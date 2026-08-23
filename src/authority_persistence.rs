@@ -32,6 +32,7 @@ pub(crate) struct ClaimedIssuance {
 pub(crate) enum PersistedIssuance {
     Pending,
     Issued { gate_pass: String },
+    Retired,
     Failed,
 }
 

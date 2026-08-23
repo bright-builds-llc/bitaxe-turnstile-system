@@ -188,6 +188,7 @@ impl AuthorityApplication {
         Ok(match self.repository.issuance(challenge_id).await? {
             PersistedIssuance::Pending => IssuanceLookup::Pending,
             PersistedIssuance::Issued { gate_pass } => IssuanceLookup::Issued { gate_pass },
+            PersistedIssuance::Retired => return Err(AuthorityApplicationError::IssuanceRetired),
             PersistedIssuance::Failed => IssuanceLookup::Failed,
         })
     }
@@ -362,6 +363,8 @@ pub enum AuthorityApplicationError {
     WrongClaimantKey,
     #[error("Claimant Issuance Proof identity was already consumed")]
     ReplayedIssuanceProof,
+    #[error("Gate Pass issuance bytes have passed their Retention Floor")]
+    IssuanceRetired,
     #[error("Gate Authority persistence failed")]
     Persistence(#[source] Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]

@@ -499,6 +499,9 @@ impl IntoResponse for ApiError {
             Self::InvalidApplication(AuthorityApplicationError::UnknownChallenge) => {
                 (StatusCode::NOT_FOUND, "unknown_challenge")
             }
+            Self::InvalidApplication(AuthorityApplicationError::IssuanceRetired) => {
+                (StatusCode::GONE, "issuance_retired")
+            }
             Self::InvalidApplication(
                 AuthorityApplicationError::InvalidClaimantProof
                 | AuthorityApplicationError::WrongIssuanceProofRequest

@@ -18,6 +18,9 @@ roadmap.
 - [Ticket 02](./issues/02-retention-planner-cli.md) established separate service-local CLI seams,
   a shared typed policy core, digest-bound context-local plans, and bounded idempotent replay-proof
   cleanup with destructive mode disabled by default.
+- [Ticket 03](./issues/03-gate-authority-retention.md) added authoritative challenge terminal-time
+  projection, post-expiry Gate Pass byte retirement, atomic day-30 Authority aggregate
+  pseudonymization, and day-90 tombstone deletion without disturbing active adapter acknowledgements.
 
 ## Delivery order
 

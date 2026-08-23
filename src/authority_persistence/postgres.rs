@@ -322,6 +322,11 @@ impl AuthorityRepository for PostgresAuthorityRepository {
         if result.rows_affected() != 1 {
             return Err(AuthorityPersistenceError::LostSigningLease);
         }
+        sqlx::query(include_str!("postgres/queries/mark_challenge_issued.sql"))
+            .bind(challenge_id.as_str())
+            .bind(unix_seconds_to_i64(issued_at)?)
+            .execute(&mut *transaction)
+            .await?;
         sqlx::query(include_str!("postgres/queries/mark_outbox_completed.sql"))
             .bind(challenge_id.as_str())
             .execute(&mut *transaction)
@@ -334,19 +339,20 @@ impl AuthorityRepository for PostgresAuthorityRepository {
         &self,
         challenge_id: &ChallengeId,
     ) -> Result<PersistedIssuance, AuthorityPersistenceError> {
-        let maybe_row = sqlx::query_as::<_, (Option<String>, Option<String>)>(include_str!(
-            "postgres/queries/select_issuance.sql"
-        ))
+        let maybe_row = sqlx::query_as::<_, (Option<String>, Option<String>, Option<i64>)>(
+            include_str!("postgres/queries/select_issuance.sql"),
+        )
         .bind(challenge_id.as_str())
         .fetch_optional(&self.pool)
         .await?;
-        let Some((maybe_status, maybe_gate_pass)) = maybe_row else {
+        let Some((maybe_status, maybe_gate_pass, maybe_retired_at)) = maybe_row else {
             return Err(AuthorityPersistenceError::UnknownChallenge);
         };
-        match (maybe_status.as_deref(), maybe_gate_pass) {
-            (None | Some("pending" | "signing"), None) => Ok(PersistedIssuance::Pending),
-            (Some("issued"), Some(gate_pass)) => Ok(PersistedIssuance::Issued { gate_pass }),
-            (Some("failed"), None) => Ok(PersistedIssuance::Failed),
+        match (maybe_status.as_deref(), maybe_gate_pass, maybe_retired_at) {
+            (None | Some("pending" | "signing"), None, None) => Ok(PersistedIssuance::Pending),
+            (Some("issued"), Some(gate_pass), None) => Ok(PersistedIssuance::Issued { gate_pass }),
+            (Some("issued"), None, Some(_)) => Ok(PersistedIssuance::Retired),
+            (Some("failed"), None, None) => Ok(PersistedIssuance::Failed),
             _ => Err(AuthorityPersistenceError::InvalidPersistedData),
         }
     }

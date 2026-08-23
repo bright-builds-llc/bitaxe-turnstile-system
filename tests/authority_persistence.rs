@@ -24,6 +24,8 @@ use tokio::{net::TcpListener, task::JoinHandle, time::timeout};
 mod authority_key_support;
 #[path = "support/claimant.rs"]
 mod claimant_support;
+#[path = "authority_persistence/governance.rs"]
+mod governance;
 #[path = "support/http.rs"]
 mod http_support;
 #[path = "support/postgres.rs"]

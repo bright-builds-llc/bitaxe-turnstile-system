@@ -2,10 +2,14 @@ use std::{error::Error, process::Command};
 
 use serde_json::Value;
 
+#[path = "governance_cli/authority.rs"]
+mod authority;
 #[path = "support/postgres.rs"]
 mod postgres_support;
 
 use postgres_support::PostgresTestDatabase;
+
+const TEST_PSEUDONYMIZATION_KEY: &str = "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A";
 
 #[test]
 fn both_service_local_clis_publish_the_governance_command_surface() -> Result<(), Box<dyn Error>> {
@@ -399,6 +403,10 @@ fn run_authority(
                 "BWG_GOVERNANCE_DESTRUCTIVE_ENABLED",
                 destructive_enabled.to_string(),
             )
+            .env(
+                "BWG_GOVERNANCE_PSEUDONYMIZATION_KEY",
+                TEST_PSEUDONYMIZATION_KEY,
+            )
             .output()?,
     )
 }
@@ -416,6 +424,34 @@ fn run_reference(
                 "BWG_GOVERNANCE_DESTRUCTIVE_ENABLED",
                 destructive_enabled.to_string(),
             )
+            .env(
+                "BWG_GOVERNANCE_PSEUDONYMIZATION_KEY",
+                TEST_PSEUDONYMIZATION_KEY,
+            )
             .output()?,
+    )
+}
+
+fn apply_authority_manifest(
+    database_url: &str,
+    manifest: &Value,
+) -> Result<std::process::Output, Box<dyn Error>> {
+    let job_id = manifest["job_id"]
+        .as_str()
+        .ok_or("plan should return a job ID")?;
+    let digest = manifest["manifest_digest"]
+        .as_str()
+        .ok_or("plan should return a digest")?;
+    run_authority(
+        database_url,
+        &[
+            "apply-retention",
+            "--job-id",
+            job_id,
+            "--manifest-digest",
+            digest,
+            "--confirm-destruction",
+        ],
+        true,
     )
 }

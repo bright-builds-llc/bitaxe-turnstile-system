@@ -39,6 +39,7 @@ async fn apply_retention(
     let policy = retention_policy(arguments)?;
     let destructive_enabled =
         env::var("BWG_GOVERNANCE_DESTRUCTIVE_ENABLED").is_ok_and(|value| value == "true");
+    let maybe_pseudonymization_key = env::var("BWG_GOVERNANCE_PSEUDONYMIZATION_KEY").ok();
     let request = ApplyRetentionRequest::new(
         job_id,
         manifest_digest,
@@ -46,6 +47,7 @@ async fn apply_retention(
         destructive_enabled,
         confirmed,
         policy,
+        maybe_pseudonymization_key.as_deref(),
     )?;
     let database_url = env::var(database_url_name(context))?;
     let application = GovernanceApplication::connect(context, &database_url).await?;

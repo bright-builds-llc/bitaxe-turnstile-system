@@ -71,8 +71,26 @@ respectively.
   expiry changed since planning fails before a partial batch can commit. Apply recomputes the full
   manifest digest before selecting the bounded effect batch. Retrying a completed job returns its
   stable completion cursor with zero new transitions.
+- A batch containing a pseudonymization action additionally requires a context-local 32-byte
+  base64url key in `BWG_GOVERNANCE_PSEUDONYMIZATION_KEY`. The key is held only in process memory;
+  plans, jobs, tombstones, output, and audit records never contain it.
 - `export` is reserved on both CLIs and remains unavailable until the versioned export/audit profile
   is implemented.
+
+### Gate Authority retirement behavior
+
+- A Work Challenge receives a terminal instant from unsatisfied expiry, terminal issuance failure,
+  or successful issuance. Satisfied challenges with pending or signing issuance have no terminal
+  instant and cannot enter an operational plan.
+- The compact Gate Pass JWS is cleared at its signed expiry without changing the immutable `issued`
+  fact. Subsequent claimant-authenticated Issuance Lookup returns `410 issuance_retired` and never
+  recreates or misreports the pass.
+- At terminal day 30, one transaction locks and revalidates the challenge, inserts a context-keyed
+  HMAC-SHA-256 tombstone, and deletes its Claimant proof rows, Accepted Work Events, share
+  fingerprints, Work Sessions, outbox, issuance intent, and challenge. A missing key or changed
+  terminal floor rolls back the whole transaction.
+- At terminal day 90, the minimal Authority tombstone is physically deleted. Active or non-terminal
+  challenges never appear in either transition.
 
 ## Export contract
 

@@ -2,6 +2,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
@@ -325,6 +326,7 @@ pub struct ApplyRetentionRequest {
     manifest_digest: String,
     batch_size: u64,
     policy: RetentionPolicy,
+    maybe_pseudonymization_key: Option<PseudonymizationKey>,
 }
 
 impl ApplyRetentionRequest {
@@ -336,6 +338,7 @@ impl ApplyRetentionRequest {
         destructive_enabled: bool,
         confirmed: bool,
         policy: RetentionPolicy,
+        maybe_pseudonymization_key: Option<&str>,
     ) -> Result<Self, GovernanceError> {
         if !destructive_enabled {
             return Err(GovernanceError::DestructiveApplyDisabled);
@@ -356,7 +359,23 @@ impl ApplyRetentionRequest {
             manifest_digest: manifest_digest.to_owned(),
             batch_size,
             policy,
+            maybe_pseudonymization_key: maybe_pseudonymization_key
+                .map(PseudonymizationKey::parse)
+                .transpose()?,
         })
+    }
+}
+
+struct PseudonymizationKey([u8; 32]);
+
+impl PseudonymizationKey {
+    fn parse(value: &str) -> Result<Self, GovernanceError> {
+        let decoded = URL_SAFE_NO_PAD
+            .decode(value)
+            .map_err(|_| GovernanceError::InvalidPseudonymizationKey)?;
+        let bytes = <[u8; 32]>::try_from(decoded)
+            .map_err(|_| GovernanceError::InvalidPseudonymizationKey)?;
+        Ok(Self(bytes))
     }
 }
 
@@ -397,6 +416,10 @@ pub enum GovernanceError {
     ManifestDigestMismatch,
     #[error("current Retention Policy differs from the reviewed Governance Manifest")]
     StaleRetentionPolicy,
+    #[error("pseudonymization requires a 32-byte base64url context key")]
+    MissingPseudonymizationKey,
+    #[error("pseudonymization key must be a 32-byte base64url value")]
+    InvalidPseudonymizationKey,
     #[error("retention job is unavailable in this persistence context")]
     UnknownRetentionJob,
     #[error("governed records changed after planning; create and review a new plan")]
