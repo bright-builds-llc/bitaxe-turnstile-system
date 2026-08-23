@@ -24,6 +24,9 @@ roadmap.
 - [Ticket 04](./issues/04-relying-service-retention.md) added pass-expiry and terminal-outcome floors,
   marker-specific and aggregate Relying Service tombstones, lookup-window-aware retirement, and
   preservation of account business records outside the BWG aggregate.
+- [Ticket 05](./issues/05-export-governance-audit.md) added resumable frozen NDJSON snapshots,
+  byte-bound integrity manifests, prohibited-data scans, metadata-only lifecycle audits, failure
+  categories, and day-90 retirement for audit and redacted snapshot records.
 
 ## Delivery order
 

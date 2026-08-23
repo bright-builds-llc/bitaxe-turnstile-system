@@ -1,7 +1,8 @@
-use std::{collections::BTreeMap, str::FromStr as _};
+use std::{collections::BTreeMap, str::FromStr as _, time::Instant};
 
 use ring::digest::{SHA256, digest};
 use serde::Serialize;
+use serde_json::json;
 use sqlx::{PgPool, Row as _, postgres::PgPoolOptions};
 use uuid::Uuid;
 
@@ -11,7 +12,11 @@ use super::{
     RetentionCandidate, RetentionJobStatus, RetentionPolicy, RetentionState, plan_candidate,
 };
 
+use audit::{AuditEventType, NewAuditEvent, insert_audit_event};
+
+mod audit;
 mod authority_retention;
+mod export;
 mod reference_retention;
 mod retention_apply;
 
@@ -29,6 +34,7 @@ struct ContextProfile {
     create_schema: &'static str,
     migrator: &'static sqlx::migrate::Migrator,
     retention_candidates_query: &'static str,
+    export_sources_query: &'static str,
 }
 
 impl ContextProfile {
@@ -41,6 +47,7 @@ impl ContextProfile {
                 retention_candidates_query: include_str!(
                     "queries/authority_retention_candidates.sql"
                 ),
+                export_sources_query: include_str!("queries/export_authority_sources.sql"),
             },
             GovernanceContext::RelyingService => Self {
                 context,
@@ -49,6 +56,7 @@ impl ContextProfile {
                 retention_candidates_query: include_str!(
                     "queries/reference_retention_candidates.sql"
                 ),
+                export_sources_query: include_str!("queries/export_reference_sources.sql"),
             },
         }
     }
@@ -107,6 +115,7 @@ impl PostgresGovernanceRepository {
         as_of_unix_seconds: u64,
         policy: RetentionPolicy,
     ) -> Result<GovernanceManifest, GovernanceError> {
+        let started = Instant::now();
         let candidates = self
             .retention_candidates(as_of_unix_seconds, policy)
             .await?;
@@ -164,6 +173,19 @@ impl PostgresGovernanceRepository {
                 .execute(&mut *transaction)
                 .await?;
         }
+        insert_audit_event(
+            &mut transaction,
+            NewAuditEvent {
+                event_type: AuditEventType::RetentionPlanned,
+                operation_id: job_id,
+                maybe_manifest_digest: Some(&manifest_digest),
+                counts: json!({ "eligible_items": eligible_items }),
+                duration_milliseconds: elapsed_milliseconds(started)?,
+                outcome: "completed",
+                maybe_error_category: None,
+            },
+        )
+        .await?;
         transaction.commit().await?;
         Ok(GovernanceManifest {
             job_id: job_id.to_string(),
@@ -181,6 +203,7 @@ impl PostgresGovernanceRepository {
         &self,
         request: ApplyRetentionRequest,
     ) -> Result<ApplyRetentionResult, GovernanceError> {
+        let started = Instant::now();
         let mut transaction = self.pool.begin().await?;
         let maybe_job = sqlx::query(include_str!("queries/select_retention_job_for_apply.sql"))
             .bind(request.job_id)
@@ -224,6 +247,19 @@ impl PostgresGovernanceRepository {
             return Err(GovernanceError::ManifestDigestMismatch);
         }
         if status == RetentionJobStatus::Completed {
+            insert_audit_event(
+                &mut transaction,
+                NewAuditEvent {
+                    event_type: AuditEventType::RetentionApplied,
+                    operation_id: request.job_id,
+                    maybe_manifest_digest: Some(&manifest_digest),
+                    counts: json!({ "deleted": 0, "pseudonymized": 0 }),
+                    duration_milliseconds: elapsed_milliseconds(started)?,
+                    outcome: "already_completed",
+                    maybe_error_category: None,
+                },
+            )
+            .await?;
             transaction.commit().await?;
             return Ok(ApplyRetentionResult {
                 job_id: request.job_id.to_string(),
@@ -278,6 +314,68 @@ impl PostgresGovernanceRepository {
             .bind(to_i64(next_cursor)?)
             .execute(&mut *transaction)
             .await?;
+        if cursor > 0 {
+            insert_audit_event(
+                &mut transaction,
+                NewAuditEvent {
+                    event_type: AuditEventType::RecoveryResumed,
+                    operation_id: request.job_id,
+                    maybe_manifest_digest: Some(&manifest_digest),
+                    counts: json!({ "cursor": cursor }),
+                    duration_milliseconds: elapsed_milliseconds(started)?,
+                    outcome: "resumed",
+                    maybe_error_category: None,
+                },
+            )
+            .await?;
+        }
+        insert_audit_event(
+            &mut transaction,
+            NewAuditEvent {
+                event_type: AuditEventType::RetentionApplied,
+                operation_id: request.job_id,
+                maybe_manifest_digest: Some(&manifest_digest),
+                counts: json!({
+                    "deleted": deleted_items,
+                    "pseudonymized": pseudonymized_items,
+                    "cursor": next_cursor
+                }),
+                duration_milliseconds: elapsed_milliseconds(started)?,
+                outcome: next_status.as_str(),
+                maybe_error_category: None,
+            },
+        )
+        .await?;
+        if pseudonymized_items > 0 {
+            insert_audit_event(
+                &mut transaction,
+                NewAuditEvent {
+                    event_type: AuditEventType::Pseudonymized,
+                    operation_id: request.job_id,
+                    maybe_manifest_digest: Some(&manifest_digest),
+                    counts: json!({ "records": pseudonymized_items }),
+                    duration_milliseconds: elapsed_milliseconds(started)?,
+                    outcome: "completed",
+                    maybe_error_category: None,
+                },
+            )
+            .await?;
+        }
+        if deleted_items > 0 {
+            insert_audit_event(
+                &mut transaction,
+                NewAuditEvent {
+                    event_type: AuditEventType::Deleted,
+                    operation_id: request.job_id,
+                    maybe_manifest_digest: Some(&manifest_digest),
+                    counts: json!({ "records": deleted_items }),
+                    duration_milliseconds: elapsed_milliseconds(started)?,
+                    outcome: "completed",
+                    maybe_error_category: None,
+                },
+            )
+            .await?;
+        }
         transaction.commit().await?;
         Ok(ApplyRetentionResult {
             job_id: request.job_id.to_string(),
@@ -318,41 +416,6 @@ impl PostgresGovernanceRepository {
             })
             .collect()
     }
-}
-
-async fn delete_protocol_material(
-    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    context: GovernanceContext,
-    item: &PlannedItem,
-    as_of_unix_seconds: u64,
-) -> Result<u64, GovernanceError> {
-    if !record_class_allowed_in_context(item.record_class, context) {
-        return Err(GovernanceError::InvalidPersistedData);
-    }
-    let result = match item.record_class {
-        GovernedRecordClass::SignedGatePass => {
-            sqlx::query(include_str!("queries/clear_signed_gate_pass.sql"))
-                .bind(&item.record_key)
-                .bind(to_i64(item.retention_floor_unix_seconds)?)
-                .bind(to_i64(as_of_unix_seconds)?)
-                .execute(&mut **transaction)
-                .await?
-        }
-        record_class => {
-            let query = replay_delete_query(record_class)?;
-            let expected_expiry = item
-                .retention_floor_unix_seconds
-                .checked_sub(1)
-                .ok_or(GovernanceError::InvalidPersistedData)?;
-            sqlx::query(query)
-                .bind(&item.record_key)
-                .bind(to_i64(expected_expiry)?)
-                .bind(to_i64(as_of_unix_seconds)?)
-                .execute(&mut **transaction)
-                .await?
-        }
-    };
-    Ok(result.rows_affected())
 }
 
 fn planned_item_from_row(row: sqlx::postgres::PgRow) -> Result<PlannedItem, GovernanceError> {
@@ -416,6 +479,7 @@ fn parse_record_class(value: &str) -> Result<GovernedRecordClass, GovernanceErro
         "pass_consumption" => Ok(GovernedRecordClass::PassConsumption),
         "relying_service_operational" => Ok(GovernedRecordClass::RelyingServiceOperational),
         "governance_audit" => Ok(GovernedRecordClass::GovernanceAudit),
+        "governance_export_snapshot" => Ok(GovernedRecordClass::GovernanceExportSnapshot),
         _ => Err(GovernanceError::InvalidPersistedData),
     }
 }
@@ -464,27 +528,19 @@ const fn record_class_allowed_in_context(
                 | GovernedRecordClass::PassConsumption
                 | GovernedRecordClass::RelyingServiceOperational,
             GovernanceContext::RelyingService
-        ) | (GovernedRecordClass::GovernanceAudit, _)
+        ) | (
+            GovernedRecordClass::GovernanceAudit | GovernedRecordClass::GovernanceExportSnapshot,
+            _
+        )
     )
-}
-
-const fn replay_delete_query(
-    record_class: GovernedRecordClass,
-) -> Result<&'static str, GovernanceError> {
-    match record_class {
-        GovernedRecordClass::ClaimantIssuanceProofReplay => {
-            Ok(include_str!("queries/delete_issuance_proof.sql"))
-        }
-        GovernedRecordClass::DpopProofReplay => Ok(include_str!("queries/delete_dpop_proof.sql")),
-        GovernedRecordClass::ClaimantOutcomeProofReplay => {
-            Ok(include_str!("queries/delete_outcome_proof.sql"))
-        }
-        _ => Err(GovernanceError::InvalidPersistedData),
-    }
 }
 
 fn to_i64(value: u64) -> Result<i64, GovernanceError> {
     i64::try_from(value).map_err(|_| GovernanceError::InvalidPersistedData)
+}
+
+fn elapsed_milliseconds(started: Instant) -> Result<u64, GovernanceError> {
+    u64::try_from(started.elapsed().as_millis()).map_err(|_| GovernanceError::InvalidPersistedData)
 }
 
 fn to_u64(value: i64) -> Result<u64, GovernanceError> {

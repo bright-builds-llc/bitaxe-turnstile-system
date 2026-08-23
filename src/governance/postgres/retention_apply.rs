@@ -1,7 +1,9 @@
-use super::{PlannedItem, authority_retention, delete_protocol_material, reference_retention};
+use uuid::Uuid;
+
+use super::{PlannedItem, authority_retention, reference_retention, to_i64};
 use crate::governance::{
-    EligibilityReason, GovernanceContext, GovernanceError, PseudonymizationKey, RetentionAction,
-    RetentionPolicy,
+    EligibilityReason, GovernanceContext, GovernanceError, GovernedRecordClass,
+    PseudonymizationKey, RetentionAction, RetentionPolicy,
 };
 
 pub(super) enum AppliedTransition {
@@ -28,7 +30,8 @@ pub(super) async fn apply_transition(
     let applied = match (context, item.action, item.reason) {
         (_, RetentionAction::Delete, EligibilityReason::ProtocolRetentionFloorReached) => {
             AppliedTransition::Deleted(
-                delete_protocol_material(transaction, context, item, as_of_unix_seconds).await?,
+                delete_protocol_material(transaction, context, item, as_of_unix_seconds, policy)
+                    .await?,
             )
         }
         (
@@ -124,4 +127,85 @@ fn required_key(
     maybe_key: Option<&PseudonymizationKey>,
 ) -> Result<&PseudonymizationKey, GovernanceError> {
     maybe_key.ok_or(GovernanceError::MissingPseudonymizationKey)
+}
+
+async fn delete_protocol_material(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    context: GovernanceContext,
+    item: &PlannedItem,
+    as_of_unix_seconds: u64,
+    policy: RetentionPolicy,
+) -> Result<u64, GovernanceError> {
+    if !super::record_class_allowed_in_context(item.record_class, context) {
+        return Err(GovernanceError::InvalidPersistedData);
+    }
+    let result = match item.record_class {
+        GovernedRecordClass::GovernanceExportSnapshot => {
+            let export_id = Uuid::parse_str(&item.record_key)
+                .map_err(|_| GovernanceError::InvalidPersistedData)?;
+            let created_at = item
+                .retention_floor_unix_seconds
+                .checked_sub(policy.tombstone_retention_seconds())
+                .ok_or(GovernanceError::InvalidPersistedData)?;
+            sqlx::query(include_str!("../queries/delete_governance_export.sql"))
+                .bind(export_id)
+                .bind(to_i64(created_at)?)
+                .bind(to_i64(as_of_unix_seconds)?)
+                .execute(&mut **transaction)
+                .await?
+        }
+        GovernedRecordClass::GovernanceAudit => {
+            let event_id = Uuid::parse_str(&item.record_key)
+                .map_err(|_| GovernanceError::InvalidPersistedData)?;
+            let occurred_at = item
+                .retention_floor_unix_seconds
+                .checked_sub(policy.tombstone_retention_seconds())
+                .ok_or(GovernanceError::InvalidPersistedData)?;
+            sqlx::query(include_str!("../queries/delete_governance_audit.sql"))
+                .bind(event_id)
+                .bind(to_i64(occurred_at)?)
+                .bind(to_i64(as_of_unix_seconds)?)
+                .execute(&mut **transaction)
+                .await?
+        }
+        GovernedRecordClass::SignedGatePass => {
+            sqlx::query(include_str!("../queries/clear_signed_gate_pass.sql"))
+                .bind(&item.record_key)
+                .bind(to_i64(item.retention_floor_unix_seconds)?)
+                .bind(to_i64(as_of_unix_seconds)?)
+                .execute(&mut **transaction)
+                .await?
+        }
+        record_class => {
+            let query = replay_delete_query(record_class)?;
+            let expected_expiry = item
+                .retention_floor_unix_seconds
+                .checked_sub(1)
+                .ok_or(GovernanceError::InvalidPersistedData)?;
+            sqlx::query(query)
+                .bind(&item.record_key)
+                .bind(to_i64(expected_expiry)?)
+                .bind(to_i64(as_of_unix_seconds)?)
+                .execute(&mut **transaction)
+                .await?
+        }
+    };
+    Ok(result.rows_affected())
+}
+
+const fn replay_delete_query(
+    record_class: GovernedRecordClass,
+) -> Result<&'static str, GovernanceError> {
+    match record_class {
+        GovernedRecordClass::ClaimantIssuanceProofReplay => {
+            Ok(include_str!("../queries/delete_issuance_proof.sql"))
+        }
+        GovernedRecordClass::DpopProofReplay => {
+            Ok(include_str!("../queries/delete_dpop_proof.sql"))
+        }
+        GovernedRecordClass::ClaimantOutcomeProofReplay => {
+            Ok(include_str!("../queries/delete_outcome_proof.sql"))
+        }
+        _ => Err(GovernanceError::InvalidPersistedData),
+    }
 }

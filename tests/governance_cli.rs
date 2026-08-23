@@ -2,8 +2,12 @@ use std::{error::Error, process::Command};
 
 use serde_json::Value;
 
+#[path = "governance_cli/audit.rs"]
+mod audit;
 #[path = "governance_cli/authority.rs"]
 mod authority;
+#[path = "governance_cli/export.rs"]
+mod export;
 #[path = "support/postgres.rs"]
 mod postgres_support;
 #[path = "governance_cli/reference.rs"]

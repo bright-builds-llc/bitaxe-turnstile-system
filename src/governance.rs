@@ -9,10 +9,12 @@ use thiserror::Error;
 use uuid::Uuid;
 
 pub mod cli;
+mod export;
 mod postgres;
 #[cfg(test)]
 mod tests;
 
+use export::{ExportResumeRequest, ExportStartRequest, GovernanceExportPage};
 use postgres::PostgresGovernanceRepository;
 
 /// Hosted identifying-retention default: 30 days.
@@ -50,6 +52,7 @@ pub enum GovernedRecordClass {
     PassConsumption,
     RelyingServiceOperational,
     GovernanceAudit,
+    GovernanceExportSnapshot,
 }
 
 impl GovernedRecordClass {
@@ -61,6 +64,7 @@ impl GovernedRecordClass {
                 | Self::DpopProofReplay
                 | Self::ClaimantOutcomeProofReplay
                 | Self::GovernanceAudit
+                | Self::GovernanceExportSnapshot
         )
     }
 
@@ -74,6 +78,7 @@ impl GovernedRecordClass {
             Self::PassConsumption => "pass_consumption",
             Self::RelyingServiceOperational => "relying_service_operational",
             Self::GovernanceAudit => "governance_audit",
+            Self::GovernanceExportSnapshot => "governance_export_snapshot",
         }
     }
 }
@@ -338,7 +343,18 @@ impl GovernanceApplication {
         &self,
         request: ApplyRetentionRequest,
     ) -> Result<ApplyRetentionResult, GovernanceError> {
-        self.repository.apply_retention(request).await
+        let job_id = request.job_id;
+        let manifest_digest = request.manifest_digest.clone();
+        match self.repository.apply_retention(request).await {
+            Ok(result) => Ok(result),
+            Err(error) => {
+                self.repository
+                    .record_retention_failure(job_id, &manifest_digest, error.audit_category())
+                    .await
+                    .map_err(|_| GovernanceError::AuditPersistenceFailed)?;
+                Err(error)
+            }
+        }
     }
 }
 
@@ -518,6 +534,16 @@ pub enum GovernanceError {
     InvalidPseudonymizationKey,
     #[error("retention job is unavailable in this persistence context")]
     UnknownRetentionJob,
+    #[error("export identifier is invalid")]
+    InvalidExportId,
+    #[error("governance export is unavailable in this persistence context")]
+    UnknownExport,
+    #[error("export page size must be between 1 and 1000")]
+    InvalidExportPageSize,
+    #[error("export cursor is beyond the frozen snapshot")]
+    InvalidExportCursor,
+    #[error("governance failure audit could not be persisted")]
+    AuditPersistenceFailed,
     #[error("governed records changed after planning; create and review a new plan")]
     StaleRetentionPlan,
     #[error("persisted governance data exceeds supported numeric bounds")]
@@ -528,4 +554,26 @@ pub enum GovernanceError {
     Migration(#[from] sqlx::migrate::MigrateError),
     #[error("governance manifest serialization failed")]
     ManifestSerialization(#[from] serde_json::Error),
+}
+
+impl GovernanceError {
+    fn audit_category(&self) -> &'static str {
+        match self {
+            Self::Database(_) | Self::Migration(_) => "database",
+            Self::ManifestSerialization(_) => "serialization",
+            Self::UnknownRetentionJob | Self::UnknownExport => "not_found",
+            Self::ManifestDigestMismatch
+            | Self::StaleRetentionPolicy
+            | Self::StaleRetentionPlan => "stale_state",
+            Self::DestructiveApplyDisabled | Self::DestructiveConfirmationRequired => {
+                "operator_guard"
+            }
+            Self::InvalidPseudonymizationKey | Self::MissingPseudonymizationKey => {
+                "pseudonymization_key"
+            }
+            Self::PlanningInstantInFuture | Self::SystemClockUnavailable => "trusted_time",
+            Self::AuditPersistenceFailed => "audit",
+            _ => "invalid_input",
+        }
+    }
 }

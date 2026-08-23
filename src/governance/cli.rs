@@ -9,8 +9,8 @@ use std::{
 use thiserror::Error;
 
 use super::{
-    ApplyRetentionRequest, GovernanceApplication, GovernanceContext, GovernanceError,
-    RetentionPolicy,
+    ApplyRetentionRequest, ExportResumeRequest, ExportStartRequest, GovernanceApplication,
+    GovernanceContext, GovernanceError, RetentionPolicy,
 };
 
 /// Runs one context-specific Service-Local Operator command.
@@ -21,9 +21,42 @@ pub async fn run(context: GovernanceContext) -> Result<(), GovernanceCliError> {
         None | Some("--help" | "-h" | "help") => write_help(context),
         Some("plan-retention") => plan_retention(context, &arguments[1..]).await,
         Some("apply-retention") => apply_retention(context, &arguments[1..]).await,
-        Some("export") => Err(GovernanceCliError::ExportUnavailable),
+        Some("export") => export(context, &arguments[1..]).await,
         Some(command) => Err(GovernanceCliError::UnknownCommand(command.to_owned())),
     }
+}
+
+async fn export(
+    context: GovernanceContext,
+    arguments: &[String],
+) -> Result<(), GovernanceCliError> {
+    let page_size = optional_u64(arguments, "--page-size")?.unwrap_or(100);
+    let database_url = env::var(database_url_name(context))?;
+    let application = GovernanceApplication::connect(context, &database_url).await?;
+    let page = match optional_string(arguments, "--export-id")? {
+        Some(export_id) => {
+            let after_sequence = required_u64(arguments, "--after-sequence")?;
+            application
+                .resume_export(ExportResumeRequest::new(
+                    export_id,
+                    after_sequence,
+                    page_size,
+                )?)
+                .await?
+        }
+        None => {
+            let snapshot_cutoff = required_u64(arguments, "--snapshot-cutoff")?;
+            let key = env::var("BWG_GOVERNANCE_PSEUDONYMIZATION_KEY")?;
+            application
+                .start_export(ExportStartRequest::new(snapshot_cutoff, page_size, &key)?)
+                .await?
+        }
+    };
+    let mut stdout = io::stdout().lock();
+    for line in page.into_lines() {
+        stdout.write_all(&line)?;
+    }
+    Ok(())
 }
 
 async fn apply_retention(
@@ -100,6 +133,20 @@ fn required_string<'a>(arguments: &'a [String], name: &str) -> Result<&'a str, G
         .ok_or_else(|| GovernanceCliError::MissingOption(name.to_owned()))
 }
 
+fn optional_string<'a>(
+    arguments: &'a [String],
+    name: &str,
+) -> Result<Option<&'a str>, GovernanceCliError> {
+    let Some(index) = arguments.iter().position(|argument| argument == name) else {
+        return Ok(None);
+    };
+    arguments
+        .get(index + 1)
+        .map(String::as_str)
+        .map(Some)
+        .ok_or_else(|| GovernanceCliError::MissingOption(name.to_owned()))
+}
+
 fn optional_u64(arguments: &[String], name: &str) -> Result<Option<u64>, GovernanceCliError> {
     let Some(index) = arguments.iter().position(|argument| argument == name) else {
         return Ok(None);
@@ -132,8 +179,6 @@ fn write_help(context: GovernanceContext) -> Result<(), GovernanceCliError> {
 pub enum GovernanceCliError {
     #[error("unknown governance command: {0}")]
     UnknownCommand(String),
-    #[error("governance export is not enabled by the current schema profile")]
-    ExportUnavailable,
     #[error("missing required option: {0}")]
     MissingOption(String),
     #[error("governance option must be an unsigned integer")]

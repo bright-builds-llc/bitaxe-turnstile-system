@@ -74,8 +74,9 @@ respectively.
 - A batch containing a pseudonymization action additionally requires a context-local 32-byte
   base64url key in `BWG_GOVERNANCE_PSEUDONYMIZATION_KEY`. The key is held only in process memory;
   plans, jobs, tombstones, output, and audit records never contain it.
-- `export` is reserved on both CLIs and remains unavailable until the versioned export/audit profile
-  is implemented.
+- `export --snapshot-cutoff <unix-seconds> [--page-size <1..1000>]` freezes a redacted snapshot and
+  emits its first NDJSON page. `export --export-id <uuid> --after-sequence <n>
+  [--page-size <1..1000>]` resumes from the same frozen items and may safely repeat an unread page.
 
 ### Gate Authority retirement behavior
 
@@ -117,7 +118,9 @@ respectively.
 ## Export contract
 
 Exports use `application/x-ndjson; profile="bwg-governance-v1"` and are streamed without persisting
-the output file in the service. Every record envelope contains:
+the output file in the service. To make process-independent resume exact, the context temporarily
+persists the already-redacted, newline-terminated snapshot items and deletes those operational rows
+after 90 days. Every record envelope contains:
 
 - `schema_version`, fixed to `bwg-governance-v1`;
 - `context`, either `gate_authority` or `relying_service`;
@@ -132,10 +135,16 @@ byte level.
 
 ## Governance audit events
 
-The context-local audit vocabulary is `retention_planned`, `retention_applied`, `export_started`,
-`export_completed`, `export_failed`, `pseudonymized`, `deleted`, and `recovery_resumed`. Events
+The context-local audit vocabulary is `retention_planned`, `retention_applied`, `retention_failed`,
+`export_started`, `export_completed`, `export_failed`, `pseudonymized`, `deleted`, and
+`recovery_resumed`. Events
 contain the context, operation ID, manifest digest when available, cutoff, counts, duration, outcome,
 and a bounded error category. They never copy a governed row or operator credential.
+
+Successful audit events commit in the same context-local transaction as their effect. A failed
+apply or export rolls back its effect and records a separate bounded failure event; if that failure
+event cannot be persisted, the CLI returns an audit-persistence error instead of claiming success.
+Audit rows themselves become governance candidates at day 90.
 
 ## Prototype finding
 

@@ -130,5 +130,29 @@ FROM (
     CROSS JOIN policy
     WHERE tombstone.record_class IN ('pass_consumption', 'relying_service_operational')
       AND tombstone.delete_after_unix_seconds <= policy.as_of_unix_seconds
+
+    UNION ALL
+
+    SELECT audit.event_id::TEXT AS record_key,
+           audit.occurred_at_unix_seconds + policy.tombstone_retention_seconds
+               AS retention_floor_unix_seconds,
+           'governance_audit' AS record_class,
+           'identifying' AS retention_state
+    FROM governance_audit_events AS audit
+    CROSS JOIN policy
+    WHERE audit.occurred_at_unix_seconds + policy.tombstone_retention_seconds
+          <= policy.as_of_unix_seconds
+
+    UNION ALL
+
+    SELECT export.export_id::TEXT AS record_key,
+           export.created_at_unix_seconds + policy.tombstone_retention_seconds
+               AS retention_floor_unix_seconds,
+           'governance_export_snapshot' AS record_class,
+           'identifying' AS retention_state
+    FROM governance_export_jobs AS export
+    CROSS JOIN policy
+    WHERE export.created_at_unix_seconds + policy.tombstone_retention_seconds
+          <= policy.as_of_unix_seconds
 ) AS candidates
 ORDER BY record_class, retention_state, record_key
