@@ -154,7 +154,7 @@ impl PostgresGovernanceRepository {
             sqlx::query(include_str!("queries/insert_retention_item.sql"))
                 .bind(job_id)
                 .bind(to_i64(item.sequence)?)
-                .bind(record_class_name(item.record_class))
+                .bind(item.record_class.as_str())
                 .bind(item.record_key)
                 .bind(item.action.as_str())
                 .bind(eligibility_reason_name(item.reason))
@@ -519,19 +519,6 @@ fn sha256_hex(bytes: &[u8]) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
-}
-
-const fn record_class_name(record_class: GovernedRecordClass) -> &'static str {
-    match record_class {
-        GovernedRecordClass::ClaimantIssuanceProofReplay => "claimant_issuance_proof_replay",
-        GovernedRecordClass::SignedGatePass => "signed_gate_pass",
-        GovernedRecordClass::AuthorityOperational => "authority_operational",
-        GovernedRecordClass::DpopProofReplay => "dpop_proof_replay",
-        GovernedRecordClass::ClaimantOutcomeProofReplay => "claimant_outcome_proof_replay",
-        GovernedRecordClass::PassConsumption => "pass_consumption",
-        GovernedRecordClass::RelyingServiceOperational => "relying_service_operational",
-        GovernedRecordClass::GovernanceAudit => "governance_audit",
-    }
 }
 
 fn parse_job_status(value: &str) -> Result<RetentionJobStatus, GovernanceError> {

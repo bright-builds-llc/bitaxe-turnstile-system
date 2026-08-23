@@ -13,8 +13,14 @@ FROM (
            'claimant_issuance_proof_replay' AS record_class,
            'identifying' AS retention_state
     FROM claimant_issuance_proofs AS proof
+    JOIN work_challenges AS challenge USING (challenge_id)
     CROSS JOIN policy
     WHERE proof.expires_at_unix_seconds < policy.as_of_unix_seconds
+      AND (
+          challenge.terminal_at_unix_seconds IS NULL
+          OR challenge.terminal_at_unix_seconds + policy.operational_retention_seconds
+             > policy.as_of_unix_seconds
+      )
 
     UNION ALL
 

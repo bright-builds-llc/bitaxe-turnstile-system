@@ -20,5 +20,8 @@ aggregates, and Authority tombstones. Issued bytes retire at their signed expiry
 return `410 issuance_retired`; a 30-day aggregate transition inserts one HMAC-SHA-256 pseudonymized
 tombstone and deletes all challenge-owned rows atomically; the tombstone is deleted at day 90.
 Terminal-time projection and legacy backfill keep non-terminal rows ineligible. CLI and public HTTP/
-Pool Adapter tests prove rollback on a missing key, stable active acknowledgements, explicit retired
-lookup, staged deletion, and absence of the key and signed bytes from operator output.
+Pool Adapter tests migrate real pre-Ticket-03 rows, populate every aggregate child class, prove
+rollback on a missing key, replay the same stable acknowledgement and progress after process
+replacement, expose explicit retired lookup, and keep the key and signed bytes out of operator
+output. BWG/0.1 has zero verifier skew, so strict `now >= exp` rejection makes signed expiry the
+first safe byte-retirement instant.

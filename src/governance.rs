@@ -3,12 +3,15 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use ring::hmac;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
 pub mod cli;
 mod postgres;
+#[cfg(test)]
+mod tests;
 
 use postgres::PostgresGovernanceRepository;
 
@@ -59,6 +62,19 @@ impl GovernedRecordClass {
                 | Self::ClaimantOutcomeProofReplay
                 | Self::GovernanceAudit
         )
+    }
+
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::ClaimantIssuanceProofReplay => "claimant_issuance_proof_replay",
+            Self::SignedGatePass => "signed_gate_pass",
+            Self::AuthorityOperational => "authority_operational",
+            Self::DpopProofReplay => "dpop_proof_replay",
+            Self::ClaimantOutcomeProofReplay => "claimant_outcome_proof_replay",
+            Self::PassConsumption => "pass_consumption",
+            Self::RelyingServiceOperational => "relying_service_operational",
+            Self::GovernanceAudit => "governance_audit",
+        }
     }
 }
 
@@ -377,6 +393,25 @@ impl PseudonymizationKey {
             .map_err(|_| GovernanceError::InvalidPseudonymizationKey)?;
         Ok(Self(bytes))
     }
+}
+
+fn pseudonymize_record(
+    key: &PseudonymizationKey,
+    context: GovernanceContext,
+    record_class: GovernedRecordClass,
+    record_key: &str,
+) -> String {
+    let signing_key = hmac::Key::new(hmac::HMAC_SHA256, &key.0);
+    let message = format!(
+        "bwg-governance-v1\0{}\0{}\0{record_key}",
+        context.as_str(),
+        record_class.as_str()
+    );
+    hmac::sign(&signing_key, message.as_bytes())
+        .as_ref()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// Observable result of one bounded Destructive Apply invocation.

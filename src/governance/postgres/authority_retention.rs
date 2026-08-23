@@ -1,10 +1,10 @@
-use ring::hmac;
 use sqlx::Row as _;
 use uuid::Uuid;
 
 use super::{PlannedItem, to_i64};
 use crate::governance::{
     GovernanceContext, GovernanceError, GovernedRecordClass, PseudonymizationKey, RetentionPolicy,
+    pseudonymize_record,
 };
 
 #[derive(Clone, Copy)]
@@ -60,7 +60,12 @@ pub(super) async fn pseudonymize_authority_aggregate(
         .checked_add(policy.tombstone_retention_seconds())
         .ok_or(GovernanceError::InvalidPersistedData)?;
     let tombstone_id = Uuid::new_v4();
-    let pseudonym = authority_pseudonym(key, &item.record_key);
+    let pseudonym = pseudonymize_record(
+        key,
+        GovernanceContext::GateAuthority,
+        GovernedRecordClass::AuthorityOperational,
+        &item.record_key,
+    );
     sqlx::query(include_str!("../queries/insert_authority_tombstone.sql"))
         .bind(tombstone_id)
         .bind(pseudonym)
@@ -106,14 +111,4 @@ fn parse_terminal_status(value: &str) -> Result<AuthorityTerminalStatus, Governa
         "expired" => Ok(AuthorityTerminalStatus::Expired),
         _ => Err(GovernanceError::InvalidPersistedData),
     }
-}
-
-fn authority_pseudonym(key: &PseudonymizationKey, record_key: &str) -> String {
-    let signing_key = hmac::Key::new(hmac::HMAC_SHA256, &key.0);
-    let message = format!("bwg-governance-v1\0gate_authority\0authority_operational\0{record_key}");
-    hmac::sign(&signing_key, message.as_bytes())
-        .as_ref()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
