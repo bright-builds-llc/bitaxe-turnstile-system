@@ -45,6 +45,8 @@
       <h2>Free play</h2>
       <button data-action="advance30">Advance to day 30</button>
       <button data-action="advance90">Advance to day 90</button>
+      <button data-action="setUnsafePolicy">Set unsafe 0-day policy</button>
+      <button data-action="resetPolicy">Restore hosted policy</button>
       <button data-action="planAuthority">Plan Authority cleanup</button>
       <button data-action="planRelying">Plan Relying cleanup</button>
       <button data-action="applyAuthority">Apply Authority batch</button>
@@ -67,8 +69,9 @@
     <script>
       // Pure prototype module: no DOM access and no persistence.
       const GovernanceLifecycle = (() => {
-        const initialRecord = (name, safetyFloorDay) => ({
+        const initialRecord = (name, kind, safetyFloorDay) => ({
           name,
+          kind,
           safetyFloorDay,
           state: "active",
           plannedAction: null,
@@ -84,31 +87,67 @@
         const initialState = () => ({
           day: 0,
           nextManifest: 1,
+          policy: { operationalDay: 30, tombstoneDay: 90 },
           notice: "Fresh records are active in two independent contexts.",
           authority: initialContext([
-            initialRecord("Signed Gate Pass bytes", 1),
-            initialRecord("Challenge and Accepted Work history", 30),
+            initialRecord("Signed Gate Pass bytes", "artifact", 1),
+            initialRecord("Challenge and Accepted Work history", "operational", 1),
           ]),
           relying: initialContext([
-            initialRecord("Pass Consumption marker", 1),
-            initialRecord("Redemption and terminal outcome", 30),
+            initialRecord("Pass Consumption marker", "operational", 1),
+            initialRecord("Redemption and terminal outcome", "operational", 1),
           ]),
-          exportJob: { state: "idle", snapshotDay: null, cursor: 0, digestStable: true },
+          exportJob: { state: "idle", snapshotDay: null, cursor: 0, lines: [], digest: null },
         });
 
-        const plannedAction = (record, day) => {
-          if (day < record.safetyFloorDay) return null;
-          if (record.name === "Signed Gate Pass bytes") return "delete";
-          if (day >= 90) return "delete";
-          if (day >= 30) return "pseudonymize";
+        const plannedAction = (record, day, policy) => {
+          if (record.state === "deleted" || day < record.safetyFloorDay) return null;
+          if (record.kind === "artifact") return "delete";
+          if (record.state === "pseudonymized" && day >= policy.tombstoneDay) return "delete";
+          if (record.state === "expired" && day >= policy.operationalDay) return "pseudonymize";
           return null;
         };
 
+        const policyError = (state) => {
+          const floors = [...state.authority.records, ...state.relying.records]
+            .filter((record) => record.kind === "operational")
+            .map((record) => record.safetyFloorDay);
+          const highestFloor = Math.max(...floors);
+          if (state.policy.operationalDay < highestFloor) {
+            return `Operational retention day ${state.policy.operationalDay} is below safety floor day ${highestFloor}.`;
+          }
+          if (state.policy.tombstoneDay < state.policy.operationalDay) {
+            return "Tombstone retention cannot end before operational retention.";
+          }
+          return null;
+        };
+
+        const advanceTo = (state, day) => {
+          const expire = (context) => ({
+            ...context,
+            records: context.records.map((record) => ({
+              ...record,
+              state: record.state === "active" && day >= record.safetyFloorDay ? "expired" : record.state,
+            })),
+          });
+          return {
+            ...state,
+            day,
+            notice: `Time advanced to day ${day}; records past their safety floor are expired.`,
+            authority: expire(state.authority),
+            relying: expire(state.relying),
+          };
+        };
+
         const plan = (state, contextName) => {
+          const maybePolicyError = policyError(state);
+          if (maybePolicyError) {
+            return { ...state, notice: `Plan rejected: ${maybePolicyError}` };
+          }
           const context = state[contextName];
           const records = context.records.map((record) => ({
             ...record,
-            plannedAction: plannedAction(record, state.day),
+            plannedAction: plannedAction(record, state.day, state.policy),
           }));
           const eligible = records.filter((record) => record.plannedAction).length;
           return {
@@ -173,11 +212,40 @@
           };
         };
 
+        const exportLines = (state) => ["authority", "relying"].flatMap((contextName) =>
+          state[contextName].records.map((record, index) => JSON.stringify({
+            sequence: `${contextName}-${index + 1}`,
+            snapshotDay: state.day,
+            context: contextName,
+            recordType: record.name,
+            state: record.state,
+          })),
+        );
+
+        const digest = (lines) => {
+          let value = 2166136261;
+          for (const character of lines.join("\n")) {
+            value ^= character.charCodeAt(0);
+            value = Math.imul(value, 16777619);
+          }
+          return `prototype-${(value >>> 0).toString(16).padStart(8, "0")}`;
+        };
+
         const reduce = (state, action) => {
           switch (action.type) {
             case "reset": return initialState();
-            case "advance30": return { ...state, day: 30, notice: "Operational retention reached day 30." };
-            case "advance90": return { ...state, day: 90, notice: "Tombstone retention reached day 90." };
+            case "advance30": return advanceTo(state, 30);
+            case "advance90": return advanceTo(state, 90);
+            case "setUnsafePolicy": return {
+              ...state,
+              policy: { ...state.policy, operationalDay: 0 },
+              notice: "Operational retention was configured below the protocol floor.",
+            };
+            case "resetPolicy": return {
+              ...state,
+              policy: { operationalDay: 30, tombstoneDay: 90 },
+              notice: "Hosted 30/90-day policy restored.",
+            };
             case "planAuthority": return plan(state, "authority");
             case "planRelying": return plan(state, "relying");
             case "applyAuthority": return apply(state, "authority");
@@ -186,18 +254,33 @@
             case "interruptRelying": return interrupt(state, "relying");
             case "resumeAuthority": return resume(state, "authority");
             case "resumeRelying": return resume(state, "relying");
-            case "startExport": return {
-              ...state,
-              notice: `Export fixed a repeatable snapshot at day ${state.day}.`,
-              exportJob: { state: "interrupted", snapshotDay: state.day, cursor: 1, digestStable: true },
-            };
+            case "startExport": {
+              const lines = exportLines(state);
+              return {
+                ...state,
+                notice: `Export fixed ${lines.length} sequenced records at day ${state.day}.`,
+                exportJob: {
+                  state: "interrupted",
+                  snapshotDay: state.day,
+                  cursor: 1,
+                  lines,
+                  digest: digest(lines),
+                },
+              };
+            }
             case "resumeExport": {
               const snapshotDay = state.exportJob.snapshotDay;
               if (snapshotDay === null) return { ...state, notice: "No export snapshot exists." };
+              const resumedDigest = digest(state.exportJob.lines);
               return {
                 ...state,
-                notice: `Export resumed at cursor ${state.exportJob.cursor} using the unchanged day-${snapshotDay} snapshot.`,
-                exportJob: { ...state.exportJob, state: "completed", cursor: 4 },
+                notice: `Export resumed at cursor ${state.exportJob.cursor}; ${state.exportJob.lines.length} sequences kept digest ${resumedDigest}.`,
+                exportJob: {
+                  ...state.exportJob,
+                  state: "completed",
+                  cursor: state.exportJob.lines.length,
+                  digest: resumedDigest,
+                },
               };
             }
             default: return state;
@@ -210,8 +293,8 @@
       const scenarios = [
         {
           title: "Safety floor",
-          description: "Try cleanup before expiry, then advance to day 30 and plan again.",
-          steps: ["planAuthority", "advance30", "planAuthority", "applyAuthority", "applyAuthority"],
+          description: "Reject an unsafe configured policy, restore it, then retire expired records.",
+          steps: ["setUnsafePolicy", "planAuthority", "resetPolicy", "advance30", "planAuthority", "applyAuthority", "applyAuthority"],
         },
         {
           title: "Interrupted batch",
@@ -257,7 +340,8 @@
         document.querySelector("#notice").textContent = state.notice;
         document.querySelector("#state").innerHTML = `
           <div><strong>Current day:</strong> ${state.day}</div>
-          <div><strong>Export:</strong> ${state.exportJob.state}, snapshot day ${state.exportJob.snapshotDay ?? "none"}, cursor ${state.exportJob.cursor}</div>
+          <div><strong>Policy:</strong> operational day ${state.policy.operationalDay}, tombstone day ${state.policy.tombstoneDay}</div>
+          <div><strong>Export:</strong> ${state.exportJob.state}, snapshot day ${state.exportJob.snapshotDay ?? "none"}, cursor ${state.exportJob.cursor}, sequences ${state.exportJob.lines.length}, digest <code>${state.exportJob.digest ?? "none"}</code></div>
           ${contextHtml("authority", state.authority)}
           ${contextHtml("relying", state.relying)}
         `;
