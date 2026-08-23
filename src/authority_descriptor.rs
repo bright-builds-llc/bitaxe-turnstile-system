@@ -1,0 +1,409 @@
+use std::{collections::HashSet, sync::Arc};
+
+use serde::{Deserialize, Deserializer, Serialize};
+use thiserror::Error;
+
+use crate::{
+    challenge::ActionPolicy,
+    crypto_profile::{AuthorityJwk, AuthorityJwkWire, DPOP_JWS_ALGORITHM, GATE_PASS_JWS_ALGORITHM},
+};
+
+const PROTOCOL_VERSION: &str = "BWG/0.1";
+const SOURCE_REPOSITORY: &str = "https://github.com/bright-builds-llc/bitaxe-turnstile-system";
+
+/// Validated public operator metadata used to publish Authority discovery.
+#[derive(Clone)]
+pub struct AuthorityPublicConfig {
+    issuer: Arc<str>,
+    public_base_url: Arc<str>,
+    authority_keys: Arc<[AuthorityJwkWire]>,
+    operator_policy_url: Arc<str>,
+    privacy_url: Arc<str>,
+    terms_url: Arc<str>,
+}
+
+impl AuthorityPublicConfig {
+    /// Validates the public URLs and Authority verification keys used by discovery.
+    pub fn new(
+        issuer: impl Into<Arc<str>>,
+        public_base_url: impl Into<Arc<str>>,
+        authority_keys: Vec<AuthorityJwkWire>,
+        operator_policy_url: impl Into<Arc<str>>,
+        privacy_url: impl Into<Arc<str>>,
+        terms_url: impl Into<Arc<str>>,
+    ) -> Result<Self, AuthorityDescriptorError> {
+        let config = Self {
+            issuer: issuer.into(),
+            public_base_url: public_base_url.into(),
+            authority_keys: authority_keys.into(),
+            operator_policy_url: operator_policy_url.into(),
+            privacy_url: privacy_url.into(),
+            terms_url: terms_url.into(),
+        };
+        config.validate()?;
+        Ok(config)
+    }
+
+    fn validate(&self) -> Result<(), AuthorityDescriptorError> {
+        if [
+            self.issuer.as_ref(),
+            self.public_base_url.as_ref(),
+            self.operator_policy_url.as_ref(),
+            self.privacy_url.as_ref(),
+            self.terms_url.as_ref(),
+        ]
+        .into_iter()
+        .any(|url| !is_https_url(url))
+        {
+            return Err(AuthorityDescriptorError::InvalidPublicUrl);
+        }
+        validate_authority_keys(&self.authority_keys)
+    }
+
+    pub(crate) fn descriptor(&self) -> AuthorityDescriptor {
+        let base_url = self.public_base_url.trim_end_matches('/');
+        AuthorityDescriptor(AuthorityDescriptorFields {
+            issuer: self.issuer.to_string(),
+            protocol_version: PROTOCOL_VERSION.to_owned(),
+            endpoints: AuthorityEndpoints {
+                challenge_creation: format!("{base_url}/v0/challenges"),
+                challenge_progress: format!("{base_url}/v0/challenges/{{challenge_id}}/events"),
+                authority_descriptor: format!(
+                    "{base_url}/.well-known/pow-gate-configuration"
+                ),
+                jwks: format!("{base_url}/.well-known/jwks.json"),
+            },
+            jwks: JwksDocument {
+                keys: self.authority_keys.to_vec(),
+            },
+            algorithms: AuthorityAlgorithms {
+                gate_pass_jws: vec![GATE_PASS_JWS_ALGORITHM.to_owned()],
+                browser_dpop_jws: vec![DPOP_JWS_ALGORITHM.to_owned()],
+                jwk_thumbprint: "SHA-256".to_owned(),
+                access_token_hash: "SHA-256".to_owned(),
+            },
+            transports: AuthorityTransports {
+                public_api: "https+json".to_owned(),
+                progress: "sse".to_owned(),
+                pool_adapter: "grpc+protobuf".to_owned(),
+                worker: "stratum-v1".to_owned(),
+            },
+            capabilities: AuthorityCapabilities {
+                challenge_issuance: true,
+                authority_discovery: true,
+                jwks_rotation: true,
+                bounded_overrides: true,
+            },
+            critical_capabilities: Vec::new(),
+            limits: AuthorityLimits {
+                max_action_reference_bytes: 256,
+                max_claimant_key_bytes: 4096,
+                challenge_ttl_seconds: 900,
+                gate_pass_ttl_seconds: 120,
+                dpop_clock_window_seconds: 60,
+            },
+            policies: ActionPolicy::ALL
+                .into_iter()
+                .map(ActionPolicyDescriptor::from)
+                .collect(),
+            source: SourceDescriptor {
+                repository: SOURCE_REPOSITORY.to_owned(),
+                version: env!("CARGO_PKG_VERSION").to_owned(),
+                commit: option_env!("BWG_BUILD_COMMIT")
+                    .unwrap_or("Unavailable")
+                    .to_owned(),
+                build_time: option_env!("BWG_BUILD_TIME")
+                    .unwrap_or("Unavailable")
+                    .to_owned(),
+            },
+            operator_policy_url: self.operator_policy_url.to_string(),
+            privacy: PrivacyDescriptor {
+                url: self.privacy_url.to_string(),
+                summary: "Pairwise Claimant keys and opaque Action References; no account or device identity in challenge discovery.".to_owned(),
+            },
+            terms_url: self.terms_url.to_string(),
+            license: LicenseDescriptor {
+                project: "MIT".to_owned(),
+                url: format!("{SOURCE_REPOSITORY}/blob/main/LICENSE"),
+            },
+        })
+    }
+}
+
+/// A validated, versioned public Gate Authority discovery document.
+#[derive(Clone, Debug, Serialize)]
+#[serde(transparent)]
+pub struct AuthorityDescriptor(AuthorityDescriptorFields);
+
+impl AuthorityDescriptor {
+    /// Returns the discovered issuer identity without granting it trust.
+    pub fn issuer(&self) -> &str {
+        &self.0.issuer
+    }
+
+    pub(crate) fn jwks(&self) -> JwksDocument {
+        self.0.jwks.clone()
+    }
+}
+
+impl<'de> Deserialize<'de> for AuthorityDescriptor {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields = AuthorityDescriptorFields::deserialize(deserializer)?;
+        fields.validate().map_err(serde::de::Error::custom)?;
+        Ok(Self(fields))
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct AuthorityDescriptorFields {
+    issuer: String,
+    protocol_version: String,
+    endpoints: AuthorityEndpoints,
+    jwks: JwksDocument,
+    algorithms: AuthorityAlgorithms,
+    transports: AuthorityTransports,
+    capabilities: AuthorityCapabilities,
+    critical_capabilities: Vec<String>,
+    limits: AuthorityLimits,
+    policies: Vec<ActionPolicyDescriptor>,
+    source: SourceDescriptor,
+    operator_policy_url: String,
+    privacy: PrivacyDescriptor,
+    terms_url: String,
+    license: LicenseDescriptor,
+}
+
+impl AuthorityDescriptorFields {
+    fn validate(&self) -> Result<(), AuthorityDescriptorError> {
+        if self.protocol_version != PROTOCOL_VERSION
+            || !is_https_url(&self.issuer)
+            || ![
+                self.endpoints.challenge_creation.as_str(),
+                self.endpoints.challenge_progress.as_str(),
+                self.endpoints.authority_descriptor.as_str(),
+                self.endpoints.jwks.as_str(),
+                self.source.repository.as_str(),
+                self.operator_policy_url.as_str(),
+                self.privacy.url.as_str(),
+                self.terms_url.as_str(),
+                self.license.url.as_str(),
+            ]
+            .into_iter()
+            .all(is_https_url)
+        {
+            return Err(AuthorityDescriptorError::InvalidDescriptor);
+        }
+        validate_authority_keys(&self.jwks.keys)?;
+        if self.algorithms.gate_pass_jws != [GATE_PASS_JWS_ALGORITHM]
+            || self.algorithms.browser_dpop_jws != [DPOP_JWS_ALGORITHM]
+            || self.algorithms.jwk_thumbprint != "SHA-256"
+            || self.algorithms.access_token_hash != "SHA-256"
+        {
+            return Err(AuthorityDescriptorError::InvalidAlgorithms);
+        }
+
+        let known_capabilities = [
+            "challenge_issuance",
+            "authority_discovery",
+            "jwks_rotation",
+            "bounded_overrides",
+        ];
+        if self
+            .critical_capabilities
+            .iter()
+            .any(|capability| !known_capabilities.contains(&capability.as_str()))
+        {
+            return Err(AuthorityDescriptorError::UnknownCriticalCapability);
+        }
+        if self.policies.is_empty() {
+            return Err(AuthorityDescriptorError::InvalidPolicies);
+        }
+        for policy in &self.policies {
+            policy.validate()?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct AuthorityEndpoints {
+    challenge_creation: String,
+    challenge_progress: String,
+    authority_descriptor: String,
+    jwks: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct JwksDocument {
+    keys: Vec<AuthorityJwkWire>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct AuthorityAlgorithms {
+    gate_pass_jws: Vec<String>,
+    browser_dpop_jws: Vec<String>,
+    jwk_thumbprint: String,
+    access_token_hash: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct AuthorityTransports {
+    public_api: String,
+    progress: String,
+    pool_adapter: String,
+    worker: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct AuthorityCapabilities {
+    challenge_issuance: bool,
+    authority_discovery: bool,
+    jwks_rotation: bool,
+    bounded_overrides: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct AuthorityLimits {
+    max_action_reference_bytes: usize,
+    max_claimant_key_bytes: usize,
+    challenge_ttl_seconds: u64,
+    gate_pass_ttl_seconds: u64,
+    dpop_clock_window_seconds: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct ActionPolicyDescriptor {
+    id: String,
+    default_expected_hashes: String,
+    #[serde(
+        default,
+        rename = "expected_hash_override",
+        skip_serializing_if = "Option::is_none"
+    )]
+    maybe_expected_hash_override: Option<ExpectedHashBounds>,
+    challenge_ttl_seconds: u64,
+    critical_fields: Vec<String>,
+}
+
+impl From<ActionPolicy> for ActionPolicyDescriptor {
+    fn from(policy: ActionPolicy) -> Self {
+        Self {
+            id: policy.id().to_owned(),
+            default_expected_hashes: policy.default_expected_hashes().to_string(),
+            maybe_expected_hash_override: policy.expected_hash_override_bounds().map(
+                |(minimum, maximum)| ExpectedHashBounds {
+                    minimum: minimum.to_string(),
+                    maximum: maximum.to_string(),
+                },
+            ),
+            challenge_ttl_seconds: policy.challenge_ttl_seconds(),
+            critical_fields: Vec::new(),
+        }
+    }
+}
+
+impl ActionPolicyDescriptor {
+    fn validate(&self) -> Result<(), AuthorityDescriptorError> {
+        let policy =
+            ActionPolicy::parse(&self.id).map_err(|_| AuthorityDescriptorError::InvalidPolicies)?;
+        let known_fields = [
+            "default_expected_hashes",
+            "expected_hash_override",
+            "challenge_ttl_seconds",
+        ];
+        if self
+            .critical_fields
+            .iter()
+            .any(|field| !known_fields.contains(&field.as_str()))
+        {
+            return Err(AuthorityDescriptorError::UnknownCriticalPolicyField);
+        }
+        if self.default_expected_hashes != policy.default_expected_hashes().to_string()
+            || self.challenge_ttl_seconds != policy.challenge_ttl_seconds()
+        {
+            return Err(AuthorityDescriptorError::InvalidPolicies);
+        }
+        let expected_bounds = policy
+            .expected_hash_override_bounds()
+            .map(|(minimum, maximum)| (minimum.to_string(), maximum.to_string()));
+        let actual_bounds = self
+            .maybe_expected_hash_override
+            .as_ref()
+            .map(|bounds| (bounds.minimum.to_owned(), bounds.maximum.to_owned()));
+        if actual_bounds != expected_bounds {
+            return Err(AuthorityDescriptorError::InvalidPolicies);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct ExpectedHashBounds {
+    minimum: String,
+    maximum: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct SourceDescriptor {
+    repository: String,
+    version: String,
+    commit: String,
+    build_time: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct PrivacyDescriptor {
+    url: String,
+    summary: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct LicenseDescriptor {
+    project: String,
+    url: String,
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum AuthorityDescriptorError {
+    #[error("public Authority URLs must use HTTPS")]
+    InvalidPublicUrl,
+    #[error("Authority discovery needs valid unique verification keys")]
+    InvalidAuthorityKeys,
+    #[error("Authority Descriptor fields are invalid")]
+    InvalidDescriptor,
+    #[error("Authority Descriptor algorithms are invalid")]
+    InvalidAlgorithms,
+    #[error("Authority Descriptor names an unknown critical capability")]
+    UnknownCriticalCapability,
+    #[error("Authority Descriptor policies are invalid")]
+    InvalidPolicies,
+    #[error("Authority Descriptor policy names an unknown critical field")]
+    UnknownCriticalPolicyField,
+}
+
+fn validate_authority_keys(keys: &[AuthorityJwkWire]) -> Result<(), AuthorityDescriptorError> {
+    if keys.is_empty() {
+        return Err(AuthorityDescriptorError::InvalidAuthorityKeys);
+    }
+    let validated = keys
+        .iter()
+        .cloned()
+        .map(AuthorityJwk::try_from)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| AuthorityDescriptorError::InvalidAuthorityKeys)?;
+    let unique_ids = validated
+        .iter()
+        .map(|key| key.kid())
+        .collect::<HashSet<_>>();
+    if unique_ids.len() != validated.len() {
+        return Err(AuthorityDescriptorError::InvalidAuthorityKeys);
+    }
+    Ok(())
+}
+
+fn is_https_url(value: &str) -> bool {
+    value.starts_with("https://") && value.len() > "https://".len()
+}

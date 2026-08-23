@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use axum::{
     Json, Router,
@@ -8,29 +8,91 @@ use axum::{
     routing::post,
 };
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use uuid::Uuid;
 
 use crate::{
-    authority::CreateChallengeRequest,
+    authority::{CLIENT_ID_HEADER, CreateChallengeRequest},
     challenge::{ActionPolicy, WorkChallengeDescriptor},
+    crypto_profile::{AuthorityJwk, AuthorityJwkWire},
 };
+
+/// Authority identity and keys trusted by operator configuration, never discovery alone.
+#[derive(Clone)]
+pub struct TrustedAuthority {
+    issuer: Arc<str>,
+    keys: Arc<[AuthorityJwk]>,
+}
+
+impl TrustedAuthority {
+    /// Parses an explicitly configured issuer and trusted verification-key set.
+    pub fn new(
+        issuer: impl Into<Arc<str>>,
+        key_wires: Vec<AuthorityJwkWire>,
+    ) -> Result<Self, ReferenceConfigError> {
+        let issuer = issuer.into();
+        if !issuer.starts_with("https://") {
+            return Err(ReferenceConfigError::InvalidTrustedIssuer);
+        }
+        let keys = key_wires
+            .into_iter()
+            .map(AuthorityJwk::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| ReferenceConfigError::InvalidTrustedKeys)?;
+        let unique_ids = keys.iter().map(AuthorityJwk::kid).collect::<HashSet<_>>();
+        if keys.is_empty() || unique_ids.len() != keys.len() {
+            return Err(ReferenceConfigError::InvalidTrustedKeys);
+        }
+        Ok(Self {
+            issuer,
+            keys: keys.into(),
+        })
+    }
+
+    /// Returns the explicitly trusted issuer.
+    pub fn issuer(&self) -> &str {
+        &self.issuer
+    }
+
+    /// Returns the explicitly trusted key identifiers.
+    pub fn key_ids(&self) -> Vec<&str> {
+        self.keys.iter().map(AuthorityJwk::kid).collect()
+    }
+}
 
 /// Server-only configuration for the reference account-creation integration.
 #[derive(Clone)]
 pub struct Config {
     authority_base_url: Arc<str>,
+    service_client_id: Arc<str>,
     service_credential: Arc<str>,
+    trusted_authority: TrustedAuthority,
 }
 
 impl Config {
+    /// Configures backend authentication and an independently trusted Authority issuer.
     pub fn new(
         authority_base_url: impl Into<Arc<str>>,
+        service_client_id: impl Into<Arc<str>>,
         service_credential: impl Into<Arc<str>>,
+        trusted_authority: TrustedAuthority,
     ) -> Self {
         Self {
             authority_base_url: authority_base_url.into(),
+            service_client_id: service_client_id.into(),
             service_credential: service_credential.into(),
+            trusted_authority,
         }
+    }
+
+    /// Returns the issuer trusted by operator configuration, not discovery.
+    pub fn trusted_authority_issuer(&self) -> &str {
+        self.trusted_authority.issuer()
+    }
+
+    /// Returns the explicitly configured trusted Authority key identifiers.
+    pub fn trusted_authority_key_ids(&self) -> Vec<&str> {
+        self.trusted_authority.key_ids()
     }
 }
 
@@ -67,6 +129,7 @@ async fn create_account_challenge(
         action_policy: ActionPolicy::ACCOUNT_CREATION_LIGHT_V1.to_owned(),
         action_reference: format!("action_{}", Uuid::new_v4().simple()),
         claimant_key: request.claimant_key,
+        maybe_overrides: None,
     };
     let response = state
         .http_client
@@ -74,6 +137,7 @@ async fn create_account_challenge(
             "{}/v0/challenges",
             state.config.authority_base_url.trim_end_matches('/')
         ))
+        .header(CLIENT_ID_HEADER, state.config.service_client_id.as_ref())
         .bearer_auth(state.config.service_credential.as_ref())
         .json(&authority_request)
         .send()
@@ -127,4 +191,12 @@ impl IntoResponse for ReferenceServiceError {
 #[derive(Serialize)]
 struct ErrorResponse {
     error: &'static str,
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum ReferenceConfigError {
+    #[error("trusted Authority issuer must use HTTPS")]
+    InvalidTrustedIssuer,
+    #[error("trusted Authority keys must be valid, non-empty, and unique")]
+    InvalidTrustedKeys,
 }

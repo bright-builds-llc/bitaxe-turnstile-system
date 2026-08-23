@@ -4,23 +4,29 @@ use std::{
 };
 
 use axum::Router;
-use bwg_core::{authority, reference_service};
+use bwg_core::{
+    authority::{self, AuthorityPublicConfig, DeploymentEnvironment, ServiceCredential},
+    challenge::ActionPolicy,
+    crypto_profile::AuthorityJwkWire,
+    reference_service,
+};
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 
 const SERVICE_CREDENTIAL: &str = "test-reference-service-credential";
+const SERVICE_CLIENT_ID: &str = "reference-service-test";
+const TRUSTED_AUTHORITY_ISSUER: &str = "https://authority.example";
 
 #[tokio::test]
 async fn reference_backend_issues_a_browser_safe_light_challenge()
 -> Result<(), Box<dyn std::error::Error>> {
     // Arrange
-    let authority_url = spawn_http(authority::router(authority::Config::new(
-        SERVICE_CREDENTIAL,
-    )))
-    .await?;
+    let authority_url = spawn_http(authority::router(authority_config()?)).await?;
     let reference_url = spawn_http(reference_service::router(reference_service::Config::new(
         authority_url,
+        SERVICE_CLIENT_ID,
         SERVICE_CREDENTIAL,
+        trusted_authority()?,
     )))
     .await?;
     let client = reqwest::Client::new();
@@ -48,10 +54,12 @@ async fn reference_backend_issues_a_browser_safe_light_challenge()
     let expected_fields = BTreeSet::from([
         "action_policy",
         "action_reference",
+        "allowed_origins",
         "challenge_id",
         "claimant_key",
         "expires_at_unix_seconds",
         "protocol_version",
+        "relying_service_audience",
         "work_requirement",
     ]);
 
@@ -63,6 +71,14 @@ async fn reference_backend_issues_a_browser_safe_light_challenge()
             .is_some_and(|value| value.starts_with("action_"))
     );
     assert_eq!(descriptor["claimant_key"], "claimant_key_test_7fH2");
+    assert_eq!(
+        descriptor["relying_service_audience"],
+        "https://relying.example"
+    );
+    assert_eq!(
+        descriptor["allowed_origins"],
+        json!(["https://app.relying.example"])
+    );
     assert_eq!(descriptor["protocol_version"], "BWG/0.1");
     assert_eq!(
         descriptor["work_requirement"]["expected_hashes"],
@@ -83,13 +99,12 @@ async fn reference_backend_issues_a_browser_safe_light_challenge()
 async fn browser_cannot_supply_authoritative_challenge_terms()
 -> Result<(), Box<dyn std::error::Error>> {
     // Arrange
-    let authority_url = spawn_http(authority::router(authority::Config::new(
-        SERVICE_CREDENTIAL,
-    )))
-    .await?;
+    let authority_url = spawn_http(authority::router(authority_config()?)).await?;
     let reference_url = spawn_http(reference_service::router(reference_service::Config::new(
         authority_url,
+        SERVICE_CLIENT_ID,
         SERVICE_CREDENTIAL,
+        trusted_authority()?,
     )))
     .await?;
 
@@ -117,10 +132,7 @@ async fn browser_cannot_supply_authoritative_challenge_terms()
 async fn authority_rejects_unauthenticated_challenge_issuance()
 -> Result<(), Box<dyn std::error::Error>> {
     // Arrange
-    let authority_url = spawn_http(authority::router(authority::Config::new(
-        SERVICE_CREDENTIAL,
-    )))
-    .await?;
+    let authority_url = spawn_http(authority::router(authority_config()?)).await?;
 
     // Act
     let response = reqwest::Client::new()
@@ -154,4 +166,41 @@ async fn spawn_http(router: Router) -> Result<String, std::io::Error> {
     });
 
     Ok(format!("http://{address}"))
+}
+
+fn authority_config() -> Result<authority::Config, Box<dyn std::error::Error>> {
+    let credential = ServiceCredential::new(
+        SERVICE_CLIENT_ID,
+        SERVICE_CREDENTIAL,
+        DeploymentEnvironment::Development,
+        "https://relying.example".to_owned(),
+        vec!["https://app.relying.example".to_owned()],
+        vec![ActionPolicy::AccountCreationLightV1],
+    )?;
+    let public = AuthorityPublicConfig::new(
+        TRUSTED_AUTHORITY_ISSUER,
+        TRUSTED_AUTHORITY_ISSUER,
+        authority_keys()?,
+        "https://authority.example/policies/operator",
+        "https://authority.example/privacy",
+        "https://authority.example/terms",
+    )?;
+    Ok(authority::Config::new(
+        DeploymentEnvironment::Development,
+        vec![credential],
+        public,
+    )?)
+}
+
+fn authority_keys() -> Result<Vec<AuthorityJwkWire>, serde_json::Error> {
+    let vectors: Value =
+        serde_json::from_str(include_str!("../conformance/bwg-0.1/crypto-vectors.json"))?;
+    serde_json::from_value(vectors["authority_keys"].clone())
+}
+
+fn trusted_authority() -> Result<reference_service::TrustedAuthority, Box<dyn std::error::Error>> {
+    Ok(reference_service::TrustedAuthority::new(
+        TRUSTED_AUTHORITY_ISSUER,
+        authority_keys()?,
+    )?)
 }

@@ -162,6 +162,11 @@ fn valid_command() -> Result<IssueChallengeCommand, ChallengeError> {
         action_policy: ActionPolicy::AccountCreationLightV1,
         action_reference: ActionReference::try_from("action_123abc".to_owned())?,
         claimant_key: ClaimantKey::try_from("claimant_key_123abc".to_owned())?,
+        relying_service_audience: RelyingServiceAudience::try_from(
+            "https://relying.example".to_owned(),
+        )?,
+        allowed_origins: AllowedOrigins::try_from(vec!["https://app.relying.example".to_owned()])?,
+        maybe_work_requirement_override: None,
     })
 }
 
@@ -171,6 +176,8 @@ fn valid_descriptor_json() -> Value {
         "action_policy": "account-creation.light.v1",
         "action_reference": "action_123abc",
         "claimant_key": "claimant_key_123abc",
+        "relying_service_audience": "https://relying.example",
+        "allowed_origins": ["https://app.relying.example"],
         "work_requirement": { "expected_hashes": "4398046511104" },
         "expires_at_unix_seconds": 1_900,
         "protocol_version": "BWG/0.1"
