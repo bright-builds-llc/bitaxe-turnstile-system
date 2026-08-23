@@ -4,10 +4,18 @@
 
 **Blocked by:** 01: Publish the governance contract and lifecycle model.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Pure typed policy calculation rejects configuration below Retention Floors and produces independently verifiable eligibility reasons and actions.
-- [ ] Separate Gate Authority and Relying Service CLIs expose `plan-retention`, `apply-retention`, and `export` without adding remote HTTP administration.
-- [ ] Additive migrations persist context-local immutable manifests, job state, and resumable cursors while leaving legacy rows ineligible until safe terminal times exist.
-- [ ] Planning never mutates governed records; apply is disabled by default and rejects missing confirmation, digest drift, stale policy, or the wrong context.
-- [ ] CLI-level tests prove dry-run and repeated apply behavior without using database rows as acceptance oracles.
+- [x] Pure typed policy calculation rejects configuration below Retention Floors and produces independently verifiable eligibility reasons and actions.
+- [x] Separate Gate Authority and Relying Service CLIs expose `plan-retention`, `apply-retention`, and `export` without adding remote HTTP administration.
+- [x] Additive migrations persist context-local immutable manifests, job state, and resumable cursors while leaving legacy rows ineligible until safe terminal times exist.
+- [x] Planning never mutates governed records; apply is disabled by default and rejects missing confirmation, digest drift, stale policy, or the wrong context.
+- [x] CLI-level tests prove dry-run and repeated apply behavior without using database rows as acceptance oracles.
+
+## Answer
+
+Added a shared pure Retention Policy planner behind separate Gate Authority and Relying Service
+operator binaries. The first end-to-end record classes are replay-proof identities: plans expose
+only grouped reasons/actions and a digest, while enabled and confirmed apply invocations delete them
+in durable bounded batches. Process-level tests prove default fail-closed behavior, exact-digest and
+context binding, cursor resume, dry-run preservation, and idempotent completion through CLI output.

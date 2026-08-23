@@ -49,6 +49,28 @@ They contain no public Claimant or Action Reference and cannot support Claimant-
 4. Related rows are pseudonymized or deleted in referentially safe order inside one context. A
    batch failure rolls back and emits only a safe error category.
 
+### Service-local CLI contract
+
+The `gate-authority-governance` and `reference-service-governance` binaries expose the same command
+shape while reading only `BWG_AUTHORITY_DATABASE_URL` or `BWG_RELYING_SERVICE_DATABASE_URL`,
+respectively.
+
+- `plan-retention --as-of <unix-seconds>` applies the hosted 30/90-day policy by default. Optional
+  `--operational-retention-seconds` and `--tombstone-retention-seconds` values may extend but never
+  shorten those windows. Planning writes only context-local job, ordered-item, and manifest metadata.
+- The JSON plan includes the job ID, context, planning instant, policy, status, total eligible items,
+  counts grouped by record class/action/eligibility reason, and a 64-character SHA-256 digest. It
+  never exposes governed record identifiers.
+- `apply-retention --job-id <uuid> --manifest-digest <sha256>
+  --confirm-destruction [--batch-size <1..1000>]` advances at most one bounded batch. It additionally
+  requires `BWG_GOVERNANCE_DESTRUCTIVE_ENABLED=true`; absence is fail-closed.
+- A job ID from the other context, a changed digest, missing confirmation, disabled destructive
+  mode, an invalid batch bound, or a governed row changed since planning fails before a partial
+  batch can commit. Retrying a completed job returns its stable completion cursor with zero new
+  transitions.
+- `export` is reserved on both CLIs and remains unavailable until the versioned export/audit profile
+  is implemented.
+
 ## Export contract
 
 Exports use `application/x-ndjson; profile="bwg-governance-v1"` and are streamed without persisting

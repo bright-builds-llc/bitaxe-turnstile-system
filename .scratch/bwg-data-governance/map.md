@@ -15,6 +15,9 @@ roadmap.
 - The disposable lifecycle prototype is preserved on
   `codex/prototype-bwg-data-governance-lifecycle` at
   `6a468d137d7cc7a4273bb00bdbe7266a1db68fcc`.
+- [Ticket 02](./issues/02-retention-planner-cli.md) established separate service-local CLI seams,
+  a shared typed policy core, digest-bound context-local plans, and bounded idempotent replay-proof
+  cleanup with destructive mode disabled by default.
 
 ## Delivery order
 
