@@ -74,8 +74,10 @@ weaken terminal immutability.
 
 ### Q8: How is cleanup authorized?
 
-**Answer:** `plan-retention` is always read-only. `apply-retention` requires destructive mode to be
-explicitly enabled, the exact SHA-256 Governance Manifest digest, and an explicit confirmation flag.
+**Answer:** `plan-retention` is read-only with respect to governed domain records, but it may write
+context-local job and Governance Manifest metadata needed to bind a later apply. `apply-retention`
+requires destructive mode to be explicitly enabled, the exact SHA-256 manifest digest, and an
+explicit confirmation flag.
 
 **Rationale:** A reviewed dry run and digest binding make stale or changed plans fail closed before
 an irreversible effect.

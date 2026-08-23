@@ -14,7 +14,7 @@ roadmap.
   remain context-local.
 - The disposable lifecycle prototype is preserved on
   `codex/prototype-bwg-data-governance-lifecycle` at
-  `b0014ec353754e94e22b2c7031130bb61c37ee18`.
+  `6a468d137d7cc7a4273bb00bdbe7266a1db68fcc`.
 
 ## Delivery order
 

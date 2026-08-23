@@ -76,7 +76,7 @@ and a bounded error category. They never copy a governed row or operator credent
 
 The disposable logic prototype at branch
 `codex/prototype-bwg-data-governance-lifecycle`, commit
-`b0014ec353754e94e22b2c7031130bb61c37ee18`, validated five scenarios: safety-floor rejection,
+`6a468d137d7cc7a4273bb00bdbe7266a1db68fcc`, validated five scenarios: safety-floor rejection,
 interrupted batch resumption, independent context failure, repeatable export snapshots, and
 day-30 pseudonymization followed by day-90 deletion. Its pure state model confirmed that eligibility
 can be shared while manifests, cursors, transactions, and failures must remain context-local. The

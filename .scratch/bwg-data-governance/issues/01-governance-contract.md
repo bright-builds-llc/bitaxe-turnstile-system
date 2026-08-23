@@ -15,4 +15,4 @@
 
 Published the BWG/0.1 Data-Governance Profile, decision tree, glossary additions, and ADRs 0087–0089.
 The lifecycle prototype is preserved on `codex/prototype-bwg-data-governance-lifecycle` at
-`b0014ec353754e94e22b2c7031130bb61c37ee18`; only its validated findings remain on `main`.
+`6a468d137d7cc7a4273bb00bdbe7266a1db68fcc`; only its validated findings remain on `main`.

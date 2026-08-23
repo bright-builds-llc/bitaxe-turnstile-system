@@ -13,8 +13,9 @@ destructive security contract.
 ## Solution
 
 Provide separate service-local governance CLIs for the Gate Authority and Relying Service. Each CLI
-can produce read-only Retention Job plans, explicitly apply a digest-bound plan in bounded resumable
-batches, and stream a redacted snapshot export. A shared pure policy model enforces protocol
+can plan without changing governed domain records, persist only the context-local metadata needed
+to bind a later apply, explicitly apply that digest-bound plan in bounded resumable batches, and
+stream a redacted snapshot export. A shared pure policy model enforces protocol
 Retention Floors and hosted 30/90-day defaults, while persistence, authorization, jobs, cursors,
 manifests, audit events, and failures remain context-local.
 
@@ -80,4 +81,4 @@ manifests, audit events, and failures remain context-local.
 - Parent integration work remains `.scratch/bwg-core/issues/09-persistent-lifecycle.md`.
 - The normative profile is `docs/protocol/bwg-0.1-data-governance.md`.
 - Prototype primary source: `codex/prototype-bwg-data-governance-lifecycle` at
-  `b0014ec353754e94e22b2c7031130bb61c37ee18`.
+  `6a468d137d7cc7a4273bb00bdbe7266a1db68fcc`.

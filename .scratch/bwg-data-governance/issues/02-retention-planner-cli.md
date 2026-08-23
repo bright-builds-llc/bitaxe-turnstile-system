@@ -1,6 +1,6 @@
 # 02: Plan retention through service-local operator CLIs
 
-**What to build:** A Service-Local Operator can run either context's CLI to obtain a read-only, digest-bound Retention Job plan, and can only apply that exact bounded plan when destructive mode and explicit confirmation are present.
+**What to build:** A Service-Local Operator can run either context's CLI to obtain a digest-bound Retention Job plan without changing governed domain records, and can only apply that exact bounded plan when destructive mode and explicit confirmation are present.
 
 **Blocked by:** 01: Publish the governance contract and lifecycle model.
 
