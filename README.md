@@ -16,11 +16,11 @@ BWG provides resource-backed abuse resistance. It does not claim to prove humani
 
 ## Status
 
-The repository contains the protocol language, accepted architectural decisions, and the first executable BWG Core slice. The current Rust service spine issues a browser-safe Light Work Challenge through an authenticated Gate Authority interface and a reference account-creation backend.
+The repository contains the protocol language, accepted architectural decisions, and an executable BWG Core spine. The Rust Gate Authority persists challenge accounting and crash-recoverable Gate Pass issuance in PostgreSQL, while the reference account-creation backend exercises the public challenge and Redemption interfaces.
 
 ## Development
 
-The initial acceptance harness starts both HTTP interfaces on ephemeral local ports and exercises them only through their public routes.
+The acceptance harness starts PostgreSQL in ephemeral Docker containers, starts both HTTP interfaces on ephemeral local ports, and exercises them only through public role interfaces. Local verification therefore requires a running Docker daemon.
 
 ```sh
 bun run test

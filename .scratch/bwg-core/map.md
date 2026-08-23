@@ -7,6 +7,7 @@
 - [Ticket 03](./issues/03-gate-pass-crypto-interop.md) fixed the `BWG/0.1` cryptographic profile: Authority Gate Passes use fully specified `Ed25519`, browser DPoP uses non-extractable P-256 keys with `ES256`, and shared Rust/WebCrypto vectors cover key binding, hashing, fail-closed algorithms, and JWKS rotation.
 - [Ticket 04](./issues/04-secure-issuance-authority-discovery.md) secured hosted issuance with verifier-only environment/audience/origin/policy-scoped credentials and overlap rotation, pinned bounded overrides into immutable challenges, and published a trust-neutral Authority Descriptor plus JWKS with fail-closed critical fields.
 - [Ticket 05](./issues/05-accepted-work-progress.md) established target-derived Accepted Work accounting: challenge-scoped sessions, stable event/share deduplication and replay acknowledgements feed exact Verified Progress through SSE while Activity Estimate and every Worker-reported value remain non-authoritative.
+- [Ticket 06](./issues/06-authority-persistence-issuance-recovery.md) made Gate Authority accounting and issuance PostgreSQL-authoritative: one transaction persists accepted work, stable acknowledgement, progress, and threshold outbox intent; leased workers recover signing and store one exact pass; fresh Claimant Issuance Proofs retrieve durable `pending`, `issued`, or `failed` state.
 
 ## Persistence boundary split
 

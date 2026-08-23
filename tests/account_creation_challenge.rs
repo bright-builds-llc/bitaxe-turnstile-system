@@ -5,7 +5,9 @@ use std::{
 
 use axum::Router;
 use bwg_core::{
-    authority::{self, AuthorityPublicConfig, DeploymentEnvironment, ServiceCredential},
+    authority::{
+        self, AuthorityApplication, AuthorityPublicConfig, DeploymentEnvironment, ServiceCredential,
+    },
     challenge::ActionPolicy,
     reference_service,
 };
@@ -20,13 +22,16 @@ const REDEMPTION_URL: &str = "http://127.0.0.1:1/account-creation/redeem";
 
 #[path = "support/authority_keys.rs"]
 mod authority_key_support;
-use authority_key_support::authority_keys;
+#[path = "support/postgres.rs"]
+mod postgres_support;
+use authority_key_support::{CLAIMANT_PUBLIC_JWK, authority_keys};
+use postgres_support::PostgresTestDatabase;
 
 #[tokio::test]
 async fn reference_backend_issues_a_browser_safe_standard_challenge()
 -> Result<(), Box<dyn std::error::Error>> {
     // Arrange
-    let authority_url = spawn_http(authority::router(authority_config()?)).await?;
+    let (authority_url, _database) = spawn_authority(authority_config()?).await?;
     let reference_url = spawn_http(reference_service::router(reference_service::Config::new(
         authority_url,
         SERVICE_CLIENT_ID,
@@ -43,7 +48,7 @@ async fn reference_backend_issues_a_browser_safe_standard_challenge()
     let response = client
         .post(format!("{reference_url}/account-creation/challenge"))
         .json(&json!({
-            "claimant_key": "claimant_key_test_7fH2"
+            "claimant_key": CLAIMANT_PUBLIC_JWK
         }))
         .send()
         .await?;
@@ -77,7 +82,7 @@ async fn reference_backend_issues_a_browser_safe_standard_challenge()
             .as_str()
             .is_some_and(|value| value.starts_with("action_"))
     );
-    assert_eq!(descriptor["claimant_key"], "claimant_key_test_7fH2");
+    assert_eq!(descriptor["claimant_key"], CLAIMANT_PUBLIC_JWK);
     assert_eq!(
         descriptor["relying_service_audience"],
         "https://relying.example"
@@ -106,7 +111,7 @@ async fn reference_backend_issues_a_browser_safe_standard_challenge()
 async fn browser_cannot_supply_authoritative_challenge_terms()
 -> Result<(), Box<dyn std::error::Error>> {
     // Arrange
-    let authority_url = spawn_http(authority::router(authority_config()?)).await?;
+    let (authority_url, _database) = spawn_authority(authority_config()?).await?;
     let reference_url = spawn_http(reference_service::router(reference_service::Config::new(
         authority_url,
         SERVICE_CLIENT_ID,
@@ -121,7 +126,7 @@ async fn browser_cannot_supply_authoritative_challenge_terms()
     let response = reqwest::Client::new()
         .post(format!("{reference_url}/account-creation/challenge"))
         .json(&json!({
-            "claimant_key": "claimant_key_test_7fH2",
+            "claimant_key": CLAIMANT_PUBLIC_JWK,
             "action_policy": "account-creation.light.v0",
             "action_reference": "customer@example.com",
             "work_requirement": { "expected_hashes": "1" },
@@ -141,7 +146,7 @@ async fn browser_cannot_supply_authoritative_challenge_terms()
 async fn authority_rejects_unauthenticated_challenge_issuance()
 -> Result<(), Box<dyn std::error::Error>> {
     // Arrange
-    let authority_url = spawn_http(authority::router(authority_config()?)).await?;
+    let (authority_url, _database) = spawn_authority(authority_config()?).await?;
 
     // Act
     let response = reqwest::Client::new()
@@ -149,7 +154,7 @@ async fn authority_rejects_unauthenticated_challenge_issuance()
         .json(&json!({
             "action_policy": "account-creation.light.v1",
             "action_reference": "action_Z9x3pK7m",
-            "claimant_key": "claimant_key_test_7fH2"
+            "claimant_key": CLAIMANT_PUBLIC_JWK
         }))
         .send()
         .await?;
@@ -175,6 +180,16 @@ async fn spawn_http(router: Router) -> Result<String, std::io::Error> {
     });
 
     Ok(format!("http://{address}"))
+}
+
+async fn spawn_authority(
+    config: authority::Config,
+) -> Result<(String, PostgresTestDatabase), Box<dyn std::error::Error>> {
+    let database = PostgresTestDatabase::start().await?;
+    let application =
+        AuthorityApplication::connect_postgres(config, database.database_url()).await?;
+    let authority_url = spawn_http(authority::router(application)).await?;
+    Ok((authority_url, database))
 }
 
 fn authority_config() -> Result<authority::Config, Box<dyn std::error::Error>> {

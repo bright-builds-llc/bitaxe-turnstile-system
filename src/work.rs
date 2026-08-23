@@ -195,6 +195,11 @@ impl AssignedTarget {
         Ok(Self(bytes))
     }
 
+    /// Returns the fixed-width, most-significant-byte-first target.
+    pub fn to_be_bytes(self) -> [u8; 32] {
+        self.0
+    }
+
     /// Calculates integer expected hashes for this target.
     pub fn credited_work(self) -> CreditedWork {
         let target = Uint256::from_be_bytes(self.0);
@@ -302,6 +307,18 @@ impl VerifiedProgress {
     /// Returns whether cumulative progress meets an exact Work Requirement.
     pub fn meets(self, work_requirement: CreditedWork) -> bool {
         self.0 >= work_requirement.0
+    }
+}
+
+impl TryFrom<String> for VerifiedProgress {
+    type Error = WorkError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value == "0" {
+            return Ok(Self::zero());
+        }
+        let credited_work = CreditedWork::try_from(value)?;
+        Ok(Self(credited_work.0))
     }
 }
 

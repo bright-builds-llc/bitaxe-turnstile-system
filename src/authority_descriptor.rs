@@ -119,10 +119,6 @@ impl AuthorityPublicConfig {
         })
     }
 
-    pub(crate) fn issuer(&self) -> &str {
-        self.issuer.as_str()
-    }
-
     pub(crate) fn authority_keys(&self) -> &AuthorityKeySet {
         &self.authority_keys
     }
@@ -137,6 +133,13 @@ impl AuthorityDescriptor {
     /// Returns the discovered issuer identity without granting it trust.
     pub fn issuer(&self) -> &str {
         &self.0.issuer
+    }
+
+    pub(crate) fn gate_pass_url(&self, challenge_id: &str) -> String {
+        self.0
+            .endpoints
+            .gate_pass
+            .replace("{challenge_id}", challenge_id)
     }
 
     pub(crate) fn jwks(&self) -> JwksDocument {

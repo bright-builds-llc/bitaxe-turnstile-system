@@ -49,6 +49,23 @@ fn credited_work_json_round_trips_as_canonical_decimal() -> Result<(), Box<dyn s
 }
 
 #[test]
+fn persisted_verified_progress_parses_zero_and_exact_work() -> Result<(), WorkError> {
+    // Arrange
+    let zero = "0".to_owned();
+    let exact = "4295032833".to_owned();
+
+    // Act
+    let zero_progress = VerifiedProgress::try_from(zero)?;
+    let exact_progress = VerifiedProgress::try_from(exact)?;
+
+    // Assert
+    assert_eq!(zero_progress, VerifiedProgress::zero());
+    assert_eq!(exact_progress.to_decimal_string(), "4295032833");
+
+    Ok(())
+}
+
+#[test]
 fn equivalent_binary_zero_work_is_fractional_display_only() -> Result<(), WorkError> {
     // Arrange
     let work = difficulty_one_target()?.credited_work();

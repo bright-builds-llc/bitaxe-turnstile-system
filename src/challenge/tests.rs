@@ -36,6 +36,31 @@ fn unknown_action_policy_is_rejected() {
 }
 
 #[test]
+fn policy_revisions_map_explicitly_to_one_protected_action_type() {
+    // Arrange
+    let policies = [
+        ActionPolicy::AccountCreationLightV1,
+        ActionPolicy::AccountCreationStandardV1,
+    ];
+
+    // Act
+    let action_types = policies.map(ActionPolicy::protected_action_type);
+
+    // Assert
+    assert_eq!(
+        action_types,
+        [
+            ProtectedActionType::AccountCreation,
+            ProtectedActionType::AccountCreation,
+        ]
+    );
+    assert_eq!(
+        ProtectedActionType::AccountCreation.id(),
+        "account_creation"
+    );
+}
+
+#[test]
 fn standard_policy_owns_default_work() -> Result<(), Box<dyn std::error::Error>> {
     // Arrange
     let mut command = valid_command()?;

@@ -1,6 +1,6 @@
 # BWG/0.1 Accepted Work and Progress
 
-This slice defines the reusable accounting core and public progress stream exercised by the simulated Pool Adapter. PostgreSQL durability and recovery replace the in-memory tracer store in the persistent-lifecycle phase; the event, acknowledgement, projection, and SSE semantics remain unchanged.
+This slice defines the reusable accounting core and public progress stream exercised by the simulated Pool Adapter. PostgreSQL authoritatively stores challenge policy, Work Sessions, Accepted Work Events, exact projections, stable acknowledgements, and threshold issuance intent; in-memory state is limited to disposable SSE fan-out and pure domain tests.
 
 ## Accepted Work Event
 

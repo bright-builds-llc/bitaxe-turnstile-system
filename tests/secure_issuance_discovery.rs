@@ -1,8 +1,8 @@
 use axum::Router;
 use bwg_core::{
     authority::{
-        self, AuthorityConfigError, AuthorityPublicConfig, CLIENT_ID_HEADER, Config,
-        DeploymentEnvironment, ServiceCredential,
+        self, AuthorityApplication, AuthorityConfigError, AuthorityPublicConfig, CLIENT_ID_HEADER,
+        Config, DeploymentEnvironment, ServiceCredential,
     },
     authority_descriptor::AuthorityDescriptor,
     challenge::ActionPolicy,
@@ -16,13 +16,16 @@ const SERVICE_SECRET: &str = "production-secret-7zZszCLVD82lfejKM4g4nXGQ9";
 
 #[path = "support/authority_keys.rs"]
 mod authority_key_support;
-use authority_key_support::authority_keys;
+#[path = "support/postgres.rs"]
+mod postgres_support;
+use authority_key_support::{CLAIMANT_PUBLIC_JWK, authority_keys};
+use postgres_support::PostgresTestDatabase;
 
 #[tokio::test]
 async fn scoped_backend_credential_issues_browser_safe_challenge()
 -> Result<(), Box<dyn std::error::Error>> {
     // Arrange
-    let authority_url = spawn_http(authority::router(authority_config()?)).await?;
+    let (authority_url, _database) = spawn_authority(authority_config()?).await?;
 
     // Act
     let response = reqwest::Client::new()
@@ -32,7 +35,7 @@ async fn scoped_backend_credential_issues_browser_safe_challenge()
         .json(&json!({
             "action_policy": "account-creation.light.v1",
             "action_reference": "action_secure_01",
-            "claimant_key": "claimant_key_secure_01"
+            "claimant_key": CLAIMANT_PUBLIC_JWK
         }))
         .send()
         .await?;
@@ -109,7 +112,7 @@ async fn credential_rotation_accepts_overlap_then_retires_old_secret()
     let old_secret = "old-production-secret-B7sT3XUqv9Jw5Ez2Kc8mP0";
     let new_secret = "new-production-secret-N8rK4YVpz6Mx2Fa3Hd7qW1";
     let policies = vec![ActionPolicy::AccountCreationLightV1];
-    let overlap_url = spawn_http(authority::router(Config::new(
+    let (overlap_url, _overlap_database) = spawn_authority(Config::new(
         DeploymentEnvironment::Production,
         vec![
             service_credential(
@@ -124,7 +127,7 @@ async fn credential_rotation_accepts_overlap_then_retires_old_secret()
             )?,
         ],
         public_config()?,
-    )?))
+    )?)
     .await?;
 
     // Act
@@ -132,7 +135,7 @@ async fn credential_rotation_accepts_overlap_then_retires_old_secret()
         post_challenge(&overlap_url, old_secret, "account-creation.light.v1", None).await?;
     let new_overlap =
         post_challenge(&overlap_url, new_secret, "account-creation.light.v1", None).await?;
-    let retired_url = spawn_http(authority::router(Config::new(
+    let (retired_url, _retired_database) = spawn_authority(Config::new(
         DeploymentEnvironment::Production,
         vec![service_credential(
             new_secret,
@@ -140,7 +143,7 @@ async fn credential_rotation_accepts_overlap_then_retires_old_secret()
             policies,
         )?],
         public_config()?,
-    )?))
+    )?)
     .await?;
     let old_retired =
         post_challenge(&retired_url, old_secret, "account-creation.light.v1", None).await?;
@@ -159,7 +162,7 @@ async fn credential_rotation_accepts_overlap_then_retires_old_secret()
 #[tokio::test]
 async fn credential_policy_scope_fails_closed() -> Result<(), Box<dyn std::error::Error>> {
     // Arrange
-    let authority_url = spawn_http(authority::router(authority_config()?)).await?;
+    let (authority_url, _database) = spawn_authority(authority_config()?).await?;
 
     // Act
     let response = post_challenge(
@@ -184,7 +187,7 @@ async fn credential_policy_scope_fails_closed() -> Result<(), Box<dyn std::error
 async fn repeated_authentication_failures_are_throttled() -> Result<(), Box<dyn std::error::Error>>
 {
     // Arrange
-    let authority_url = spawn_http(authority::router(authority_config()?)).await?;
+    let (authority_url, _database) = spawn_authority(authority_config()?).await?;
 
     // Act
     let mut failed_statuses = Vec::new();
@@ -233,11 +236,11 @@ async fn bounded_standard_override_is_pinned_without_mutating_policy()
         DeploymentEnvironment::Production,
         vec![ActionPolicy::AccountCreationStandardV1],
     )?;
-    let authority_url = spawn_http(authority::router(Config::new(
+    let (authority_url, _database) = spawn_authority(Config::new(
         DeploymentEnvironment::Production,
         vec![standard_credential],
         public_config()?,
-    )?))
+    )?)
     .await?;
 
     // Act
@@ -280,7 +283,7 @@ async fn bounded_standard_override_is_pinned_without_mutating_policy()
 #[tokio::test]
 async fn out_of_bounds_standard_override_is_rejected() -> Result<(), Box<dyn std::error::Error>> {
     // Arrange
-    let authority_url = override_authority_url().await?;
+    let (authority_url, _database) = override_authority_url().await?;
 
     // Act
     let below_bounds = post_challenge(
@@ -300,7 +303,7 @@ async fn out_of_bounds_standard_override_is_rejected() -> Result<(), Box<dyn std
 #[tokio::test]
 async fn unpermitted_light_override_is_rejected() -> Result<(), Box<dyn std::error::Error>> {
     // Arrange
-    let authority_url = override_authority_url().await?;
+    let (authority_url, _database) = override_authority_url().await?;
 
     // Act
     let response = post_challenge(
@@ -320,7 +323,7 @@ async fn unpermitted_light_override_is_rejected() -> Result<(), Box<dyn std::err
 #[tokio::test]
 async fn unknown_override_field_is_rejected() -> Result<(), Box<dyn std::error::Error>> {
     // Arrange
-    let authority_url = override_authority_url().await?;
+    let (authority_url, _database) = override_authority_url().await?;
 
     // Act
     let response = post_challenge(
@@ -344,7 +347,7 @@ async fn unknown_override_field_is_rejected() -> Result<(), Box<dyn std::error::
 async fn authority_descriptor_publishes_complete_public_contract()
 -> Result<(), Box<dyn std::error::Error>> {
     // Arrange
-    let authority_url = spawn_http(authority::router(authority_config()?)).await?;
+    let (authority_url, _database) = spawn_authority(authority_config()?).await?;
 
     // Act
     let descriptor_response = reqwest::get(format!(
@@ -513,7 +516,7 @@ async fn post_challenge(
     let mut body = json!({
         "action_policy": action_policy,
         "action_reference": "action_secure_01",
-        "claimant_key": "claimant_key_secure_01"
+        "claimant_key": CLAIMANT_PUBLIC_JWK
     });
     if let Some(overrides) = maybe_overrides {
         body["overrides"] = overrides;
@@ -528,7 +531,7 @@ async fn post_challenge(
 }
 
 async fn published_descriptor() -> Result<Value, Box<dyn std::error::Error>> {
-    let authority_url = spawn_http(authority::router(authority_config()?)).await?;
+    let (authority_url, _database) = spawn_authority(authority_config()?).await?;
     Ok(reqwest::get(format!(
         "{authority_url}/.well-known/pow-gate-configuration"
     ))
@@ -537,7 +540,8 @@ async fn published_descriptor() -> Result<Value, Box<dyn std::error::Error>> {
     .await?)
 }
 
-async fn override_authority_url() -> Result<String, Box<dyn std::error::Error>> {
+async fn override_authority_url()
+-> Result<(String, PostgresTestDatabase), Box<dyn std::error::Error>> {
     let credential = service_credential(
         SERVICE_SECRET,
         DeploymentEnvironment::Production,
@@ -546,12 +550,22 @@ async fn override_authority_url() -> Result<String, Box<dyn std::error::Error>> 
             ActionPolicy::AccountCreationStandardV1,
         ],
     )?;
-    Ok(spawn_http(authority::router(Config::new(
+    spawn_authority(Config::new(
         DeploymentEnvironment::Production,
         vec![credential],
         public_config()?,
-    )?))
-    .await?)
+    )?)
+    .await
+}
+
+async fn spawn_authority(
+    config: Config,
+) -> Result<(String, PostgresTestDatabase), Box<dyn std::error::Error>> {
+    let database = PostgresTestDatabase::start().await?;
+    let application =
+        AuthorityApplication::connect_postgres(config, database.database_url()).await?;
+    let authority_url = spawn_http(authority::router(application)).await?;
+    Ok((authority_url, database))
 }
 
 async fn spawn_http(router: Router) -> Result<String, std::io::Error> {

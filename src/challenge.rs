@@ -20,6 +20,21 @@ const LIGHT_TTL_SECONDS: u64 = 15 * 60;
 #[cfg(test)]
 mod tests;
 
+/// Stable classification of the Protected Action authorized by a Gate Pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProtectedActionType {
+    AccountCreation,
+}
+
+impl ProtectedActionType {
+    /// Returns the stable wire identifier independent of any Action Policy revision.
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::AccountCreation => "account_creation",
+        }
+    }
+}
+
 /// A policy revision from which authoritative challenge terms are derived.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActionPolicy {
@@ -78,6 +93,15 @@ impl ActionPolicy {
     /// Returns the stable revision identifier.
     pub fn id(self) -> &'static str {
         self.specification().id
+    }
+
+    /// Returns the stable Protected Action Type governed by this policy revision.
+    pub fn protected_action_type(self) -> ProtectedActionType {
+        match self {
+            Self::AccountCreationLightV1 | Self::AccountCreationStandardV1 => {
+                ProtectedActionType::AccountCreation
+            }
+        }
     }
 
     fn work_requirement(
@@ -360,6 +384,11 @@ impl WorkChallengeDescriptor {
         self.work_requirement.credited_work
     }
 
+    /// Returns the immutable Action Policy revision selected for this challenge.
+    pub fn action_policy(&self) -> ActionPolicy {
+        self.action_policy
+    }
+
     /// Returns the opaque Action Reference bound into the challenge.
     pub fn action_reference(&self) -> &str {
         &self.action_reference.0
@@ -373,6 +402,11 @@ impl WorkChallengeDescriptor {
     /// Returns the Claimant public-key serialization bound into the challenge.
     pub fn claimant_key(&self) -> &str {
         self.claimant_key.as_str()
+    }
+
+    /// Returns the absolute challenge deadline used by durable issuance.
+    pub fn expires_at_unix_seconds(&self) -> u64 {
+        self.expires_at_unix_seconds.0
     }
 }
 

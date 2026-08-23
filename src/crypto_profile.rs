@@ -5,10 +5,13 @@ use ring::{digest, signature};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+mod issuance_proof;
 mod signing;
 #[cfg(test)]
 pub(crate) mod test_support;
+pub use issuance_proof::{VerifiedIssuanceProof, verify_issuance_proof};
 pub use signing::{AuthoritySigningKey, GatePassClaimsInput, GatePassConfirmationInput};
+pub(crate) use signing::{GatePassClaimsSeed, GatePassClaimsTemplate};
 
 /// Mandatory fully specified JOSE algorithm for BWG Gate Passes.
 pub const GATE_PASS_JWS_ALGORITHM: &str = "Ed25519";
@@ -190,7 +193,9 @@ pub struct VerifiedGatePass {
     expires_at: u64,
     pass_id: String,
     challenge_id: String,
+    protected_action_type: String,
     action_reference: String,
+    action_policy: String,
 }
 
 impl VerifiedGatePass {
@@ -234,9 +239,19 @@ impl VerifiedGatePass {
         &self.challenge_id
     }
 
+    /// Returns the verified stable Protected Action Type.
+    pub fn protected_action_type(&self) -> &str {
+        &self.protected_action_type
+    }
+
     /// Returns the verified opaque Action Reference.
     pub fn action_reference(&self) -> &str {
         &self.action_reference
+    }
+
+    /// Returns the verified immutable Action Policy revision.
+    pub fn action_policy(&self) -> &str {
+        &self.action_policy
     }
 }
 
@@ -321,7 +336,9 @@ pub fn verify_gate_pass(
         expires_at: claims.exp,
         pass_id: claims.jti,
         challenge_id: claims.challenge_id,
+        protected_action_type: claims.protected_action_type,
         action_reference: claims.action_reference,
+        action_policy: claims.action_policy,
     })
 }
 
@@ -452,7 +469,9 @@ struct GatePassClaims {
     exp: u64,
     jti: String,
     challenge_id: String,
+    protected_action_type: String,
     action_reference: String,
+    action_policy: String,
     cnf: ConfirmationClaim,
     bwg_version: String,
 }
@@ -463,7 +482,9 @@ impl GatePassClaims {
             || self.aud.is_empty()
             || self.jti.is_empty()
             || self.challenge_id.is_empty()
+            || self.protected_action_type.is_empty()
             || self.action_reference.is_empty()
+            || self.action_policy.is_empty()
             || self.cnf.jkt.is_empty()
             || self.bwg_version != "BWG/0.1"
             || self.iat >= self.exp
@@ -520,6 +541,10 @@ pub enum CryptoProfileError {
     InvalidDpopType,
     #[error("DPoP claims are invalid")]
     InvalidDpopClaims,
+    #[error("Claimant Issuance Proof type is invalid")]
+    InvalidIssuanceProofType,
+    #[error("Claimant Issuance Proof claims are invalid")]
+    InvalidIssuanceProofClaims,
     #[error("JWS algorithm is unknown")]
     UnknownAlgorithm,
     #[error("symmetric JWS algorithms are forbidden")]

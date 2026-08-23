@@ -8,6 +8,7 @@ This development profile fixes the cryptographic choices needed by Gate Pass and
 | --- | --- | --- | --- |
 | Gate Authority compact JWS signature | `Ed25519` | `Ed25519` | Fully specifies the curve selected by ADR 0023 and RFC 9864. |
 | Claimant DPoP proof | `ES256` | ECDSA with P-256 and SHA-256 | Fully specified in JOSE, required by this profile, and supported by browser WebCrypto. |
+| Claimant Issuance Proof | `ES256` | ECDSA with P-256 and SHA-256 | Reuses the challenge-bound Claimant key for read-only issuance recovery without making the Gate Pass a lookup credential. |
 | Claimant JWK thumbprint (`cnf.jkt`) | SHA-256 | `digest("SHA-256", ...)` | Required by RFC 7638 and RFC 9449. |
 | Gate Pass access-token hash (`ath`) | SHA-256 | `digest("SHA-256", ...)` | Required by RFC 9449 over the ASCII compact Gate Pass value. |
 
@@ -21,7 +22,7 @@ The former polymorphic `EdDSA` JOSE identifier is rejected because RFC 9864 depr
 - The protected `kid` selects only an explicitly trusted configured or discovered Authority JWKS key.
 - Authority JWKs use `kty: OKP`, `crv: Ed25519`, `alg: Ed25519`, `use: sig`, and `key_ops: [verify]`.
 - No critical JOSE extensions are defined in `BWG/0.1`; a protected `crit` header therefore fails closed.
-- The payload carries the required BWG claims and binds the Claimant key through `cnf.jkt`.
+- The payload carries issuer, audience, issue/expiry time, unique pass identity, Work Challenge, Protected Action Type, immutable Action Policy revision, Action Reference, protocol version, and Claimant-key binding through `cnf.jkt`.
 - Token-provided key URLs or arbitrary Authority keys do not become trusted inputs.
 
 ## Browser DPoP key
@@ -37,6 +38,10 @@ The Claimant key confirmation is the base64url-without-padding SHA-256 digest of
 The DPoP `ath` claim is the base64url-without-padding SHA-256 digest of the ASCII compact Gate Pass. Later Redemption validation must additionally enforce method, URI, time window, unique proof identity, replay state, exact Action Reference, and atomic pass consumption.
 
 If the DPoP public JWK includes optional `alg` metadata, it must be exactly `ES256`. Redemption compares the thumbprint verified from the DPoP public JWK directly with the `cnf.jkt` recovered from the verified Gate Pass; independently valid but differently bound artifacts fail closed.
+
+## Claimant Issuance Proof
+
+Issuance Lookup uses a dedicated compact JWS with protected `typ: bwg-issuance-proof+jwt`, `alg: ES256`, and the Claimant public JWK. Its payload requires unique `jti`, `iat`, `htm: GET`, the exact public lookup URI in `htu`, and the Work Challenge ID. The Authority verifies the signature, request binding, 60-second freshness window, challenge-bound JWK thumbprint, and durable one-time proof identity before returning only the existing issuance state.
 
 ## JWKS rotation
 

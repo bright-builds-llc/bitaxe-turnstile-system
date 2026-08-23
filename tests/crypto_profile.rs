@@ -143,6 +143,8 @@ fn rust_verifies_the_current_authority_gate_pass() -> Result<(), Box<dyn std::er
     // Assert
     assert_eq!(verified.authority_kid(), "authority-b");
     assert_eq!(verified.claimant_jkt(), gate_pass.claimant_jkt);
+    assert_eq!(verified.protected_action_type(), "account_creation");
+    assert_eq!(verified.action_policy(), "account-creation.light.v1");
     assert_eq!(
         access_token_hash(&gate_pass.compact_jws),
         gate_pass.access_token_hash
@@ -484,7 +486,9 @@ fn invalid_signed_gate_pass_claims_are_rejected() -> Result<(), Box<dyn std::err
         "exp": 1_787_443_200_u64,
         "jti": "pass_invalid_claims",
         "challenge_id": "challenge_crypto_01",
+        "protected_action_type": "account_creation",
         "action_reference": "action_crypto_01",
+        "action_policy": "account-creation.light.v1",
         "cnf": { "jkt": vectors.claimant_jkt },
         "bwg_version": "BWG/0.1"
     }))?;

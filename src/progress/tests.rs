@@ -26,6 +26,137 @@ fn zero_receipt_time_is_rejected() {
 }
 
 #[test]
+fn accepted_work_transition_rejects_challenge_expiry() -> Result<(), ProgressError> {
+    // Arrange
+    let event_received_at = 200;
+    let challenge_expires_at = 200;
+
+    // Act
+    let result = ensure_event_before_challenge_expiry(event_received_at, challenge_expires_at);
+
+    // Assert
+    assert_eq!(result, Err(ProgressError::ChallengeExpired));
+
+    Ok(())
+}
+
+#[test]
+fn accepted_work_transition_creates_one_threshold_intent() -> Result<(), ProgressError> {
+    // Arrange
+    let work_requirement = CreditedWork::try_from("100".to_owned())?;
+    let input = AcceptedWorkTransitionInput {
+        progress_before: VerifiedProgress::zero(),
+        work_requirement,
+        credited_work: work_requirement,
+        fingerprint_inserted: true,
+    };
+
+    // Act
+    let transition = accepted_work_transition(input)?;
+
+    // Assert
+    assert!(transition.issuance_intent_created);
+    assert!(transition.satisfied);
+    assert_eq!(transition.disposition, AcceptedWorkDisposition::Credited);
+    assert_eq!(transition.maybe_credited_work, Some(work_requirement));
+
+    Ok(())
+}
+
+#[test]
+fn accepted_work_transition_deduplicates_share_without_credit() -> Result<(), ProgressError> {
+    // Arrange
+    let input = AcceptedWorkTransitionInput {
+        progress_before: VerifiedProgress::zero(),
+        work_requirement: CreditedWork::try_from("100".to_owned())?,
+        credited_work: CreditedWork::try_from("50".to_owned())?,
+        fingerprint_inserted: false,
+    };
+
+    // Act
+    let transition = accepted_work_transition(input)?;
+
+    // Assert
+    assert_eq!(
+        transition.disposition,
+        AcceptedWorkDisposition::DuplicateShare
+    );
+    assert_eq!(transition.maybe_credited_work, None);
+    assert_eq!(transition.verified_progress, VerifiedProgress::zero());
+
+    Ok(())
+}
+
+#[test]
+fn accepted_work_transition_keeps_satisfied_challenge_terminal() -> Result<(), ProgressError> {
+    // Arrange
+    let work_requirement = CreditedWork::try_from("100".to_owned())?;
+    let input = AcceptedWorkTransitionInput {
+        progress_before: VerifiedProgress::try_from("100".to_owned())?,
+        work_requirement,
+        credited_work: work_requirement,
+        fingerprint_inserted: true,
+    };
+
+    // Act
+    let transition = accepted_work_transition(input)?;
+
+    // Assert
+    assert_eq!(
+        transition.disposition,
+        AcceptedWorkDisposition::ChallengeSatisfied
+    );
+    assert_eq!(transition.maybe_credited_work, None);
+    assert!(!transition.issuance_intent_created);
+
+    Ok(())
+}
+
+#[test]
+fn accepted_work_transition_credits_below_threshold_without_issuance() -> Result<(), ProgressError>
+{
+    // Arrange
+    let input = AcceptedWorkTransitionInput {
+        progress_before: VerifiedProgress::zero(),
+        work_requirement: CreditedWork::try_from("100".to_owned())?,
+        credited_work: CreditedWork::try_from("50".to_owned())?,
+        fingerprint_inserted: true,
+    };
+
+    // Act
+    let transition = accepted_work_transition(input)?;
+
+    // Assert
+    assert_eq!(transition.verified_progress.to_decimal_string(), "50");
+    assert!(!transition.satisfied);
+    assert!(!transition.issuance_intent_created);
+
+    Ok(())
+}
+
+#[test]
+fn accepted_work_transition_rejects_progress_overflow() -> Result<(), ProgressError> {
+    // Arrange
+    let maximum = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
+    let maximum_minus_one =
+        "115792089237316195423570985008687907853269984665640564039457584007913129639934";
+    let input = AcceptedWorkTransitionInput {
+        progress_before: VerifiedProgress::try_from(maximum_minus_one.to_owned())?,
+        work_requirement: CreditedWork::try_from(maximum.to_owned())?,
+        credited_work: CreditedWork::try_from("2".to_owned())?,
+        fingerprint_inserted: true,
+    };
+
+    // Act
+    let result = accepted_work_transition(input);
+
+    // Assert
+    assert!(matches!(result, Err(ProgressError::InvalidWork(_))));
+
+    Ok(())
+}
+
+#[test]
 fn zero_assigned_target_is_rejected() -> Result<(), ProgressError> {
     // Arrange
     let mut input = valid_event_input()?;

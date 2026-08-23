@@ -1,20 +1,14 @@
-use std::{
-    io::Error,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::Router;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use bwg_core::{
     authority::{
-        self, AuthorityPublicConfig, CLIENT_ID_HEADER, Config as AuthorityConfig,
-        DeploymentEnvironment, ServiceCredential,
+        self, AuthorityApplication, AuthorityPublicConfig, CLAIMANT_PROOF_HEADER, CLIENT_ID_HEADER,
+        Config as AuthorityConfig, DeploymentEnvironment, IssuanceWorkerId, ServiceCredential,
     },
     challenge::{ActionPolicy, ChallengeId},
     crypto_profile::{
         AuthorityKeySet, AuthoritySigningKey, GatePassClaimsInput, GatePassConfirmationInput,
-        P256PublicJwk, P256PublicJwkWire, access_token_hash, p256_jwk_thumbprint,
     },
     progress::{
         AcceptedWorkEvent, AcceptedWorkEventId, AcceptedWorkEventInput, NetworkTargetOutcome,
@@ -23,16 +17,18 @@ use bwg_core::{
     redemption::{RedemptionError, RedemptionRequest, RedemptionService},
     reference_service,
 };
-use ring::{
-    rand::SystemRandom,
-    signature::{self, KeyPair as _},
-};
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 
 #[path = "support/authority_keys.rs"]
 mod authority_key_support;
+#[path = "support/claimant.rs"]
+mod claimant_support;
+#[path = "support/postgres.rs"]
+mod postgres_support;
 use authority_key_support::authority_keys;
+use claimant_support::Claimant;
+use postgres_support::PostgresTestDatabase;
 
 const CLIENT_ID: &str = "redemption-reference-service";
 const SERVICE_SECRET: &str = "redemption-secret-P9vK2mQ7xR4tY8uN3cF6wL1zA5dH0sJ";
@@ -43,9 +39,12 @@ const AUTHORITY_SIGNING_SEED: &str = "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2
 async fn complete_work_pass_redeem_journey_is_idempotent() -> Result<(), Box<dyn std::error::Error>>
 {
     // Arrange
-    let authority_config = authority_config()?;
-    let adapter = authority_config.simulated_pool_adapter();
-    let authority_url = spawn_http(authority::router(authority_config)).await?;
+    let database = PostgresTestDatabase::start().await?;
+    let application =
+        AuthorityApplication::connect_postgres(authority_config()?, database.database_url())
+            .await?;
+    let adapter = application.simulated_pool_adapter();
+    let authority_url = spawn_http(authority::router(application.clone())).await?;
     let (reference_url, redemption_url) = spawn_reference_service(authority_url.clone()).await?;
     let claimant = Claimant::generate()?;
     let challenge = reqwest::Client::new()
@@ -66,29 +65,54 @@ async fn complete_work_pass_redeem_journey_is_idempotent() -> Result<(), Box<dyn
         .ok_or("challenge identifier is missing")?;
     let challenge_id = ChallengeId::try_from(challenge_id_text.to_owned())?;
     let session_id = WorkSessionId::try_from("session_redemption01".to_owned())?;
-    adapter.register_session(&challenge_id, session_id.clone())?;
+    adapter
+        .register_session(&challenge_id, session_id.clone())
+        .await?;
 
     // Act
-    let acknowledgement = adapter.report(light_target_event(session_id)?)?;
-    let gate_pass = reqwest::get(format!(
-        "{authority_url}/v0/challenges/{challenge_id_text}/gate-pass"
-    ))
-    .await?
-    .json::<Value>()
-    .await?["gate_pass"]
+    let acknowledgement = adapter.report(light_target_event(session_id)?).await?;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    application
+        .process_next_issuance(
+            &IssuanceWorkerId::try_from("worker_redemption01".to_owned())?,
+            now,
+        )
+        .await?;
+    let public_lookup_url =
+        format!("https://authority.example/v0/challenges/{challenge_id_text}/gate-pass");
+    let request_lookup_url = format!("{authority_url}/v0/challenges/{challenge_id_text}/gate-pass");
+    let issuance_proof = claimant.sign_issuance_proof(
+        &public_lookup_url,
+        challenge_id_text,
+        "proof_redemption_lookup01",
+        now,
+    )?;
+    let gate_pass = reqwest::Client::new()
+        .get(&request_lookup_url)
+        .header(CLAIMANT_PROOF_HEADER, issuance_proof)
+        .send()
+        .await?
+        .json::<Value>()
+        .await?["gate_pass"]
         .as_str()
         .ok_or("Gate Pass response is missing token")?
         .to_owned();
-    let repeated_gate_pass = reqwest::get(format!(
-        "{authority_url}/v0/challenges/{challenge_id_text}/gate-pass"
-    ))
-    .await?
-    .json::<Value>()
-    .await?["gate_pass"]
+    let repeated_issuance_proof = claimant.sign_issuance_proof(
+        &public_lookup_url,
+        challenge_id_text,
+        "proof_redemption_lookup02",
+        now,
+    )?;
+    let repeated_gate_pass = reqwest::Client::new()
+        .get(request_lookup_url)
+        .header(CLAIMANT_PROOF_HEADER, repeated_issuance_proof)
+        .send()
+        .await?
+        .json::<Value>()
+        .await?["gate_pass"]
         .as_str()
         .ok_or("repeated Gate Pass response is missing token")?
         .to_owned();
-    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     let first_proof = claimant.sign_dpop(&gate_pass, &redemption_url, "dpop_redemption01", now)?;
     let first_response = redeem(
         &reference_url,
@@ -369,83 +393,6 @@ async fn concurrent_redemption_creates_one_stable_record() -> Result<(), Box<dyn
     Ok(())
 }
 
-struct Claimant {
-    key_pair: Arc<signature::EcdsaKeyPair>,
-    public_jwk: Value,
-    public_jwk_json: String,
-}
-
-impl Claimant {
-    fn generate() -> Result<Self, Box<dyn std::error::Error>> {
-        let rng = SystemRandom::new();
-        let pkcs8 = signature::EcdsaKeyPair::generate_pkcs8(
-            &signature::ECDSA_P256_SHA256_FIXED_SIGNING,
-            &rng,
-        )
-        .map_err(|_| Error::other("failed to generate P-256 test key"))?;
-        let key_pair = signature::EcdsaKeyPair::from_pkcs8(
-            &signature::ECDSA_P256_SHA256_FIXED_SIGNING,
-            pkcs8.as_ref(),
-            &rng,
-        )
-        .map_err(|error| Error::other(format!("failed to import P-256 test key: {error}")))?;
-        let public_key = key_pair.public_key().as_ref();
-        if public_key.len() != 65 || public_key[0] != 0x04 {
-            return Err("P-256 public key is not uncompressed SEC1".into());
-        }
-        let public_jwk = json!({
-            "kty": "EC",
-            "crv": "P-256",
-            "x": URL_SAFE_NO_PAD.encode(&public_key[1..33]),
-            "y": URL_SAFE_NO_PAD.encode(&public_key[33..65]),
-            "alg": "ES256"
-        });
-        Ok(Self {
-            key_pair: Arc::new(key_pair),
-            public_jwk_json: serde_json::to_string(&public_jwk)?,
-            public_jwk,
-        })
-    }
-
-    fn jkt(&self) -> Result<String, Box<dyn std::error::Error>> {
-        let wire = serde_json::from_value::<P256PublicJwkWire>(self.public_jwk.clone())?;
-        let key = P256PublicJwk::try_from(wire)?;
-        Ok(p256_jwk_thumbprint(&key))
-    }
-
-    fn sign_dpop(
-        &self,
-        gate_pass: &str,
-        redemption_url: &str,
-        proof_id: &str,
-        issued_at: u64,
-    ) -> Result<String, Box<dyn std::error::Error>> {
-        let header = json!({
-            "typ": "dpop+jwt",
-            "alg": "ES256",
-            "jwk": self.public_jwk
-        });
-        let payload = json!({
-            "jti": proof_id,
-            "htm": "POST",
-            "htu": redemption_url,
-            "iat": issued_at,
-            "ath": access_token_hash(gate_pass)
-        });
-        let protected = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header)?);
-        let payload = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload)?);
-        let signing_input = format!("{protected}.{payload}");
-        let signature = self
-            .key_pair
-            .sign(&SystemRandom::new(), signing_input.as_bytes())
-            .map_err(|_| Error::other("failed to sign DPoP proof"))?;
-        Ok(format!(
-            "{signing_input}.{}",
-            URL_SAFE_NO_PAD.encode(signature.as_ref())
-        ))
-    }
-}
-
 fn signed_gate_pass(
     claimant: &Claimant,
     issuer: &str,
@@ -461,7 +408,9 @@ fn signed_gate_pass(
         exp: expires_at,
         jti: format!("pass_test_{issued_at}_{expires_at}"),
         challenge_id: "challenge_testpass01".to_owned(),
+        protected_action_type: "account_creation".to_owned(),
         action_reference: action_reference.to_owned(),
+        action_policy: "account-creation.light.v1".to_owned(),
         cnf: GatePassConfirmationInput {
             jkt: claimant.jkt()?,
         },

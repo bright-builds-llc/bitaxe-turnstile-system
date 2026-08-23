@@ -3,8 +3,8 @@ use std::time::Duration;
 use axum::Router;
 use bwg_core::{
     authority::{
-        self, AuthorityPublicConfig, CLIENT_ID_HEADER, Config, DeploymentEnvironment,
-        ServiceCredential,
+        self, AuthorityApplication, AuthorityApplicationError, AuthorityPublicConfig,
+        CLIENT_ID_HEADER, Config, DeploymentEnvironment, ServiceCredential,
     },
     challenge::{ActionPolicy, ChallengeId},
     progress::{
@@ -18,7 +18,10 @@ use tokio::{net::TcpListener, time::timeout};
 
 #[path = "support/authority_keys.rs"]
 mod authority_key_support;
-use authority_key_support::authority_keys;
+#[path = "support/postgres.rs"]
+mod postgres_support;
+use authority_key_support::{CLAIMANT_PUBLIC_JWK, authority_keys};
+use postgres_support::PostgresTestDatabase;
 
 const CLIENT_ID: &str = "progress-reference-service";
 const SERVICE_SECRET: &str = "progress-secret-P9vK2mQ7xR4tY8uN3cF6wL1zA5dH0sJ";
@@ -125,9 +128,12 @@ fn duplicate_share_fingerprint_never_advances_progress_twice()
 async fn verified_progress_streams_separately_from_activity_estimate()
 -> Result<(), Box<dyn std::error::Error>> {
     // Arrange
-    let config = authority_config()?;
-    let adapter = config.simulated_pool_adapter();
-    let authority_url = spawn_http(authority::router(config)).await?;
+    let database = PostgresTestDatabase::start().await?;
+    let application =
+        AuthorityApplication::connect_postgres(authority_config()?, database.database_url())
+            .await?;
+    let adapter = application.simulated_pool_adapter();
+    let authority_url = spawn_http(authority::router(application)).await?;
     let challenge = reqwest::Client::new()
         .post(format!("{authority_url}/v0/challenges"))
         .header(CLIENT_ID_HEADER, CLIENT_ID)
@@ -135,7 +141,7 @@ async fn verified_progress_streams_separately_from_activity_estimate()
         .json(&json!({
             "action_policy": "account-creation.light.v1",
             "action_reference": "action_progress_01",
-            "claimant_key": "claimant_key_progress_01"
+            "claimant_key": CLAIMANT_PUBLIC_JWK
         }))
         .send()
         .await?
@@ -146,7 +152,9 @@ async fn verified_progress_streams_separately_from_activity_estimate()
         .ok_or("challenge response needs an identifier")?;
     let progress_challenge_id = ChallengeId::try_from(challenge_id.to_owned())?;
     let session_id = WorkSessionId::try_from("session_stream_01".to_owned())?;
-    adapter.register_session(&progress_challenge_id, session_id.clone())?;
+    adapter
+        .register_session(&progress_challenge_id, session_id.clone())
+        .await?;
     let mut stream = reqwest::get(format!(
         "{authority_url}/v0/challenges/{challenge_id}/events"
     ))
@@ -156,11 +164,13 @@ async fn verified_progress_streams_separately_from_activity_estimate()
         .ok_or("progress stream ended before its snapshot")?;
 
     // Act
-    let acknowledgement = adapter.report(difficulty_one_event(
-        "event_stream_01",
-        session_id,
-        "share_stream_01",
-    )?)?;
+    let acknowledgement = adapter
+        .report(difficulty_one_event(
+            "event_stream_01",
+            session_id,
+            "share_stream_01",
+        )?)
+        .await?;
     let updated = timeout(Duration::from_secs(2), stream.chunk())
         .await??
         .ok_or("progress stream ended before its update")?;
@@ -175,6 +185,67 @@ async fn verified_progress_streams_separately_from_activity_estimate()
         acknowledgement.verified_progress().to_decimal_string(),
         "4295032833"
     );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn work_received_at_challenge_expiry_cannot_advance_progress()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Arrange
+    let database = PostgresTestDatabase::start().await?;
+    let application =
+        AuthorityApplication::connect_postgres(authority_config()?, database.database_url())
+            .await?;
+    let adapter = application.simulated_pool_adapter();
+    let authority_url = spawn_http(authority::router(application)).await?;
+    let challenge = reqwest::Client::new()
+        .post(format!("{authority_url}/v0/challenges"))
+        .header(CLIENT_ID_HEADER, CLIENT_ID)
+        .bearer_auth(SERVICE_SECRET)
+        .json(&json!({
+            "action_policy": "account-creation.light.v1",
+            "action_reference": "action_expired_progress_01",
+            "claimant_key": CLAIMANT_PUBLIC_JWK
+        }))
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<Value>()
+        .await?;
+    let challenge_id = ChallengeId::try_from(
+        challenge["challenge_id"]
+            .as_str()
+            .ok_or("challenge response needs an identifier")?
+            .to_owned(),
+    )?;
+    let challenge_expiry = challenge["expires_at_unix_seconds"]
+        .as_u64()
+        .ok_or("challenge response needs an expiry")?;
+    let session_id = WorkSessionId::try_from("session_expired_progress_01".to_owned())?;
+    adapter
+        .register_session(&challenge_id, session_id.clone())
+        .await?;
+    let event = AcceptedWorkEvent::try_from(AcceptedWorkEventInput {
+        event_id: AcceptedWorkEventId::try_from("event_expired_progress_01".to_owned())?,
+        work_session_id: session_id,
+        assigned_target: difficulty_one_target(),
+        received_at: ReceiptTime::try_from(challenge_expiry)?,
+        share_fingerprint: ShareFingerprint::try_from("share_expired_progress_01".to_owned())?,
+        network_target_outcome: NetworkTargetOutcome::BelowNetworkTarget,
+        maybe_worker_report: None,
+    })?;
+
+    // Act
+    let result = adapter.report(event).await;
+
+    // Assert
+    assert!(matches!(
+        result,
+        Err(AuthorityApplicationError::Progress(
+            bwg_core::progress::ProgressError::ChallengeExpired
+        ))
+    ));
 
     Ok(())
 }

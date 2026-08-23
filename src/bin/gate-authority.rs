@@ -1,11 +1,15 @@
 use std::{env, error::Error};
 
 use bwg_core::{
-    authority::{self, AuthorityPublicConfig, DeploymentEnvironment, ServiceCredential},
+    authority::{
+        self, AuthorityPublicConfig, DeploymentEnvironment, IssuanceProcessingOutcome,
+        IssuanceWorkerId, ServiceCredential,
+    },
     challenge::ActionPolicy,
     crypto_profile::AuthorityJwkWire,
 };
 use tokio::net::TcpListener;
+use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -44,12 +48,45 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let signing_seed = env::var("BWG_AUTHORITY_SIGNING_SEED")?;
     let config = authority::Config::new(environment, vec![credential], public_config)?
         .with_signing_key_seed(signing_kid, &signing_seed)?;
+    let application = authority::AuthorityApplication::connect_postgres(
+        config,
+        &env::var("BWG_AUTHORITY_DATABASE_URL")?,
+    )
+    .await?;
+    let issuance_application = application.clone();
+    let issuance_worker_id =
+        IssuanceWorkerId::try_from(format!("worker_{}", Uuid::new_v4().simple()))?;
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_millis(250));
+        loop {
+            interval.tick().await;
+            let now = match std::time::SystemTime::UNIX_EPOCH.elapsed() {
+                Ok(duration) => duration.as_secs(),
+                Err(error) => {
+                    tracing::error!(%error, "system clock is unavailable to issuance worker");
+                    continue;
+                }
+            };
+            match issuance_application
+                .process_next_issuance(&issuance_worker_id, now)
+                .await
+            {
+                Ok(IssuanceProcessingOutcome::Issued { challenge_id }) => {
+                    tracing::info!(challenge_id = %challenge_id.as_str(), "Gate Pass issued");
+                }
+                Ok(IssuanceProcessingOutcome::NoWork) => {}
+                Err(error) => {
+                    tracing::warn!(%error, "Gate Pass issuance iteration failed");
+                }
+            }
+        }
+    });
     let listen_address =
         env::var("BWG_LISTEN_ADDRESS").unwrap_or_else(|_| "127.0.0.1:3000".to_owned());
     let listener = TcpListener::bind(&listen_address).await?;
     tracing::info!(%listen_address, "Gate Authority listening");
 
-    axum::serve(listener, authority::router(config)).await?;
+    axum::serve(listener, authority::router(application)).await?;
 
     Ok(())
 }

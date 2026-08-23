@@ -28,6 +28,7 @@ use tokio_stream::{
 use uuid::Uuid;
 
 use crate::{
+    authority_application::IssuanceLookup,
     authority_descriptor::{AuthorityDescriptor, JwksDocument},
     challenge::{
         ActionPolicy, ActionReference, AllowedOrigins, ChallengeError, ChallengeId, ClaimantKey,
@@ -35,14 +36,14 @@ use crate::{
         WorkRequirementOverride, issue_challenge,
     },
     crypto_profile::{AuthorityKeySet, AuthoritySigningKey},
-    gate_pass_issuer::{GatePassIssuer, GatePassIssuerError},
-    progress::{
-        AcceptedWorkAcknowledgement, AcceptedWorkEvent, ProgressError, ProgressService,
-        WorkSessionId,
-    },
+    progress::ProgressError,
     service_auth::{ServiceClientId, ServiceSecret},
 };
 
+pub use crate::authority_application::{
+    AuthorityApplication, AuthorityApplicationError, IssuanceProcessingOutcome, IssuanceWorkerId,
+    SimulatedPoolAdapter,
+};
 pub use crate::authority_descriptor::AuthorityPublicConfig;
 
 #[cfg(test)]
@@ -50,6 +51,8 @@ mod tests;
 
 /// Backend-only header carrying the public service client identifier.
 pub const CLIENT_ID_HEADER: &str = "bwg-client-id";
+/// Claimant-signed proof header required for read-only issuance lookup.
+pub const CLAIMANT_PROOF_HEADER: &str = "bwg-claimant-proof";
 const SERVICE_SECRET_VERIFIER_DOMAIN: &[u8] = b"BWG/0.1 service credential verifier";
 const MAXIMUM_FAILED_AUTHENTICATIONS: u32 = 5;
 const AUTHENTICATION_THROTTLE_WINDOW: Duration = Duration::from_secs(60);
@@ -207,9 +210,8 @@ pub struct Config {
     descriptor: AuthorityDescriptor,
     jwks: JwksDocument,
     authentication_throttle: AuthenticationThrottle,
-    progress: ProgressService,
     authority_keys: AuthorityKeySet,
-    gate_pass_issuer: GatePassIssuer,
+    maybe_signer: Option<AuthoritySigningKey>,
 }
 
 impl Config {
@@ -237,7 +239,6 @@ impl Config {
         }
 
         let authority_keys = public.authority_keys().clone();
-        let gate_pass_issuer = GatePassIssuer::new(public.issuer().to_owned());
         let descriptor = public.descriptor();
         let jwks = descriptor.jwks();
         Ok(Self {
@@ -245,33 +246,34 @@ impl Config {
             descriptor,
             jwks,
             authentication_throttle: AuthenticationThrottle::default(),
-            progress: ProgressService::default(),
             authority_keys,
-            gate_pass_issuer,
+            maybe_signer: None,
         })
     }
 
     /// Configures the active Ed25519 signer after matching it to the published JWKS.
     pub fn with_signing_key_seed(
-        self,
+        mut self,
         kid: String,
         seed_base64url: &str,
     ) -> Result<Self, AuthorityConfigError> {
         let signer =
             AuthoritySigningKey::from_seed_base64url(kid, seed_base64url, &self.authority_keys)
                 .map_err(|_| AuthorityConfigError::InvalidSigningKey)?;
-        self.gate_pass_issuer
-            .set_signer(signer)
-            .map_err(|_| AuthorityConfigError::InvalidSigningKey)?;
+        self.maybe_signer = Some(signer);
         Ok(self)
     }
 
-    /// Returns the in-process Pool Adapter tracer port used by this implementation slice.
-    pub fn simulated_pool_adapter(&self) -> SimulatedPoolAdapter {
-        SimulatedPoolAdapter {
-            progress: self.progress.clone(),
-            gate_pass_issuer: self.gate_pass_issuer.clone(),
-        }
+    pub(crate) fn issuer(&self) -> &str {
+        self.descriptor.issuer()
+    }
+
+    pub(crate) fn maybe_signer(&self) -> Option<AuthoritySigningKey> {
+        self.maybe_signer.clone()
+    }
+
+    pub(crate) fn issuance_lookup_url(&self, challenge_id: &ChallengeId) -> String {
+        self.descriptor.gate_pass_url(challenge_id.as_str())
     }
 
     fn authenticate(&self, headers: &HeaderMap) -> Result<&ServiceCredential, ApiError> {
@@ -309,51 +311,9 @@ impl Config {
     }
 }
 
-/// In-process adapter port that exercises the future authenticated gRPC boundary.
-#[derive(Clone)]
-pub struct SimulatedPoolAdapter {
-    progress: ProgressService,
-    gate_pass_issuer: GatePassIssuer,
-}
-
-impl SimulatedPoolAdapter {
-    /// Binds one Work Session to its opaque challenge.
-    pub fn register_session(
-        &self,
-        challenge_id: &ChallengeId,
-        session_id: WorkSessionId,
-    ) -> Result<(), ProgressError> {
-        self.progress.register_session(challenge_id, session_id)
-    }
-
-    /// Reports one target-qualified accepted result with stable replay acknowledgement.
-    pub fn report(
-        &self,
-        event: AcceptedWorkEvent,
-    ) -> Result<AcceptedWorkAcknowledgement, ProgressError> {
-        let challenge_id = self
-            .progress
-            .challenge_for_session(event.work_session_id())?;
-        let acknowledgement = self.progress.report(event)?;
-        if acknowledgement.issuance_intent_created() {
-            let issued_at = SystemTime::UNIX_EPOCH
-                .elapsed()
-                .map_err(|_| ProgressError::ClockUnavailable)?
-                .as_secs();
-            if let Err(error) = self
-                .gate_pass_issuer
-                .ensure_issued(&challenge_id, issued_at)
-            {
-                tracing::warn!(%error, %issued_at, "Gate Pass issuance remains pending");
-            }
-        }
-        Ok(acknowledgement)
-    }
-}
-
 #[derive(Clone)]
 struct AuthorityState {
-    config: Config,
+    application: AuthorityApplication,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -373,7 +333,7 @@ pub(crate) struct ChallengeOverridesRequest {
 }
 
 /// Builds the versioned Gate Authority HTTP interface.
-pub fn router(config: Config) -> Router {
+pub fn router(application: AuthorityApplication) -> Router {
     Router::new()
         .route("/v0/challenges", post(create_challenge))
         .route(
@@ -389,15 +349,15 @@ pub fn router(config: Config) -> Router {
             "/v0/challenges/{challenge_id}/gate-pass",
             get(challenge_gate_pass),
         )
-        .with_state(AuthorityState { config })
+        .with_state(AuthorityState { application })
 }
 
 async fn authority_descriptor(State(state): State<AuthorityState>) -> Json<AuthorityDescriptor> {
-    Json(state.config.descriptor)
+    Json(state.application.config.descriptor.clone())
 }
 
 async fn authority_jwks(State(state): State<AuthorityState>) -> Json<JwksDocument> {
-    Json(state.config.jwks)
+    Json(state.application.config.jwks.clone())
 }
 
 async fn challenge_progress(
@@ -405,7 +365,7 @@ async fn challenge_progress(
     Path(challenge_id): Path<String>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, axum::Error>>>, ApiError> {
     let challenge_id = ChallengeId::try_from(challenge_id)?;
-    let (snapshot, receiver) = state.config.progress.subscribe(&challenge_id)?;
+    let (snapshot, receiver) = state.application.subscribe_progress(&challenge_id).await?;
     let initial = tokio_stream::once(
         Event::default()
             .event("verified_progress")
@@ -427,16 +387,23 @@ async fn challenge_progress(
 async fn challenge_gate_pass(
     State(state): State<AuthorityState>,
     Path(challenge_id): Path<String>,
-) -> Result<Json<GatePassResponse>, ApiError> {
+    headers: HeaderMap,
+) -> Result<Json<IssuanceLookup>, ApiError> {
     let challenge_id = ChallengeId::try_from(challenge_id)?;
-    let maybe_gate_pass = state
-        .config
-        .gate_pass_issuer
-        .maybe_gate_pass(&challenge_id)?;
-    let Some(gate_pass) = maybe_gate_pass else {
-        return Err(ApiError::GatePassPending);
-    };
-    Ok(Json(GatePassResponse { gate_pass }))
+    let compact_proof = headers
+        .get(CLAIMANT_PROOF_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .ok_or(ApiError::Unauthorized)?;
+    let now = SystemTime::UNIX_EPOCH
+        .elapsed()
+        .map_err(|_| ApiError::InternalTime)?
+        .as_secs();
+    Ok(Json(
+        state
+            .application
+            .issuance(&challenge_id, compact_proof, now)
+            .await?,
+    ))
 }
 
 async fn create_challenge(
@@ -444,7 +411,7 @@ async fn create_challenge(
     headers: HeaderMap,
     Json(request): Json<CreateChallengeRequest>,
 ) -> Result<(StatusCode, Json<WorkChallengeDescriptor>), ApiError> {
-    let credential = state.config.authenticate(&headers)?;
+    let credential = state.application.config.authenticate(&headers)?;
     let action_policy = ActionPolicy::parse(&request.action_policy)?;
     if !credential.permits(action_policy) {
         return Err(ApiError::PolicyNotPermitted);
@@ -469,15 +436,7 @@ async fn create_challenge(
         format!("challenge_{}", Uuid::new_v4().simple()),
         issued_at_unix_seconds,
     )?;
-    state
-        .config
-        .gate_pass_issuer
-        .register_challenge(&descriptor)?;
-    state.config.progress.register_challenge(
-        ChallengeId::try_from(descriptor.challenge_id().to_owned())?,
-        descriptor.required_work(),
-    )?;
-
+    state.application.insert_challenge(&descriptor).await?;
     Ok((StatusCode::CREATED, Json(descriptor)))
 }
 
@@ -489,8 +448,7 @@ enum ApiError {
     InternalTime,
     InternalState,
     InvalidProgress(ProgressError),
-    InvalidGatePassIssuer(GatePassIssuerError),
-    GatePassPending,
+    InvalidApplication(AuthorityApplicationError),
 }
 
 impl From<ChallengeError> for ApiError {
@@ -505,9 +463,9 @@ impl From<ProgressError> for ApiError {
     }
 }
 
-impl From<GatePassIssuerError> for ApiError {
-    fn from(error: GatePassIssuerError) -> Self {
-        Self::InvalidGatePassIssuer(error)
+impl From<AuthorityApplicationError> for ApiError {
+    fn from(error: AuthorityApplicationError) -> Self {
+        Self::InvalidApplication(error)
     }
 }
 
@@ -538,13 +496,19 @@ impl IntoResponse for ApiError {
                 (StatusCode::NOT_FOUND, "unknown_challenge")
             }
             Self::InvalidProgress(_) => (StatusCode::BAD_REQUEST, "invalid_progress_request"),
-            Self::GatePassPending => (StatusCode::CONFLICT, "gate_pass_pending"),
-            Self::InvalidGatePassIssuer(GatePassIssuerError::UnknownChallenge) => {
+            Self::InvalidApplication(AuthorityApplicationError::UnknownChallenge) => {
                 (StatusCode::NOT_FOUND, "unknown_challenge")
             }
-            Self::InvalidGatePassIssuer(_) => (
+            Self::InvalidApplication(
+                AuthorityApplicationError::InvalidClaimantProof
+                | AuthorityApplicationError::WrongIssuanceProofRequest
+                | AuthorityApplicationError::StaleIssuanceProof
+                | AuthorityApplicationError::WrongClaimantKey
+                | AuthorityApplicationError::ReplayedIssuanceProof,
+            ) => (StatusCode::UNAUTHORIZED, "invalid_claimant_proof"),
+            Self::InvalidApplication(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "gate_pass_issuance_failed",
+                "authority_persistence_failed",
             ),
             Self::InternalTime | Self::InternalState => {
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal_error")
@@ -558,11 +522,6 @@ impl IntoResponse for ApiError {
 #[derive(Serialize)]
 struct ErrorResponse {
     error: &'static str,
-}
-
-#[derive(Serialize)]
-struct GatePassResponse {
-    gate_pass: String,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
