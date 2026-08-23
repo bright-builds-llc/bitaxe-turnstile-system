@@ -7,17 +7,24 @@ use std::{
 
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{Path, State},
     http::{
         HeaderMap, StatusCode,
         header::{AUTHORIZATION, RETRY_AFTER},
     },
-    response::{IntoResponse, Response},
+    response::{
+        IntoResponse, Response, Sse,
+        sse::{Event, KeepAlive},
+    },
     routing::{get, post},
 };
 use ring::hmac;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tokio_stream::{
+    Stream, StreamExt as _,
+    wrappers::{BroadcastStream, errors::BroadcastStreamRecvError},
+};
 use uuid::Uuid;
 
 use crate::{
@@ -26,6 +33,10 @@ use crate::{
         ActionPolicy, ActionReference, AllowedOrigins, ChallengeError, ClaimantKey,
         IssueChallengeCommand, RelyingServiceAudience, WorkChallengeDescriptor,
         WorkRequirementOverride, issue_challenge,
+    },
+    progress::{
+        AcceptedWorkAcknowledgement, AcceptedWorkEvent, ProgressChallengeId, ProgressError,
+        ProgressService, WorkSessionId,
     },
     service_auth::{ServiceClientId, ServiceSecret},
 };
@@ -194,6 +205,7 @@ pub struct Config {
     descriptor: AuthorityDescriptor,
     jwks: JwksDocument,
     authentication_throttle: AuthenticationThrottle,
+    progress: ProgressService,
 }
 
 impl Config {
@@ -227,7 +239,15 @@ impl Config {
             descriptor,
             jwks,
             authentication_throttle: AuthenticationThrottle::default(),
+            progress: ProgressService::default(),
         })
+    }
+
+    /// Returns the in-process Pool Adapter tracer port used by this implementation slice.
+    pub fn simulated_pool_adapter(&self) -> SimulatedPoolAdapter {
+        SimulatedPoolAdapter {
+            progress: self.progress.clone(),
+        }
     }
 
     fn authenticate(&self, headers: &HeaderMap) -> Result<&ServiceCredential, ApiError> {
@@ -265,6 +285,31 @@ impl Config {
     }
 }
 
+/// In-process adapter port that exercises the future authenticated gRPC boundary.
+#[derive(Clone)]
+pub struct SimulatedPoolAdapter {
+    progress: ProgressService,
+}
+
+impl SimulatedPoolAdapter {
+    /// Binds one Work Session to its opaque challenge.
+    pub fn register_session(
+        &self,
+        challenge_id: &ProgressChallengeId,
+        session_id: WorkSessionId,
+    ) -> Result<(), ProgressError> {
+        self.progress.register_session(challenge_id, session_id)
+    }
+
+    /// Reports one target-qualified accepted result with stable replay acknowledgement.
+    pub fn report(
+        &self,
+        event: AcceptedWorkEvent,
+    ) -> Result<AcceptedWorkAcknowledgement, ProgressError> {
+        self.progress.report(event)
+    }
+}
+
 #[derive(Clone)]
 struct AuthorityState {
     config: Config,
@@ -295,6 +340,10 @@ pub fn router(config: Config) -> Router {
             get(authority_descriptor),
         )
         .route("/.well-known/jwks.json", get(authority_jwks))
+        .route(
+            "/v0/challenges/{challenge_id}/events",
+            get(challenge_progress),
+        )
         .with_state(AuthorityState { config })
 }
 
@@ -304,6 +353,30 @@ async fn authority_descriptor(State(state): State<AuthorityState>) -> Json<Autho
 
 async fn authority_jwks(State(state): State<AuthorityState>) -> Json<JwksDocument> {
     Json(state.config.jwks)
+}
+
+async fn challenge_progress(
+    State(state): State<AuthorityState>,
+    Path(challenge_id): Path<String>,
+) -> Result<Sse<impl Stream<Item = Result<Event, axum::Error>>>, ApiError> {
+    let challenge_id = ProgressChallengeId::try_from(challenge_id)?;
+    let (snapshot, receiver) = state.config.progress.subscribe(&challenge_id)?;
+    let initial = tokio_stream::once(
+        Event::default()
+            .event("verified_progress")
+            .json_data(snapshot),
+    );
+    let live = BroadcastStream::new(receiver).filter_map(|result| match result {
+        Ok(update) => Some(
+            Event::default()
+                .event("verified_progress")
+                .json_data(update),
+        ),
+        Err(BroadcastStreamRecvError::Lagged(skipped)) => Some(Ok(Event::default()
+            .event("resync_required")
+            .data(format!("skipped {skipped} progress updates")))),
+    });
+    Ok(Sse::new(initial.chain(live)).keep_alive(KeepAlive::default()))
 }
 
 async fn create_challenge(
@@ -336,6 +409,10 @@ async fn create_challenge(
         format!("challenge_{}", Uuid::new_v4().simple()),
         issued_at_unix_seconds,
     )?;
+    state.config.progress.register_challenge(
+        ProgressChallengeId::try_from(descriptor.challenge_id().to_owned())?,
+        descriptor.required_work()?,
+    )?;
 
     Ok((StatusCode::CREATED, Json(descriptor)))
 }
@@ -347,11 +424,18 @@ enum ApiError {
     InvalidChallenge(ChallengeError),
     InternalTime,
     InternalState,
+    InvalidProgress(ProgressError),
 }
 
 impl From<ChallengeError> for ApiError {
     fn from(error: ChallengeError) -> Self {
         Self::InvalidChallenge(error)
+    }
+}
+
+impl From<ProgressError> for ApiError {
+    fn from(error: ProgressError) -> Self {
+        Self::InvalidProgress(error)
     }
 }
 
@@ -378,6 +462,10 @@ impl IntoResponse for ApiError {
                 ChallengeError::OverrideNotPermitted | ChallengeError::OverrideOutsideBounds,
             ) => (StatusCode::BAD_REQUEST, "invalid_policy_override"),
             Self::InvalidChallenge(_) => (StatusCode::BAD_REQUEST, "invalid_challenge_request"),
+            Self::InvalidProgress(ProgressError::UnknownChallenge) => {
+                (StatusCode::NOT_FOUND, "unknown_challenge")
+            }
+            Self::InvalidProgress(_) => (StatusCode::BAD_REQUEST, "invalid_progress_request"),
             Self::InternalTime | Self::InternalState => {
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal_error")
             }

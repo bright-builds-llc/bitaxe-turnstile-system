@@ -369,6 +369,10 @@ async fn authority_descriptor_publishes_complete_public_contract()
     assert_eq!(descriptor["algorithms"]["gate_pass_jws"][0], "Ed25519");
     assert_eq!(descriptor["algorithms"]["browser_dpop_jws"][0], "ES256");
     assert_eq!(descriptor["capabilities"]["bounded_overrides"], true);
+    assert_eq!(
+        descriptor["capabilities"]["verified_progress_streaming"],
+        true
+    );
     assert_eq!(descriptor["limits"]["max_action_reference_bytes"], 256);
     assert_eq!(
         descriptor["source"]["repository"],

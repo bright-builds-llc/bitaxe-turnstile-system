@@ -81,6 +81,7 @@ impl AuthorityPublicConfig {
                 authority_discovery: true,
                 jwks_rotation: true,
                 bounded_overrides: true,
+                verified_progress_streaming: true,
             },
             critical_capabilities: Vec::new(),
             limits: AuthorityLimits {
@@ -199,6 +200,7 @@ impl AuthorityDescriptorFields {
             "authority_discovery",
             "jwks_rotation",
             "bounded_overrides",
+            "verified_progress_streaming",
         ];
         if self
             .critical_capabilities
@@ -252,6 +254,7 @@ struct AuthorityCapabilities {
     authority_discovery: bool,
     jwks_rotation: bool,
     bounded_overrides: bool,
+    verified_progress_streaming: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

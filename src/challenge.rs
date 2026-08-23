@@ -3,7 +3,10 @@ use std::{collections::HashSet, num::NonZeroU64};
 use serde::{Deserialize, Serialize, Serializer};
 use thiserror::Error;
 
-use crate::web_url::{HttpsOrigin, HttpsUrl};
+use crate::{
+    web_url::{HttpsOrigin, HttpsUrl},
+    work::CreditedWork,
+};
 
 const MAX_ACTION_REFERENCE_LENGTH: usize = 256;
 const MAX_CHALLENGE_ID_LENGTH: usize = 128;
@@ -348,6 +351,19 @@ pub struct WorkChallengeDescriptor {
     work_requirement: WorkRequirement,
     expires_at_unix_seconds: ExpiresAtUnixSeconds,
     protocol_version: ProtocolVersion,
+}
+
+impl WorkChallengeDescriptor {
+    /// Returns the opaque identifier used by public lifecycle endpoints.
+    pub fn challenge_id(&self) -> &str {
+        &self.challenge_id.0
+    }
+
+    /// Returns the exact Work Requirement as the shared accounting type.
+    pub fn required_work(&self) -> Result<CreditedWork, ChallengeError> {
+        CreditedWork::try_from(self.work_requirement.expected_hashes.0.clone())
+            .map_err(|_| ChallengeError::InvalidExpectedHashes)
+    }
 }
 
 #[derive(Deserialize)]

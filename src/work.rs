@@ -4,7 +4,7 @@ use thiserror::Error;
 #[cfg(test)]
 mod tests;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct Uint256([u64; 4]);
 
 impl Uint256 {
@@ -252,6 +252,44 @@ impl CreditedWork {
             .maybe_checked_add(other.0)
             .map(Self)
             .ok_or(WorkError::CreditedWorkOverflow)
+    }
+}
+
+/// Exact cumulative Credited Work, including the valid zero-progress state.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct VerifiedProgress(Uint256);
+
+impl VerifiedProgress {
+    /// Returns zero Verified Progress for a newly issued challenge.
+    pub fn zero() -> Self {
+        Self(Uint256::ZERO)
+    }
+
+    /// Adds one accepted-work credit while rejecting fixed-width overflow.
+    pub fn checked_add(self, credited_work: CreditedWork) -> Result<Self, WorkError> {
+        self.0
+            .maybe_checked_add(credited_work.0)
+            .map(Self)
+            .ok_or(WorkError::CreditedWorkOverflow)
+    }
+
+    /// Returns the canonical exact decimal representation.
+    pub fn to_decimal_string(self) -> String {
+        self.0.to_decimal_string()
+    }
+
+    /// Returns whether cumulative progress meets an exact Work Requirement.
+    pub fn meets(self, work_requirement: CreditedWork) -> bool {
+        self.0 >= work_requirement.0
+    }
+}
+
+impl Serialize for VerifiedProgress {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0.to_decimal_string())
     }
 }
 
