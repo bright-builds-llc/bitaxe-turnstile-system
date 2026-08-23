@@ -87,24 +87,29 @@ impl ActionPolicy {
         let specification = self.specification();
         let Some(work_override) = maybe_override else {
             return Ok(WorkRequirement {
-                expected_hashes: ExpectedHashes::from(specification.default_expected_hashes),
+                credited_work: CreditedWork::from_non_zero_u64(
+                    specification.default_expected_hashes,
+                ),
             });
         };
         let Some((minimum, maximum)) = specification.maybe_override_bounds else {
             return Err(ChallengeError::OverrideNotPermitted);
         };
-        let expected_hashes = work_override.expected_hashes.as_u64()?;
+        let expected_hashes = work_override
+            .credited_work
+            .try_to_u64()
+            .map_err(|_| ChallengeError::InvalidExpectedHashes)?;
         if !(minimum..=maximum).contains(&expected_hashes) {
             return Err(ChallengeError::OverrideOutsideBounds);
         }
         Ok(WorkRequirement {
-            expected_hashes: work_override.expected_hashes.clone(),
+            credited_work: work_override.credited_work,
         })
     }
 
     fn accepts(self, work_requirement: &WorkRequirement) -> bool {
         let specification = self.specification();
-        let Ok(expected_hashes) = work_requirement.expected_hashes.as_u64() else {
+        let Ok(expected_hashes) = work_requirement.credited_work.try_to_u64() else {
             return false;
         };
         if expected_hashes == specification.default_expected_hashes.get() {
@@ -214,9 +219,9 @@ impl TryFrom<Vec<String>> for AllowedOrigins {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
-struct ChallengeId(String);
+pub struct ChallengeId(String);
 
 impl TryFrom<String> for ChallengeId {
     type Error = ChallengeError;
@@ -237,50 +242,25 @@ impl TryFrom<String> for ChallengeId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(transparent)]
-struct ExpectedHashes(String);
-
-impl From<NonZeroU64> for ExpectedHashes {
-    fn from(value: NonZeroU64) -> Self {
-        Self(value.to_string())
-    }
-}
-
-impl TryFrom<String> for ExpectedHashes {
-    type Error = ChallengeError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        let is_canonical = !value.is_empty()
-            && !value.starts_with('0')
-            && value.bytes().all(|byte| byte.is_ascii_digit());
-        if !is_canonical {
-            return Err(ChallengeError::InvalidExpectedHashes);
-        }
-
-        Ok(Self(value))
-    }
-}
-
-impl ExpectedHashes {
-    fn as_u64(&self) -> Result<u64, ChallengeError> {
-        self.0
-            .parse()
-            .map_err(|_| ChallengeError::InvalidExpectedHashes)
+impl ChallengeId {
+    /// Returns the opaque server-issued challenge identifier.
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
 /// An explicitly permitted exact-work override selected by a backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkRequirementOverride {
-    expected_hashes: ExpectedHashes,
+    credited_work: CreditedWork,
 }
 
 impl WorkRequirementOverride {
     /// Parses an exact canonical expected-hashes override.
     pub fn expected_hashes(value: String) -> Result<Self, ChallengeError> {
         Ok(Self {
-            expected_hashes: ExpectedHashes::try_from(value)?,
+            credited_work: CreditedWork::try_from(value)
+                .map_err(|_| ChallengeError::InvalidExpectedHashes)?,
         })
     }
 }
@@ -333,9 +313,11 @@ impl Serialize for ProtocolVersion {
 }
 
 /// Exact authoritative work required to satisfy a challenge.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WorkRequirement {
-    expected_hashes: ExpectedHashes,
+    #[serde(rename = "expected_hashes")]
+    credited_work: CreditedWork,
 }
 
 /// The immutable browser-safe description of an issued Work Challenge.
@@ -356,13 +338,12 @@ pub struct WorkChallengeDescriptor {
 impl WorkChallengeDescriptor {
     /// Returns the opaque identifier used by public lifecycle endpoints.
     pub fn challenge_id(&self) -> &str {
-        &self.challenge_id.0
+        self.challenge_id.as_str()
     }
 
     /// Returns the exact Work Requirement as the shared accounting type.
-    pub fn required_work(&self) -> Result<CreditedWork, ChallengeError> {
-        CreditedWork::try_from(self.work_requirement.expected_hashes.0.clone())
-            .map_err(|_| ChallengeError::InvalidExpectedHashes)
+    pub fn required_work(&self) -> CreditedWork {
+        self.work_requirement.credited_work
     }
 }
 
@@ -375,15 +356,9 @@ struct WorkChallengeDescriptorWire {
     claimant_key: String,
     relying_service_audience: String,
     allowed_origins: Vec<String>,
-    work_requirement: WorkRequirementWire,
+    work_requirement: WorkRequirement,
     expires_at_unix_seconds: u64,
     protocol_version: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct WorkRequirementWire {
-    expected_hashes: String,
 }
 
 impl TryFrom<WorkChallengeDescriptorWire> for WorkChallengeDescriptor {
@@ -391,9 +366,7 @@ impl TryFrom<WorkChallengeDescriptorWire> for WorkChallengeDescriptor {
 
     fn try_from(wire: WorkChallengeDescriptorWire) -> Result<Self, Self::Error> {
         let action_policy = ActionPolicy::parse(&wire.action_policy)?;
-        let work_requirement = WorkRequirement {
-            expected_hashes: ExpectedHashes::try_from(wire.work_requirement.expected_hashes)?,
-        };
+        let work_requirement = wire.work_requirement;
         if !action_policy.accepts(&work_requirement) {
             return Err(ChallengeError::PolicyWorkMismatch);
         }

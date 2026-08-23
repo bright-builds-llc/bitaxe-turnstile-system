@@ -200,12 +200,13 @@ fn descriptor_deserialization_rejects_unknown_protocol_version() {
 }
 
 #[test]
-fn expected_hashes_require_canonical_non_zero_decimal() {
+fn work_override_requires_canonical_non_zero_decimal() {
     // Arrange
     let invalid_values = ["", "0", "01", "1.0", "-1", "abc"];
 
     // Act
-    let results = invalid_values.map(|value| ExpectedHashes::try_from(value.to_owned()));
+    let results =
+        invalid_values.map(|value| WorkRequirementOverride::expected_hashes(value.to_owned()));
 
     // Assert
     assert!(

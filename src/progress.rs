@@ -7,27 +7,16 @@ use serde::Serialize;
 use thiserror::Error;
 use tokio::sync::broadcast;
 
-use crate::work::{AssignedTarget, CreditedWork, VerifiedProgress, WorkError};
+use crate::{
+    challenge::ChallengeId,
+    work::{AssignedTarget, CreditedWork, VerifiedProgress, WorkError},
+};
 
 const MAXIMUM_OPAQUE_ID_LENGTH: usize = 128;
 const PROGRESS_CHANNEL_CAPACITY: usize = 32;
 
 #[cfg(test)]
 mod tests;
-
-/// Opaque Work Challenge identity used by the progress service.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
-#[serde(transparent)]
-pub struct ProgressChallengeId(String);
-
-impl TryFrom<String> for ProgressChallengeId {
-    type Error = ProgressError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        validate_opaque_id(&value, "challenge_")?;
-        Ok(Self(value))
-    }
-}
 
 /// Stable Pool Adapter identity for one at-least-once Accepted Work Event.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
@@ -142,6 +131,17 @@ impl TryFrom<AcceptedWorkEventInput> for AcceptedWorkEvent {
     }
 }
 
+impl AcceptedWorkEvent {
+    fn matches_authoritative_replay(&self, other: &Self) -> bool {
+        self.event_id == other.event_id
+            && self.work_session_id == other.work_session_id
+            && self.assigned_target == other.assigned_target
+            && self.received_at == other.received_at
+            && self.share_fingerprint == other.share_fingerprint
+            && self.network_target_outcome == other.network_target_outcome
+    }
+}
+
 /// Observable treatment of one Accepted Work Event delivery.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -190,7 +190,7 @@ pub enum ActivityEstimateStatus {
 /// Public lifecycle payload sent through Server-Sent Events.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ProgressUpdate {
-    challenge_id: ProgressChallengeId,
+    challenge_id: ChallengeId,
     verified_progress: VerifiedProgress,
     work_requirement: CreditedWork,
     satisfied: bool,
@@ -214,8 +214,13 @@ pub struct ChallengeProgress {
     work_requirement: CreditedWork,
     verified_progress: VerifiedProgress,
     work_sessions: HashSet<WorkSessionId>,
-    acknowledgements: HashMap<AcceptedWorkEventId, AcceptedWorkAcknowledgement>,
+    event_records: HashMap<AcceptedWorkEventId, AcceptedEventRecord>,
     share_fingerprints: HashSet<ShareFingerprint>,
+}
+
+struct AcceptedEventRecord {
+    event: AcceptedWorkEvent,
+    acknowledgement: AcceptedWorkAcknowledgement,
 }
 
 impl ChallengeProgress {
@@ -225,7 +230,7 @@ impl ChallengeProgress {
             work_requirement,
             verified_progress: VerifiedProgress::zero(),
             work_sessions: HashSet::new(),
-            acknowledgements: HashMap::new(),
+            event_records: HashMap::new(),
             share_fingerprints: HashSet::new(),
         }
     }
@@ -243,23 +248,35 @@ impl ChallengeProgress {
         &mut self,
         event: AcceptedWorkEvent,
     ) -> Result<AcceptedWorkAcknowledgement, ProgressError> {
-        if let Some(acknowledgement) = self.acknowledgements.get(&event.event_id) {
-            return Ok(acknowledgement.clone());
+        self.accept_with_global_duplicate(event, false)
+    }
+
+    fn accept_with_global_duplicate(
+        &mut self,
+        event: AcceptedWorkEvent,
+        globally_duplicate_share: bool,
+    ) -> Result<AcceptedWorkAcknowledgement, ProgressError> {
+        if let Some(record) = self.event_records.get(&event.event_id) {
+            if !record.event.matches_authoritative_replay(&event) {
+                return Err(ProgressError::ConflictingEventReplay);
+            }
+            return Ok(record.acknowledgement.clone());
         }
         if !self.work_sessions.contains(&event.work_session_id) {
             return Err(ProgressError::UnknownWorkSession);
         }
 
-        let duplicate_share = self.share_fingerprints.contains(&event.share_fingerprint);
+        let duplicate_share =
+            globally_duplicate_share || self.share_fingerprints.contains(&event.share_fingerprint);
         let maybe_credited_work = if duplicate_share {
             None
         } else {
             let credited_work = event.assigned_target.credited_work();
             self.verified_progress = self.verified_progress.checked_add(credited_work)?;
-            self.share_fingerprints
-                .insert(event.share_fingerprint.clone());
             Some(credited_work)
         };
+        self.share_fingerprints
+            .insert(event.share_fingerprint.clone());
         let disposition = if duplicate_share {
             AcceptedWorkDisposition::DuplicateShare
         } else {
@@ -267,7 +284,8 @@ impl ChallengeProgress {
         };
 
         // Worker-reported work and lucky depth are deliberately non-authoritative.
-        let _maybe_worker_report = event.maybe_worker_report;
+        let recorded_event = event.clone();
+        drop(event.maybe_worker_report);
         let acknowledgement = AcceptedWorkAcknowledgement {
             event_id: event.event_id.clone(),
             work_session_id: event.work_session_id,
@@ -278,8 +296,13 @@ impl ChallengeProgress {
             verified_progress: self.verified_progress,
             work_requirement: self.work_requirement,
         };
-        self.acknowledgements
-            .insert(event.event_id, acknowledgement.clone());
+        self.event_records.insert(
+            event.event_id,
+            AcceptedEventRecord {
+                event: recorded_event,
+                acknowledgement: acknowledgement.clone(),
+            },
+        );
         Ok(acknowledgement)
     }
 
@@ -293,7 +316,7 @@ impl ChallengeProgress {
         self.verified_progress.meets(self.work_requirement)
     }
 
-    fn update(&self, challenge_id: ProgressChallengeId) -> ProgressUpdate {
+    fn update(&self, challenge_id: ChallengeId) -> ProgressUpdate {
         ProgressUpdate {
             challenge_id,
             verified_progress: self.verified_progress,
@@ -314,8 +337,16 @@ pub struct ProgressService {
 
 #[derive(Default)]
 struct ProgressServiceState {
-    challenges: HashMap<ProgressChallengeId, ChallengeChannel>,
-    work_sessions: HashMap<WorkSessionId, ProgressChallengeId>,
+    challenges: HashMap<ChallengeId, ChallengeChannel>,
+    work_sessions: HashMap<WorkSessionId, ChallengeId>,
+    events: HashMap<AcceptedWorkEventId, GlobalEventRecord>,
+    share_fingerprints: HashMap<ShareFingerprint, ChallengeId>,
+}
+
+struct GlobalEventRecord {
+    event: AcceptedWorkEvent,
+    challenge_id: ChallengeId,
+    acknowledgement: AcceptedWorkAcknowledgement,
 }
 
 struct ChallengeChannel {
@@ -327,7 +358,7 @@ impl ProgressService {
     /// Registers an immutable issued challenge before accepting Work Sessions.
     pub fn register_challenge(
         &self,
-        challenge_id: ProgressChallengeId,
+        challenge_id: ChallengeId,
         work_requirement: CreditedWork,
     ) -> Result<(), ProgressError> {
         let mut state = self.lock_state()?;
@@ -348,7 +379,7 @@ impl ProgressService {
     /// Binds one opaque Work Session to exactly one registered challenge.
     pub fn register_session(
         &self,
-        challenge_id: &ProgressChallengeId,
+        challenge_id: &ChallengeId,
         session_id: WorkSessionId,
     ) -> Result<(), ProgressError> {
         let mut state = self.lock_state()?;
@@ -374,27 +405,57 @@ impl ProgressService {
         let Some(challenge_id) = maybe_challenge_id else {
             return Err(ProgressError::UnknownWorkSession);
         };
-        let channel = state
-            .challenges
-            .get_mut(&challenge_id)
-            .ok_or(ProgressError::UnknownChallenge)?;
-        let progress_before = channel.progress.verified_progress();
-        let acknowledgement = channel.progress.accept(event)?;
-        if channel.progress.verified_progress() != progress_before
-            && channel.updates.receiver_count() > 0
-        {
-            channel
-                .updates
-                .send(channel.progress.update(challenge_id))
-                .map_err(|_| ProgressError::ProgressStreamUnavailable)?;
+        if let Some(record) = state.events.get(&event.event_id) {
+            if record.challenge_id != challenge_id
+                || !record.event.matches_authoritative_replay(&event)
+            {
+                return Err(ProgressError::ConflictingEventReplay);
+            }
+            return Ok(record.acknowledgement.clone());
         }
+
+        let event_id = event.event_id.clone();
+        let share_fingerprint = event.share_fingerprint.clone();
+        let recorded_event = event.clone();
+        let globally_duplicate_share = state.share_fingerprints.contains_key(&share_fingerprint);
+        let acknowledgement = {
+            let channel = state
+                .challenges
+                .get_mut(&challenge_id)
+                .ok_or(ProgressError::UnknownChallenge)?;
+            let progress_before = channel.progress.verified_progress();
+            let acknowledgement = channel
+                .progress
+                .accept_with_global_duplicate(event, globally_duplicate_share)?;
+            if channel.progress.verified_progress() != progress_before
+                && channel.updates.receiver_count() > 0
+            {
+                channel
+                    .updates
+                    .send(channel.progress.update(challenge_id.clone()))
+                    .map_err(|_| ProgressError::ProgressStreamUnavailable)?;
+            }
+            acknowledgement
+        };
+        state
+            .share_fingerprints
+            .entry(share_fingerprint)
+            .or_insert_with(|| challenge_id.clone());
+        state.events.insert(
+            event_id,
+            GlobalEventRecord {
+                event: recorded_event,
+                challenge_id,
+                acknowledgement: acknowledgement.clone(),
+            },
+        );
         Ok(acknowledgement)
     }
 
     /// Returns a current snapshot and receiver for subsequent updates.
     pub fn subscribe(
         &self,
-        challenge_id: &ProgressChallengeId,
+        challenge_id: &ChallengeId,
     ) -> Result<(ProgressUpdate, broadcast::Receiver<ProgressUpdate>), ProgressError> {
         let state = self.lock_state()?;
         let channel = state
@@ -424,6 +485,8 @@ pub enum ProgressError {
     DuplicateWorkSession,
     #[error("Accepted Work Event names an unknown Work Session")]
     UnknownWorkSession,
+    #[error("Accepted Work Event identity conflicts with its canonical delivery")]
+    ConflictingEventReplay,
     #[error("Work Challenge is already registered")]
     DuplicateChallenge,
     #[error("Work Challenge is not registered")]

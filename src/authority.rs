@@ -30,13 +30,13 @@ use uuid::Uuid;
 use crate::{
     authority_descriptor::{AuthorityDescriptor, JwksDocument},
     challenge::{
-        ActionPolicy, ActionReference, AllowedOrigins, ChallengeError, ClaimantKey,
+        ActionPolicy, ActionReference, AllowedOrigins, ChallengeError, ChallengeId, ClaimantKey,
         IssueChallengeCommand, RelyingServiceAudience, WorkChallengeDescriptor,
         WorkRequirementOverride, issue_challenge,
     },
     progress::{
-        AcceptedWorkAcknowledgement, AcceptedWorkEvent, ProgressChallengeId, ProgressError,
-        ProgressService, WorkSessionId,
+        AcceptedWorkAcknowledgement, AcceptedWorkEvent, ProgressError, ProgressService,
+        WorkSessionId,
     },
     service_auth::{ServiceClientId, ServiceSecret},
 };
@@ -295,7 +295,7 @@ impl SimulatedPoolAdapter {
     /// Binds one Work Session to its opaque challenge.
     pub fn register_session(
         &self,
-        challenge_id: &ProgressChallengeId,
+        challenge_id: &ChallengeId,
         session_id: WorkSessionId,
     ) -> Result<(), ProgressError> {
         self.progress.register_session(challenge_id, session_id)
@@ -359,7 +359,7 @@ async fn challenge_progress(
     State(state): State<AuthorityState>,
     Path(challenge_id): Path<String>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, axum::Error>>>, ApiError> {
-    let challenge_id = ProgressChallengeId::try_from(challenge_id)?;
+    let challenge_id = ChallengeId::try_from(challenge_id)?;
     let (snapshot, receiver) = state.config.progress.subscribe(&challenge_id)?;
     let initial = tokio_stream::once(
         Event::default()
@@ -410,8 +410,8 @@ async fn create_challenge(
         issued_at_unix_seconds,
     )?;
     state.config.progress.register_challenge(
-        ProgressChallengeId::try_from(descriptor.challenge_id().to_owned())?,
-        descriptor.required_work()?,
+        ChallengeId::try_from(descriptor.challenge_id().to_owned())?,
+        descriptor.required_work(),
     )?;
 
     Ok((StatusCode::CREATED, Json(descriptor)))

@@ -18,7 +18,7 @@ The Gate Authority calculates Credited Work only from the assigned target. Worke
 
 ## At-least-once acknowledgement
 
-The first event identity and share fingerprint insert advances the exact projection and returns a stable acknowledgement. Replaying the same event identity returns that same acknowledgement. A new event identity carrying an already-seen share fingerprint receives a stable `duplicate_share` acknowledgement with no Credited Work. Replaying that duplicate delivery returns the same duplicate acknowledgement.
+The first event identity and share fingerprint insert advances the exact projection and returns a stable acknowledgement. Event identities and share fingerprints are indexed Authority-wide, not only within one Work Challenge. Replaying the same authoritative event fields returns that same acknowledgement. Reusing an event identity with a different challenge, session, target, fingerprint, receipt time, or network-target outcome fails closed. A new event identity carrying an already-seen share fingerprint—within the same challenge or another one—receives a stable `duplicate_share` acknowledgement with no Credited Work. Replaying that duplicate delivery returns the same duplicate acknowledgement.
 
 Work Sessions are registered against exactly one opaque Work Challenge before events are accepted. Unknown or cross-challenge sessions fail closed.
 

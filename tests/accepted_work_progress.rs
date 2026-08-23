@@ -6,11 +6,10 @@ use bwg_core::{
         self, AuthorityPublicConfig, CLIENT_ID_HEADER, Config, DeploymentEnvironment,
         ServiceCredential,
     },
-    challenge::ActionPolicy,
+    challenge::{ActionPolicy, ChallengeId},
     progress::{
         AcceptedWorkEvent, AcceptedWorkEventId, AcceptedWorkEventInput, ChallengeProgress,
-        NetworkTargetOutcome, ProgressChallengeId, ReceiptTime, ShareFingerprint, WorkSessionId,
-        WorkerReport,
+        NetworkTargetOutcome, ReceiptTime, ShareFingerprint, WorkSessionId, WorkerReport,
     },
     work::CreditedWork,
 };
@@ -31,13 +30,10 @@ fn assigned_target_is_the_only_source_of_credited_work() -> Result<(), Box<dyn s
     let session_id = WorkSessionId::try_from("session_crypto_01".to_owned())?;
     let mut progress = ChallengeProgress::new(required_work);
     progress.register_session(session_id.clone())?;
-    let mut assigned_target = [0_u8; 32];
-    assigned_target[4] = 0xff;
-    assigned_target[5] = 0xff;
     let event = AcceptedWorkEvent::try_from(AcceptedWorkEventInput {
         event_id: AcceptedWorkEventId::try_from("event_accepted_01".to_owned())?,
         work_session_id: session_id,
-        assigned_target,
+        assigned_target: difficulty_one_target(),
         received_at: ReceiptTime::try_from(1_787_443_200_u64)?,
         share_fingerprint: ShareFingerprint::try_from("share_fingerprint_01".to_owned())?,
         network_target_outcome: NetworkTargetOutcome::BelowNetworkTarget,
@@ -148,7 +144,7 @@ async fn verified_progress_streams_separately_from_activity_estimate()
     let challenge_id = challenge["challenge_id"]
         .as_str()
         .ok_or("challenge response needs an identifier")?;
-    let progress_challenge_id = ProgressChallengeId::try_from(challenge_id.to_owned())?;
+    let progress_challenge_id = ChallengeId::try_from(challenge_id.to_owned())?;
     let session_id = WorkSessionId::try_from("session_stream_01".to_owned())?;
     adapter.register_session(&progress_challenge_id, session_id.clone())?;
     let mut stream = reqwest::get(format!(
@@ -188,18 +184,22 @@ fn difficulty_one_event(
     session_id: WorkSessionId,
     share_fingerprint: &str,
 ) -> Result<AcceptedWorkEvent, Box<dyn std::error::Error>> {
-    let mut assigned_target = [0_u8; 32];
-    assigned_target[4] = 0xff;
-    assigned_target[5] = 0xff;
     Ok(AcceptedWorkEvent::try_from(AcceptedWorkEventInput {
         event_id: AcceptedWorkEventId::try_from(event_id.to_owned())?,
         work_session_id: session_id,
-        assigned_target,
+        assigned_target: difficulty_one_target(),
         received_at: ReceiptTime::try_from(1_787_443_200_u64)?,
         share_fingerprint: ShareFingerprint::try_from(share_fingerprint.to_owned())?,
         network_target_outcome: NetworkTargetOutcome::BelowNetworkTarget,
         maybe_worker_report: None,
     })?)
+}
+
+fn difficulty_one_target() -> [u8; 32] {
+    let mut target = [0_u8; 32];
+    target[4] = 0xff;
+    target[5] = 0xff;
+    target
 }
 
 fn authority_config() -> Result<Config, Box<dyn std::error::Error>> {

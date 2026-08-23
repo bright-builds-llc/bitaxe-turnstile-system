@@ -118,10 +118,11 @@ fn network_target_outcome_does_not_change_assigned_target_credit() -> Result<(),
 }
 
 #[test]
-fn progress_service_rejects_duplicate_challenge_registration() -> Result<(), ProgressError> {
+fn progress_service_rejects_duplicate_challenge_registration()
+-> Result<(), Box<dyn std::error::Error>> {
     // Arrange
     let service = ProgressService::default();
-    let challenge_id = ProgressChallengeId::try_from("challenge_duplicate_01".to_owned())?;
+    let challenge_id = ChallengeId::try_from("challenge_duplicate01".to_owned())?;
     let work_requirement = CreditedWork::try_from("4295032833".to_owned())?;
     service.register_challenge(challenge_id.clone(), work_requirement)?;
 
@@ -135,16 +136,94 @@ fn progress_service_rejects_duplicate_challenge_registration() -> Result<(), Pro
 }
 
 #[test]
-fn progress_service_rejects_unknown_challenge_subscription() -> Result<(), ProgressError> {
+fn progress_service_rejects_unknown_challenge_subscription()
+-> Result<(), Box<dyn std::error::Error>> {
     // Arrange
     let service = ProgressService::default();
-    let challenge_id = ProgressChallengeId::try_from("challenge_unknown_01".to_owned())?;
+    let challenge_id = ChallengeId::try_from("challenge_unknown01".to_owned())?;
 
     // Act
     let result = service.subscribe(&challenge_id);
 
     // Assert
     assert!(matches!(result, Err(ProgressError::UnknownChallenge)));
+
+    Ok(())
+}
+
+#[test]
+fn authority_wide_share_fingerprint_does_not_credit_two_challenges()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Arrange
+    let (service, first_challenge, second_challenge, first_session, second_session) =
+        service_with_two_challenges()?;
+    let mut first_input = valid_event_input()?;
+    first_input.work_session_id = first_session;
+    let mut second_input = valid_event_input()?;
+    second_input.event_id = AcceptedWorkEventId::try_from("event_second01".to_owned())?;
+    second_input.work_session_id = second_session;
+
+    // Act
+    let first_ack = service.report(AcceptedWorkEvent::try_from(first_input)?)?;
+    let second_ack = service.report(AcceptedWorkEvent::try_from(second_input)?)?;
+    let (first_progress, _first_updates) = service.subscribe(&first_challenge)?;
+    let (second_progress, _second_updates) = service.subscribe(&second_challenge)?;
+
+    // Assert
+    assert_eq!(first_ack.disposition(), AcceptedWorkDisposition::Credited);
+    assert_eq!(
+        second_ack.disposition(),
+        AcceptedWorkDisposition::DuplicateShare
+    );
+    assert_eq!(
+        first_progress.verified_progress().to_decimal_string(),
+        "4295032833"
+    );
+    assert_eq!(second_progress.verified_progress().to_decimal_string(), "0");
+
+    Ok(())
+}
+
+#[test]
+fn conflicting_event_identity_reuse_across_challenges_fails_closed()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Arrange
+    let (service, _first_challenge, second_challenge, first_session, second_session) =
+        service_with_two_challenges()?;
+    let mut first_input = valid_event_input()?;
+    first_input.work_session_id = first_session;
+    let mut conflicting_input = valid_event_input()?;
+    conflicting_input.work_session_id = second_session;
+    service.report(AcceptedWorkEvent::try_from(first_input)?)?;
+
+    // Act
+    let result = service.report(AcceptedWorkEvent::try_from(conflicting_input)?);
+    let (second_progress, _updates) = service.subscribe(&second_challenge)?;
+
+    // Assert
+    assert_eq!(result, Err(ProgressError::ConflictingEventReplay));
+    assert_eq!(second_progress.verified_progress().to_decimal_string(), "0");
+
+    Ok(())
+}
+
+#[test]
+fn conflicting_event_identity_reuse_within_challenge_fails_closed() -> Result<(), ProgressError> {
+    // Arrange
+    let required_work = CreditedWork::try_from("4295032833".to_owned())?;
+    let mut progress = ChallengeProgress::new(required_work);
+    let first_input = valid_event_input()?;
+    let mut conflicting_input = valid_event_input()?;
+    conflicting_input.share_fingerprint =
+        ShareFingerprint::try_from("share_conflict01".to_owned())?;
+    progress.register_session(first_input.work_session_id.clone())?;
+    progress.accept(AcceptedWorkEvent::try_from(first_input)?)?;
+
+    // Act
+    let result = progress.accept(AcceptedWorkEvent::try_from(conflicting_input)?);
+
+    // Assert
+    assert_eq!(result, Err(ProgressError::ConflictingEventReplay));
 
     Ok(())
 }
@@ -162,4 +241,32 @@ fn valid_event_input() -> Result<AcceptedWorkEventInput, ProgressError> {
         network_target_outcome: NetworkTargetOutcome::BelowNetworkTarget,
         maybe_worker_report: None,
     })
+}
+
+type TwoChallengeService = (
+    ProgressService,
+    ChallengeId,
+    ChallengeId,
+    WorkSessionId,
+    WorkSessionId,
+);
+
+fn service_with_two_challenges() -> Result<TwoChallengeService, Box<dyn std::error::Error>> {
+    let service = ProgressService::default();
+    let first_challenge = ChallengeId::try_from("challenge_first01".to_owned())?;
+    let second_challenge = ChallengeId::try_from("challenge_second01".to_owned())?;
+    let first_session = WorkSessionId::try_from("session_first01".to_owned())?;
+    let second_session = WorkSessionId::try_from("session_second01".to_owned())?;
+    let work_requirement = CreditedWork::try_from("4398046511104".to_owned())?;
+    service.register_challenge(first_challenge.clone(), work_requirement)?;
+    service.register_challenge(second_challenge.clone(), work_requirement)?;
+    service.register_session(&first_challenge, first_session.clone())?;
+    service.register_session(&second_challenge, second_session.clone())?;
+    Ok((
+        service,
+        first_challenge,
+        second_challenge,
+        first_session,
+        second_session,
+    ))
 }

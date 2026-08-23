@@ -1,3 +1,5 @@
+use std::num::NonZeroU64;
+
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
 use thiserror::Error;
 
@@ -21,6 +23,14 @@ impl Uint256 {
         }
 
         Self(limbs)
+    }
+
+    fn from_u64(value: u64) -> Self {
+        Self([value, 0, 0, 0])
+    }
+
+    fn maybe_to_u64(self) -> Option<u64> {
+        (self.0[1..] == [0; 3]).then_some(self.0[0])
     }
 
     fn to_be_bytes(self) -> [u8; 32] {
@@ -221,6 +231,17 @@ impl TryFrom<&[u8]> for AssignedTarget {
 pub struct CreditedWork(Uint256);
 
 impl CreditedWork {
+    /// Creates exact non-zero work from a bounded integer without reparsing.
+    pub fn from_non_zero_u64(value: NonZeroU64) -> Self {
+        Self(Uint256::from_u64(value.get()))
+    }
+
+    /// Converts exact work to `u64` when it fits that bounded representation.
+    pub fn try_to_u64(self) -> Result<u64, WorkError> {
+        self.0
+            .maybe_to_u64()
+            .ok_or(WorkError::CreditedWorkOutsideU64)
+    }
     /// Parses the fixed-width, most-significant-byte-first binary contract.
     pub fn from_be_bytes(bytes: [u8; 32]) -> Result<Self, WorkError> {
         let value = Uint256::from_be_bytes(bytes);
@@ -349,4 +370,6 @@ pub enum WorkError {
     InvalidCreditedWorkDecimal,
     #[error("Credited Work exceeds the fixed-width unsigned range")]
     CreditedWorkOverflow,
+    #[error("Credited Work does not fit the bounded u64 representation")]
+    CreditedWorkOutsideU64,
 }
