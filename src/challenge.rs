@@ -3,15 +3,13 @@ use std::{collections::HashSet, num::NonZeroU64};
 use serde::{Deserialize, Serialize, Serializer};
 use thiserror::Error;
 
+use crate::web_url::{HttpsOrigin, HttpsUrl};
+
 const MAX_ACTION_REFERENCE_LENGTH: usize = 256;
 const MAX_CHALLENGE_ID_LENGTH: usize = 128;
 const MAX_CLAIMANT_KEY_LENGTH: usize = 4096;
 const LIGHT_EXPECTED_HASHES_VALUE: u64 = 1_u64 << 42;
 const STANDARD_EXPECTED_HASHES_VALUE: u64 = 1_u64 << 44;
-const LIGHT_EXPECTED_HASHES: NonZeroU64 =
-    NonZeroU64::new(LIGHT_EXPECTED_HASHES_VALUE).expect("the Light preset is non-zero");
-const STANDARD_EXPECTED_HASHES: NonZeroU64 =
-    NonZeroU64::new(STANDARD_EXPECTED_HASHES_VALUE).expect("the Standard preset is non-zero");
 const STANDARD_OVERRIDE_MINIMUM: u64 = 1_u64 << 43;
 const STANDARD_OVERRIDE_MAXIMUM: u64 = 1_u64 << 45;
 const LIGHT_TTL_SECONDS: u64 = 15 * 60;
@@ -26,6 +24,34 @@ pub enum ActionPolicy {
     AccountCreationStandardV1,
 }
 
+#[derive(Clone, Copy)]
+struct ActionPolicySpec {
+    policy: ActionPolicy,
+    id: &'static str,
+    default_expected_hashes: NonZeroU64,
+    maybe_override_bounds: Option<(u64, u64)>,
+    challenge_ttl_seconds: u64,
+}
+
+const ACTION_POLICY_SPECS: [ActionPolicySpec; 2] = [
+    ActionPolicySpec {
+        policy: ActionPolicy::AccountCreationLightV1,
+        id: ActionPolicy::ACCOUNT_CREATION_LIGHT_V1,
+        default_expected_hashes: NonZeroU64::new(LIGHT_EXPECTED_HASHES_VALUE)
+            .expect("the Light preset is non-zero"),
+        maybe_override_bounds: None,
+        challenge_ttl_seconds: LIGHT_TTL_SECONDS,
+    },
+    ActionPolicySpec {
+        policy: ActionPolicy::AccountCreationStandardV1,
+        id: ActionPolicy::ACCOUNT_CREATION_STANDARD_V1,
+        default_expected_hashes: NonZeroU64::new(STANDARD_EXPECTED_HASHES_VALUE)
+            .expect("the Standard preset is non-zero"),
+        maybe_override_bounds: Some((STANDARD_OVERRIDE_MINIMUM, STANDARD_OVERRIDE_MAXIMUM)),
+        challenge_ttl_seconds: LIGHT_TTL_SECONDS,
+    },
+];
+
 impl ActionPolicy {
     /// Stable identifier for the immutable Light policy revision.
     pub const ACCOUNT_CREATION_LIGHT_V1: &'static str = "account-creation.light.v1";
@@ -39,86 +65,72 @@ impl ActionPolicy {
 
     /// Parses the stable identifier of a supported policy revision.
     pub fn parse(value: &str) -> Result<Self, ChallengeError> {
-        match value {
-            Self::ACCOUNT_CREATION_LIGHT_V1 => Ok(Self::AccountCreationLightV1),
-            Self::ACCOUNT_CREATION_STANDARD_V1 => Ok(Self::AccountCreationStandardV1),
-            _ => Err(ChallengeError::UnknownActionPolicy),
-        }
+        ACTION_POLICY_SPECS
+            .iter()
+            .find(|spec| spec.id == value)
+            .map(|spec| spec.policy)
+            .ok_or(ChallengeError::UnknownActionPolicy)
     }
 
     /// Returns the stable revision identifier.
     pub fn id(self) -> &'static str {
-        match self {
-            Self::AccountCreationLightV1 => Self::ACCOUNT_CREATION_LIGHT_V1,
-            Self::AccountCreationStandardV1 => Self::ACCOUNT_CREATION_STANDARD_V1,
-        }
+        self.specification().id
     }
 
     fn work_requirement(
         self,
         maybe_override: Option<&WorkRequirementOverride>,
     ) -> Result<WorkRequirement, ChallengeError> {
-        match (self, maybe_override) {
-            (Self::AccountCreationLightV1, None) => Ok(WorkRequirement {
-                expected_hashes: ExpectedHashes::from(LIGHT_EXPECTED_HASHES),
-            }),
-            (Self::AccountCreationLightV1, Some(_)) => Err(ChallengeError::OverrideNotPermitted),
-            (Self::AccountCreationStandardV1, None) => Ok(WorkRequirement {
-                expected_hashes: ExpectedHashes::from(STANDARD_EXPECTED_HASHES),
-            }),
-            (Self::AccountCreationStandardV1, Some(work_override)) => {
-                let expected_hashes = work_override.expected_hashes.as_u64()?;
-                if !(STANDARD_OVERRIDE_MINIMUM..=STANDARD_OVERRIDE_MAXIMUM)
-                    .contains(&expected_hashes)
-                {
-                    return Err(ChallengeError::OverrideOutsideBounds);
-                }
-                Ok(WorkRequirement {
-                    expected_hashes: work_override.expected_hashes.clone(),
-                })
-            }
+        let specification = self.specification();
+        let Some(work_override) = maybe_override else {
+            return Ok(WorkRequirement {
+                expected_hashes: ExpectedHashes::from(specification.default_expected_hashes),
+            });
+        };
+        let Some((minimum, maximum)) = specification.maybe_override_bounds else {
+            return Err(ChallengeError::OverrideNotPermitted);
+        };
+        let expected_hashes = work_override.expected_hashes.as_u64()?;
+        if !(minimum..=maximum).contains(&expected_hashes) {
+            return Err(ChallengeError::OverrideOutsideBounds);
         }
+        Ok(WorkRequirement {
+            expected_hashes: work_override.expected_hashes.clone(),
+        })
     }
 
     fn accepts(self, work_requirement: &WorkRequirement) -> bool {
-        match self {
-            Self::AccountCreationLightV1 => {
-                work_requirement.expected_hashes == ExpectedHashes::from(LIGHT_EXPECTED_HASHES)
-            }
-            Self::AccountCreationStandardV1 => {
-                work_requirement
-                    .expected_hashes
-                    .as_u64()
-                    .is_ok_and(|value| {
-                        (STANDARD_OVERRIDE_MINIMUM..=STANDARD_OVERRIDE_MAXIMUM).contains(&value)
-                    })
-            }
+        let specification = self.specification();
+        let Ok(expected_hashes) = work_requirement.expected_hashes.as_u64() else {
+            return false;
+        };
+        if expected_hashes == specification.default_expected_hashes.get() {
+            return true;
         }
+        specification
+            .maybe_override_bounds
+            .is_some_and(|(minimum, maximum)| (minimum..=maximum).contains(&expected_hashes))
     }
 
     /// Returns the exact default Work Requirement for this revision.
     pub fn default_expected_hashes(self) -> u64 {
-        match self {
-            Self::AccountCreationLightV1 => LIGHT_EXPECTED_HASHES_VALUE,
-            Self::AccountCreationStandardV1 => STANDARD_EXPECTED_HASHES_VALUE,
-        }
+        self.specification().default_expected_hashes.get()
     }
 
     /// Returns the inclusive exact-work override bounds when overrides are permitted.
-    pub fn expected_hash_override_bounds(self) -> Option<(u64, u64)> {
-        match self {
-            Self::AccountCreationLightV1 => None,
-            Self::AccountCreationStandardV1 => {
-                Some((STANDARD_OVERRIDE_MINIMUM, STANDARD_OVERRIDE_MAXIMUM))
-            }
-        }
+    pub fn maybe_expected_hash_override_bounds(self) -> Option<(u64, u64)> {
+        self.specification().maybe_override_bounds
     }
 
     /// Returns the immutable challenge lifetime for this revision.
     pub fn challenge_ttl_seconds(self) -> u64 {
+        self.specification().challenge_ttl_seconds
+    }
+
+    fn specification(self) -> &'static ActionPolicySpec {
         match self {
-            Self::AccountCreationLightV1 => LIGHT_TTL_SECONDS,
-            Self::AccountCreationStandardV1 => LIGHT_TTL_SECONDS,
+            Self::AccountCreationLightV1 => &ACTION_POLICY_SPECS[0],
+            Self::AccountCreationStandardV1 => &ACTION_POLICY_SPECS[1],
         }
     }
 }
@@ -165,36 +177,37 @@ impl TryFrom<String> for ClaimantKey {
 /// The configured Relying Service audience bound into a Work Challenge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
-pub struct RelyingServiceAudience(String);
+pub struct RelyingServiceAudience(HttpsUrl);
 
 impl TryFrom<String> for RelyingServiceAudience {
     type Error = ChallengeError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        if !is_https_url(&value) {
-            return Err(ChallengeError::InvalidRelyingServiceAudience);
-        }
-        Ok(Self(value))
+        HttpsUrl::try_from(value)
+            .map(Self)
+            .map_err(|_| ChallengeError::InvalidRelyingServiceAudience)
     }
 }
 
 /// Browser origins permitted to present one issued Work Challenge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
-pub struct AllowedOrigins(Vec<String>);
+pub struct AllowedOrigins(Vec<HttpsOrigin>);
 
 impl TryFrom<Vec<String>> for AllowedOrigins {
     type Error = ChallengeError;
 
     fn try_from(value: Vec<String>) -> Result<Self, Self::Error> {
-        let unique = value.iter().collect::<HashSet<_>>();
-        if value.is_empty()
-            || unique.len() != value.len()
-            || value.iter().any(|origin| !is_https_origin(origin))
-        {
+        let origins = value
+            .into_iter()
+            .map(HttpsOrigin::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| ChallengeError::InvalidAllowedOrigins)?;
+        let unique = origins.iter().collect::<HashSet<_>>();
+        if origins.is_empty() || unique.len() != origins.len() {
             return Err(ChallengeError::InvalidAllowedOrigins);
         }
-        Ok(Self(value))
+        Ok(Self(origins))
     }
 }
 
@@ -458,18 +471,4 @@ fn validate_bounded_value(value: &str, maximum_length: usize) -> Result<(), ()> 
     }
 
     Ok(())
-}
-
-fn is_https_url(value: &str) -> bool {
-    value.starts_with("https://") && value.len() > "https://".len()
-}
-
-fn is_https_origin(value: &str) -> bool {
-    let Some(authority) = value.strip_prefix("https://") else {
-        return false;
-    };
-    !authority.is_empty()
-        && !authority.contains('/')
-        && !authority.contains('?')
-        && !authority.contains('#')
 }

@@ -36,6 +36,64 @@ fn unknown_action_policy_is_rejected() {
 }
 
 #[test]
+fn standard_policy_owns_default_work() -> Result<(), Box<dyn std::error::Error>> {
+    // Arrange
+    let mut command = valid_command()?;
+    command.action_policy = ActionPolicy::AccountCreationStandardV1;
+
+    // Act
+    let descriptor = issue_challenge(command, "challenge_123abc".to_owned(), 1_000)?;
+    let serialized = serde_json::to_value(descriptor)?;
+
+    // Assert
+    assert_eq!(serialized["action_policy"], "account-creation.standard.v1");
+    assert_eq!(
+        serialized["work_requirement"]["expected_hashes"],
+        "17592186044416"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn standard_policy_accepts_inclusive_override_boundaries() -> Result<(), Box<dyn std::error::Error>>
+{
+    // Arrange
+    let overrides = ["8796093022208", "35184372088832"];
+
+    // Act
+    let results = overrides.map(|value| {
+        let mut command = valid_command()?;
+        command.action_policy = ActionPolicy::AccountCreationStandardV1;
+        command.maybe_work_requirement_override =
+            Some(WorkRequirementOverride::expected_hashes(value.to_owned())?);
+        issue_challenge(command, "challenge_123abc".to_owned(), 1_000)
+    });
+
+    // Assert
+    assert!(results.into_iter().all(|result| result.is_ok()));
+
+    Ok(())
+}
+
+#[test]
+fn light_policy_rejects_work_override() -> Result<(), Box<dyn std::error::Error>> {
+    // Arrange
+    let mut command = valid_command()?;
+    command.maybe_work_requirement_override = Some(WorkRequirementOverride::expected_hashes(
+        "8796093022208".to_owned(),
+    )?);
+
+    // Act
+    let result = issue_challenge(command, "challenge_123abc".to_owned(), 1_000);
+
+    // Assert
+    assert_eq!(result, Err(ChallengeError::OverrideNotPermitted));
+
+    Ok(())
+}
+
+#[test]
 fn action_reference_enforces_bounded_non_empty_input() {
     // Arrange
     let maximum = "a".repeat(MAX_ACTION_REFERENCE_LENGTH);

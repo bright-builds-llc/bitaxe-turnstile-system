@@ -1,3 +1,5 @@
+use std::{collections::HashSet, sync::Arc};
+
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use ring::{digest, signature};
 use serde::{Deserialize, Serialize};
@@ -43,6 +45,18 @@ impl AuthorityJwk {
     pub fn kid(&self) -> &str {
         &self.kid
     }
+
+    fn to_wire(&self) -> AuthorityJwkWire {
+        AuthorityJwkWire {
+            kid: self.kid.to_owned(),
+            kty: "OKP".to_owned(),
+            crv: "Ed25519".to_owned(),
+            x: URL_SAFE_NO_PAD.encode(self.public_key),
+            alg: GATE_PASS_JWS_ALGORITHM.to_owned(),
+            public_key_use: "sig".to_owned(),
+            key_ops: vec!["verify".to_owned()],
+        }
+    }
 }
 
 impl TryFrom<AuthorityJwkWire> for AuthorityJwk {
@@ -67,6 +81,43 @@ impl TryFrom<AuthorityJwkWire> for AuthorityJwk {
             kid: wire.kid,
             public_key,
         })
+    }
+}
+
+/// A validated non-empty set of Authority keys with unique identifiers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthorityKeySet(Arc<[AuthorityJwk]>);
+
+impl AuthorityKeySet {
+    /// Returns the validated keys.
+    pub fn keys(&self) -> &[AuthorityJwk] {
+        &self.0
+    }
+
+    /// Returns the trusted key identifiers.
+    pub fn key_ids(&self) -> Vec<&str> {
+        self.0.iter().map(AuthorityJwk::kid).collect()
+    }
+
+    /// Returns the canonical public JWKS wire values.
+    pub fn to_wires(&self) -> Vec<AuthorityJwkWire> {
+        self.0.iter().map(AuthorityJwk::to_wire).collect()
+    }
+}
+
+impl TryFrom<Vec<AuthorityJwkWire>> for AuthorityKeySet {
+    type Error = CryptoProfileError;
+
+    fn try_from(wires: Vec<AuthorityJwkWire>) -> Result<Self, Self::Error> {
+        let keys = wires
+            .into_iter()
+            .map(AuthorityJwk::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        let unique_ids = keys.iter().map(AuthorityJwk::kid).collect::<HashSet<_>>();
+        if keys.is_empty() || unique_ids.len() != keys.len() {
+            return Err(CryptoProfileError::InvalidAuthorityKeySet);
+        }
+        Ok(Self(keys.into()))
     }
 }
 
@@ -403,6 +454,8 @@ pub enum CryptoProfileError {
     AmbiguousKeyId,
     #[error("Authority JWK does not match the BWG profile")]
     InvalidAuthorityKey,
+    #[error("Authority key set must be non-empty with unique identifiers")]
+    InvalidAuthorityKeySet,
     #[error("Claimant JWK does not match the BWG profile")]
     InvalidClaimantKey,
     #[error("JWS signature is invalid")]

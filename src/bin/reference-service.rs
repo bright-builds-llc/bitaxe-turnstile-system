@@ -27,7 +27,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             service_client_id,
             service_credential,
             trusted_authority,
-        )),
+        )?),
     )
     .await?;
 

@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use tokio::net::TcpListener;
 
 const CLIENT_ID: &str = "reference-service-production";
-const SERVICE_SECRET: &str = "production-secret-7zZszCLVD82lfejKM4g4nXGQ";
+const SERVICE_SECRET: &str = "production-secret-7zZszCLVD82lfejKM4g4nXGQ9";
 
 #[tokio::test]
 async fn scoped_backend_credential_issues_browser_safe_challenge()
@@ -103,8 +103,8 @@ fn credential_environment_must_match_authority() -> Result<(), Box<dyn std::erro
 async fn credential_rotation_accepts_overlap_then_retires_old_secret()
 -> Result<(), Box<dyn std::error::Error>> {
     // Arrange
-    let old_secret = "old-production-secret-B7sT3XUqv9Jw5Ez2";
-    let new_secret = "new-production-secret-N8rK4YVpz6Mx2Fa3";
+    let old_secret = "old-production-secret-B7sT3XUqv9Jw5Ez2Kc8mP0";
+    let new_secret = "new-production-secret-N8rK4YVpz6Mx2Fa3Hd7qW1";
     let policies = vec![ActionPolicy::AccountCreationLightV1];
     let overlap_url = spawn_http(authority::router(Config::new(
         DeploymentEnvironment::Production,
@@ -172,6 +172,50 @@ async fn credential_policy_scope_fails_closed() -> Result<(), Box<dyn std::error
     assert_eq!(
         response.json::<Value>().await?,
         json!({ "error": "policy_not_permitted" })
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn repeated_authentication_failures_are_throttled() -> Result<(), Box<dyn std::error::Error>>
+{
+    // Arrange
+    let authority_url = spawn_http(authority::router(authority_config()?)).await?;
+
+    // Act
+    let mut failed_statuses = Vec::new();
+    for attempt in 0..5 {
+        let response = post_challenge(
+            &authority_url,
+            &format!("wrong-secret-attempt-{attempt}"),
+            "account-creation.light.v1",
+            None,
+        )
+        .await?;
+        failed_statuses.push(response.status());
+    }
+    let throttled = post_challenge(
+        &authority_url,
+        SERVICE_SECRET,
+        "account-creation.light.v1",
+        None,
+    )
+    .await?;
+
+    // Assert
+    assert!(
+        failed_statuses
+            .into_iter()
+            .all(|status| status == reqwest::StatusCode::UNAUTHORIZED)
+    );
+    assert_eq!(throttled.status(), reqwest::StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        throttled
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok()),
+        Some("60")
     );
 
     Ok(())
@@ -389,7 +433,7 @@ async fn discovery_does_not_grant_relying_service_trust() -> Result<(), Box<dyn 
         CLIENT_ID,
         SERVICE_SECRET,
         trusted_authority,
-    );
+    )?;
 
     // Act
     let discovered = serde_json::from_value::<AuthorityDescriptor>(descriptor)?;

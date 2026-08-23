@@ -1,5 +1,3 @@
-use std::{collections::HashSet, sync::Arc};
-
 use axum::{
     Json, Router,
     extract::State,
@@ -14,75 +12,71 @@ use uuid::Uuid;
 use crate::{
     authority::{CLIENT_ID_HEADER, CreateChallengeRequest},
     challenge::{ActionPolicy, WorkChallengeDescriptor},
-    crypto_profile::{AuthorityJwk, AuthorityJwkWire},
+    crypto_profile::{AuthorityJwkWire, AuthorityKeySet},
+    service_auth::{ServiceClientId, ServiceSecret},
+    web_url::{AuthorityEndpointUrl, HttpsUrl},
 };
+
+#[cfg(test)]
+mod tests;
 
 /// Authority identity and keys trusted by operator configuration, never discovery alone.
 #[derive(Clone)]
 pub struct TrustedAuthority {
-    issuer: Arc<str>,
-    keys: Arc<[AuthorityJwk]>,
+    issuer: HttpsUrl,
+    keys: AuthorityKeySet,
 }
 
 impl TrustedAuthority {
     /// Parses an explicitly configured issuer and trusted verification-key set.
     pub fn new(
-        issuer: impl Into<Arc<str>>,
+        issuer: impl Into<String>,
         key_wires: Vec<AuthorityJwkWire>,
     ) -> Result<Self, ReferenceConfigError> {
-        let issuer = issuer.into();
-        if !issuer.starts_with("https://") {
-            return Err(ReferenceConfigError::InvalidTrustedIssuer);
-        }
-        let keys = key_wires
-            .into_iter()
-            .map(AuthorityJwk::try_from)
-            .collect::<Result<Vec<_>, _>>()
+        let issuer = HttpsUrl::try_from(issuer.into())
+            .map_err(|_| ReferenceConfigError::InvalidTrustedIssuer)?;
+        let keys = AuthorityKeySet::try_from(key_wires)
             .map_err(|_| ReferenceConfigError::InvalidTrustedKeys)?;
-        let unique_ids = keys.iter().map(AuthorityJwk::kid).collect::<HashSet<_>>();
-        if keys.is_empty() || unique_ids.len() != keys.len() {
-            return Err(ReferenceConfigError::InvalidTrustedKeys);
-        }
-        Ok(Self {
-            issuer,
-            keys: keys.into(),
-        })
+        Ok(Self { issuer, keys })
     }
 
     /// Returns the explicitly trusted issuer.
     pub fn issuer(&self) -> &str {
-        &self.issuer
+        self.issuer.as_str()
     }
 
     /// Returns the explicitly trusted key identifiers.
     pub fn key_ids(&self) -> Vec<&str> {
-        self.keys.iter().map(AuthorityJwk::kid).collect()
+        self.keys.key_ids()
     }
 }
 
 /// Server-only configuration for the reference account-creation integration.
 #[derive(Clone)]
 pub struct Config {
-    authority_base_url: Arc<str>,
-    service_client_id: Arc<str>,
-    service_credential: Arc<str>,
+    authority_base_url: AuthorityEndpointUrl,
+    service_client_id: ServiceClientId,
+    service_credential: ServiceSecret,
     trusted_authority: TrustedAuthority,
 }
 
 impl Config {
     /// Configures backend authentication and an independently trusted Authority issuer.
     pub fn new(
-        authority_base_url: impl Into<Arc<str>>,
-        service_client_id: impl Into<Arc<str>>,
-        service_credential: impl Into<Arc<str>>,
+        authority_base_url: impl Into<String>,
+        service_client_id: impl Into<String>,
+        service_credential: impl Into<String>,
         trusted_authority: TrustedAuthority,
-    ) -> Self {
-        Self {
-            authority_base_url: authority_base_url.into(),
-            service_client_id: service_client_id.into(),
-            service_credential: service_credential.into(),
+    ) -> Result<Self, ReferenceConfigError> {
+        Ok(Self {
+            authority_base_url: AuthorityEndpointUrl::try_from(authority_base_url.into())
+                .map_err(|_| ReferenceConfigError::InvalidAuthorityEndpoint)?,
+            service_client_id: ServiceClientId::try_from(service_client_id.into())
+                .map_err(|_| ReferenceConfigError::InvalidClientId)?,
+            service_credential: ServiceSecret::try_from(service_credential.into())
+                .map_err(|_| ReferenceConfigError::InvalidServiceSecret)?,
             trusted_authority,
-        }
+        })
     }
 
     /// Returns the issuer trusted by operator configuration, not discovery.
@@ -126,7 +120,7 @@ async fn create_account_challenge(
     Json(request): Json<BrowserChallengeRequest>,
 ) -> Result<(StatusCode, Json<WorkChallengeDescriptor>), ReferenceServiceError> {
     let authority_request = CreateChallengeRequest {
-        action_policy: ActionPolicy::ACCOUNT_CREATION_LIGHT_V1.to_owned(),
+        action_policy: ActionPolicy::ACCOUNT_CREATION_STANDARD_V1.to_owned(),
         action_reference: format!("action_{}", Uuid::new_v4().simple()),
         claimant_key: request.claimant_key,
         maybe_overrides: None,
@@ -135,10 +129,10 @@ async fn create_account_challenge(
         .http_client
         .post(format!(
             "{}/v0/challenges",
-            state.config.authority_base_url.trim_end_matches('/')
+            state.config.authority_base_url.as_str()
         ))
-        .header(CLIENT_ID_HEADER, state.config.service_client_id.as_ref())
-        .bearer_auth(state.config.service_credential.as_ref())
+        .header(CLIENT_ID_HEADER, state.config.service_client_id.as_str())
+        .bearer_auth(state.config.service_credential.expose_secret())
         .json(&authority_request)
         .send()
         .await
@@ -195,6 +189,12 @@ struct ErrorResponse {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ReferenceConfigError {
+    #[error("Authority endpoint must use HTTPS or loopback HTTP")]
+    InvalidAuthorityEndpoint,
+    #[error("service client identifier is invalid")]
+    InvalidClientId,
+    #[error("service credential is not a high-entropy base64url token")]
+    InvalidServiceSecret,
     #[error("trusted Authority issuer must use HTTPS")]
     InvalidTrustedIssuer,
     #[error("trusted Authority keys must be valid, non-empty, and unique")]

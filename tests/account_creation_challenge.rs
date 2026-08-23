@@ -13,12 +13,12 @@ use bwg_core::{
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 
-const SERVICE_CREDENTIAL: &str = "test-reference-service-credential";
+const SERVICE_CREDENTIAL: &str = "test-secret-P9vK2mQ7xR4tY8uN3cF6wL1zA5dH0sJ";
 const SERVICE_CLIENT_ID: &str = "reference-service-test";
 const TRUSTED_AUTHORITY_ISSUER: &str = "https://authority.example";
 
 #[tokio::test]
-async fn reference_backend_issues_a_browser_safe_light_challenge()
+async fn reference_backend_issues_a_browser_safe_standard_challenge()
 -> Result<(), Box<dyn std::error::Error>> {
     // Arrange
     let authority_url = spawn_http(authority::router(authority_config()?)).await?;
@@ -27,7 +27,7 @@ async fn reference_backend_issues_a_browser_safe_light_challenge()
         SERVICE_CLIENT_ID,
         SERVICE_CREDENTIAL,
         trusted_authority()?,
-    )))
+    )?))
     .await?;
     let client = reqwest::Client::new();
     let request_started_at = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
@@ -64,7 +64,7 @@ async fn reference_backend_issues_a_browser_safe_light_challenge()
     ]);
 
     assert_eq!(actual_fields, expected_fields);
-    assert_eq!(descriptor["action_policy"], "account-creation.light.v1");
+    assert_eq!(descriptor["action_policy"], "account-creation.standard.v1");
     assert!(
         descriptor["action_reference"]
             .as_str()
@@ -82,7 +82,7 @@ async fn reference_backend_issues_a_browser_safe_light_challenge()
     assert_eq!(descriptor["protocol_version"], "BWG/0.1");
     assert_eq!(
         descriptor["work_requirement"]["expected_hashes"],
-        "4398046511104"
+        "17592186044416"
     );
     assert!(descriptor["challenge_id"].as_str().is_some());
     let expires_at = descriptor["expires_at_unix_seconds"]
@@ -105,7 +105,7 @@ async fn browser_cannot_supply_authoritative_challenge_terms()
         SERVICE_CLIENT_ID,
         SERVICE_CREDENTIAL,
         trusted_authority()?,
-    )))
+    )?))
     .await?;
 
     // Act
@@ -175,7 +175,7 @@ fn authority_config() -> Result<authority::Config, Box<dyn std::error::Error>> {
         DeploymentEnvironment::Development,
         "https://relying.example".to_owned(),
         vec!["https://app.relying.example".to_owned()],
-        vec![ActionPolicy::AccountCreationLightV1],
+        vec![ActionPolicy::AccountCreationStandardV1],
     )?;
     let public = AuthorityPublicConfig::new(
         TRUSTED_AUTHORITY_ISSUER,

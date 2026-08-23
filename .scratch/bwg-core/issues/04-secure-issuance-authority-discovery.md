@@ -16,8 +16,10 @@
 
 ## Answer
 
-Challenge creation now requires a backend-only client identifier plus a 32–128 character high-entropy secret. The Authority stores only an HMAC verifier and binds every credential to one deployment environment, Relying Service audience, allowed browser origins, and Action Policy scope. Multiple verifiers for one client support a brief rotation overlap; removing the old verifier retires it without exposing either secret to challenge or discovery responses.
+Challenge creation now requires a backend-only client identifier plus a diverse 43–128 character base64url secret, with a CSPRNG generator for new 256-bit credentials. The Authority stores only an HMAC verifier, throttles repeated failures, and binds every credential to one deployment environment, Relying Service audience, allowed browser origins, and Action Policy scope. Multiple verifiers for one client support a brief rotation overlap; removing the old verifier retires it without exposing either secret to challenge or discovery responses.
 
 Added immutable Light and Standard Action Policy revisions. Standard permits only an exact expected-hashes override inside its published inclusive bounds; Light permits none, unknown override fields are rejected, and each issued descriptor pins its audience, origins, policy revision, exact Work Requirement, and expiry independently of later requests.
+
+The reference account-creation backend now selects the Standard revision and its `2^44` default, matching the accepted product policy.
 
 The public Authority Descriptor and JWKS endpoints publish issuer, versioned endpoints, verification keys, algorithms, transports, capabilities, limits, policy defaults and bounds, source/build provenance, operator policy, privacy, terms, and MIT licensing. Relying Service configuration separately requires the trusted issuer and exact Authority keys; discovery cannot add trust. Unknown listed critical capabilities or policy fields fail closed. `bun run verify` passes.

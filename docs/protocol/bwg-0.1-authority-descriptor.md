@@ -25,4 +25,6 @@ A Relying Service separately configures the exact issuer and Authority verificat
 
 ## Hosted backend credentials
 
-Challenge creation also requires a backend-only client identifier and high-entropy secret. The Authority stores only a verifier, binds each credential to one deployment environment, Relying Service audience, allowed browser origins, permitted operation, and Action Policy revisions, and supports brief old/new-secret overlap. Neither credential value is included in a Work Challenge, descriptor, JWKS response, or browser request.
+Challenge creation also requires a backend-only client identifier and a CSPRNG-generated 256-bit secret. The Authority stores only a verifier, throttles repeated failures with an explicit retry window, binds each credential to one deployment environment, Relying Service audience, allowed browser origins, permitted operation, and Action Policy revisions, and supports brief old/new-secret overlap. Neither credential value is included in a Work Challenge, descriptor, JWKS response, or browser request.
+
+The reference process applies the authentication throttle per configured client ID and returns `429` with `Retry-After`. Multi-replica deployments must add a shared edge or distributed limiter so attempts cannot be multiplied across replicas.

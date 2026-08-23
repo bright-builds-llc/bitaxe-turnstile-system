@@ -1,69 +1,57 @@
-use std::{collections::HashSet, sync::Arc};
-
 use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
 use crate::{
     challenge::ActionPolicy,
-    crypto_profile::{AuthorityJwk, AuthorityJwkWire, DPOP_JWS_ALGORITHM, GATE_PASS_JWS_ALGORITHM},
+    crypto_profile::{
+        AuthorityJwkWire, AuthorityKeySet, DPOP_JWS_ALGORITHM, GATE_PASS_JWS_ALGORITHM,
+    },
+    web_url::HttpsUrl,
 };
 
 const PROTOCOL_VERSION: &str = "BWG/0.1";
 const SOURCE_REPOSITORY: &str = "https://github.com/bright-builds-llc/bitaxe-turnstile-system";
 
+#[cfg(test)]
+mod tests;
+
 /// Validated public operator metadata used to publish Authority discovery.
 #[derive(Clone)]
 pub struct AuthorityPublicConfig {
-    issuer: Arc<str>,
-    public_base_url: Arc<str>,
-    authority_keys: Arc<[AuthorityJwkWire]>,
-    operator_policy_url: Arc<str>,
-    privacy_url: Arc<str>,
-    terms_url: Arc<str>,
+    issuer: HttpsUrl,
+    public_base_url: HttpsUrl,
+    authority_keys: AuthorityKeySet,
+    operator_policy_url: HttpsUrl,
+    privacy_url: HttpsUrl,
+    terms_url: HttpsUrl,
 }
 
 impl AuthorityPublicConfig {
     /// Validates the public URLs and Authority verification keys used by discovery.
     pub fn new(
-        issuer: impl Into<Arc<str>>,
-        public_base_url: impl Into<Arc<str>>,
+        issuer: impl Into<String>,
+        public_base_url: impl Into<String>,
         authority_keys: Vec<AuthorityJwkWire>,
-        operator_policy_url: impl Into<Arc<str>>,
-        privacy_url: impl Into<Arc<str>>,
-        terms_url: impl Into<Arc<str>>,
+        operator_policy_url: impl Into<String>,
+        privacy_url: impl Into<String>,
+        terms_url: impl Into<String>,
     ) -> Result<Self, AuthorityDescriptorError> {
         let config = Self {
-            issuer: issuer.into(),
-            public_base_url: public_base_url.into(),
-            authority_keys: authority_keys.into(),
-            operator_policy_url: operator_policy_url.into(),
-            privacy_url: privacy_url.into(),
-            terms_url: terms_url.into(),
+            issuer: parse_https_config_url(issuer.into())?,
+            public_base_url: parse_https_config_url(public_base_url.into())?,
+            authority_keys: AuthorityKeySet::try_from(authority_keys)
+                .map_err(|_| AuthorityDescriptorError::InvalidAuthorityKeys)?,
+            operator_policy_url: parse_https_config_url(operator_policy_url.into())?,
+            privacy_url: parse_https_config_url(privacy_url.into())?,
+            terms_url: parse_https_config_url(terms_url.into())?,
         };
-        config.validate()?;
         Ok(config)
     }
 
-    fn validate(&self) -> Result<(), AuthorityDescriptorError> {
-        if [
-            self.issuer.as_ref(),
-            self.public_base_url.as_ref(),
-            self.operator_policy_url.as_ref(),
-            self.privacy_url.as_ref(),
-            self.terms_url.as_ref(),
-        ]
-        .into_iter()
-        .any(|url| !is_https_url(url))
-        {
-            return Err(AuthorityDescriptorError::InvalidPublicUrl);
-        }
-        validate_authority_keys(&self.authority_keys)
-    }
-
     pub(crate) fn descriptor(&self) -> AuthorityDescriptor {
-        let base_url = self.public_base_url.trim_end_matches('/');
+        let base_url = self.public_base_url.as_str().trim_end_matches('/');
         AuthorityDescriptor(AuthorityDescriptorFields {
-            issuer: self.issuer.to_string(),
+            issuer: self.issuer.as_str().to_owned(),
             protocol_version: PROTOCOL_VERSION.to_owned(),
             endpoints: AuthorityEndpoints {
                 challenge_creation: format!("{base_url}/v0/challenges"),
@@ -74,7 +62,7 @@ impl AuthorityPublicConfig {
                 jwks: format!("{base_url}/.well-known/jwks.json"),
             },
             jwks: JwksDocument {
-                keys: self.authority_keys.to_vec(),
+                keys: self.authority_keys.to_wires(),
             },
             algorithms: AuthorityAlgorithms {
                 gate_pass_jws: vec![GATE_PASS_JWS_ALGORITHM.to_owned()],
@@ -116,12 +104,12 @@ impl AuthorityPublicConfig {
                     .unwrap_or("Unavailable")
                     .to_owned(),
             },
-            operator_policy_url: self.operator_policy_url.to_string(),
+            operator_policy_url: self.operator_policy_url.as_str().to_owned(),
             privacy: PrivacyDescriptor {
-                url: self.privacy_url.to_string(),
+                url: self.privacy_url.as_str().to_owned(),
                 summary: "Pairwise Claimant keys and opaque Action References; no account or device identity in challenge discovery.".to_owned(),
             },
-            terms_url: self.terms_url.to_string(),
+            terms_url: self.terms_url.as_str().to_owned(),
             license: LicenseDescriptor {
                 project: "MIT".to_owned(),
                 url: format!("{SOURCE_REPOSITORY}/blob/main/LICENSE"),
@@ -179,8 +167,8 @@ struct AuthorityDescriptorFields {
 impl AuthorityDescriptorFields {
     fn validate(&self) -> Result<(), AuthorityDescriptorError> {
         if self.protocol_version != PROTOCOL_VERSION
-            || !is_https_url(&self.issuer)
-            || ![
+            || [
+                self.issuer.as_str(),
                 self.endpoints.challenge_creation.as_str(),
                 self.endpoints.challenge_progress.as_str(),
                 self.endpoints.authority_descriptor.as_str(),
@@ -192,11 +180,12 @@ impl AuthorityDescriptorFields {
                 self.license.url.as_str(),
             ]
             .into_iter()
-            .all(is_https_url)
+            .any(|value| HttpsUrl::try_from(value.to_owned()).is_err())
         {
             return Err(AuthorityDescriptorError::InvalidDescriptor);
         }
-        validate_authority_keys(&self.jwks.keys)?;
+        AuthorityKeySet::try_from(self.jwks.keys.clone())
+            .map_err(|_| AuthorityDescriptorError::InvalidAuthorityKeys)?;
         if self.algorithms.gate_pass_jws != [GATE_PASS_JWS_ALGORITHM]
             || self.algorithms.browser_dpop_jws != [DPOP_JWS_ALGORITHM]
             || self.algorithms.jwk_thumbprint != "SHA-256"
@@ -293,7 +282,7 @@ impl From<ActionPolicy> for ActionPolicyDescriptor {
         Self {
             id: policy.id().to_owned(),
             default_expected_hashes: policy.default_expected_hashes().to_string(),
-            maybe_expected_hash_override: policy.expected_hash_override_bounds().map(
+            maybe_expected_hash_override: policy.maybe_expected_hash_override_bounds().map(
                 |(minimum, maximum)| ExpectedHashBounds {
                     minimum: minimum.to_string(),
                     maximum: maximum.to_string(),
@@ -327,7 +316,7 @@ impl ActionPolicyDescriptor {
             return Err(AuthorityDescriptorError::InvalidPolicies);
         }
         let expected_bounds = policy
-            .expected_hash_override_bounds()
+            .maybe_expected_hash_override_bounds()
             .map(|(minimum, maximum)| (minimum.to_string(), maximum.to_string()));
         let actual_bounds = self
             .maybe_expected_hash_override
@@ -384,26 +373,6 @@ pub enum AuthorityDescriptorError {
     UnknownCriticalPolicyField,
 }
 
-fn validate_authority_keys(keys: &[AuthorityJwkWire]) -> Result<(), AuthorityDescriptorError> {
-    if keys.is_empty() {
-        return Err(AuthorityDescriptorError::InvalidAuthorityKeys);
-    }
-    let validated = keys
-        .iter()
-        .cloned()
-        .map(AuthorityJwk::try_from)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| AuthorityDescriptorError::InvalidAuthorityKeys)?;
-    let unique_ids = validated
-        .iter()
-        .map(|key| key.kid())
-        .collect::<HashSet<_>>();
-    if unique_ids.len() != validated.len() {
-        return Err(AuthorityDescriptorError::InvalidAuthorityKeys);
-    }
-    Ok(())
-}
-
-fn is_https_url(value: &str) -> bool {
-    value.starts_with("https://") && value.len() > "https://".len()
+fn parse_https_config_url(value: String) -> Result<HttpsUrl, AuthorityDescriptorError> {
+    HttpsUrl::try_from(value).map_err(|_| AuthorityDescriptorError::InvalidPublicUrl)
 }

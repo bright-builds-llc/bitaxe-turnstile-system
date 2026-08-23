@@ -1,9 +1,17 @@
-use std::{collections::HashSet, str::FromStr, sync::Arc, time::SystemTime};
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant, SystemTime},
+};
 
 use axum::{
     Json, Router,
     extract::State,
-    http::{HeaderMap, StatusCode, header::AUTHORIZATION},
+    http::{
+        HeaderMap, StatusCode,
+        header::{AUTHORIZATION, RETRY_AFTER},
+    },
     response::{IntoResponse, Response},
     routing::{get, post},
 };
@@ -19,15 +27,73 @@ use crate::{
         IssueChallengeCommand, RelyingServiceAudience, WorkChallengeDescriptor,
         WorkRequirementOverride, issue_challenge,
     },
+    service_auth::{ServiceClientId, ServiceSecret},
 };
 
 pub use crate::authority_descriptor::AuthorityPublicConfig;
 
+#[cfg(test)]
+mod tests;
+
 /// Backend-only header carrying the public service client identifier.
 pub const CLIENT_ID_HEADER: &str = "bwg-client-id";
-const MINIMUM_SERVICE_SECRET_LENGTH: usize = 32;
-const MAXIMUM_SERVICE_SECRET_LENGTH: usize = 128;
 const SERVICE_SECRET_VERIFIER_DOMAIN: &[u8] = b"BWG/0.1 service credential verifier";
+const MAXIMUM_FAILED_AUTHENTICATIONS: u32 = 5;
+const AUTHENTICATION_THROTTLE_WINDOW: Duration = Duration::from_secs(60);
+
+#[derive(Clone, Default)]
+struct AuthenticationThrottle {
+    failures: Arc<Mutex<HashMap<String, FailureWindow>>>,
+}
+
+struct FailureWindow {
+    started_at: Instant,
+    failures: u32,
+}
+
+impl AuthenticationThrottle {
+    fn check(&self, client_id: &str, now: Instant) -> Result<(), ApiError> {
+        let mut failures = self.failures.lock().map_err(|_| ApiError::InternalState)?;
+        if failures.get(client_id).is_some_and(|window| {
+            now.duration_since(window.started_at) >= AUTHENTICATION_THROTTLE_WINDOW
+        }) {
+            failures.remove(client_id);
+        }
+        if failures
+            .get(client_id)
+            .is_some_and(|window| window.failures >= MAXIMUM_FAILED_AUTHENTICATIONS)
+        {
+            return Err(ApiError::TooManyAuthenticationAttempts);
+        }
+        Ok(())
+    }
+
+    fn record_failure(&self, client_id: &str, now: Instant) -> Result<(), ApiError> {
+        let mut failures = self.failures.lock().map_err(|_| ApiError::InternalState)?;
+        let window = failures
+            .entry(client_id.to_owned())
+            .or_insert(FailureWindow {
+                started_at: now,
+                failures: 0,
+            });
+        if now.duration_since(window.started_at) >= AUTHENTICATION_THROTTLE_WINDOW {
+            *window = FailureWindow {
+                started_at: now,
+                failures: 0,
+            };
+        }
+        window.failures += 1;
+        Ok(())
+    }
+
+    fn clear(&self, client_id: &str) -> Result<(), ApiError> {
+        self.failures
+            .lock()
+            .map_err(|_| ApiError::InternalState)?
+            .remove(client_id);
+        Ok(())
+    }
+}
 
 /// An isolated Gate Authority deployment environment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,7 +119,7 @@ impl FromStr for DeploymentEnvironment {
 /// A high-entropy backend credential stored as a verifier and scoped to policies.
 #[derive(Clone)]
 pub struct ServiceCredential {
-    client_id: Arc<str>,
+    client_id: ServiceClientId,
     secret_verifier: [u8; 32],
     environment: DeploymentEnvironment,
     relying_service_audience: RelyingServiceAudience,
@@ -64,36 +130,24 @@ pub struct ServiceCredential {
 impl ServiceCredential {
     /// Creates a verifier-only credential bound to one environment, audience, origins, and policy set.
     pub fn new(
-        client_id: impl Into<Arc<str>>,
+        client_id: impl Into<String>,
         secret: &str,
         environment: DeploymentEnvironment,
         relying_service_audience: String,
         allowed_origins: Vec<String>,
         allowed_policies: Vec<ActionPolicy>,
     ) -> Result<Self, AuthorityConfigError> {
-        let client_id = client_id.into();
-        if client_id.is_empty()
-            || client_id.len() > 128
-            || !client_id
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
-        {
-            return Err(AuthorityConfigError::InvalidClientId);
-        }
-        if !(MINIMUM_SERVICE_SECRET_LENGTH..=MAXIMUM_SERVICE_SECRET_LENGTH).contains(&secret.len())
-            || !secret.bytes().all(|byte| {
-                byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~')
-            })
-        {
-            return Err(AuthorityConfigError::InvalidServiceSecret);
-        }
+        let client_id = ServiceClientId::try_from(client_id.into())
+            .map_err(|_| AuthorityConfigError::InvalidClientId)?;
+        let secret = ServiceSecret::try_from(secret.to_owned())
+            .map_err(|_| AuthorityConfigError::InvalidServiceSecret)?;
         if allowed_policies.is_empty() {
             return Err(AuthorityConfigError::MissingPolicyScope);
         }
 
         Ok(Self {
             client_id,
-            secret_verifier: service_secret_verifier(secret),
+            secret_verifier: service_secret_verifier(secret.expose_secret()),
             environment,
             relying_service_audience: RelyingServiceAudience::try_from(relying_service_audience)
                 .map_err(|_| AuthorityConfigError::InvalidRelyingServiceAudience)?,
@@ -123,6 +177,7 @@ pub struct Config {
     credentials: Arc<[ServiceCredential]>,
     descriptor: AuthorityDescriptor,
     jwks: JwksDocument,
+    authentication_throttle: AuthenticationThrottle,
 }
 
 impl Config {
@@ -143,7 +198,7 @@ impl Config {
         }
         let unique_credentials = credentials
             .iter()
-            .map(|credential| (credential.client_id.as_ref(), credential.secret_verifier))
+            .map(|credential| (credential.client_id.as_str(), credential.secret_verifier))
             .collect::<HashSet<_>>();
         if unique_credentials.len() != credentials.len() {
             return Err(AuthorityConfigError::DuplicateCredential);
@@ -155,6 +210,7 @@ impl Config {
             credentials: credentials.into(),
             descriptor,
             jwks,
+            authentication_throttle: AuthenticationThrottle::default(),
         })
     }
 
@@ -169,14 +225,26 @@ impl Config {
         let (Some(client_id), Some(secret)) = (maybe_client_id, maybe_secret) else {
             return Err(ApiError::Unauthorized);
         };
+        if !self
+            .credentials
+            .iter()
+            .any(|credential| credential.client_id.as_str() == client_id)
+        {
+            return Err(ApiError::Unauthorized);
+        }
+        let now = Instant::now();
+        self.authentication_throttle.check(client_id, now)?;
         let maybe_credential = self
             .credentials
             .iter()
-            .filter(|credential| credential.client_id.as_ref() == client_id)
+            .filter(|credential| credential.client_id.as_str() == client_id)
             .find(|credential| credential.verify_secret(secret));
         let Some(credential) = maybe_credential else {
+            self.authentication_throttle
+                .record_failure(client_id, now)?;
             return Err(ApiError::Unauthorized);
         };
+        self.authentication_throttle.clear(client_id)?;
         Ok(credential)
     }
 }
@@ -258,9 +326,11 @@ async fn create_challenge(
 
 enum ApiError {
     Unauthorized,
+    TooManyAuthenticationAttempts,
     PolicyNotPermitted,
     InvalidChallenge(ChallengeError),
     InternalTime,
+    InternalState,
 }
 
 impl From<ChallengeError> for ApiError {
@@ -271,8 +341,19 @@ impl From<ChallengeError> for ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
+        if matches!(self, Self::TooManyAuthenticationAttempts) {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                [(RETRY_AFTER, "60")],
+                Json(ErrorResponse {
+                    error: "too_many_authentication_attempts",
+                }),
+            )
+                .into_response();
+        }
         let (status, code) = match self {
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
+            Self::TooManyAuthenticationAttempts => unreachable!("handled above"),
             Self::PolicyNotPermitted => (StatusCode::FORBIDDEN, "policy_not_permitted"),
             Self::InvalidChallenge(ChallengeError::UnknownActionPolicy) => {
                 (StatusCode::BAD_REQUEST, "unknown_action_policy")
@@ -281,7 +362,9 @@ impl IntoResponse for ApiError {
                 ChallengeError::OverrideNotPermitted | ChallengeError::OverrideOutsideBounds,
             ) => (StatusCode::BAD_REQUEST, "invalid_policy_override"),
             Self::InvalidChallenge(_) => (StatusCode::BAD_REQUEST, "invalid_challenge_request"),
-            Self::InternalTime => (StatusCode::INTERNAL_SERVER_ERROR, "internal_error"),
+            Self::InternalTime | Self::InternalState => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "internal_error")
+            }
         };
 
         (status, Json(ErrorResponse { error: code })).into_response()
@@ -299,7 +382,7 @@ pub enum AuthorityConfigError {
     InvalidEnvironment,
     #[error("client identifier is invalid")]
     InvalidClientId,
-    #[error("service secret must be a 32-128 character high-entropy token")]
+    #[error("service secret must be a diverse 43-128 character base64url token")]
     InvalidServiceSecret,
     #[error("service credential needs at least one Action Policy scope")]
     MissingPolicyScope,
