@@ -112,7 +112,9 @@ export async function verifyGatePass(compactJws, keys) {
       claims.aud,
       claims.jti,
       claims.challenge_id,
+      claims.protected_action_type,
       claims.action_reference,
+      claims.action_policy,
       claims.cnf?.jkt,
     ) ||
     claims.bwg_version !== "BWG/0.1" ||
@@ -127,10 +129,42 @@ export async function verifyGatePass(compactJws, keys) {
 }
 
 export async function verifyDpop(compactJws, accessToken) {
+  const { compact, jkt } = await verifyClaimantJws(
+    compactJws,
+    "dpop+jwt",
+    "invalid_dpop_type",
+  );
+
+  const claims = decodeJson(compact.payload);
+  if (
+    !nonEmptyStrings(claims.jti, claims.htm, claims.htu, claims.ath) ||
+    !Number.isSafeInteger(claims.iat) ||
+    claims.iat <= 0
+  ) {
+    throw new Error("invalid_dpop_claims");
+  }
+  const ath = await accessTokenHash(accessToken);
+  assertEqual(claims.ath, ath, "access_token_hash_mismatch");
+
+  return { ath, jkt };
+}
+
+export async function verifyLookupProof(compactJws, expectedType, resourceClaim) {
+  const { compact, jkt } = await verifyClaimantJws(
+    compactJws,
+    expectedType,
+    "invalid_lookup_proof_type",
+  );
+  const claims = decodeJson(compact.payload);
+  validateLookupClaims(claims, resourceClaim);
+  return { claims, jkt };
+}
+
+async function verifyClaimantJws(compactJws, expectedType, typeError) {
   const compact = parseCompactJws(compactJws);
   const header = decodeJson(compact.protectedHeader);
   validateCriticalHeaders(header);
-  assertEqual(header.typ, "dpop+jwt", "invalid_dpop_type");
+  assertEqual(header.typ, expectedType, typeError);
   assertEqual(header.alg, "ES256", "unknown_algorithm");
   validateP256PublicJwk(header.jwk);
 
@@ -151,18 +185,18 @@ export async function verifyDpop(compactJws, accessToken) {
     throw new Error("invalid_signature");
   }
 
-  const claims = decodeJson(compact.payload);
+  return { compact, jkt: await p256JwkThumbprint(header.jwk) };
+}
+
+export function validateLookupClaims(claims, resourceClaim) {
   if (
-    !nonEmptyStrings(claims.jti, claims.htm, claims.htu, claims.ath) ||
+    !nonEmptyStrings(claims.jti, claims.htm, claims.htu, claims[resourceClaim]) ||
+    claims.htm !== "GET" ||
     !Number.isSafeInteger(claims.iat) ||
     claims.iat <= 0
   ) {
-    throw new Error("invalid_dpop_claims");
+    throw new Error("invalid_lookup_proof_claims");
   }
-  const ath = await accessTokenHash(accessToken);
-  assertEqual(claims.ath, ath, "access_token_hash_mismatch");
-
-  return { ath, jkt: await p256JwkThumbprint(header.jwk) };
 }
 
 async function proveNonExtractableClaimantKey() {

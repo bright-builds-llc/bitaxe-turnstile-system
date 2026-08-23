@@ -36,8 +36,8 @@ const RELYING_SERVICE_AUDIENCE: &str = "https://relying.example";
 const AUTHORITY_SIGNING_SEED: &str = "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A";
 
 #[tokio::test]
-async fn complete_work_pass_redeem_journey_is_idempotent() -> Result<(), Box<dyn std::error::Error>>
-{
+async fn standard_issue_work_pass_redeem_outcome_journey_uses_public_interfaces()
+-> Result<(), Box<dyn std::error::Error>> {
     // Arrange
     let database = PostgresTestDatabase::start().await?;
     let authority_application =

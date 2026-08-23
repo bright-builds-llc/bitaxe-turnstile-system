@@ -1,0 +1,342 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Bitcoin Work Gate Protocol",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/v0/challenges": {
+      "post": {
+        "summary": "Create a Work Challenge",
+        "security": [{ "ServiceCredential": [], "ServiceClientId": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/CreateChallengeRequest" } }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Immutable browser-safe challenge",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/WorkChallenge" } }
+            }
+          }
+        }
+      }
+    },
+    "/v0/challenges/{challenge_id}/events": {
+      "get": {
+        "summary": "Stream Verified Progress",
+        "parameters": [{ "$ref": "#/components/parameters/ChallengeId" }],
+        "responses": {
+          "200": {
+            "description": "SSE progress snapshots and updates",
+            "content": { "text/event-stream": { "schema": { "type": "string" } } }
+          }
+        }
+      }
+    },
+    "/v0/challenges/{challenge_id}/gate-pass": {
+      "get": {
+        "summary": "Look up durable Gate Pass issuance",
+        "parameters": [
+          { "$ref": "#/components/parameters/ChallengeId" },
+          { "$ref": "#/components/parameters/ClaimantProof" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Existing issuance state",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/IssuanceLookup" } }
+            }
+          },
+          "401": { "$ref": "#/components/responses/InvalidClaimantProof" }
+        }
+      }
+    },
+    "/account-creation/challenge": {
+      "post": {
+        "summary": "Create the reference Standard-policy challenge",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/BrowserChallengeRequest" } }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Standard Work Challenge",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/WorkChallenge" } }
+            }
+          }
+        }
+      }
+    },
+    "/account-creation/redeem": {
+      "post": {
+        "summary": "Consume one Gate Pass and accept its Protected Action",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/RedemptionRequest" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Durable Redemption Record and current outcome",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/RedemptionRecord" } }
+            }
+          },
+          "401": { "description": "Invalid, replayed, expired, or consumed authorization" }
+        }
+      }
+    },
+    "/account-creation/outcomes/{action_reference}": {
+      "get": {
+        "summary": "Look up an existing Protected Action outcome",
+        "parameters": [
+          { "$ref": "#/components/parameters/ActionReference" },
+          { "$ref": "#/components/parameters/ClaimantProof" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Existing Redemption Record and outcome",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/RedemptionRecord" } }
+            }
+          },
+          "401": { "$ref": "#/components/responses/InvalidClaimantProof" },
+          "404": { "description": "Unknown, key-mismatched, or publicly expired outcome" }
+        }
+      }
+    },
+    "/.well-known/pow-gate-configuration": {
+      "get": {
+        "summary": "Discover Authority metadata without granting trust",
+        "responses": { "200": { "description": "Authority Descriptor" } }
+      }
+    },
+    "/.well-known/jwks.json": {
+      "get": {
+        "summary": "Retrieve Authority verification keys",
+        "responses": { "200": { "description": "JWKS document" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ServiceCredential": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "ServiceClientId": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "bwg-client-id"
+      }
+    },
+    "parameters": {
+      "ChallengeId": {
+        "name": "challenge_id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "pattern": "^challenge_[A-Za-z0-9_-]+$" }
+      },
+      "ActionReference": {
+        "name": "action_reference",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "pattern": "^action_[A-Za-z0-9_-]+$" }
+      },
+      "ClaimantProof": {
+        "name": "bwg-claimant-proof",
+        "in": "header",
+        "required": true,
+        "schema": { "type": "string", "pattern": "^[^.]+\\.[^.]+\\.[^.]+$" }
+      }
+    },
+    "responses": {
+      "InvalidClaimantProof": {
+        "description": "Missing, invalid, stale, wrong-key, or replayed Claimant proof"
+      }
+    },
+    "schemas": {
+      "CreateChallengeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["action_policy", "action_reference", "claimant_key"],
+        "properties": {
+          "action_policy": { "type": "string" },
+          "action_reference": { "type": "string" },
+          "claimant_key": { "type": "string", "contentMediaType": "application/jwk+json" },
+          "overrides": { "type": "object" }
+        }
+      },
+      "BrowserChallengeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claimant_key"],
+        "properties": {
+          "claimant_key": { "type": "string", "contentMediaType": "application/jwk+json" }
+        }
+      },
+      "WorkChallenge": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "challenge_id", "action_policy", "action_reference", "claimant_key",
+          "relying_service_audience", "allowed_origins", "work_requirement", "expires_at_unix_seconds",
+          "protocol_version"
+        ],
+        "properties": {
+          "challenge_id": { "type": "string" },
+          "action_policy": { "type": "string" },
+          "action_reference": { "type": "string" },
+          "claimant_key": { "type": "string" },
+          "relying_service_audience": { "type": "string", "format": "uri" },
+          "allowed_origins": { "type": "array", "items": { "type": "string", "format": "uri" } },
+          "work_requirement": { "type": "object" },
+          "expires_at_unix_seconds": { "type": "integer", "minimum": 1 },
+          "protocol_version": { "const": "BWG/0.1" }
+        }
+      },
+      "GatePassClaims": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "iss", "aud", "iat", "exp", "jti", "challenge_id", "protected_action_type",
+          "action_reference", "action_policy", "cnf", "bwg_version"
+        ],
+        "properties": {
+          "iss": { "type": "string", "format": "uri" },
+          "aud": { "type": "string", "format": "uri" },
+          "iat": { "type": "integer" },
+          "exp": { "type": "integer" },
+          "jti": { "type": "string" },
+          "challenge_id": { "type": "string" },
+          "protected_action_type": { "const": "account_creation" },
+          "action_reference": { "type": "string" },
+          "action_policy": { "type": "string" },
+          "cnf": {
+            "type": "object",
+            "required": ["jkt"],
+            "properties": { "jkt": { "type": "string" } }
+          },
+          "bwg_version": { "const": "BWG/0.1" }
+        }
+      },
+      "ClaimantIssuanceProofClaims": {
+        "allOf": [
+          { "$ref": "#/components/schemas/RequestProofClaims" },
+          {
+            "type": "object",
+            "required": ["challenge_id"],
+            "properties": {
+              "htm": { "const": "GET" },
+              "challenge_id": { "type": "string" }
+            }
+          }
+        ]
+      },
+      "DpopClaims": {
+        "allOf": [
+          { "$ref": "#/components/schemas/RequestProofClaims" },
+          {
+            "type": "object",
+            "required": ["ath"],
+            "properties": {
+              "htm": { "const": "POST" },
+              "ath": { "type": "string" }
+            }
+          }
+        ]
+      },
+      "ClaimantOutcomeProofClaims": {
+        "allOf": [
+          { "$ref": "#/components/schemas/RequestProofClaims" },
+          {
+            "type": "object",
+            "required": ["action_reference"],
+            "properties": {
+              "htm": { "const": "GET" },
+              "action_reference": { "type": "string" }
+            }
+          }
+        ]
+      },
+      "RequestProofClaims": {
+        "type": "object",
+        "required": ["jti", "htm", "htu", "iat"],
+        "properties": {
+          "jti": { "type": "string" },
+          "htm": { "type": "string" },
+          "htu": { "type": "string", "format": "uri" },
+          "iat": { "type": "integer" },
+          "challenge_id": { "type": "string" },
+          "action_reference": { "type": "string" },
+          "ath": { "type": "string" }
+        }
+      },
+      "IssuanceLookup": {
+        "oneOf": [
+          { "type": "object", "additionalProperties": false, "required": ["status"], "properties": { "status": { "const": "pending" } } },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "gate_pass"],
+            "properties": { "status": { "const": "issued" }, "gate_pass": { "type": "string" } }
+          },
+          { "type": "object", "additionalProperties": false, "required": ["status"], "properties": { "status": { "const": "failed" } } }
+        ]
+      },
+      "RedemptionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["gate_pass", "dpop_proof", "action_reference"],
+        "properties": {
+          "gate_pass": { "type": "string" },
+          "dpop_proof": { "type": "string" },
+          "action_reference": { "type": "string" }
+        }
+      },
+      "RedemptionRecord": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["redemption_id", "action_reference", "accepted_at_unix_seconds", "outcome"],
+        "properties": {
+          "redemption_id": { "type": "string" },
+          "action_reference": { "type": "string" },
+          "accepted_at_unix_seconds": { "type": "integer" },
+          "outcome": { "$ref": "#/components/schemas/ProtectedActionOutcome" }
+        }
+      },
+      "ProtectedActionOutcome": {
+        "oneOf": [
+          { "type": "object", "additionalProperties": false, "required": ["status"], "properties": { "status": { "const": "pending" } } },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "result"],
+            "properties": {
+              "status": { "const": "succeeded" },
+              "result": {
+                "type": "object",
+                "required": ["account_id"],
+                "properties": { "account_id": { "type": "string" } }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "reason"],
+            "properties": { "status": { "const": "failed" }, "reason": { "type": "string" } }
+          }
+        ]
+      }
+    }
+  }
+}

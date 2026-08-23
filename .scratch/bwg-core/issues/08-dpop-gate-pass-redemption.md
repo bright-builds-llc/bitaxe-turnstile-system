@@ -4,14 +4,14 @@
 
 **Blocked by:** 06: Persist Authority accounting and recover Gate Pass issuance; 07: Persist Redemption and Protected Action outcomes.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The signed pass binds issuer, audience, challenge, Protected Action Type, Action Reference, immutable Action Policy revision, Claimant key, issue time, expiry, and unique pass identity.
+- [x] The signed pass binds issuer, audience, challenge, Protected Action Type, Action Reference, immutable Action Policy revision, Claimant key, issue time, expiry, and unique pass identity.
 - [x] Redemption verifies the configured Authority, exact audience and action, unexpired pass, and fresh DPoP proof.
 - [x] Concurrent, copied, wrong-key, wrong-action, wrong-audience, expired, and replayed requests fail safely.
-- [ ] Issuance and Outcome Lookup use their dedicated claimant proof profiles and expose only their bounded read semantics.
-- [ ] OpenAPI and interoperability fixtures cover the final pass, proof, Redemption, issuance-state, and outcome-state wire contracts.
-- [ ] The acceptance harness proves the complete simulated Standard-policy issue-work-pass-redeem-outcome journey through public interfaces.
+- [x] Issuance and Outcome Lookup use their dedicated claimant proof profiles and expose only their bounded read semantics.
+- [x] OpenAPI and interoperability fixtures cover the final pass, proof, Redemption, issuance-state, and outcome-state wire contracts.
+- [x] The acceptance harness proves the complete simulated Standard-policy issue-work-pass-redeem-outcome journey through public interfaces.
 
 ## Progress
 
@@ -24,3 +24,11 @@ The current harness generates a real P-256 Claimant key and proves direct Author
 ## Restructuring
 
 The former Ticket 06 was split after review exposed a dependency cycle with the former Ticket 07. New Tickets 06 and 07 now own the Authority and Relying Service persistence foundations respectively; this ticket retains the completed cryptographic and process-local protocol work and finishes the public protocol only after those foundations exist.
+
+## Answer
+
+Completed the durable public BWG/0.1 proof-of-possession journey on the Ticket 06 and 07 PostgreSQL foundations. Gate Pass signing and verification now require issuer, audience, challenge, stable Protected Action Type, exact Action Reference, immutable Action Policy revision, Claimant thumbprint, temporal bounds, pass identity, and protocol version. Dedicated ES256 Issuance and Outcome proofs remain read-only, fresh, request-bound, replay-protected, and resource-bound.
+
+Published `openapi/bwg-0.1.json` as the OpenAPI 3.1 contract for challenge creation, progress SSE, issuance lookup states, Redemption, outcome lookup states, discovery, and JWKS. Added RFC-key-derived positive and negative lookup-proof fixtures plus a deterministic verification command; Rust and WebCrypto verify the same compact Issuance and Outcome JWS values alongside the existing Gate Pass and DPoP vectors.
+
+The primary acceptance journey now starts from the Reference Relying Service's Standard Action Policy, credits exact simulated work through the public Authority/Pool Adapter interfaces, recovers one exact pass with Claimant proof, accepts DPoP Redemption, executes the protected action internally, and retrieves the durable successful outcome with a fresh Claimant Outcome Proof. Consumed-pass and proof replay attempts fail closed.

@@ -56,6 +56,7 @@ bun run verify
 - [Deferred v2 areas](./docs/design/deferred-v2.md)
 - [Implementation research](./docs/design/implementation-research.md)
 - [Architectural decisions](./docs/adr/)
+- [BWG/0.1 OpenAPI contract](./openapi/bwg-0.1.json)
 - [Original project brief](./initial-prompt.md)
 
 ## License

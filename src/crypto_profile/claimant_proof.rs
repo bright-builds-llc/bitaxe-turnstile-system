@@ -252,7 +252,7 @@ struct IssuanceProofClaims {
 impl IssuanceProofClaims {
     fn validate(&self) -> Result<(), CryptoProfileError> {
         if self.jti.is_empty()
-            || self.htm.is_empty()
+            || self.htm != "GET"
             || self.htu.is_empty()
             || self.iat == 0
             || self.challenge_id.is_empty()
@@ -275,7 +275,7 @@ struct OutcomeProofClaims {
 impl OutcomeProofClaims {
     fn validate(&self) -> Result<(), CryptoProfileError> {
         if self.jti.is_empty()
-            || self.htm.is_empty()
+            || self.htm != "GET"
             || self.htu.is_empty()
             || self.iat == 0
             || self.action_reference.is_empty()
@@ -317,6 +317,24 @@ mod tests {
             htu: "https://relying.example/lookup".to_owned(),
             iat: 1,
             action_reference: String::new(),
+        };
+
+        // Act
+        let result = claims.validate();
+
+        // Assert
+        assert_eq!(result, Err(CryptoProfileError::InvalidOutcomeProofClaims));
+    }
+
+    #[test]
+    fn lookup_claims_require_get_method() {
+        // Arrange
+        let claims = OutcomeProofClaims {
+            jti: "proof_03".to_owned(),
+            htm: "POST".to_owned(),
+            htu: "https://relying.example/lookup".to_owned(),
+            iat: 1,
+            action_reference: "action_01".to_owned(),
         };
 
         // Act
