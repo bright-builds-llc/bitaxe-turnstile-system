@@ -124,6 +124,40 @@ _Avoid_: Gate Pass retry, re-Redemption, action retry
 A fresh, replay-protected ES256 JWS bound to an exact Outcome Lookup request and Action Reference whose public-key thumbprint must match the accepted Redemption Record; it grants only read access to that existing outcome.
 _Avoid_: Gate Pass, Redemption proof, access token
 
+### Data governance
+
+**Retention Floor**:
+The earliest instant at which a BWG record may leave its current form without weakening replay safety, immutable outcomes, or another protocol guarantee.
+_Avoid_: Cleanup schedule, storage target, public lookup expiry
+
+**Retention Policy**:
+A context-owned schedule that extends every applicable Retention Floor and assigns an eventual pseudonymization or deletion action to each BWG record class.
+_Avoid_: Replay window, database TTL, public lookup window
+
+**Retention Job**:
+A bounded, resumable application of one context's Retention Policy against a fixed planning instant.
+_Avoid_: Cross-context cleanup, cron deletion, garbage collection
+
+**Snapshot Cutoff**:
+The immutable observation boundary that makes every page of one governance export describe the same context state.
+_Avoid_: Current time, page cursor, retention deadline
+
+**Governance Manifest**:
+The immutable summary and digest that binds a planned or exported governance operation to its context, Snapshot Cutoff, policy, and record counts.
+_Avoid_: Audit log, database dump, operator credential
+
+**Pseudonymized Tombstone**:
+A temporary, non-identifying terminal fact that preserves bounded integrity or audit evidence after identifying BWG fields have been erased.
+_Avoid_: Redemption Record, anonymized account, permanent history
+
+**Service-Local Operator**:
+An administrator acting through one service's host and context-specific persistence privilege, never through a Claimant proof.
+_Avoid_: Claimant, remote BWG administrator, database superuser
+
+**Destructive Apply**:
+The explicit execution of a previously planned Retention Job whose exact Governance Manifest has been confirmed by a Service-Local Operator.
+_Avoid_: Dry run, automatic cleanup, export
+
 **Trusted Authority Key Set**:
 The durable local set of explicitly trusted Gate Authority verification keys a Relying Service uses to validate Gate Passes without depending on a live Authority during Redemption.
 _Avoid_: Discovered JWKS, trust-on-first-use, signing keys

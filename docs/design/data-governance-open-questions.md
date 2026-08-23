@@ -1,5 +1,9 @@
 # BWG Core Data-Governance Open Questions
 
+These questions were resolved by the self-answered governance design tree in
+[`data-governance-profile.md`](./data-governance-profile.md). They remain here as the preserved
+decision surface that Ticket 09 originally exposed.
+
 Ticket 09 cannot safely add export or deletion behavior until the following privileged contract is decided. These choices are intentionally separate from Claimant Issuance and Outcome Proofs, which authorize only bounded reads of one claimant-bound record.
 
 ## Operator authority
