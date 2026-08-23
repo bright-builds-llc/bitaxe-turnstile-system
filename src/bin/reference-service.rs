@@ -1,0 +1,26 @@
+use std::{env, error::Error};
+
+use bwg_core::reference_service;
+use tokio::net::TcpListener;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    tracing_subscriber::fmt().try_init()?;
+    let authority_base_url = env::var("BWG_AUTHORITY_BASE_URL")?;
+    let service_credential = env::var("BWG_SERVICE_CREDENTIAL")?;
+    let listen_address =
+        env::var("BWG_LISTEN_ADDRESS").unwrap_or_else(|_| "127.0.0.1:3001".to_owned());
+    let listener = TcpListener::bind(&listen_address).await?;
+    tracing::info!(%listen_address, "reference service listening");
+
+    axum::serve(
+        listener,
+        reference_service::router(reference_service::Config::new(
+            authority_base_url,
+            service_credential,
+        )),
+    )
+    .await?;
+
+    Ok(())
+}

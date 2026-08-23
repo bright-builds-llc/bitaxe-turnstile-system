@@ -1,0 +1,14 @@
+{
+  "name": "bwg-core",
+  "private": true,
+  "packageManager": "bun@1.3.14",
+  "scripts": {
+    "format": "cargo fmt --all",
+    "format:check": "cargo fmt --all -- --check",
+    "lint": "cargo clippy --all-targets --all-features -- -D warnings",
+    "build": "cargo build --all-targets --all-features",
+    "test": "cargo test --all-features",
+    "check:standards": "bun scripts/bright-builds-check.ts all",
+    "verify": "bun run format:check && bun run lint && bun run build && bun run test && bun run check:standards"
+  }
+}

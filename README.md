@@ -16,7 +16,18 @@ BWG provides resource-backed abuse resistance. It does not claim to prove humani
 
 ## Status
 
-The repository is currently in collaborative domain and architecture design. It contains the protocol language, accepted architectural decisions, v1 product defaults, and deferred design areas; implementation planning follows after the design interview closes.
+The repository contains the protocol language, accepted architectural decisions, and the first executable BWG Core slice. The current Rust service spine issues a browser-safe Light Work Challenge through an authenticated Gate Authority interface and a reference account-creation backend.
+
+## Development
+
+The initial acceptance harness starts both HTTP interfaces on ephemeral local ports and exercises them only through their public routes.
+
+```sh
+bun run test
+bun run verify
+```
+
+`bun run verify` checks Rust formatting, linting, all targets, tests, and the managed Bright Builds repository rules.
 
 ## Principles
 
