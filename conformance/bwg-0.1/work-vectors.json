@@ -5,6 +5,7 @@
   "json_encoding": "canonical non-zero decimal string",
   "sources": [
     "docs/adr/0025-calculate-credited-work-from-assigned-targets.md",
+    "conformance/bwg-0.1/work-vectors-derivation.md",
     "https://github.com/bitcoin/bitcoin/blob/58a7869f860f022e6163dc3fae3106a0599830c5/src/chain.cpp"
   ],
   "target_vectors": [

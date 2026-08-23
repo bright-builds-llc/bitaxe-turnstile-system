@@ -32,7 +32,7 @@ impl Uint256 {
         bytes
     }
 
-    fn checked_add(self, other: Self) -> Option<Self> {
+    fn maybe_checked_add(self, other: Self) -> Option<Self> {
         let mut sum = [0_u64; 4];
         let mut carry = false;
         for (index, limb) in sum.iter_mut().enumerate() {
@@ -45,7 +45,7 @@ impl Uint256 {
         (!carry).then_some(Self(sum))
     }
 
-    fn checked_mul_small_add(self, multiplier: u64, addend: u64) -> Option<Self> {
+    fn maybe_checked_mul_small_add(self, multiplier: u64, addend: u64) -> Option<Self> {
         let mut product = [0_u64; 4];
         let mut carry = u128::from(addend);
         for (index, limb) in product.iter_mut().enumerate() {
@@ -192,11 +192,11 @@ impl AssignedTarget {
             return CreditedWork(Uint256::ONE);
         }
 
-        let Some(divisor) = target.checked_add(Uint256::ONE) else {
+        let Some(divisor) = target.maybe_checked_add(Uint256::ONE) else {
             unreachable!("the maximum target was handled above");
         };
         let quotient = target.bitwise_not().divide(divisor);
-        let Some(work) = quotient.checked_add(Uint256::ONE) else {
+        let Some(work) = quotient.maybe_checked_add(Uint256::ONE) else {
             unreachable!("a non-zero target produces work within 256 bits");
         };
 
@@ -249,7 +249,7 @@ impl CreditedWork {
     /// Adds exact work while rejecting values outside the fixed-width contract.
     pub fn checked_add(self, other: Self) -> Result<Self, WorkError> {
         self.0
-            .checked_add(other.0)
+            .maybe_checked_add(other.0)
             .map(Self)
             .ok_or(WorkError::CreditedWorkOverflow)
     }
@@ -269,7 +269,7 @@ impl TryFrom<String> for CreditedWork {
         let mut parsed = Uint256::ZERO;
         for byte in value.bytes() {
             let digit = u64::from(byte - b'0');
-            let Some(next) = parsed.checked_mul_small_add(10, digit) else {
+            let Some(next) = parsed.maybe_checked_mul_small_add(10, digit) else {
                 return Err(WorkError::CreditedWorkOverflow);
             };
             parsed = next;

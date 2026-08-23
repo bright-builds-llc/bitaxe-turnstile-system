@@ -2,6 +2,7 @@ use std::io::{Error, ErrorKind};
 
 use bwg_core::work::{AssignedTarget, CreditedWork, WorkError};
 use serde::Deserialize;
+use thiserror::Error as ThisError;
 
 #[derive(Deserialize)]
 struct WorkVectors {
@@ -38,14 +39,35 @@ struct NegativeVectors {
 struct InvalidTargetVector {
     id: String,
     assigned_target_be_hex: String,
-    expected_error: String,
+    expected_error: TargetErrorCode,
 }
 
 #[derive(Deserialize)]
 struct InvalidAccumulationVector {
     id: String,
     credited_work_inputs_decimal: Vec<String>,
-    expected_error: String,
+    expected_error: AccumulationErrorCode,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum TargetErrorCode {
+    InvalidTargetLength,
+    ZeroTarget,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum AccumulationErrorCode {
+    CreditedWorkOverflow,
+}
+
+#[derive(Debug, ThisError, PartialEq, Eq)]
+enum VectorAccumulationError {
+    #[error("accumulation vector needs inputs")]
+    MissingInputs,
+    #[error(transparent)]
+    Work(#[from] WorkError),
 }
 
 #[test]
@@ -104,14 +126,7 @@ fn assert_target_vector(vector: &TargetVector) -> Result<(), Box<dyn std::error:
 fn assert_accumulation_vector(
     vector: &AccumulationVector,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut inputs = vector.credited_work_inputs_decimal.iter();
-    let Some(first) = inputs.next() else {
-        return Err(Error::new(ErrorKind::InvalidData, "accumulation vector needs inputs").into());
-    };
-    let mut accumulated = CreditedWork::try_from(first.clone())?;
-    for input in inputs {
-        accumulated = accumulated.checked_add(CreditedWork::try_from(input.clone())?)?;
-    }
+    let accumulated = accumulate_decimal_inputs(&vector.credited_work_inputs_decimal)?;
 
     assert_eq!(
         accumulated.to_decimal_string(),
@@ -135,12 +150,13 @@ fn assert_invalid_target_vector(
     let bytes = decode_hex(&vector.assigned_target_be_hex)?;
     let result = AssignedTarget::try_from(bytes.as_slice());
 
-    match vector.expected_error.as_str() {
-        "invalid_target_length" => {
+    match vector.expected_error {
+        TargetErrorCode::InvalidTargetLength => {
             assert_eq!(result, Err(WorkError::InvalidTargetLength), "{}", vector.id)
         }
-        "zero_target" => assert_eq!(result, Err(WorkError::ZeroTarget), "{}", vector.id),
-        _ => return Err(Error::new(ErrorKind::InvalidData, "unknown target error code").into()),
+        TargetErrorCode::ZeroTarget => {
+            assert_eq!(result, Err(WorkError::ZeroTarget), "{}", vector.id)
+        }
     }
 
     Ok(())
@@ -149,32 +165,35 @@ fn assert_invalid_target_vector(
 fn assert_invalid_accumulation_vector(
     vector: &InvalidAccumulationVector,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut inputs = vector.credited_work_inputs_decimal.iter();
-    let Some(first) = inputs.next() else {
-        return Err(Error::new(ErrorKind::InvalidData, "accumulation vector needs inputs").into());
-    };
-    let mut result = Ok(CreditedWork::try_from(first.clone())?);
-    for input in inputs {
-        result = result.and_then(|work| work.checked_add(CreditedWork::try_from(input.clone())?));
-    }
+    let result = accumulate_decimal_inputs(&vector.credited_work_inputs_decimal);
 
-    match vector.expected_error.as_str() {
-        "credited_work_overflow" => {
+    match vector.expected_error {
+        AccumulationErrorCode::CreditedWorkOverflow => {
             assert_eq!(
                 result,
-                Err(WorkError::CreditedWorkOverflow),
+                Err(VectorAccumulationError::Work(
+                    WorkError::CreditedWorkOverflow
+                )),
                 "{}",
                 vector.id
             )
         }
-        _ => {
-            return Err(
-                Error::new(ErrorKind::InvalidData, "unknown accumulation error code").into(),
-            );
-        }
     }
 
     Ok(())
+}
+
+fn accumulate_decimal_inputs(inputs: &[String]) -> Result<CreditedWork, VectorAccumulationError> {
+    let mut inputs = inputs.iter();
+    let Some(first) = inputs.next() else {
+        return Err(VectorAccumulationError::MissingInputs);
+    };
+    let mut accumulated = CreditedWork::try_from(first.clone())?;
+    for input in inputs {
+        accumulated = accumulated.checked_add(CreditedWork::try_from(input.clone())?)?;
+    }
+
+    Ok(accumulated)
 }
 
 fn decode_fixed_width_hex(value: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {

@@ -3,10 +3,7 @@ use super::*;
 #[test]
 fn difficulty_one_target_has_bitcoin_core_work() -> Result<(), WorkError> {
     // Arrange
-    let mut target_bytes = [0_u8; 32];
-    target_bytes[4] = 0xff;
-    target_bytes[5] = 0xff;
-    let target = AssignedTarget::from_be_bytes(target_bytes)?;
+    let target = difficulty_one_target()?;
 
     // Act
     let work = target.credited_work();
@@ -20,10 +17,7 @@ fn difficulty_one_target_has_bitcoin_core_work() -> Result<(), WorkError> {
 #[test]
 fn credited_work_uses_fixed_width_big_endian_binary() -> Result<(), WorkError> {
     // Arrange
-    let mut target_bytes = [0_u8; 32];
-    target_bytes[4] = 0xff;
-    target_bytes[5] = 0xff;
-    let work = AssignedTarget::from_be_bytes(target_bytes)?.credited_work();
+    let work = difficulty_one_target()?.credited_work();
     let mut expected_bytes = [0_u8; 32];
     expected_bytes[27..].copy_from_slice(&[1, 0, 1, 0, 1]);
 
@@ -41,10 +35,7 @@ fn credited_work_uses_fixed_width_big_endian_binary() -> Result<(), WorkError> {
 #[test]
 fn credited_work_json_round_trips_as_canonical_decimal() -> Result<(), Box<dyn std::error::Error>> {
     // Arrange
-    let mut target_bytes = [0_u8; 32];
-    target_bytes[4] = 0xff;
-    target_bytes[5] = 0xff;
-    let work = AssignedTarget::from_be_bytes(target_bytes)?.credited_work();
+    let work = difficulty_one_target()?.credited_work();
 
     // Act
     let json = serde_json::to_string(&work)?;
@@ -60,10 +51,7 @@ fn credited_work_json_round_trips_as_canonical_decimal() -> Result<(), Box<dyn s
 #[test]
 fn equivalent_binary_zero_work_is_fractional_display_only() -> Result<(), WorkError> {
     // Arrange
-    let mut target_bytes = [0_u8; 32];
-    target_bytes[4] = 0xff;
-    target_bytes[5] = 0xff;
-    let work = AssignedTarget::from_be_bytes(target_bytes)?.credited_work();
+    let work = difficulty_one_target()?.credited_work();
 
     // Act
     let equivalent_zero_bits = work.equivalent_binary_zero_work();
@@ -191,4 +179,11 @@ fn credited_work_accumulation_rejects_overflow() -> Result<(), WorkError> {
     assert_eq!(result, Err(WorkError::CreditedWorkOverflow));
 
     Ok(())
+}
+
+fn difficulty_one_target() -> Result<AssignedTarget, WorkError> {
+    let mut target_bytes = [0_u8; 32];
+    target_bytes[4] = 0xff;
+    target_bytes[5] = 0xff;
+    AssignedTarget::from_be_bytes(target_bytes)
 }
