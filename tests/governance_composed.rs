@@ -9,6 +9,21 @@ use postgres_support::PostgresTestDatabase;
 
 const PSEUDONYMIZATION_KEY: &str = "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A";
 
+enum GovernanceRole {
+    Authority,
+    RelyingService,
+}
+
+enum KeyAccess {
+    Available,
+    Missing,
+}
+
+struct ManifestArguments {
+    job_id: String,
+    manifest_digest: String,
+}
+
 #[tokio::test]
 async fn independent_context_failure_recovery_and_export_converge_in_one_cluster()
 -> Result<(), Box<dyn Error>> {
@@ -63,22 +78,46 @@ async fn independent_context_failure_recovery_and_export_converge_in_one_cluster
     let authority_job = manifest_arguments(&authority_manifest)?;
     let reference_job = manifest_arguments(&reference_manifest)?;
     let (authority_failed, reference_applied) = std::thread::scope(|scope| {
-        let authority = scope.spawn(|| run_apply(&database_url, true, &authority_job, false));
-        let reference = scope.spawn(|| run_apply(&database_url, false, &reference_job, true));
-        (
-            authority
-                .join()
-                .expect("Authority command thread should finish"),
-            reference
-                .join()
-                .expect("Reference command thread should finish"),
-        )
+        let authority = scope.spawn(|| {
+            run_apply(
+                &database_url,
+                GovernanceRole::Authority,
+                &authority_job,
+                KeyAccess::Missing,
+            )
+        });
+        let reference = scope.spawn(|| {
+            run_apply(
+                &database_url,
+                GovernanceRole::RelyingService,
+                &reference_job,
+                KeyAccess::Available,
+            )
+        });
+        (authority.join(), reference.join())
     });
-    let authority_failed = authority_failed?;
-    let reference_applied = reference_applied?;
-    let authority_recovered = run_apply(&database_url, true, &authority_job, true)?;
-    let authority_repeated = run_apply(&database_url, true, &authority_job, true)?;
-    let reference_repeated = run_apply(&database_url, false, &reference_job, true)?;
+    let authority_failed = authority_failed
+        .map_err(|_| std::io::Error::other("Authority command thread panicked"))??;
+    let reference_applied = reference_applied
+        .map_err(|_| std::io::Error::other("Relying Service command thread panicked"))??;
+    let authority_recovered = run_apply(
+        &database_url,
+        GovernanceRole::Authority,
+        &authority_job,
+        KeyAccess::Available,
+    )?;
+    let authority_repeated = run_apply(
+        &database_url,
+        GovernanceRole::Authority,
+        &authority_job,
+        KeyAccess::Available,
+    )?;
+    let reference_repeated = run_apply(
+        &database_url,
+        GovernanceRole::RelyingService,
+        &reference_job,
+        KeyAccess::Available,
+    )?;
     let export_cutoff = (100 + 90 * 24 * 60 * 60).to_string();
     let authority_export = run_authority(
         &database_url,
@@ -129,51 +168,54 @@ async fn independent_context_failure_recovery_and_export_converge_in_one_cluster
     Ok(())
 }
 
-fn manifest_arguments(manifest: &Value) -> Result<[String; 2], Box<dyn Error>> {
-    Ok([
-        manifest["job_id"]
+fn manifest_arguments(manifest: &Value) -> Result<ManifestArguments, Box<dyn Error>> {
+    Ok(ManifestArguments {
+        job_id: manifest["job_id"]
             .as_str()
             .ok_or("manifest needs a job ID")?
             .to_owned(),
-        manifest["manifest_digest"]
+        manifest_digest: manifest["manifest_digest"]
             .as_str()
             .ok_or("manifest needs a digest")?
             .to_owned(),
-    ])
+    })
 }
 
 fn run_apply(
     database_url: &str,
-    authority: bool,
-    job: &[String; 2],
-    include_key: bool,
+    role: GovernanceRole,
+    job: &ManifestArguments,
+    key_access: KeyAccess,
 ) -> std::io::Result<std::process::Output> {
-    let binary = if authority {
-        env!("CARGO_BIN_EXE_gate-authority-governance")
-    } else {
-        env!("CARGO_BIN_EXE_reference-service-governance")
-    };
-    let database_variable = if authority {
-        "BWG_AUTHORITY_DATABASE_URL"
-    } else {
-        "BWG_RELYING_SERVICE_DATABASE_URL"
+    let (binary, database_variable) = match role {
+        GovernanceRole::Authority => (
+            env!("CARGO_BIN_EXE_gate-authority-governance"),
+            "BWG_AUTHORITY_DATABASE_URL",
+        ),
+        GovernanceRole::RelyingService => (
+            env!("CARGO_BIN_EXE_reference-service-governance"),
+            "BWG_RELYING_SERVICE_DATABASE_URL",
+        ),
     };
     let mut command = Command::new(binary);
     command
         .args([
             "apply-retention",
             "--job-id",
-            &job[0],
+            &job.job_id,
             "--manifest-digest",
-            &job[1],
+            &job.manifest_digest,
             "--confirm-destruction",
         ])
         .env(database_variable, database_url)
         .env("BWG_GOVERNANCE_DESTRUCTIVE_ENABLED", "true");
-    if include_key {
-        command.env("BWG_GOVERNANCE_PSEUDONYMIZATION_KEY", PSEUDONYMIZATION_KEY);
-    } else {
-        command.env_remove("BWG_GOVERNANCE_PSEUDONYMIZATION_KEY");
+    match key_access {
+        KeyAccess::Available => {
+            command.env("BWG_GOVERNANCE_PSEUDONYMIZATION_KEY", PSEUDONYMIZATION_KEY);
+        }
+        KeyAccess::Missing => {
+            command.env_remove("BWG_GOVERNANCE_PSEUDONYMIZATION_KEY");
+        }
     }
     command.output()
 }
