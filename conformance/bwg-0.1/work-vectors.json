@@ -1,0 +1,79 @@
+{
+  "profile": "BWG/0.1",
+  "formula": "floor(2^256 / (assigned_target + 1))",
+  "binary_encoding": "32-byte unsigned big-endian",
+  "json_encoding": "canonical non-zero decimal string",
+  "sources": [
+    "docs/adr/0025-calculate-credited-work-from-assigned-targets.md",
+    "https://github.com/bitcoin/bitcoin/blob/58a7869f860f022e6163dc3fae3106a0599830c5/src/chain.cpp"
+  ],
+  "target_vectors": [
+    {
+      "id": "bitcoin-difficulty-one",
+      "assigned_target_be_hex": "00000000ffff0000000000000000000000000000000000000000000000000000",
+      "credited_work_decimal": "4295032833",
+      "credited_work_be_hex": "0000000000000000000000000000000000000000000000000000000100010001",
+      "equivalent_binary_zero_work": "32.000022013947"
+    },
+    {
+      "id": "light-preset-exact-power-of-two",
+      "assigned_target_be_hex": "00000000003fffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "credited_work_decimal": "4398046511104",
+      "credited_work_be_hex": "0000000000000000000000000000000000000000000000000000040000000000",
+      "equivalent_binary_zero_work": "42.000000000000"
+    },
+    {
+      "id": "fractional-display",
+      "assigned_target_be_hex": "00000000000abcde000000000000000000000000000000000000000000000000",
+      "credited_work_decimal": "26213559667632",
+      "credited_work_be_hex": "000000000000000000000000000000000000000000000000000017d751e98bb0",
+      "equivalent_binary_zero_work": "44.575378511129"
+    },
+    {
+      "id": "maximum-valid-target",
+      "assigned_target_be_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "credited_work_decimal": "1",
+      "credited_work_be_hex": "0000000000000000000000000000000000000000000000000000000000000001",
+      "equivalent_binary_zero_work": "0.000000000000"
+    },
+    {
+      "id": "minimum-valid-target",
+      "assigned_target_be_hex": "0000000000000000000000000000000000000000000000000000000000000001",
+      "credited_work_decimal": "57896044618658097711785492504343953926634992332820282019728792003956564819968",
+      "credited_work_be_hex": "8000000000000000000000000000000000000000000000000000000000000000",
+      "equivalent_binary_zero_work": "255.000000000000"
+    }
+  ],
+  "accumulation_vectors": [
+    {
+      "id": "light-plus-difficulty-one",
+      "credited_work_inputs_decimal": ["4398046511104", "4295032833"],
+      "accumulated_work_decimal": "4402341543937",
+      "accumulated_work_be_hex": "0000000000000000000000000000000000000000000000000000040100010001"
+    }
+  ],
+  "negative_vectors": {
+    "assigned_targets": [
+      {
+        "id": "zero-target",
+        "assigned_target_be_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+        "expected_error": "zero_target"
+      },
+      {
+        "id": "short-target",
+        "assigned_target_be_hex": "01010101010101010101010101010101010101010101010101010101010101",
+        "expected_error": "invalid_target_length"
+      }
+    ],
+    "accumulations": [
+      {
+        "id": "fixed-width-overflow",
+        "credited_work_inputs_decimal": [
+          "57896044618658097711785492504343953926634992332820282019728792003956564819968",
+          "57896044618658097711785492504343953926634992332820282019728792003956564819968"
+        ],
+        "expected_error": "credited_work_overflow"
+      }
+    ]
+  }
+}

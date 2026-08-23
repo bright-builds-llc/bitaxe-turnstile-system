@@ -3,3 +3,4 @@
 pub mod authority;
 pub mod challenge;
 pub mod reference_service;
+pub mod work;
