@@ -65,10 +65,7 @@ fn equivalent_binary_zero_work_is_fractional_display_only() -> Result<(), WorkEr
 #[test]
 fn credited_work_accumulates_without_precision_loss() -> Result<(), WorkError> {
     // Arrange
-    let mut difficulty_one_target = [0_u8; 32];
-    difficulty_one_target[4] = 0xff;
-    difficulty_one_target[5] = 0xff;
-    let difficulty_one_work = AssignedTarget::from_be_bytes(difficulty_one_target)?.credited_work();
+    let difficulty_one_work = difficulty_one_target()?.credited_work();
     let mut light_target = [0xff_u8; 32];
     light_target[..5].fill(0);
     light_target[5] = 0x3f;
