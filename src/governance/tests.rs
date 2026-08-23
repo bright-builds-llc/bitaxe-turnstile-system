@@ -1,6 +1,6 @@
 use super::{
-    GovernanceContext, GovernanceError, GovernedRecordClass, PseudonymizationKey,
-    pseudonymize_record,
+    GovernanceContext, GovernanceError, GovernedRecordClass, PseudonymizationKey, RetentionPolicy,
+    pseudonymize_record, relying_retention_floors,
 };
 
 #[test]
@@ -16,6 +16,51 @@ fn pseudonymization_key_parses_a_32_byte_base64url_value() -> Result<(), Box<dyn
     assert_eq!(key.0, [0x11; 32]);
 
     Ok(())
+}
+
+#[test]
+fn relying_retention_floor_preserves_the_longer_public_lookup_window()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Arrange
+    let policy = RetentionPolicy::hosted_default();
+
+    // Act
+    let (operational, final_floor) = relying_retention_floors(100, 10_000_000, &[], policy)?;
+
+    // Assert
+    assert_eq!(operational, 10_000_000);
+    assert_eq!(final_floor, 10_000_000);
+
+    Ok(())
+}
+
+#[test]
+fn relying_retention_floor_preserves_the_longer_pass_marker_floor()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Arrange
+    let policy = RetentionPolicy::hosted_default();
+    let pass_markers = [(200, 20_000_000)];
+
+    // Act
+    let (operational, final_floor) = relying_retention_floors(100, 200, &pass_markers, policy)?;
+
+    // Assert
+    assert_eq!(operational, 20_000_000);
+    assert_eq!(final_floor, 20_000_000);
+
+    Ok(())
+}
+
+#[test]
+fn relying_retention_floor_rejects_timestamp_overflow() {
+    // Arrange
+    let policy = RetentionPolicy::hosted_default();
+
+    // Act
+    let result = relying_retention_floors(u64::MAX, u64::MAX, &[], policy);
+
+    // Assert
+    assert!(matches!(result, Err(GovernanceError::InvalidPersistedData)));
 }
 
 #[test]

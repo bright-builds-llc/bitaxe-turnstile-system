@@ -23,6 +23,8 @@ use tokio::{net::TcpListener, task::JoinHandle};
 mod authority_key_support;
 #[path = "support/claimant.rs"]
 mod claimant_support;
+#[path = "relying_service_persistence/governance.rs"]
+mod governance;
 #[path = "support/http.rs"]
 mod http_support;
 #[path = "support/postgres.rs"]

@@ -132,6 +132,7 @@ impl ReferenceApplication {
                 action_policy: gate_pass.action_policy(),
                 dpop_proof_id: dpop.proof_id(),
                 accepted_at_unix_seconds: now,
+                gate_pass_expires_at_unix_seconds: gate_pass.expires_at(),
                 dpop_expires_at_unix_seconds: dpop_expires_at,
                 outcome_lookup_window_seconds: self.config.outcome_lookup_window_seconds(),
             })

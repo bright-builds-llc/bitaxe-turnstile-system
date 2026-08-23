@@ -420,6 +420,37 @@ fn pseudonymize_record(
         .collect()
 }
 
+fn relying_retention_floors(
+    terminal_at: u64,
+    public_lookup_expires_at: u64,
+    pass_markers: &[(u64, u64)],
+    policy: RetentionPolicy,
+) -> Result<(u64, u64), GovernanceError> {
+    let mut operational_floor = terminal_at
+        .checked_add(policy.operational_retention_seconds())
+        .ok_or(GovernanceError::InvalidPersistedData)?
+        .max(public_lookup_expires_at);
+    let mut final_floor = terminal_at
+        .checked_add(policy.tombstone_retention_seconds())
+        .ok_or(GovernanceError::InvalidPersistedData)?
+        .max(public_lookup_expires_at);
+    for (consumed_at, expires_at) in pass_markers {
+        operational_floor = operational_floor.max(
+            consumed_at
+                .checked_add(policy.operational_retention_seconds())
+                .ok_or(GovernanceError::InvalidPersistedData)?
+                .max(*expires_at),
+        );
+        final_floor = final_floor.max(
+            consumed_at
+                .checked_add(policy.tombstone_retention_seconds())
+                .ok_or(GovernanceError::InvalidPersistedData)?
+                .max(*expires_at),
+        );
+    }
+    Ok((operational_floor, final_floor))
+}
+
 /// Observable result of one bounded Destructive Apply invocation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ApplyRetentionResult {

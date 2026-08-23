@@ -12,8 +12,8 @@ use super::{
 };
 
 mod authority_retention;
-
-use authority_retention::{delete_authority_tombstone, pseudonymize_authority_aggregate};
+mod reference_retention;
+mod retention_apply;
 
 static AUTHORITY_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations/gate_authority");
 static REFERENCE_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations/relying_service");
@@ -46,7 +46,9 @@ impl ContextProfile {
                 context,
                 create_schema: "CREATE SCHEMA IF NOT EXISTS relying_service",
                 migrator: &REFERENCE_MIGRATOR,
-                retention_candidates_query: include_str!("queries/reference_replay_candidates.sql"),
+                retention_candidates_query: include_str!(
+                    "queries/reference_retention_candidates.sql"
+                ),
             },
         }
     }
@@ -244,60 +246,24 @@ impl PostgresGovernanceRepository {
             .filter(|item| item.sequence > cursor)
             .take(batch_size)
         {
-            let affected = match (item.action, item.reason) {
-                (RetentionAction::Delete, EligibilityReason::ProtocolRetentionFloorReached) => {
-                    delete_protocol_material(
-                        &mut transaction,
-                        self.profile.context,
-                        item,
-                        as_of_unix_seconds,
-                    )
-                    .await?
-                }
-                (RetentionAction::Pseudonymize, EligibilityReason::OperationalWindowElapsed) => {
-                    let maybe_key = request.maybe_pseudonymization_key.as_ref();
-                    let Some(key) = maybe_key else {
-                        return Err(GovernanceError::MissingPseudonymizationKey);
-                    };
-                    let affected = pseudonymize_authority_aggregate(
-                        &mut transaction,
-                        self.profile.context,
-                        item,
-                        as_of_unix_seconds,
-                        policy,
-                        key,
-                    )
-                    .await?;
-                    pseudonymized_items += affected;
-                    affected
-                }
-                (RetentionAction::Delete, EligibilityReason::TombstoneWindowElapsed) => {
-                    delete_authority_tombstone(
-                        &mut transaction,
-                        self.profile.context,
-                        item,
-                        as_of_unix_seconds,
-                    )
-                    .await?
-                }
-                (RetentionAction::Delete, EligibilityReason::OverdueRetentionWindowElapsed) => {
-                    authority_retention::delete_overdue_authority_aggregate(
-                        &mut transaction,
-                        self.profile.context,
-                        item,
-                        as_of_unix_seconds,
-                        policy,
-                    )
-                    .await?
-                }
-                _ => return Err(GovernanceError::InvalidPersistedData),
-            };
-            if affected != 1 {
+            let applied = retention_apply::apply_transition(
+                &mut transaction,
+                self.profile.context,
+                item,
+                as_of_unix_seconds,
+                policy,
+                request.maybe_pseudonymization_key.as_ref(),
+            )
+            .await?;
+            if applied.affected() != 1 {
                 return Err(GovernanceError::StaleRetentionPlan);
             }
             next_cursor = item.sequence;
-            if item.action == RetentionAction::Delete {
-                deleted_items += 1;
+            match applied {
+                retention_apply::AppliedTransition::Deleted(_) => deleted_items += 1,
+                retention_apply::AppliedTransition::Pseudonymized(_) => {
+                    pseudonymized_items += 1;
+                }
             }
         }
         let completed = next_cursor >= eligible_items;

@@ -21,6 +21,9 @@ roadmap.
 - [Ticket 03](./issues/03-gate-authority-retention.md) added authoritative challenge terminal-time
   projection, post-expiry Gate Pass byte retirement, atomic day-30 Authority aggregate
   pseudonymization, and day-90 tombstone deletion without disturbing active adapter acknowledgements.
+- [Ticket 04](./issues/04-relying-service-retention.md) added pass-expiry and terminal-outcome floors,
+  marker-specific and aggregate Relying Service tombstones, lookup-window-aware retirement, and
+  preservation of account business records outside the BWG aggregate.
 
 ## Delivery order
 

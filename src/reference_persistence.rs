@@ -27,6 +27,7 @@ pub(crate) struct ValidatedRedemption<'a> {
     pub action_policy: &'a str,
     pub dpop_proof_id: &'a str,
     pub accepted_at_unix_seconds: u64,
+    pub gate_pass_expires_at_unix_seconds: u64,
     pub dpop_expires_at_unix_seconds: u64,
     pub outcome_lookup_window_seconds: u64,
 }

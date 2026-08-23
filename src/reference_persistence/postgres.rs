@@ -189,6 +189,7 @@ impl ReferenceRepository for PostgresReferenceRepository {
             .bind(redemption.pass_id)
             .bind(&redemption_id)
             .bind(to_i64(redemption.accepted_at_unix_seconds)?)
+            .bind(to_i64(redemption.gate_pass_expires_at_unix_seconds)?)
             .execute(&mut *transaction)
             .await?;
         let record = select_redemption(&mut transaction, &redemption_id).await?;
@@ -305,6 +306,7 @@ impl ReferenceRepository for PostgresReferenceRepository {
         let outcome = sqlx::query(include_str!("postgres/queries/complete_action_outcome.sql"))
             .bind(&action.redemption_id)
             .bind(safe_result)
+            .bind(to_i64(completed_at)?)
             .execute(&mut *transaction)
             .await?;
         if outcome.rows_affected() != 1 {
@@ -343,6 +345,7 @@ impl ReferenceRepository for PostgresReferenceRepository {
         sqlx::query(include_str!("postgres/queries/fail_action_outcome.sql"))
             .bind(&action.redemption_id)
             .bind(safe_reason)
+            .bind(to_i64(completed_at)?)
             .execute(&mut *transaction)
             .await?;
         sqlx::query(include_str!("postgres/queries/abandon_claimed_attempt.sql"))

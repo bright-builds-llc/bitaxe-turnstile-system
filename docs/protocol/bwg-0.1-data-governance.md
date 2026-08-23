@@ -96,6 +96,23 @@ respectively.
   runs after day 90, the plan declares an overdue final deletion and atomically removes the aggregate
   without creating an already-expired tombstone.
 
+### Relying Service retirement behavior
+
+- New Pass Consumption rows retain the exact signed Gate Pass expiry. Legacy rows without that
+  value cannot enter a plan until a deployment supplies independently justified backfill evidence.
+- A Pass Consumption marker becomes eligible only after both signed expiry and its day-30
+  operational window. It may become a marker-specific HMAC tombstone while the associated outcome
+  remains available through a longer public lookup window.
+- A terminal Relying Service aggregate uses the latest of terminal day 30, every marker floor, and
+  public lookup expiry. One transaction locks and revalidates the immutable outcome, inserts an
+  aggregate tombstone plus any remaining marker tombstones, and deletes Pass Consumption,
+  Redemption, outcome, attempt, execution-intent, and Protected Action protocol rows.
+- Reference Account and other application business rows are not members of the BWG aggregate and
+  are not rewritten or deleted by governance transitions.
+- Aggregate and marker tombstones expire at the latest applicable terminal day 90 or artifact floor.
+  A first cleanup after that final floor declares a direct overdue deletion instead of creating an
+  already-expired tombstone.
+
 ## Export contract
 
 Exports use `application/x-ndjson; profile="bwg-governance-v1"` and are streamed without persisting

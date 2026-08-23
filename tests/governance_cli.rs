@@ -6,6 +6,8 @@ use serde_json::Value;
 mod authority;
 #[path = "support/postgres.rs"]
 mod postgres_support;
+#[path = "governance_cli/reference.rs"]
+mod reference;
 
 use postgres_support::PostgresTestDatabase;
 
@@ -429,6 +431,30 @@ fn run_reference(
                 TEST_PSEUDONYMIZATION_KEY,
             )
             .output()?,
+    )
+}
+
+fn apply_reference_manifest(
+    database_url: &str,
+    manifest: &Value,
+) -> Result<std::process::Output, Box<dyn Error>> {
+    let job_id = manifest["job_id"]
+        .as_str()
+        .ok_or("plan should return a job ID")?;
+    let digest = manifest["manifest_digest"]
+        .as_str()
+        .ok_or("plan should return a digest")?;
+    run_reference(
+        database_url,
+        &[
+            "apply-retention",
+            "--job-id",
+            job_id,
+            "--manifest-digest",
+            digest,
+            "--confirm-destruction",
+        ],
+        true,
     )
 }
 

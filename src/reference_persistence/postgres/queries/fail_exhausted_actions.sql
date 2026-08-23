@@ -21,6 +21,8 @@ WITH failed AS (
     RETURNING intent.redemption_id
 )
 UPDATE relying_service.protected_action_outcomes AS outcome
-SET status = 'failed', safe_reason = 'action_execution_exhausted'
+SET status = 'failed',
+    safe_reason = 'action_execution_exhausted',
+    terminal_at_unix_seconds = $1
 FROM failed
 WHERE outcome.redemption_id = failed.redemption_id AND outcome.status = 'pending'
