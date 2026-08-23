@@ -280,6 +280,16 @@ impl PostgresGovernanceRepository {
                     )
                     .await?
                 }
+                (RetentionAction::Delete, EligibilityReason::OverdueRetentionWindowElapsed) => {
+                    authority_retention::delete_overdue_authority_aggregate(
+                        &mut transaction,
+                        self.profile.context,
+                        item,
+                        as_of_unix_seconds,
+                        policy,
+                    )
+                    .await?
+                }
                 _ => return Err(GovernanceError::InvalidPersistedData),
             };
             if affected != 1 {
@@ -456,6 +466,7 @@ fn parse_retention_state(value: &str) -> Result<RetentionState, GovernanceError>
     match value {
         "identifying" => Ok(RetentionState::Identifying),
         "pseudonymized" => Ok(RetentionState::Pseudonymized),
+        "overdue_identifying" => Ok(RetentionState::OverdueIdentifying),
         _ => Err(GovernanceError::InvalidPersistedData),
     }
 }
@@ -464,6 +475,7 @@ fn parse_eligibility_reason(value: &str) -> Result<EligibilityReason, Governance
     match value {
         "protocol_retention_floor_reached" => Ok(EligibilityReason::ProtocolRetentionFloorReached),
         "operational_window_elapsed" => Ok(EligibilityReason::OperationalWindowElapsed),
+        "overdue_retention_window_elapsed" => Ok(EligibilityReason::OverdueRetentionWindowElapsed),
         "tombstone_window_elapsed" => Ok(EligibilityReason::TombstoneWindowElapsed),
         _ => Err(GovernanceError::InvalidPersistedData),
     }
@@ -535,6 +547,7 @@ const fn eligibility_reason_name(reason: EligibilityReason) -> &'static str {
     match reason {
         EligibilityReason::ProtocolRetentionFloorReached => "protocol_retention_floor_reached",
         EligibilityReason::OperationalWindowElapsed => "operational_window_elapsed",
+        EligibilityReason::OverdueRetentionWindowElapsed => "overdue_retention_window_elapsed",
         EligibilityReason::TombstoneWindowElapsed => "tombstone_window_elapsed",
     }
 }

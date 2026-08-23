@@ -83,6 +83,7 @@ impl GovernedRecordClass {
 #[serde(rename_all = "snake_case")]
 pub enum RetentionState {
     Identifying,
+    OverdueIdentifying,
     Pseudonymized,
 }
 
@@ -197,6 +198,7 @@ impl PlannedRetention {
 pub enum EligibilityReason {
     ProtocolRetentionFloorReached,
     OperationalWindowElapsed,
+    OverdueRetentionWindowElapsed,
     TombstoneWindowElapsed,
 }
 
@@ -214,6 +216,10 @@ pub fn plan_candidate(
         return Ok(None);
     }
     let (action, reason) = match candidate.state {
+        RetentionState::OverdueIdentifying => (
+            RetentionAction::Delete,
+            EligibilityReason::OverdueRetentionWindowElapsed,
+        ),
         RetentionState::Pseudonymized => (
             RetentionAction::Delete,
             EligibilityReason::TombstoneWindowElapsed,

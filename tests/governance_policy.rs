@@ -91,3 +91,27 @@ fn pseudonymized_records_are_planned_for_tombstone_deletion()
 
     Ok(())
 }
+
+#[test]
+fn overdue_identifying_records_converge_directly_to_deletion()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Arrange
+    let candidate = RetentionCandidate::new(
+        GovernedRecordClass::AuthorityOperational,
+        RetentionState::OverdueIdentifying,
+        100,
+    );
+
+    // Act
+    let planned = plan_candidate(&candidate, 100, RetentionPolicy::hosted_default())?
+        .expect("overdue retention floor should permit deletion");
+
+    // Assert
+    assert_eq!(planned.action(), RetentionAction::Delete);
+    assert_eq!(
+        planned.reason(),
+        EligibilityReason::OverdueRetentionWindowElapsed
+    );
+
+    Ok(())
+}

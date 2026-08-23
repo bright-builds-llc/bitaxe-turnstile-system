@@ -24,4 +24,6 @@ Pool Adapter tests migrate real pre-Ticket-03 rows, populate every aggregate chi
 rollback on a missing key, replay the same stable acknowledgement and progress after process
 replacement, expose explicit retired lookup, and keep the key and signed bytes out of operator
 output. BWG/0.1 has zero verifier skew, so strict `now >= exp` rejection makes signed expiry the
-first safe byte-retirement instant.
+first safe byte-retirement instant. Aggregate/proof candidates coalesce into one dependency-safe
+item, and a first cleanup after day 90 converges directly to final aggregate deletion instead of
+attempting to create an already-expired tombstone.

@@ -43,10 +43,19 @@ FROM (
     UNION ALL
 
     SELECT challenge.challenge_id AS record_key,
-           challenge.terminal_at_unix_seconds + policy.operational_retention_seconds
-               AS retention_floor_unix_seconds,
+           CASE
+               WHEN challenge.terminal_at_unix_seconds + policy.tombstone_retention_seconds
+                    <= policy.as_of_unix_seconds
+               THEN challenge.terminal_at_unix_seconds + policy.tombstone_retention_seconds
+               ELSE challenge.terminal_at_unix_seconds + policy.operational_retention_seconds
+           END AS retention_floor_unix_seconds,
            'authority_operational' AS record_class,
-           'identifying' AS retention_state
+           CASE
+               WHEN challenge.terminal_at_unix_seconds + policy.tombstone_retention_seconds
+                    <= policy.as_of_unix_seconds
+               THEN 'overdue_identifying'
+               ELSE 'identifying'
+           END AS retention_state
     FROM work_challenges AS challenge
     CROSS JOIN policy
     WHERE challenge.terminal_at_unix_seconds IS NOT NULL

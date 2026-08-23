@@ -163,6 +163,70 @@ async fn authority_retention_stages_pass_erasure_pseudonymization_and_tombstone_
 }
 
 #[tokio::test]
+async fn overdue_authority_aggregate_converges_directly_to_final_deletion()
+-> Result<(), Box<dyn Error>> {
+    // Arrange
+    let database = PostgresTestDatabase::start().await?;
+    let bootstrap = run_authority(
+        database.database_url(),
+        &["plan-retention", "--as-of", "1"],
+        false,
+    )?;
+    assert!(bootstrap.status.success());
+    let pool = sqlx::PgPool::connect(database.database_url()).await?;
+    sqlx::query(include_str!(
+        "../fixtures/governance/insert_authority_retention_challenge.sql"
+    ))
+    .execute(&pool)
+    .await?;
+    sqlx::query(include_str!(
+        "../fixtures/governance/insert_authority_retention_intent.sql"
+    ))
+    .execute(&pool)
+    .await?;
+    sqlx::raw_sql(include_str!(
+        "../fixtures/governance/insert_authority_retention_children.sql"
+    ))
+    .execute(&pool)
+    .await?;
+    sqlx::query(include_str!(
+        "../fixtures/governance/insert_authority_retention_proof.sql"
+    ))
+    .execute(&pool)
+    .await?;
+    let cutoff = (100 + 90 * 24 * 60 * 60).to_string();
+
+    // Act
+    let plan = run_authority(
+        database.database_url(),
+        &["plan-retention", "--as-of", &cutoff],
+        false,
+    )?;
+    let manifest = serde_json::from_slice::<Value>(&plan.stdout)?;
+    let apply = apply_authority_manifest(database.database_url(), &manifest)?;
+    let remaining = run_authority(
+        database.database_url(),
+        &["plan-retention", "--as-of", &cutoff],
+        false,
+    )?;
+    let apply = serde_json::from_slice::<Value>(&apply.stdout)?;
+    let remaining = serde_json::from_slice::<Value>(&remaining.stdout)?;
+
+    // Assert
+    assert_eq!(manifest["eligible_items"], 1);
+    assert_eq!(manifest["planned_counts"][0]["action"], "delete");
+    assert_eq!(
+        manifest["planned_counts"][0]["reason"],
+        "overdue_retention_window_elapsed"
+    );
+    assert_eq!(apply["deleted_items"], 1);
+    assert_eq!(apply["pseudonymized_items"], 0);
+    assert_eq!(remaining["eligible_items"], 0);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn authority_migration_backfills_a_safe_terminal_before_legacy_rows_are_planned()
 -> Result<(), Box<dyn Error>> {
     // Arrange

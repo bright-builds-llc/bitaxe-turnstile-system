@@ -1,4 +1,52 @@
-use super::{GovernanceContext, GovernedRecordClass, PseudonymizationKey, pseudonymize_record};
+use super::{
+    GovernanceContext, GovernanceError, GovernedRecordClass, PseudonymizationKey,
+    pseudonymize_record,
+};
+
+#[test]
+fn pseudonymization_key_parses_a_32_byte_base64url_value() -> Result<(), Box<dyn std::error::Error>>
+{
+    // Arrange
+    let encoded = "ERERERERERERERERERERERERERERERERERERERERERE";
+
+    // Act
+    let key = PseudonymizationKey::parse(encoded)?;
+
+    // Assert
+    assert_eq!(key.0, [0x11; 32]);
+
+    Ok(())
+}
+
+#[test]
+fn pseudonymization_key_rejects_malformed_base64url() {
+    // Arrange
+    let malformed = "%%%";
+
+    // Act
+    let result = PseudonymizationKey::parse(malformed);
+
+    // Assert
+    assert!(matches!(
+        result,
+        Err(GovernanceError::InvalidPseudonymizationKey)
+    ));
+}
+
+#[test]
+fn pseudonymization_key_rejects_the_wrong_decoded_length() {
+    // Arrange
+    let short = "ERERERERERERERERERERERERERERERERERERERER";
+
+    // Act
+    let result = PseudonymizationKey::parse(short);
+
+    // Assert
+    assert!(matches!(
+        result,
+        Err(GovernanceError::InvalidPseudonymizationKey)
+    ));
+}
 
 #[test]
 fn pseudonymization_matches_the_domain_separated_hmac_vector() {

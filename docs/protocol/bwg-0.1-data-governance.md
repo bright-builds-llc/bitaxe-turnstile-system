@@ -92,7 +92,9 @@ respectively.
   fingerprints, Work Sessions, outbox, issuance intent, and challenge. A missing key or changed
   terminal floor rolls back the whole transaction.
 - At terminal day 90, the minimal Authority tombstone is physically deleted. Active or non-terminal
-  challenges never appear in either transition.
+  challenges never appear in either transition. If the first cleanup for an identifying aggregate
+  runs after day 90, the plan declares an overdue final deletion and atomically removes the aggregate
+  without creating an already-expired tombstone.
 
 ## Export contract
 
