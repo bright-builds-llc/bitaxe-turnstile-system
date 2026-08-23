@@ -60,7 +60,7 @@ async fn governance_audit_records_safe_success_failure_and_ninety_day_deletion()
             "--snapshot-cutoff",
             &now.to_string(),
             "--page-size",
-            "1000",
+            "1",
         ],
         false,
     )?;
@@ -74,6 +74,20 @@ async fn governance_audit_records_safe_success_failure_and_ninety_day_deletion()
         .as_str()
         .ok_or("audit export needs an ID")?
         .to_owned();
+    let audit_resume = run_authority(
+        database.database_url(),
+        &[
+            "export",
+            "--export-id",
+            &export_id,
+            "--after-sequence",
+            "1",
+            "--page-size",
+            "1000",
+        ],
+        false,
+    )?;
+    assert!(audit_resume.status.success());
     let inspection_cutoff = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     let audit_inspection = run_authority(
         database.database_url(),
@@ -125,11 +139,14 @@ async fn governance_audit_records_safe_success_failure_and_ninety_day_deletion()
         "export_started",
         "export_completed",
         "export_failed",
+        "recovery_resumed",
     ] {
         assert!(audit_output.contains(event_type));
     }
     assert!(!audit_output.contains("00000000-0000-4000-8000-000000000091"));
     assert!(!audit_output.contains(TEST_PSEUDONYMIZATION_KEY));
+    assert!(audit_output.contains("\"context\":\"gate_authority\""));
+    assert!(audit_output.contains("snapshot_cutoff_unix_seconds"));
     assert_eq!(
         snapshot_manifest["planned_counts"][0]["record_class"],
         "governance_export_snapshot"

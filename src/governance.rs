@@ -348,10 +348,16 @@ impl GovernanceApplication {
         match self.repository.apply_retention(request).await {
             Ok(result) => Ok(result),
             Err(error) => {
-                self.repository
+                if let Err(audit_error) = self
+                    .repository
                     .record_retention_failure(job_id, &manifest_digest, error.audit_category())
                     .await
-                    .map_err(|_| GovernanceError::AuditPersistenceFailed)?;
+                {
+                    return Err(GovernanceError::OperationAndAuditFailure {
+                        operation: Box::new(error),
+                        audit: Box::new(audit_error),
+                    });
+                }
                 Err(error)
             }
         }
@@ -542,8 +548,11 @@ pub enum GovernanceError {
     InvalidExportPageSize,
     #[error("export cursor is beyond the frozen snapshot")]
     InvalidExportCursor,
-    #[error("governance failure audit could not be persisted")]
-    AuditPersistenceFailed,
+    #[error("governance operation failed ({operation}); failure audit also failed ({audit})")]
+    OperationAndAuditFailure {
+        operation: Box<GovernanceError>,
+        audit: Box<GovernanceError>,
+    },
     #[error("governed records changed after planning; create and review a new plan")]
     StaleRetentionPlan,
     #[error("persisted governance data exceeds supported numeric bounds")]
@@ -572,7 +581,7 @@ impl GovernanceError {
                 "pseudonymization_key"
             }
             Self::PlanningInstantInFuture | Self::SystemClockUnavailable => "trusted_time",
-            Self::AuditPersistenceFailed => "audit",
+            Self::OperationAndAuditFailure { .. } => "audit",
             _ => "invalid_input",
         }
     }

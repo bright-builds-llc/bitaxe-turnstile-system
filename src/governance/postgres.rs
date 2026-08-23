@@ -183,6 +183,8 @@ impl PostgresGovernanceRepository {
                 duration_milliseconds: elapsed_milliseconds(started)?,
                 outcome: "completed",
                 maybe_error_category: None,
+                context: self.profile.context,
+                maybe_snapshot_cutoff_unix_seconds: Some(as_of_unix_seconds),
             },
         )
         .await?;
@@ -257,6 +259,8 @@ impl PostgresGovernanceRepository {
                     duration_milliseconds: elapsed_milliseconds(started)?,
                     outcome: "already_completed",
                     maybe_error_category: None,
+                    context: self.profile.context,
+                    maybe_snapshot_cutoff_unix_seconds: Some(as_of_unix_seconds),
                 },
             )
             .await?;
@@ -325,6 +329,8 @@ impl PostgresGovernanceRepository {
                     duration_milliseconds: elapsed_milliseconds(started)?,
                     outcome: "resumed",
                     maybe_error_category: None,
+                    context: self.profile.context,
+                    maybe_snapshot_cutoff_unix_seconds: Some(as_of_unix_seconds),
                 },
             )
             .await?;
@@ -343,6 +349,8 @@ impl PostgresGovernanceRepository {
                 duration_milliseconds: elapsed_milliseconds(started)?,
                 outcome: next_status.as_str(),
                 maybe_error_category: None,
+                context: self.profile.context,
+                maybe_snapshot_cutoff_unix_seconds: Some(as_of_unix_seconds),
             },
         )
         .await?;
@@ -357,6 +365,8 @@ impl PostgresGovernanceRepository {
                     duration_milliseconds: elapsed_milliseconds(started)?,
                     outcome: "completed",
                     maybe_error_category: None,
+                    context: self.profile.context,
+                    maybe_snapshot_cutoff_unix_seconds: Some(as_of_unix_seconds),
                 },
             )
             .await?;
@@ -372,6 +382,8 @@ impl PostgresGovernanceRepository {
                     duration_milliseconds: elapsed_milliseconds(started)?,
                     outcome: "completed",
                     maybe_error_category: None,
+                    context: self.profile.context,
+                    maybe_snapshot_cutoff_unix_seconds: Some(as_of_unix_seconds),
                 },
             )
             .await?;

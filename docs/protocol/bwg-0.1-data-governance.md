@@ -119,8 +119,9 @@ respectively.
 
 Exports use `application/x-ndjson; profile="bwg-governance-v1"` and are streamed without persisting
 the output file in the service. To make process-independent resume exact, the context temporarily
-persists the already-redacted, newline-terminated snapshot items and deletes those operational rows
-after 90 days. Every record envelope contains:
+persists structured, already-redacted snapshot state and deterministically frames it as NDJSON only
+when a page is requested; those operational rows are deleted after 90 days and cannot be
+concatenated into an export file body. Every record envelope contains:
 
 - `schema_version`, fixed to `bwg-governance-v1`;
 - `context`, either `gate_authority` or `relying_service`;

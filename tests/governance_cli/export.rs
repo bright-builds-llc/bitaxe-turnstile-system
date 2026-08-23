@@ -3,6 +3,38 @@ use ring::digest::{SHA256, digest};
 use super::*;
 
 #[tokio::test]
+async fn export_migration_rejects_invalid_digest_and_lifecycle_states() -> Result<(), Box<dyn Error>>
+{
+    // Arrange
+    let database = PostgresTestDatabase::start().await?;
+    let bootstrap = run_authority(
+        database.database_url(),
+        &["plan-retention", "--as-of", "1"],
+        false,
+    )?;
+    assert!(bootstrap.status.success());
+    let pool = sqlx::PgPool::connect(database.database_url()).await?;
+
+    // Act
+    let invalid_digest = sqlx::query(include_str!(
+        "../fixtures/governance/insert_invalid_export_digest.sql"
+    ))
+    .execute(&pool)
+    .await;
+    let invalid_lifecycle = sqlx::query(include_str!(
+        "../fixtures/governance/insert_invalid_completed_export.sql"
+    ))
+    .execute(&pool)
+    .await;
+
+    // Assert
+    assert!(invalid_digest.is_err());
+    assert!(invalid_lifecycle.is_err());
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn authority_export_resumes_the_same_redacted_snapshot_with_an_integrity_manifest()
 -> Result<(), Box<dyn Error>> {
     // Arrange

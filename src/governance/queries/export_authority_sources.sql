@@ -50,6 +50,8 @@ FROM (
            event_id::TEXT AS source_key,
            JSONB_BUILD_OBJECT(
                'event_type', event_type,
+               'context', context,
+               'snapshot_cutoff_unix_seconds', snapshot_cutoff_unix_seconds,
                'manifest_digest', manifest_digest,
                'occurred_at_unix_seconds', occurred_at_unix_seconds,
                'counts', counts,

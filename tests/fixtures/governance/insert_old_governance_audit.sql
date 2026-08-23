@@ -7,7 +7,9 @@ INSERT INTO gate_authority.governance_audit_events (
     counts,
     duration_milliseconds,
     outcome,
-    error_category
+    error_category,
+    context,
+    snapshot_cutoff_unix_seconds
 )
 VALUES (
     '00000000-0000-4000-8000-000000000090',
@@ -18,5 +20,7 @@ VALUES (
     '{"records":1}'::JSONB,
     5,
     'completed',
-    NULL
+    NULL,
+    'gate_authority',
+    100
 )

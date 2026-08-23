@@ -17,8 +17,8 @@
 Both Service-Local Operator CLIs now freeze redacted, context-local export items at one Snapshot
 Cutoff and stream versioned NDJSON pages by export ID and sequence. The final envelope binds type
 counts, exact preceding byte count, and SHA-256 content digest; repeating a page is byte-identical
-even after domain changes. The database stores only temporary redacted snapshot items, not an
-exported file, and retires them after 90 days. Metadata-only audits are committed with successful
+even after domain changes. The database stores only temporary structured redacted snapshot state,
+not framed NDJSON or an exported file, and retires it after 90 days. Metadata-only audits are committed with successful
 plan/apply/export effects, record failure and recovery categories separately, and retire at the same
 90-day floor. Byte scans cover Authority secrets plus Claimant, Action Reference, pass, issuer, and
 Account Identity values.

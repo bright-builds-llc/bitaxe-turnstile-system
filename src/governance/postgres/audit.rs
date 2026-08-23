@@ -2,7 +2,7 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::{PostgresGovernanceRepository, to_i64};
-use crate::governance::GovernanceError;
+use crate::governance::{GovernanceContext, GovernanceError};
 
 #[derive(Clone, Copy)]
 pub(super) enum AuditEventType {
@@ -41,6 +41,8 @@ pub(super) struct NewAuditEvent<'a> {
     pub duration_milliseconds: u64,
     pub outcome: &'a str,
     pub maybe_error_category: Option<&'a str>,
+    pub context: GovernanceContext,
+    pub maybe_snapshot_cutoff_unix_seconds: Option<u64>,
 }
 
 pub(super) async fn insert_audit_event(
@@ -56,6 +58,13 @@ pub(super) async fn insert_audit_event(
         .bind(to_i64(event.duration_milliseconds)?)
         .bind(event.outcome)
         .bind(event.maybe_error_category)
+        .bind(event.context.as_str())
+        .bind(
+            event
+                .maybe_snapshot_cutoff_unix_seconds
+                .map(to_i64)
+                .transpose()?,
+        )
         .execute(&mut **transaction)
         .await?;
     Ok(())
@@ -98,6 +107,7 @@ impl PostgresGovernanceRepository {
         maybe_manifest_digest: Option<&str>,
         error_category: &str,
     ) -> Result<(), GovernanceError> {
+        let maybe_cutoff = self.operation_cutoff(operation_id).await?;
         let mut transaction = self.pool.begin().await?;
         insert_audit_event(
             &mut transaction,
@@ -109,10 +119,21 @@ impl PostgresGovernanceRepository {
                 duration_milliseconds: 0,
                 outcome: "failed",
                 maybe_error_category: Some(error_category),
+                context: self.profile.context,
+                maybe_snapshot_cutoff_unix_seconds: maybe_cutoff,
             },
         )
         .await?;
         transaction.commit().await?;
         Ok(())
+    }
+
+    async fn operation_cutoff(&self, operation_id: Uuid) -> Result<Option<u64>, GovernanceError> {
+        let maybe_cutoff =
+            sqlx::query_scalar::<_, i64>(include_str!("../queries/select_operation_cutoff.sql"))
+                .bind(operation_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        maybe_cutoff.map(super::to_u64).transpose()
     }
 }
