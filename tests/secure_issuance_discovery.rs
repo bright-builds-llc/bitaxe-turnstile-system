@@ -439,6 +439,8 @@ async fn discovery_does_not_grant_relying_service_trust() -> Result<(), Box<dyn 
         "https://authority.example",
         CLIENT_ID,
         SERVICE_SECRET,
+        "https://relying.example",
+        "http://127.0.0.1:1/account-creation/redeem",
         trusted_authority,
     )?;
 

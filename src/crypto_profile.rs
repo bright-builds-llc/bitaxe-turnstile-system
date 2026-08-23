@@ -5,8 +5,10 @@ use ring::{digest, signature};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+mod signing;
 #[cfg(test)]
 pub(crate) mod test_support;
+pub use signing::{AuthoritySigningKey, GatePassClaimsInput, GatePassConfirmationInput};
 
 /// Mandatory fully specified JOSE algorithm for BWG Gate Passes.
 pub const GATE_PASS_JWS_ALGORITHM: &str = "Ed25519";
@@ -182,6 +184,13 @@ impl TryFrom<P256PublicJwkWire> for P256PublicJwk {
 pub struct VerifiedGatePass {
     authority_kid: String,
     claimant_jkt: String,
+    issuer: String,
+    audience: String,
+    issued_at: u64,
+    expires_at: u64,
+    pass_id: String,
+    challenge_id: String,
+    action_reference: String,
 }
 
 impl VerifiedGatePass {
@@ -194,6 +203,41 @@ impl VerifiedGatePass {
     pub fn claimant_jkt(&self) -> &str {
         &self.claimant_jkt
     }
+
+    /// Returns the verified Authority issuer.
+    pub fn issuer(&self) -> &str {
+        &self.issuer
+    }
+
+    /// Returns the verified Relying Service audience.
+    pub fn audience(&self) -> &str {
+        &self.audience
+    }
+
+    /// Returns the verified issue time.
+    pub fn issued_at(&self) -> u64 {
+        self.issued_at
+    }
+
+    /// Returns the verified expiry time.
+    pub fn expires_at(&self) -> u64 {
+        self.expires_at
+    }
+
+    /// Returns the unique verified pass identity.
+    pub fn pass_id(&self) -> &str {
+        &self.pass_id
+    }
+
+    /// Returns the verified Work Challenge identity.
+    pub fn challenge_id(&self) -> &str {
+        &self.challenge_id
+    }
+
+    /// Returns the verified opaque Action Reference.
+    pub fn action_reference(&self) -> &str {
+        &self.action_reference
+    }
 }
 
 /// DPoP values established by a valid Claimant signature.
@@ -201,6 +245,10 @@ impl VerifiedGatePass {
 pub struct VerifiedDpop {
     claimant_jkt: String,
     access_token_hash: String,
+    proof_id: String,
+    http_method: String,
+    http_uri: String,
+    issued_at: u64,
 }
 
 impl VerifiedDpop {
@@ -212,6 +260,26 @@ impl VerifiedDpop {
     /// Returns the verified RFC 9449 `ath` value.
     pub fn access_token_hash(&self) -> &str {
         &self.access_token_hash
+    }
+
+    /// Returns the unique verified DPoP proof identity.
+    pub fn proof_id(&self) -> &str {
+        &self.proof_id
+    }
+
+    /// Returns the HTTP method covered by the proof.
+    pub fn http_method(&self) -> &str {
+        &self.http_method
+    }
+
+    /// Returns the HTTP URI covered by the proof.
+    pub fn http_uri(&self) -> &str {
+        &self.http_uri
+    }
+
+    /// Returns the proof issue time.
+    pub fn issued_at(&self) -> u64 {
+        self.issued_at
     }
 }
 
@@ -247,6 +315,13 @@ pub fn verify_gate_pass(
     Ok(VerifiedGatePass {
         authority_kid: header.kid,
         claimant_jkt: claims.cnf.jkt,
+        issuer: claims.iss,
+        audience: claims.aud,
+        issued_at: claims.iat,
+        expires_at: claims.exp,
+        pass_id: claims.jti,
+        challenge_id: claims.challenge_id,
+        action_reference: claims.action_reference,
     })
 }
 
@@ -282,6 +357,10 @@ pub fn verify_dpop(
     Ok(VerifiedDpop {
         claimant_jkt: p256_jwk_thumbprint(&claimant_key),
         access_token_hash: claims.ath,
+        proof_id: claims.jti,
+        http_method: claims.htm,
+        http_uri: claims.htu,
+        issued_at: claims.iat,
     })
 }
 
@@ -459,6 +538,10 @@ pub enum CryptoProfileError {
     InvalidAuthorityKey,
     #[error("Authority key set must be non-empty with unique identifiers")]
     InvalidAuthorityKeySet,
+    #[error("Authority signing key does not match configured JWKS")]
+    InvalidSigningKey,
+    #[error("JWS serialization failed")]
+    SerializationFailed,
     #[error("Claimant JWK does not match the BWG profile")]
     InvalidClaimantKey,
     #[error("JWS signature is invalid")]

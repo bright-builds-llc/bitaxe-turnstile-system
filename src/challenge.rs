@@ -182,6 +182,13 @@ impl TryFrom<String> for ClaimantKey {
     }
 }
 
+impl ClaimantKey {
+    /// Returns the opaque Claimant public-key serialization.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// The configured Relying Service audience bound into a Work Challenge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
@@ -194,6 +201,13 @@ impl TryFrom<String> for RelyingServiceAudience {
         HttpsUrl::try_from(value)
             .map(Self)
             .map_err(|_| ChallengeError::InvalidRelyingServiceAudience)
+    }
+}
+
+impl RelyingServiceAudience {
+    /// Returns the configured Relying Service audience URL.
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
     }
 }
 
@@ -344,6 +358,21 @@ impl WorkChallengeDescriptor {
     /// Returns the exact Work Requirement as the shared accounting type.
     pub fn required_work(&self) -> CreditedWork {
         self.work_requirement.credited_work
+    }
+
+    /// Returns the opaque Action Reference bound into the challenge.
+    pub fn action_reference(&self) -> &str {
+        &self.action_reference.0
+    }
+
+    /// Returns the Relying Service audience bound into the challenge.
+    pub fn relying_service_audience(&self) -> &str {
+        self.relying_service_audience.as_str()
+    }
+
+    /// Returns the Claimant public-key serialization bound into the challenge.
+    pub fn claimant_key(&self) -> &str {
+        self.claimant_key.as_str()
     }
 }
 

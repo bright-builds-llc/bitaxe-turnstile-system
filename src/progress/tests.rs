@@ -91,6 +91,36 @@ fn exact_threshold_marks_progress_satisfied() -> Result<(), ProgressError> {
 }
 
 #[test]
+fn threshold_crossing_creates_issuance_intent_once() -> Result<(), ProgressError> {
+    // Arrange
+    let required_work = CreditedWork::try_from("4295032833".to_owned())?;
+    let mut progress = ChallengeProgress::new(required_work);
+    let first_input = valid_event_input()?;
+    let mut later_input = valid_event_input()?;
+    later_input.event_id = AcceptedWorkEventId::try_from("event_later01".to_owned())?;
+    later_input.share_fingerprint = ShareFingerprint::try_from("share_later01".to_owned())?;
+    progress.register_session(first_input.work_session_id.clone())?;
+
+    // Act
+    let threshold_ack = progress.accept(AcceptedWorkEvent::try_from(first_input)?)?;
+    let later_ack = progress.accept(AcceptedWorkEvent::try_from(later_input)?)?;
+
+    // Assert
+    assert!(threshold_ack.issuance_intent_created());
+    assert!(!later_ack.issuance_intent_created());
+    assert_eq!(
+        later_ack.disposition(),
+        AcceptedWorkDisposition::ChallengeSatisfied
+    );
+    assert_eq!(
+        progress.verified_progress().to_decimal_string(),
+        "4295032833"
+    );
+
+    Ok(())
+}
+
+#[test]
 fn network_target_outcome_does_not_change_assigned_target_credit() -> Result<(), ProgressError> {
     // Arrange
     let required_work = CreditedWork::try_from("4295032833".to_owned())?;

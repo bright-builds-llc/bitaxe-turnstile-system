@@ -40,20 +40,16 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         env::var("BWG_PRIVACY_URL")?,
         env::var("BWG_TERMS_URL")?,
     )?;
+    let signing_kid = env::var("BWG_AUTHORITY_SIGNING_KID")?;
+    let signing_seed = env::var("BWG_AUTHORITY_SIGNING_SEED")?;
+    let config = authority::Config::new(environment, vec![credential], public_config)?
+        .with_signing_key_seed(signing_kid, &signing_seed)?;
     let listen_address =
         env::var("BWG_LISTEN_ADDRESS").unwrap_or_else(|_| "127.0.0.1:3000".to_owned());
     let listener = TcpListener::bind(&listen_address).await?;
     tracing::info!(%listen_address, "Gate Authority listening");
 
-    axum::serve(
-        listener,
-        authority::router(authority::Config::new(
-            environment,
-            vec![credential],
-            public_config,
-        )?),
-    )
-    .await?;
+    axum::serve(listener, authority::router(config)).await?;
 
     Ok(())
 }

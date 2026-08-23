@@ -12,7 +12,8 @@ use uuid::Uuid;
 use crate::{
     authority::{CLIENT_ID_HEADER, CreateChallengeRequest},
     challenge::{ActionPolicy, WorkChallengeDescriptor},
-    crypto_profile::{AuthorityJwkWire, AuthorityKeySet},
+    crypto_profile::{AuthorityJwk, AuthorityJwkWire, AuthorityKeySet},
+    redemption::{RedemptionError, RedemptionRecord, RedemptionRequest, RedemptionService},
     service_auth::{ServiceClientId, ServiceSecret},
     web_url::{AuthorityEndpointUrl, HttpsUrl},
 };
@@ -49,6 +50,10 @@ impl TrustedAuthority {
     pub fn key_ids(&self) -> Vec<&str> {
         self.keys.key_ids()
     }
+
+    pub(crate) fn keys(&self) -> Vec<AuthorityJwk> {
+        self.keys.keys().to_vec()
+    }
 }
 
 /// Server-only configuration for the reference account-creation integration.
@@ -58,6 +63,8 @@ pub struct Config {
     service_client_id: ServiceClientId,
     service_credential: ServiceSecret,
     trusted_authority: TrustedAuthority,
+    relying_service_audience: HttpsUrl,
+    redemption_url: AuthorityEndpointUrl,
 }
 
 impl Config {
@@ -66,6 +73,8 @@ impl Config {
         authority_base_url: impl Into<String>,
         service_client_id: impl Into<String>,
         service_credential: impl Into<String>,
+        relying_service_audience: impl Into<String>,
+        redemption_url: impl Into<String>,
         trusted_authority: TrustedAuthority,
     ) -> Result<Self, ReferenceConfigError> {
         Ok(Self {
@@ -75,6 +84,10 @@ impl Config {
                 .map_err(|_| ReferenceConfigError::InvalidClientId)?,
             service_credential: ServiceSecret::try_from(service_credential.into())
                 .map_err(|_| ReferenceConfigError::InvalidServiceSecret)?,
+            relying_service_audience: HttpsUrl::try_from(relying_service_audience.into())
+                .map_err(|_| ReferenceConfigError::InvalidRelyingServiceAudience)?,
+            redemption_url: AuthorityEndpointUrl::try_from(redemption_url.into())
+                .map_err(|_| ReferenceConfigError::InvalidRedemptionUrl)?,
             trusted_authority,
         })
     }
@@ -94,6 +107,7 @@ impl Config {
 struct ReferenceServiceState {
     config: Config,
     http_client: reqwest::Client,
+    redemption: RedemptionService,
 }
 
 #[derive(Deserialize)]
@@ -104,15 +118,34 @@ struct BrowserChallengeRequest {
 
 /// Builds the browser-facing reference account-creation interface.
 pub fn router(config: Config) -> Router {
+    let redemption = RedemptionService::new(
+        config.trusted_authority.issuer().to_owned(),
+        config.trusted_authority.keys(),
+        config.relying_service_audience.as_str().to_owned(),
+        config.redemption_url.as_str().to_owned(),
+    );
     Router::new()
         .route(
             "/account-creation/challenge",
             post(create_account_challenge),
         )
+        .route("/account-creation/redeem", post(redeem_account_creation))
         .with_state(ReferenceServiceState {
             config,
             http_client: reqwest::Client::new(),
+            redemption,
         })
+}
+
+async fn redeem_account_creation(
+    State(state): State<ReferenceServiceState>,
+    Json(request): Json<RedemptionRequest>,
+) -> Result<Json<RedemptionRecord>, ReferenceServiceError> {
+    let now = std::time::SystemTime::UNIX_EPOCH
+        .elapsed()
+        .map_err(|_| ReferenceServiceError::InternalTime)?
+        .as_secs();
+    Ok(Json(state.redemption.redeem(request, now)?))
 }
 
 async fn create_account_challenge(
@@ -169,16 +202,30 @@ enum ReferenceServiceError {
     AuthorityUnavailable,
     AuthorityRejected,
     InvalidAuthorityResponse,
+    InvalidRedemption(RedemptionError),
+    InternalTime,
+}
+
+impl From<RedemptionError> for ReferenceServiceError {
+    fn from(error: RedemptionError) -> Self {
+        Self::InvalidRedemption(error)
+    }
 }
 
 impl IntoResponse for ReferenceServiceError {
     fn into_response(self) -> Response {
-        let code = match self {
-            Self::AuthorityUnavailable | Self::InvalidAuthorityResponse => "authority_unavailable",
-            Self::AuthorityRejected => "authority_rejected_request",
+        let (status, code) = match self {
+            Self::AuthorityUnavailable | Self::InvalidAuthorityResponse => {
+                (StatusCode::BAD_GATEWAY, "authority_unavailable")
+            }
+            Self::AuthorityRejected => (StatusCode::BAD_GATEWAY, "authority_rejected_request"),
+            Self::InvalidRedemption(error) => {
+                tracing::warn!(%error, "Redemption request rejected");
+                (StatusCode::UNAUTHORIZED, "invalid_redemption")
+            }
+            Self::InternalTime => (StatusCode::INTERNAL_SERVER_ERROR, "internal_error"),
         };
-
-        (StatusCode::BAD_GATEWAY, Json(ErrorResponse { error: code })).into_response()
+        (status, Json(ErrorResponse { error: code })).into_response()
     }
 }
 
@@ -195,6 +242,10 @@ pub enum ReferenceConfigError {
     InvalidClientId,
     #[error("service credential is not a high-entropy base64url token")]
     InvalidServiceSecret,
+    #[error("Relying Service audience must use HTTPS")]
+    InvalidRelyingServiceAudience,
+    #[error("Redemption URL must use HTTPS or loopback HTTP")]
+    InvalidRedemptionUrl,
     #[error("trusted Authority issuer must use HTTPS")]
     InvalidTrustedIssuer,
     #[error("trusted Authority keys must be valid, non-empty, and unique")]

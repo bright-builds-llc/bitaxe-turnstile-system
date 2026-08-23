@@ -56,6 +56,7 @@ impl AuthorityPublicConfig {
             endpoints: AuthorityEndpoints {
                 challenge_creation: format!("{base_url}/v0/challenges"),
                 challenge_progress: format!("{base_url}/v0/challenges/{{challenge_id}}/events"),
+                gate_pass: format!("{base_url}/v0/challenges/{{challenge_id}}/gate-pass"),
                 authority_descriptor: format!(
                     "{base_url}/.well-known/pow-gate-configuration"
                 ),
@@ -117,6 +118,14 @@ impl AuthorityPublicConfig {
             },
         })
     }
+
+    pub(crate) fn issuer(&self) -> &str {
+        self.issuer.as_str()
+    }
+
+    pub(crate) fn authority_keys(&self) -> &AuthorityKeySet {
+        &self.authority_keys
+    }
 }
 
 /// A validated, versioned public Gate Authority discovery document.
@@ -172,6 +181,7 @@ impl AuthorityDescriptorFields {
                 self.issuer.as_str(),
                 self.endpoints.challenge_creation.as_str(),
                 self.endpoints.challenge_progress.as_str(),
+                self.endpoints.gate_pass.as_str(),
                 self.endpoints.authority_descriptor.as_str(),
                 self.endpoints.jwks.as_str(),
                 self.source.repository.as_str(),
@@ -223,6 +233,7 @@ impl AuthorityDescriptorFields {
 struct AuthorityEndpoints {
     challenge_creation: String,
     challenge_progress: String,
+    gate_pass: String,
     authority_descriptor: String,
     jwks: String,
 }

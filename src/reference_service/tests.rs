@@ -63,6 +63,8 @@ fn reference_config_rejects_insecure_remote_authority_endpoint()
         "http://authority.example",
         "reference-service",
         VALID_SECRET,
+        "https://relying.example",
+        "http://127.0.0.1:1/account-creation/redeem",
         trusted,
     );
 
@@ -85,6 +87,8 @@ fn reference_config_rejects_invalid_client_identifier() -> Result<(), Box<dyn st
         "https://authority.example",
         "invalid client",
         VALID_SECRET,
+        "https://relying.example",
+        "http://127.0.0.1:1/account-creation/redeem",
         trusted,
     );
 
@@ -104,6 +108,8 @@ fn reference_config_rejects_weak_service_secret() -> Result<(), Box<dyn std::err
         "https://authority.example",
         "reference-service",
         "a".repeat(43),
+        "https://relying.example",
+        "http://127.0.0.1:1/account-creation/redeem",
         trusted,
     );
 

@@ -132,6 +132,11 @@ impl TryFrom<AcceptedWorkEventInput> for AcceptedWorkEvent {
 }
 
 impl AcceptedWorkEvent {
+    /// Returns the challenge-scoped Work Session named by this event.
+    pub fn work_session_id(&self) -> &WorkSessionId {
+        &self.work_session_id
+    }
+
     fn matches_authoritative_replay(&self, other: &Self) -> bool {
         self.event_id == other.event_id
             && self.work_session_id == other.work_session_id
@@ -148,6 +153,7 @@ impl AcceptedWorkEvent {
 pub enum AcceptedWorkDisposition {
     Credited,
     DuplicateShare,
+    ChallengeSatisfied,
 }
 
 /// Stable acknowledgement returned for original and replayed event delivery.
@@ -161,6 +167,7 @@ pub struct AcceptedWorkAcknowledgement {
     maybe_credited_work: Option<CreditedWork>,
     verified_progress: VerifiedProgress,
     work_requirement: CreditedWork,
+    issuance_intent_created: bool,
 }
 
 impl AcceptedWorkAcknowledgement {
@@ -177,6 +184,11 @@ impl AcceptedWorkAcknowledgement {
     /// Returns how the event affected the projection.
     pub fn disposition(&self) -> AcceptedWorkDisposition {
         self.disposition
+    }
+
+    /// Returns whether this acknowledgement crossed the threshold and created issuance intent.
+    pub fn issuance_intent_created(&self) -> bool {
+        self.issuance_intent_created
     }
 }
 
@@ -216,6 +228,7 @@ pub struct ChallengeProgress {
     work_sessions: HashSet<WorkSessionId>,
     event_records: HashMap<AcceptedWorkEventId, AcceptedEventRecord>,
     share_fingerprints: HashSet<ShareFingerprint>,
+    issuance_intent_created: bool,
 }
 
 struct AcceptedEventRecord {
@@ -251,6 +264,7 @@ impl ChallengeProgress {
             work_sessions: HashSet::new(),
             event_records: HashMap::new(),
             share_fingerprints: HashSet::new(),
+            issuance_intent_created: false,
         }
     }
 
@@ -282,9 +296,10 @@ impl ChallengeProgress {
             return Err(ProgressError::UnknownWorkSession);
         }
 
+        let already_satisfied = self.is_satisfied();
         let duplicate_share =
             globally_duplicate_share || self.share_fingerprints.contains(&event.share_fingerprint);
-        let maybe_credited_work = if duplicate_share {
+        let maybe_credited_work = if duplicate_share || already_satisfied {
             None
         } else {
             let credited_work = event.assigned_target.credited_work();
@@ -293,7 +308,9 @@ impl ChallengeProgress {
         };
         self.share_fingerprints
             .insert(event.share_fingerprint.clone());
-        let disposition = if duplicate_share {
+        let disposition = if already_satisfied {
+            AcceptedWorkDisposition::ChallengeSatisfied
+        } else if duplicate_share {
             AcceptedWorkDisposition::DuplicateShare
         } else {
             AcceptedWorkDisposition::Credited
@@ -302,6 +319,10 @@ impl ChallengeProgress {
         // Worker-reported work and lucky depth are deliberately non-authoritative.
         let recorded_event = event.clone();
         drop(event.maybe_worker_report);
+        let issuance_intent_created = !self.issuance_intent_created && self.is_satisfied();
+        if issuance_intent_created {
+            self.issuance_intent_created = true;
+        }
         let acknowledgement = AcceptedWorkAcknowledgement {
             event_id: event.event_id.clone(),
             work_session_id: event.work_session_id,
@@ -311,6 +332,7 @@ impl ChallengeProgress {
             maybe_credited_work,
             verified_progress: self.verified_progress,
             work_requirement: self.work_requirement,
+            issuance_intent_created,
         };
         self.event_records.insert(
             event.event_id,
@@ -367,6 +389,18 @@ struct ChallengeChannel {
 }
 
 impl ProgressService {
+    /// Resolves the challenge canonically bound to one registered Work Session.
+    pub fn challenge_for_session(
+        &self,
+        session_id: &WorkSessionId,
+    ) -> Result<ChallengeId, ProgressError> {
+        self.lock_state()?
+            .work_sessions
+            .get(session_id)
+            .cloned()
+            .ok_or(ProgressError::UnknownWorkSession)
+    }
+
     /// Registers an immutable issued challenge before accepting Work Sessions.
     pub fn register_challenge(
         &self,
@@ -508,6 +542,8 @@ pub enum ProgressError {
     UnknownChallenge,
     #[error("progress projection state is unavailable")]
     ProgressStateUnavailable,
+    #[error("system clock is unavailable")]
+    ClockUnavailable,
     #[error(transparent)]
     InvalidWork(#[from] WorkError),
 }

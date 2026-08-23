@@ -15,6 +15,8 @@ use tokio::net::TcpListener;
 const SERVICE_CREDENTIAL: &str = "test-secret-P9vK2mQ7xR4tY8uN3cF6wL1zA5dH0sJ";
 const SERVICE_CLIENT_ID: &str = "reference-service-test";
 const TRUSTED_AUTHORITY_ISSUER: &str = "https://authority.example";
+const RELYING_SERVICE_AUDIENCE: &str = "https://relying.example";
+const REDEMPTION_URL: &str = "http://127.0.0.1:1/account-creation/redeem";
 
 #[path = "support/authority_keys.rs"]
 mod authority_key_support;
@@ -29,6 +31,8 @@ async fn reference_backend_issues_a_browser_safe_standard_challenge()
         authority_url,
         SERVICE_CLIENT_ID,
         SERVICE_CREDENTIAL,
+        RELYING_SERVICE_AUDIENCE,
+        REDEMPTION_URL,
         trusted_authority()?,
     )?))
     .await?;
@@ -107,6 +111,8 @@ async fn browser_cannot_supply_authoritative_challenge_terms()
         authority_url,
         SERVICE_CLIENT_ID,
         SERVICE_CREDENTIAL,
+        RELYING_SERVICE_AUDIENCE,
+        REDEMPTION_URL,
         trusted_authority()?,
     )?))
     .await?;
