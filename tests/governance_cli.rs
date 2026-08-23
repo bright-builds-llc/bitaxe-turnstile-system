@@ -42,6 +42,10 @@ async fn authority_plan_persists_a_digest_bound_dry_run_without_domain_changes()
         .env("BWG_AUTHORITY_DATABASE_URL", database.database_url())
         .output()?;
     let manifest = serde_json::from_slice::<Value>(&output.stdout)?;
+    let future = Command::new(env!("CARGO_BIN_EXE_gate-authority-governance"))
+        .args(["plan-retention", "--as-of", &u64::MAX.to_string()])
+        .env("BWG_AUTHORITY_DATABASE_URL", database.database_url())
+        .output()?;
 
     // Assert
     assert!(output.status.success());
@@ -55,6 +59,7 @@ async fn authority_plan_persists_a_digest_bound_dry_run_without_domain_changes()
             .len(),
         64
     );
+    assert!(!future.status.success());
 
     Ok(())
 }
@@ -153,6 +158,20 @@ async fn authority_apply_requires_the_exact_manifest_and_is_idempotent()
         ],
         true,
     )?;
+    let stale_policy = run_authority(
+        database.database_url(),
+        &[
+            "apply-retention",
+            "--job-id",
+            job_id,
+            "--manifest-digest",
+            digest,
+            "--operational-retention-seconds",
+            "2678400",
+            "--confirm-destruction",
+        ],
+        true,
+    )?;
     let wrong_context = run_reference(
         database.database_url(),
         &[
@@ -165,6 +184,60 @@ async fn authority_apply_requires_the_exact_manifest_and_is_idempotent()
         ],
         true,
     )?;
+    sqlx::query(
+        "UPDATE gate_authority.claimant_issuance_proofs
+         SET expires_at_unix_seconds = 60
+         WHERE proof_id = 'proof_governance_fixture'",
+    )
+    .execute(&pool)
+    .await?;
+    let stale_record = run_authority(
+        database.database_url(),
+        &[
+            "apply-retention",
+            "--job-id",
+            job_id,
+            "--manifest-digest",
+            digest,
+            "--confirm-destruction",
+        ],
+        true,
+    )?;
+    sqlx::query(
+        "UPDATE gate_authority.claimant_issuance_proofs
+         SET expires_at_unix_seconds = 50
+         WHERE proof_id = 'proof_governance_fixture'",
+    )
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        "UPDATE gate_authority.governance_retention_items
+         SET eligibility_reason = 'tombstone_window_elapsed'
+         WHERE job_id = $1::uuid",
+    )
+    .bind(job_id)
+    .execute(&pool)
+    .await?;
+    let changed_manifest_item = run_authority(
+        database.database_url(),
+        &[
+            "apply-retention",
+            "--job-id",
+            job_id,
+            "--manifest-digest",
+            digest,
+            "--confirm-destruction",
+        ],
+        true,
+    )?;
+    sqlx::query(
+        "UPDATE gate_authority.governance_retention_items
+         SET eligibility_reason = 'protocol_retention_floor_reached'
+         WHERE job_id = $1::uuid",
+    )
+    .bind(job_id)
+    .execute(&pool)
+    .await?;
     let applied = run_authority(
         database.database_url(),
         &[
@@ -206,7 +279,10 @@ async fn authority_apply_requires_the_exact_manifest_and_is_idempotent()
     assert!(!disabled.status.success());
     assert!(!unconfirmed.status.success());
     assert!(!rejected.status.success());
+    assert!(!stale_policy.status.success());
     assert!(!wrong_context.status.success());
+    assert!(!stale_record.status.success());
+    assert!(!changed_manifest_item.status.success());
     assert_eq!(applied["status"], "completed");
     assert_eq!(applied["deleted_items"], 1);
     assert_eq!(repeated["status"], "completed");

@@ -1,5 +1,7 @@
 //! Pure BWG data-governance policy and context-local operator interfaces.
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
@@ -270,7 +272,6 @@ impl GovernanceManifest {
 
 /// Context-local PostgreSQL governance application used by the operator CLI.
 pub struct GovernanceApplication {
-    context: GovernanceContext,
     repository: PostgresGovernanceRepository,
 }
 
@@ -281,10 +282,7 @@ impl GovernanceApplication {
         database_url: &str,
     ) -> Result<Self, GovernanceError> {
         let repository = PostgresGovernanceRepository::connect(context, database_url).await?;
-        Ok(Self {
-            context,
-            repository,
-        })
+        Ok(Self { repository })
     }
 
     /// Plans eligible records without changing governed domain rows.
@@ -300,8 +298,15 @@ impl GovernanceApplication {
         if as_of_unix_seconds == 0 {
             return Err(GovernanceError::InvalidPlanningInstant);
         }
+        let trusted_now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| GovernanceError::SystemClockUnavailable)?
+            .as_secs();
+        if as_of_unix_seconds > trusted_now {
+            return Err(GovernanceError::PlanningInstantInFuture);
+        }
         self.repository
-            .plan_retention(self.context, as_of_unix_seconds, policy)
+            .plan_retention(as_of_unix_seconds, policy)
             .await
     }
 
@@ -310,7 +315,7 @@ impl GovernanceApplication {
         &self,
         request: ApplyRetentionRequest,
     ) -> Result<ApplyRetentionResult, GovernanceError> {
-        self.repository.apply_retention(self.context, request).await
+        self.repository.apply_retention(request).await
     }
 }
 
@@ -319,6 +324,7 @@ pub struct ApplyRetentionRequest {
     job_id: Uuid,
     manifest_digest: String,
     batch_size: u64,
+    policy: RetentionPolicy,
 }
 
 impl ApplyRetentionRequest {
@@ -329,6 +335,7 @@ impl ApplyRetentionRequest {
         batch_size: u64,
         destructive_enabled: bool,
         confirmed: bool,
+        policy: RetentionPolicy,
     ) -> Result<Self, GovernanceError> {
         if !destructive_enabled {
             return Err(GovernanceError::DestructiveApplyDisabled);
@@ -348,6 +355,7 @@ impl ApplyRetentionRequest {
             job_id: Uuid::parse_str(job_id).map_err(|_| GovernanceError::InvalidJobId)?,
             manifest_digest: manifest_digest.to_owned(),
             batch_size,
+            policy,
         })
     }
 }
@@ -371,6 +379,10 @@ pub enum GovernanceError {
     InvalidRetentionPolicy,
     #[error("retention planning instant must be positive")]
     InvalidPlanningInstant,
+    #[error("retention planning instant cannot be later than trusted system time")]
+    PlanningInstantInFuture,
+    #[error("trusted system time is unavailable")]
+    SystemClockUnavailable,
     #[error("destructive retention apply is disabled")]
     DestructiveApplyDisabled,
     #[error("destructive retention apply requires explicit confirmation")]
@@ -383,6 +395,8 @@ pub enum GovernanceError {
     InvalidManifestDigest,
     #[error("governance manifest digest does not match the planned job")]
     ManifestDigestMismatch,
+    #[error("current Retention Policy differs from the reviewed Governance Manifest")]
+    StaleRetentionPolicy,
     #[error("retention job is unavailable in this persistence context")]
     UnknownRetentionJob,
     #[error("governed records changed after planning; create and review a new plan")]

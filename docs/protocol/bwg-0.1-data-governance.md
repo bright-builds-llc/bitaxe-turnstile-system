@@ -55,7 +55,8 @@ The `gate-authority-governance` and `reference-service-governance` binaries expo
 shape while reading only `BWG_AUTHORITY_DATABASE_URL` or `BWG_RELYING_SERVICE_DATABASE_URL`,
 respectively.
 
-- `plan-retention --as-of <unix-seconds>` applies the hosted 30/90-day policy by default. Optional
+- `plan-retention --as-of <unix-seconds>` rejects an instant later than trusted system time and
+  applies the hosted 30/90-day policy by default. Optional
   `--operational-retention-seconds` and `--tombstone-retention-seconds` values may extend but never
   shorten those windows. Planning writes only context-local job, ordered-item, and manifest metadata.
 - The JSON plan includes the job ID, context, planning instant, policy, status, total eligible items,
@@ -63,11 +64,13 @@ respectively.
   never exposes governed record identifiers.
 - `apply-retention --job-id <uuid> --manifest-digest <sha256>
   --confirm-destruction [--batch-size <1..1000>]` advances at most one bounded batch. It additionally
-  requires `BWG_GOVERNANCE_DESTRUCTIVE_ENABLED=true`; absence is fail-closed.
+  requires `BWG_GOVERNANCE_DESTRUCTIVE_ENABLED=true`; absence is fail-closed. The same optional
+  retention-window arguments must still match the reviewed plan.
 - A job ID from the other context, a changed digest, missing confirmation, disabled destructive
-  mode, an invalid batch bound, or a governed row changed since planning fails before a partial
-  batch can commit. Retrying a completed job returns its stable completion cursor with zero new
-  transitions.
+  mode, an invalid batch bound, persisted plan-item drift, policy drift, or a governed row whose
+  expiry changed since planning fails before a partial batch can commit. Apply recomputes the full
+  manifest digest before selecting the bounded effect batch. Retrying a completed job returns its
+  stable completion cursor with zero new transitions.
 - `export` is reserved on both CLIs and remains unavailable until the versioned export/audit profile
   is implemented.
 

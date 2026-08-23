@@ -46,3 +46,48 @@ fn retention_policy_rejects_zero_or_inverted_windows() {
     assert!(below_hosted_default.is_err());
     assert!(inverted.is_err());
 }
+
+#[test]
+fn identifying_operational_records_are_planned_for_pseudonymization()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Arrange
+    let candidate = RetentionCandidate::new(
+        GovernedRecordClass::AuthorityOperational,
+        RetentionState::Identifying,
+        100,
+    );
+
+    // Act
+    let planned = plan_candidate(&candidate, 100, RetentionPolicy::hosted_default())?
+        .expect("operational floor should permit pseudonymization");
+
+    // Assert
+    assert_eq!(planned.action(), RetentionAction::Pseudonymize);
+    assert_eq!(
+        planned.reason(),
+        EligibilityReason::OperationalWindowElapsed
+    );
+
+    Ok(())
+}
+
+#[test]
+fn pseudonymized_records_are_planned_for_tombstone_deletion()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Arrange
+    let candidate = RetentionCandidate::new(
+        GovernedRecordClass::RelyingServiceOperational,
+        RetentionState::Pseudonymized,
+        100,
+    );
+
+    // Act
+    let planned = plan_candidate(&candidate, 100, RetentionPolicy::hosted_default())?
+        .expect("tombstone floor should permit deletion");
+
+    // Assert
+    assert_eq!(planned.action(), RetentionAction::Delete);
+    assert_eq!(planned.reason(), EligibilityReason::TombstoneWindowElapsed);
+
+    Ok(())
+}

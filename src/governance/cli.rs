@@ -36,6 +36,7 @@ async fn apply_retention(
     let confirmed = arguments
         .iter()
         .any(|argument| argument == "--confirm-destruction");
+    let policy = retention_policy(arguments)?;
     let destructive_enabled =
         env::var("BWG_GOVERNANCE_DESTRUCTIVE_ENABLED").is_ok_and(|value| value == "true");
     let request = ApplyRetentionRequest::new(
@@ -44,6 +45,7 @@ async fn apply_retention(
         batch_size,
         destructive_enabled,
         confirmed,
+        policy,
     )?;
     let database_url = env::var(database_url_name(context))?;
     let application = GovernanceApplication::connect(context, &database_url).await?;

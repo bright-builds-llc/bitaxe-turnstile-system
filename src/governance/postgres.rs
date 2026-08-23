@@ -16,6 +16,34 @@ static REFERENCE_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migration
 
 pub(super) struct PostgresGovernanceRepository {
     pool: PgPool,
+    profile: ContextProfile,
+}
+
+#[derive(Clone, Copy)]
+struct ContextProfile {
+    context: GovernanceContext,
+    create_schema: &'static str,
+    migrator: &'static sqlx::migrate::Migrator,
+    replay_candidates_query: &'static str,
+}
+
+impl ContextProfile {
+    const fn for_context(context: GovernanceContext) -> Self {
+        match context {
+            GovernanceContext::GateAuthority => Self {
+                context,
+                create_schema: "CREATE SCHEMA IF NOT EXISTS gate_authority",
+                migrator: &AUTHORITY_MIGRATOR,
+                replay_candidates_query: include_str!("queries/authority_replay_candidates.sql"),
+            },
+            GovernanceContext::RelyingService => Self {
+                context,
+                create_schema: "CREATE SCHEMA IF NOT EXISTS relying_service",
+                migrator: &REFERENCE_MIGRATOR,
+                replay_candidates_query: include_str!("queries/reference_replay_candidates.sql"),
+            },
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -45,15 +73,14 @@ impl PostgresGovernanceRepository {
         context: GovernanceContext,
         database_url: &str,
     ) -> Result<Self, GovernanceError> {
+        let profile = ContextProfile::for_context(context);
         let bootstrap_pool = PgPoolOptions::new()
             .max_connections(1)
             .connect(database_url)
             .await?;
-        let create_schema = match context {
-            GovernanceContext::GateAuthority => "CREATE SCHEMA IF NOT EXISTS gate_authority",
-            GovernanceContext::RelyingService => "CREATE SCHEMA IF NOT EXISTS relying_service",
-        };
-        sqlx::query(create_schema).execute(&bootstrap_pool).await?;
+        sqlx::query(profile.create_schema)
+            .execute(&bootstrap_pool)
+            .await?;
         bootstrap_pool.close().await;
 
         let search_path = format!("{},public", context.as_str());
@@ -63,20 +90,16 @@ impl PostgresGovernanceRepository {
             .max_connections(5)
             .connect_with(options)
             .await?;
-        match context {
-            GovernanceContext::GateAuthority => AUTHORITY_MIGRATOR.run(&pool).await?,
-            GovernanceContext::RelyingService => REFERENCE_MIGRATOR.run(&pool).await?,
-        }
-        Ok(Self { pool })
+        profile.migrator.run(&pool).await?;
+        Ok(Self { pool, profile })
     }
 
     pub(super) async fn plan_retention(
         &self,
-        context: GovernanceContext,
         as_of_unix_seconds: u64,
         policy: RetentionPolicy,
     ) -> Result<GovernanceManifest, GovernanceError> {
-        let candidates = self.replay_candidates(context, as_of_unix_seconds).await?;
+        let candidates = self.replay_candidates(as_of_unix_seconds).await?;
         let mut items = Vec::with_capacity(candidates.len());
         let mut count_by_transition = BTreeMap::new();
         for (record_class, record_key, retention_floor_unix_seconds) in candidates {
@@ -103,62 +126,37 @@ impl PostgresGovernanceRepository {
                 retention_floor_unix_seconds,
             });
         }
-        let planned_counts = count_by_transition
-            .into_iter()
-            .map(|((record_class, action, reason), count)| PlannedCount {
-                record_class,
-                action,
-                reason,
-                count,
-            })
-            .collect::<Vec<_>>();
-        let material = DigestMaterial {
-            schema_version: "bwg-governance-plan-v1",
-            context,
-            as_of_unix_seconds,
-            policy,
-            planned_counts: &planned_counts,
-            items: &items,
-        };
-        let manifest_digest = sha256_hex(&serde_json::to_vec(&material)?);
+        let planned_counts = planned_counts(count_by_transition);
+        let manifest_digest =
+            manifest_digest_for(self.profile.context, as_of_unix_seconds, policy, &items)?;
         let job_id = Uuid::new_v4();
         let eligible_items =
             u64::try_from(items.len()).map_err(|_| GovernanceError::InvalidPersistedData)?;
         let mut transaction = self.pool.begin().await?;
-        sqlx::query(
-            "INSERT INTO governance_retention_jobs
-             (job_id, manifest_digest, as_of_unix_seconds, policy, status, cursor,
-              eligible_items, created_at_unix_seconds)
-             VALUES ($1, $2, $3, $4, 'planned', 0, $5, $3)",
-        )
-        .bind(job_id)
-        .bind(&manifest_digest)
-        .bind(to_i64(as_of_unix_seconds)?)
-        .bind(serde_json::to_value(policy)?)
-        .bind(to_i64(eligible_items)?)
-        .execute(&mut *transaction)
-        .await?;
-        for item in items {
-            sqlx::query(
-                "INSERT INTO governance_retention_items
-                 (job_id, sequence, record_class, record_key, action, eligibility_reason,
-                  retention_floor_unix_seconds)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)",
-            )
+        sqlx::query(include_str!("queries/insert_retention_job.sql"))
             .bind(job_id)
-            .bind(to_i64(item.sequence)?)
-            .bind(record_class_name(item.record_class))
-            .bind(item.record_key)
-            .bind(item.action.as_str())
-            .bind(eligibility_reason_name(item.reason))
-            .bind(to_i64(item.retention_floor_unix_seconds)?)
+            .bind(&manifest_digest)
+            .bind(to_i64(as_of_unix_seconds)?)
+            .bind(serde_json::to_value(policy)?)
+            .bind(to_i64(eligible_items)?)
             .execute(&mut *transaction)
             .await?;
+        for item in items {
+            sqlx::query(include_str!("queries/insert_retention_item.sql"))
+                .bind(job_id)
+                .bind(to_i64(item.sequence)?)
+                .bind(record_class_name(item.record_class))
+                .bind(item.record_key)
+                .bind(item.action.as_str())
+                .bind(eligibility_reason_name(item.reason))
+                .bind(to_i64(item.retention_floor_unix_seconds)?)
+                .execute(&mut *transaction)
+                .await?;
         }
         transaction.commit().await?;
         Ok(GovernanceManifest {
             job_id: job_id.to_string(),
-            context,
+            context: self.profile.context,
             as_of_unix_seconds,
             policy,
             status: RetentionJobStatus::Planned,
@@ -170,19 +168,13 @@ impl PostgresGovernanceRepository {
 
     pub(super) async fn apply_retention(
         &self,
-        context: GovernanceContext,
         request: ApplyRetentionRequest,
     ) -> Result<ApplyRetentionResult, GovernanceError> {
         let mut transaction = self.pool.begin().await?;
-        let maybe_job = sqlx::query(
-            "SELECT manifest_digest, status, cursor, eligible_items, as_of_unix_seconds
-             FROM governance_retention_jobs
-             WHERE job_id = $1
-             FOR UPDATE",
-        )
-        .bind(request.job_id)
-        .fetch_optional(&mut *transaction)
-        .await?;
+        let maybe_job = sqlx::query(include_str!("queries/select_retention_job_for_apply.sql"))
+            .bind(request.job_id)
+            .fetch_optional(&mut *transaction)
+            .await?;
         let Some(job) = maybe_job else {
             return Err(GovernanceError::UnknownRetentionJob);
         };
@@ -190,15 +182,41 @@ impl PostgresGovernanceRepository {
         if manifest_digest != request.manifest_digest {
             return Err(GovernanceError::ManifestDigestMismatch);
         }
+        let policy = serde_json::from_value::<RetentionPolicy>(job.try_get("policy")?)?;
+        if policy != request.policy {
+            return Err(GovernanceError::StaleRetentionPolicy);
+        }
         let status = parse_job_status(&job.try_get::<String, _>("status")?)?;
         let cursor = to_u64(job.try_get("cursor")?)?;
         let eligible_items = to_u64(job.try_get("eligible_items")?)?;
-        let as_of = job.try_get::<i64, _>("as_of_unix_seconds")?;
+        let as_of_unix_seconds = to_u64(job.try_get("as_of_unix_seconds")?)?;
+        let persisted_items = sqlx::query(include_str!("queries/select_retention_items.sql"))
+            .bind(request.job_id)
+            .fetch_all(&mut *transaction)
+            .await?
+            .into_iter()
+            .map(planned_item_from_row)
+            .collect::<Result<Vec<_>, _>>()?;
+        if u64::try_from(persisted_items.len())
+            .map_err(|_| GovernanceError::InvalidPersistedData)?
+            != eligible_items
+        {
+            return Err(GovernanceError::ManifestDigestMismatch);
+        }
+        let recomputed_digest = manifest_digest_for(
+            self.profile.context,
+            as_of_unix_seconds,
+            policy,
+            &persisted_items,
+        )?;
+        if recomputed_digest != manifest_digest {
+            return Err(GovernanceError::ManifestDigestMismatch);
+        }
         if status == RetentionJobStatus::Completed {
             transaction.commit().await?;
             return Ok(ApplyRetentionResult {
                 job_id: request.job_id.to_string(),
-                context,
+                context: self.profile.context,
                 manifest_digest,
                 status,
                 cursor,
@@ -207,36 +225,32 @@ impl PostgresGovernanceRepository {
             });
         }
 
-        let items = sqlx::query(
-            "SELECT sequence, record_class, record_key, action
-             FROM governance_retention_items
-             WHERE job_id = $1 AND sequence > $2
-             ORDER BY sequence
-             LIMIT $3",
-        )
-        .bind(request.job_id)
-        .bind(to_i64(cursor)?)
-        .bind(to_i64(request.batch_size)?)
-        .fetch_all(&mut *transaction)
-        .await?;
         let mut next_cursor = cursor;
         let mut deleted_items = 0_u64;
         let pseudonymized_items = 0_u64;
-        for item in items {
-            let sequence = to_u64(item.try_get("sequence")?)?;
-            let record_class = item.try_get::<String, _>("record_class")?;
-            let record_key = item.try_get::<String, _>("record_key")?;
-            let action = item.try_get::<String, _>("action")?;
-            if action != RetentionAction::Delete.as_str() {
+        let batch_size = usize::try_from(request.batch_size)
+            .map_err(|_| GovernanceError::InvalidPersistedData)?;
+        for item in persisted_items
+            .iter()
+            .filter(|item| item.sequence > cursor)
+            .take(batch_size)
+        {
+            if item.action != RetentionAction::Delete
+                || item.reason != EligibilityReason::ProtocolRetentionFloorReached
+            {
                 return Err(GovernanceError::InvalidPersistedData);
             }
-            let affected =
-                delete_replay_material(&mut transaction, context, &record_class, &record_key)
-                    .await?;
+            let affected = delete_replay_material(
+                &mut transaction,
+                self.profile.context,
+                item,
+                as_of_unix_seconds,
+            )
+            .await?;
             if affected != 1 {
                 return Err(GovernanceError::StaleRetentionPlan);
             }
-            next_cursor = sequence;
+            next_cursor = item.sequence;
             deleted_items += 1;
         }
         let completed = next_cursor >= eligible_items;
@@ -245,22 +259,16 @@ impl PostgresGovernanceRepository {
         } else {
             RetentionJobStatus::Applying
         };
-        sqlx::query(
-            "UPDATE governance_retention_jobs
-             SET status = $2, cursor = $3,
-                 completed_at_unix_seconds = CASE WHEN $2 = 'completed' THEN $4 ELSE NULL END
-             WHERE job_id = $1",
-        )
-        .bind(request.job_id)
-        .bind(next_status.as_str())
-        .bind(to_i64(next_cursor)?)
-        .bind(as_of)
-        .execute(&mut *transaction)
-        .await?;
+        sqlx::query(include_str!("queries/update_retention_job.sql"))
+            .bind(request.job_id)
+            .bind(next_status.as_str())
+            .bind(to_i64(next_cursor)?)
+            .execute(&mut *transaction)
+            .await?;
         transaction.commit().await?;
         Ok(ApplyRetentionResult {
             job_id: request.job_id.to_string(),
-            context,
+            context: self.profile.context,
             manifest_digest,
             status: next_status,
             cursor: next_cursor,
@@ -271,100 +279,171 @@ impl PostgresGovernanceRepository {
 
     async fn replay_candidates(
         &self,
-        context: GovernanceContext,
         as_of_unix_seconds: u64,
     ) -> Result<Vec<(GovernedRecordClass, String, u64)>, GovernanceError> {
-        let as_of = to_i64(as_of_unix_seconds)?;
-        match context {
-            GovernanceContext::GateAuthority => {
-                let rows = sqlx::query(
-                    "SELECT proof_id, expires_at_unix_seconds
-                     FROM claimant_issuance_proofs
-                     WHERE expires_at_unix_seconds < $1
-                     ORDER BY proof_id",
-                )
-                .bind(as_of)
-                .fetch_all(&self.pool)
-                .await?;
-                rows.into_iter()
-                    .map(|row| {
-                        Ok((
-                            GovernedRecordClass::ClaimantIssuanceProofReplay,
-                            row.try_get("proof_id")?,
-                            to_u64(row.try_get("expires_at_unix_seconds")?)?,
-                        ))
-                    })
-                    .collect()
-            }
-            GovernanceContext::RelyingService => {
-                let rows = sqlx::query(
-                    "SELECT proof_id, expires_at_unix_seconds, record_class
-                     FROM (
-                         SELECT proof_id, expires_at_unix_seconds,
-                                'dpop_proof_replay' AS record_class
-                         FROM dpop_proofs
-                         WHERE expires_at_unix_seconds < $1
-                         UNION ALL
-                         SELECT proof_id, expires_at_unix_seconds,
-                                'claimant_outcome_proof_replay' AS record_class
-                         FROM claimant_outcome_proofs
-                         WHERE expires_at_unix_seconds < $1
-                     ) AS replay_material
-                     ORDER BY record_class, proof_id",
-                )
-                .bind(as_of)
-                .fetch_all(&self.pool)
-                .await?;
-                rows.into_iter()
-                    .map(|row| {
-                        let record_class = match row.try_get::<String, _>("record_class")?.as_str()
-                        {
-                            "dpop_proof_replay" => GovernedRecordClass::DpopProofReplay,
-                            "claimant_outcome_proof_replay" => {
-                                GovernedRecordClass::ClaimantOutcomeProofReplay
-                            }
-                            _ => return Err(GovernanceError::InvalidPersistedData),
-                        };
-                        Ok((
-                            record_class,
-                            row.try_get("proof_id")?,
-                            to_u64(row.try_get("expires_at_unix_seconds")?)?,
-                        ))
-                    })
-                    .collect()
-            }
-        }
+        let rows = sqlx::query(self.profile.replay_candidates_query)
+            .bind(to_i64(as_of_unix_seconds)?)
+            .fetch_all(&self.pool)
+            .await?;
+        rows.into_iter()
+            .map(|row| {
+                let record_class = parse_record_class(&row.try_get::<String, _>("record_class")?)?;
+                if !record_class_allowed_in_context(record_class, self.profile.context) {
+                    return Err(GovernanceError::InvalidPersistedData);
+                }
+                let expires_at = to_u64(row.try_get("expires_at_unix_seconds")?)?;
+                let retention_floor_unix_seconds = expires_at
+                    .checked_add(1)
+                    .ok_or(GovernanceError::InvalidPersistedData)?;
+                Ok((
+                    record_class,
+                    row.try_get("record_key")?,
+                    retention_floor_unix_seconds,
+                ))
+            })
+            .collect()
     }
 }
 
 async fn delete_replay_material(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     context: GovernanceContext,
-    record_class: &str,
-    record_key: &str,
+    item: &PlannedItem,
+    as_of_unix_seconds: u64,
 ) -> Result<u64, GovernanceError> {
-    let result = match (context, record_class) {
-        (GovernanceContext::GateAuthority, "claimant_issuance_proof_replay") => {
-            sqlx::query("DELETE FROM claimant_issuance_proofs WHERE proof_id = $1")
-                .bind(record_key)
-                .execute(&mut **transaction)
-                .await?
-        }
-        (GovernanceContext::RelyingService, "dpop_proof_replay") => {
-            sqlx::query("DELETE FROM dpop_proofs WHERE proof_id = $1")
-                .bind(record_key)
-                .execute(&mut **transaction)
-                .await?
-        }
-        (GovernanceContext::RelyingService, "claimant_outcome_proof_replay") => {
-            sqlx::query("DELETE FROM claimant_outcome_proofs WHERE proof_id = $1")
-                .bind(record_key)
-                .execute(&mut **transaction)
-                .await?
-        }
-        _ => return Err(GovernanceError::InvalidPersistedData),
-    };
+    if !record_class_allowed_in_context(item.record_class, context) {
+        return Err(GovernanceError::InvalidPersistedData);
+    }
+    let query = replay_delete_query(item.record_class)?;
+    let expected_expiry = item
+        .retention_floor_unix_seconds
+        .checked_sub(1)
+        .ok_or(GovernanceError::InvalidPersistedData)?;
+    let result = sqlx::query(query)
+        .bind(&item.record_key)
+        .bind(to_i64(expected_expiry)?)
+        .bind(to_i64(as_of_unix_seconds)?)
+        .execute(&mut **transaction)
+        .await?;
     Ok(result.rows_affected())
+}
+
+fn planned_item_from_row(row: sqlx::postgres::PgRow) -> Result<PlannedItem, GovernanceError> {
+    let record_class = parse_record_class(&row.try_get::<String, _>("record_class")?)?;
+    let record_key = row.try_get::<String, _>("record_key")?;
+    Ok(PlannedItem {
+        sequence: to_u64(row.try_get("sequence")?)?,
+        record_class,
+        record_key_digest: sha256_hex(record_key.as_bytes()),
+        record_key,
+        action: parse_retention_action(&row.try_get::<String, _>("action")?)?,
+        reason: parse_eligibility_reason(&row.try_get::<String, _>("eligibility_reason")?)?,
+        retention_floor_unix_seconds: to_u64(row.try_get("retention_floor_unix_seconds")?)?,
+    })
+}
+
+fn manifest_digest_for(
+    context: GovernanceContext,
+    as_of_unix_seconds: u64,
+    policy: RetentionPolicy,
+    items: &[PlannedItem],
+) -> Result<String, GovernanceError> {
+    let planned_counts = planned_counts(items.iter().fold(BTreeMap::new(), |mut counts, item| {
+        *counts
+            .entry((item.record_class, item.action, item.reason))
+            .or_insert(0) += 1;
+        counts
+    }));
+    let material = DigestMaterial {
+        schema_version: "bwg-governance-plan-v1",
+        context,
+        as_of_unix_seconds,
+        policy,
+        planned_counts: &planned_counts,
+        items,
+    };
+    Ok(sha256_hex(&serde_json::to_vec(&material)?))
+}
+
+fn planned_counts(
+    counts: BTreeMap<(GovernedRecordClass, RetentionAction, EligibilityReason), u64>,
+) -> Vec<PlannedCount> {
+    counts
+        .into_iter()
+        .map(|((record_class, action, reason), count)| PlannedCount {
+            record_class,
+            action,
+            reason,
+            count,
+        })
+        .collect()
+}
+
+fn parse_record_class(value: &str) -> Result<GovernedRecordClass, GovernanceError> {
+    match value {
+        "claimant_issuance_proof_replay" => Ok(GovernedRecordClass::ClaimantIssuanceProofReplay),
+        "signed_gate_pass" => Ok(GovernedRecordClass::SignedGatePass),
+        "authority_operational" => Ok(GovernedRecordClass::AuthorityOperational),
+        "dpop_proof_replay" => Ok(GovernedRecordClass::DpopProofReplay),
+        "claimant_outcome_proof_replay" => Ok(GovernedRecordClass::ClaimantOutcomeProofReplay),
+        "pass_consumption" => Ok(GovernedRecordClass::PassConsumption),
+        "relying_service_operational" => Ok(GovernedRecordClass::RelyingServiceOperational),
+        "governance_audit" => Ok(GovernedRecordClass::GovernanceAudit),
+        _ => Err(GovernanceError::InvalidPersistedData),
+    }
+}
+
+fn parse_retention_action(value: &str) -> Result<RetentionAction, GovernanceError> {
+    match value {
+        "pseudonymize" => Ok(RetentionAction::Pseudonymize),
+        "delete" => Ok(RetentionAction::Delete),
+        _ => Err(GovernanceError::InvalidPersistedData),
+    }
+}
+
+fn parse_eligibility_reason(value: &str) -> Result<EligibilityReason, GovernanceError> {
+    match value {
+        "protocol_retention_floor_reached" => Ok(EligibilityReason::ProtocolRetentionFloorReached),
+        "operational_window_elapsed" => Ok(EligibilityReason::OperationalWindowElapsed),
+        "tombstone_window_elapsed" => Ok(EligibilityReason::TombstoneWindowElapsed),
+        _ => Err(GovernanceError::InvalidPersistedData),
+    }
+}
+
+const fn record_class_allowed_in_context(
+    record_class: GovernedRecordClass,
+    context: GovernanceContext,
+) -> bool {
+    matches!(
+        (record_class, context),
+        (
+            GovernedRecordClass::ClaimantIssuanceProofReplay
+                | GovernedRecordClass::SignedGatePass
+                | GovernedRecordClass::AuthorityOperational,
+            GovernanceContext::GateAuthority
+        ) | (
+            GovernedRecordClass::DpopProofReplay
+                | GovernedRecordClass::ClaimantOutcomeProofReplay
+                | GovernedRecordClass::PassConsumption
+                | GovernedRecordClass::RelyingServiceOperational,
+            GovernanceContext::RelyingService
+        ) | (GovernedRecordClass::GovernanceAudit, _)
+    )
+}
+
+const fn replay_delete_query(
+    record_class: GovernedRecordClass,
+) -> Result<&'static str, GovernanceError> {
+    match record_class {
+        GovernedRecordClass::ClaimantIssuanceProofReplay => {
+            Ok(include_str!("queries/delete_issuance_proof.sql"))
+        }
+        GovernedRecordClass::DpopProofReplay => Ok(include_str!("queries/delete_dpop_proof.sql")),
+        GovernedRecordClass::ClaimantOutcomeProofReplay => {
+            Ok(include_str!("queries/delete_outcome_proof.sql"))
+        }
+        _ => Err(GovernanceError::InvalidPersistedData),
+    }
 }
 
 fn to_i64(value: u64) -> Result<i64, GovernanceError> {
