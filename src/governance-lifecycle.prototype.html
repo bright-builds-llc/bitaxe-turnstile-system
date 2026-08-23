@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BWG data-governance lifecycle prototype</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        background: #101418;
+        color: #e9eef2;
+      }
+      body { max-width: 1080px; margin: 0 auto; padding: 2rem; }
+      h1, h2, h3 { color: #fff; }
+      .intro, .panel { background: #182026; border: 1px solid #33414a; border-radius: 12px; padding: 1rem; margin: 1rem 0; }
+      .contexts, .records { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+      .record { border-left: 4px solid #58c4a3; padding-left: .75rem; margin: .75rem 0; }
+      .muted { color: #9fb0bb; }
+      .notice { color: #ffd166; min-height: 1.5rem; }
+      button { background: #58c4a3; color: #07120f; border: 0; border-radius: 8px; padding: .65rem .85rem; margin: .25rem; font-weight: 700; cursor: pointer; }
+      button.secondary { background: #2a3540; color: #e9eef2; }
+      button:disabled { opacity: .45; cursor: default; }
+      .tabs { display: flex; flex-wrap: wrap; gap: .5rem; }
+      .tab.active { outline: 2px solid #ffd166; }
+      code { color: #9de2cd; }
+      @media (max-width: 760px) { .contexts, .records { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <h1>BWG data-governance lifecycle</h1>
+    <section class="intro">
+      <strong>Question:</strong> Can independent Gate Authority and Relying Service jobs safely
+      plan, resume, pseudonymize, delete, and export records without crossing protocol safety
+      floors or coupling the two persistence contexts?
+    </section>
+
+    <section class="panel">
+      <h2>Current state</h2>
+      <p id="notice" class="notice"></p>
+      <div id="state" class="contexts"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Free play</h2>
+      <button data-action="advance30">Advance to day 30</button>
+      <button data-action="advance90">Advance to day 90</button>
+      <button data-action="planAuthority">Plan Authority cleanup</button>
+      <button data-action="planRelying">Plan Relying cleanup</button>
+      <button data-action="applyAuthority">Apply Authority batch</button>
+      <button data-action="applyRelying">Apply Relying batch</button>
+      <button data-action="interruptAuthority">Interrupt Authority</button>
+      <button data-action="interruptRelying">Interrupt Relying</button>
+      <button data-action="resumeAuthority">Resume Authority</button>
+      <button data-action="resumeRelying">Resume Relying</button>
+      <button data-action="startExport">Start export snapshot</button>
+      <button data-action="resumeExport">Resume export</button>
+      <button class="secondary" data-action="reset">Reset</button>
+    </section>
+
+    <section class="panel">
+      <h2>Guided walkthroughs</h2>
+      <div id="tabs" class="tabs"></div>
+      <div id="walkthrough"></div>
+    </section>
+
+    <script>
+      // Pure prototype module: no DOM access and no persistence.
+      const GovernanceLifecycle = (() => {
+        const initialRecord = (name, safetyFloorDay) => ({
+          name,
+          safetyFloorDay,
+          state: "active",
+          plannedAction: null,
+        });
+
+        const initialContext = (records) => ({
+          job: "idle",
+          cursor: 0,
+          manifest: null,
+          records,
+        });
+
+        const initialState = () => ({
+          day: 0,
+          nextManifest: 1,
+          notice: "Fresh records are active in two independent contexts.",
+          authority: initialContext([
+            initialRecord("Signed Gate Pass bytes", 1),
+            initialRecord("Challenge and Accepted Work history", 30),
+          ]),
+          relying: initialContext([
+            initialRecord("Pass Consumption marker", 1),
+            initialRecord("Redemption and terminal outcome", 30),
+          ]),
+          exportJob: { state: "idle", snapshotDay: null, cursor: 0, digestStable: true },
+        });
+
+        const plannedAction = (record, day) => {
+          if (day < record.safetyFloorDay) return null;
+          if (record.name === "Signed Gate Pass bytes") return "delete";
+          if (day >= 90) return "delete";
+          if (day >= 30) return "pseudonymize";
+          return null;
+        };
+
+        const plan = (state, contextName) => {
+          const context = state[contextName];
+          const records = context.records.map((record) => ({
+            ...record,
+            plannedAction: plannedAction(record, state.day),
+          }));
+          const eligible = records.filter((record) => record.plannedAction).length;
+          return {
+            ...state,
+            nextManifest: state.nextManifest + 1,
+            notice: `${contextName} planned ${eligible} safe transition(s); no rows changed.`,
+            [contextName]: {
+              ...context,
+              job: "planned",
+              cursor: 0,
+              manifest: `${contextName}-manifest-${state.nextManifest}`,
+              records,
+            },
+          };
+        };
+
+        const apply = (state, contextName) => {
+          const context = state[contextName];
+          if (context.job !== "planned" && context.job !== "resuming") {
+            return { ...state, notice: `${contextName} has no resumable, digest-matched plan.` };
+          }
+          const index = context.records.findIndex((record, position) =>
+            position >= context.cursor && record.plannedAction,
+          );
+          if (index < 0) {
+            return {
+              ...state,
+              notice: `${contextName} completed independently at cursor ${context.cursor}.`,
+              [contextName]: { ...context, job: "completed" },
+            };
+          }
+          const records = context.records.map((record, position) => {
+            if (position !== index) return record;
+            return {
+              ...record,
+              state: record.plannedAction === "delete" ? "deleted" : "pseudonymized",
+              plannedAction: null,
+            };
+          });
+          return {
+            ...state,
+            notice: `${contextName} committed one bounded batch; the other context was untouched.`,
+            [contextName]: { ...context, cursor: index + 1, records },
+          };
+        };
+
+        const interrupt = (state, contextName) => ({
+          ...state,
+          notice: `${contextName} stopped after its last committed cursor.`,
+          [contextName]: { ...state[contextName], job: "interrupted" },
+        });
+
+        const resume = (state, contextName) => {
+          const context = state[contextName];
+          if (context.job !== "interrupted") {
+            return { ...state, notice: `${contextName} has no interrupted job to resume.` };
+          }
+          return {
+            ...state,
+            notice: `${contextName} resumed the same manifest at cursor ${context.cursor}.`,
+            [contextName]: { ...context, job: "resuming" },
+          };
+        };
+
+        const reduce = (state, action) => {
+          switch (action.type) {
+            case "reset": return initialState();
+            case "advance30": return { ...state, day: 30, notice: "Operational retention reached day 30." };
+            case "advance90": return { ...state, day: 90, notice: "Tombstone retention reached day 90." };
+            case "planAuthority": return plan(state, "authority");
+            case "planRelying": return plan(state, "relying");
+            case "applyAuthority": return apply(state, "authority");
+            case "applyRelying": return apply(state, "relying");
+            case "interruptAuthority": return interrupt(state, "authority");
+            case "interruptRelying": return interrupt(state, "relying");
+            case "resumeAuthority": return resume(state, "authority");
+            case "resumeRelying": return resume(state, "relying");
+            case "startExport": return {
+              ...state,
+              notice: `Export fixed a repeatable snapshot at day ${state.day}.`,
+              exportJob: { state: "interrupted", snapshotDay: state.day, cursor: 1, digestStable: true },
+            };
+            case "resumeExport": {
+              const snapshotDay = state.exportJob.snapshotDay;
+              if (snapshotDay === null) return { ...state, notice: "No export snapshot exists." };
+              return {
+                ...state,
+                notice: `Export resumed at cursor ${state.exportJob.cursor} using the unchanged day-${snapshotDay} snapshot.`,
+                exportJob: { ...state.exportJob, state: "completed", cursor: 4 },
+              };
+            }
+            default: return state;
+          }
+        };
+
+        return { initialState, reduce };
+      })();
+
+      const scenarios = [
+        {
+          title: "Safety floor",
+          description: "Try cleanup before expiry, then advance to day 30 and plan again.",
+          steps: ["planAuthority", "advance30", "planAuthority", "applyAuthority", "applyAuthority"],
+        },
+        {
+          title: "Interrupted batch",
+          description: "Commit one bounded change, interrupt, and resume from its durable cursor.",
+          steps: ["advance30", "planRelying", "applyRelying", "interruptRelying", "resumeRelying", "applyRelying"],
+        },
+        {
+          title: "Independent contexts",
+          description: "Stop Authority cleanup while Relying Service cleanup still completes.",
+          steps: ["advance30", "planAuthority", "planRelying", "interruptAuthority", "applyRelying", "applyRelying"],
+        },
+        {
+          title: "Repeatable export",
+          description: "Freeze a snapshot, advance time, then resume without changing its cutoff.",
+          steps: ["advance30", "startExport", "advance90", "resumeExport"],
+        },
+        {
+          title: "Tombstone expiry",
+          description: "Pseudonymize at day 30, then physically delete after day 90.",
+          steps: ["advance30", "planRelying", "applyRelying", "applyRelying", "advance90", "planRelying", "applyRelying", "applyRelying"],
+        },
+      ];
+
+      let state = GovernanceLifecycle.initialState();
+      let activeScenario = 0;
+      let activeStep = 0;
+
+      const label = (value) => value.replace(/([A-Z])/g, " $1").replace(/^./, (character) => character.toUpperCase());
+      const contextHtml = (name, context) => `
+        <div>
+          <h3>${label(name)}</h3>
+          <p>Job: <code>${context.job}</code> · Cursor: <code>${context.cursor}</code> · Manifest: <code>${context.manifest ?? "none"}</code></p>
+          ${context.records.map((record) => `
+            <div class="record">
+              <strong>${record.name}</strong><br />
+              State: <code>${record.state}</code> · Safety floor: day ${record.safetyFloorDay}<br />
+              Planned action: <code>${record.plannedAction ?? "none"}</code>
+            </div>
+          `).join("")}
+        </div>`;
+
+      const render = () => {
+        document.querySelector("#notice").textContent = state.notice;
+        document.querySelector("#state").innerHTML = `
+          <div><strong>Current day:</strong> ${state.day}</div>
+          <div><strong>Export:</strong> ${state.exportJob.state}, snapshot day ${state.exportJob.snapshotDay ?? "none"}, cursor ${state.exportJob.cursor}</div>
+          ${contextHtml("authority", state.authority)}
+          ${contextHtml("relying", state.relying)}
+        `;
+        document.querySelector("#tabs").innerHTML = scenarios.map((scenario, index) =>
+          `<button class="tab secondary ${index === activeScenario ? "active" : ""}" data-scenario="${index}">${scenario.title}</button>`,
+        ).join("");
+        const scenario = scenarios[activeScenario];
+        document.querySelector("#walkthrough").innerHTML = `
+          <p>${scenario.description}</p>
+          ${scenario.steps.map((step, index) =>
+            `<button data-step="${index}" ${index !== activeStep ? "disabled" : ""}>${index + 1}. ${label(step)}</button>`,
+          ).join("")}
+        `;
+      };
+
+      const dispatch = (type) => { state = GovernanceLifecycle.reduce(state, { type }); render(); };
+      document.addEventListener("click", (event) => {
+        const action = event.target.dataset.action;
+        if (action) dispatch(action);
+        const scenario = event.target.dataset.scenario;
+        if (scenario !== undefined) {
+          activeScenario = Number(scenario);
+          activeStep = 0;
+          state = GovernanceLifecycle.initialState();
+          render();
+        }
+        const step = event.target.dataset.step;
+        if (step !== undefined && Number(step) === activeStep) {
+          dispatch(scenarios[activeScenario].steps[activeStep]);
+          activeStep += 1;
+          render();
+        }
+      });
+      render();
+    </script>
+  </body>
+</html>
