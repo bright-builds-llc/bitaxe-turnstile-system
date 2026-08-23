@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>BWG/0.1 WebCrypto Conformance</title>
+  </head>
+  <body>
+    <main>
+      <h1>BWG/0.1 WebCrypto Conformance</h1>
+      <p>Status: <output id="result" data-status="running">running</output></p>
+      <pre id="details"></pre>
+    </main>
+    <script type="module">
+      import { runCryptoConformance } from "./crypto-webcrypto.mjs";
+
+      const resultOutput = document.querySelector("#result");
+      const detailsOutput = document.querySelector("#details");
+
+      try {
+        const response = await fetch("./crypto-vectors.json");
+        const vectors = await response.json();
+        const result = await runCryptoConformance(vectors);
+        resultOutput.value = "passed";
+        resultOutput.dataset.status = "passed";
+        detailsOutput.textContent = JSON.stringify(result, null, 2);
+      } catch (error) {
+        resultOutput.value = "failed";
+        resultOutput.dataset.status = "failed";
+        detailsOutput.textContent = error.stack ?? String(error);
+      }
+    </script>
+  </body>
+</html>

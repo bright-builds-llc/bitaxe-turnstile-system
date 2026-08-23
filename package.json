@@ -7,7 +7,9 @@
     "format:check": "cargo fmt --all -- --check",
     "lint": "cargo clippy --all-targets --all-features -- -D warnings",
     "build": "cargo build --all-targets --all-features",
-    "test": "cargo test --all-features",
+    "test": "bun run test:rust && bun run test:webcrypto",
+    "test:rust": "cargo test --all-features",
+    "test:webcrypto": "bun test conformance/bwg-0.1/crypto-vectors.test.mjs",
     "check:standards": "bun scripts/bright-builds-check.ts all",
     "verify": "bun run format:check && bun run lint && bun run build && bun run test && bun run check:standards"
   }
