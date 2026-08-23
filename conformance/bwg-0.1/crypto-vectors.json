@@ -105,6 +105,35 @@
     "ath": "fUHyO2r2Z3DZ53EsNrWBb0xWXoaNy59IiKCAqksmQEo",
     "jkt": "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I"
   },
+  "critical_header_negative_cases": [
+    {
+      "id": "gate-pass-unknown-critical-header",
+      "kind": "gate_pass",
+      "compact_jws": "eyJ0eXAiOiJid2ctZ2F0ZS1wYXNzK2p3dCIsImFsZyI6IkVkMjU1MTkiLCJraWQiOiJhdXRob3JpdHktYiIsImNyaXQiOlsiYndnX2V4dCJdLCJid2dfZXh0IjoicmVxdWlyZWQifQ.eyJpc3MiOiJodHRwczovL2F1dGhvcml0eS5leGFtcGxlIiwiYXVkIjoiaHR0cHM6Ly9yZWx5aW5nLmV4YW1wbGUiLCJpYXQiOjE3ODc0NDMyMDAsImV4cCI6MTc4NzQ0MzMyMCwianRpIjoicGFzc19jcnlwdG9fMDIiLCJjaGFsbGVuZ2VfaWQiOiJjaGFsbGVuZ2VfY3J5cHRvXzAxIiwiYWN0aW9uX3JlZmVyZW5jZSI6ImFjdGlvbl9jcnlwdG9fMDEiLCJjbmYiOnsiamt0IjoiMFpjT0NPUlpOWXktRFdwcXEzMGpaeUpHSFROMGQySGdsQlYzdWlndUE0SSJ9LCJid2dfdmVyc2lvbiI6IkJXRy8wLjEifQ._H56n7DZI2C7rbwuWfx4c_apGrvFhJS72MFlSWiik0IWGtMNhrKOhL1Gk5NO0RM-1ESrF_w8Js69hQJhnFdUAA",
+      "expected_error": "unsupported_critical_header"
+    },
+    {
+      "id": "dpop-unknown-critical-header",
+      "kind": "dpop",
+      "access_token": "Kz~8mXK1EalYznwH-LC-1fBAo.4Ljp~zsPE_NeO.gxU",
+      "compact_jws": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2IiwiandrIjp7Imt0eSI6IkVDIiwieCI6Imw4dEZyaHgtMzR0VjNoUklDUkRZOXpDa0RscEJoRjQyVVFVZldWQVdCRnMiLCJ5IjoiOVZFNGpmX09rX282NHpiVFRsY3VOSmFqSG10NnY5VERWclUwQ2R2R1JEQSIsImNydiI6IlAtMjU2In0sImNyaXQiOlsiYndnX2V4dCJdLCJid2dfZXh0IjoicmVxdWlyZWQifQ.eyJqdGkiOiJlMWozVl9iS2ljOC1MQUVCIiwiaHRtIjoiR0VUIiwiaHR1IjoiaHR0cHM6Ly9yZXNvdXJjZS5leGFtcGxlLm9yZy9wcm90ZWN0ZWRyZXNvdXJjZSIsImlhdCI6MTU2MjI2MjYxOCwiYXRoIjoiZlVIeU8ycjJaM0RaNTNFc05yV0JiMHhXWG9hTnk1OUlpS0NBcWtzbVFFbyJ9.2oW9RP35yRqzhrtNP86L-Ey71EOptxRimPPToA1plemAgR6pxHF8y6-yqyVnmcw6Fy1dqd-jfxSYoMxhAJpLjA",
+      "expected_error": "unsupported_critical_header"
+    }
+  ],
+  "dpop_negative_cases": [
+    {
+      "id": "dpop-mismatched-jwk-algorithm",
+      "access_token": "Kz~8mXK1EalYznwH-LC-1fBAo.4Ljp~zsPE_NeO.gxU",
+      "compact_jws": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2IiwiandrIjp7Imt0eSI6IkVDIiwieCI6Imw4dEZyaHgtMzR0VjNoUklDUkRZOXpDa0RscEJoRjQyVVFVZldWQVdCRnMiLCJ5IjoiOVZFNGpmX09rX282NHpiVFRsY3VOSmFqSG10NnY5VERWclUwQ2R2R1JEQSIsImNydiI6IlAtMjU2IiwiYWxnIjoiRWQyNTUxOSJ9fQ.eyJqdGkiOiJlMWozVl9iS2ljOC1MQUVCIiwiaHRtIjoiR0VUIiwiaHR1IjoiaHR0cHM6Ly9yZXNvdXJjZS5leGFtcGxlLm9yZy9wcm90ZWN0ZWRyZXNvdXJjZSIsImlhdCI6MTU2MjI2MjYxOCwiYXRoIjoiZlVIeU8ycjJaM0RaNTNFc05yV0JiMHhXWG9hTnk1OUlpS0NBcWtzbVFFbyJ9.2oW9RP35yRqzhrtNP86L-Ey71EOptxRimPPToA1plemAgR6pxHF8y6-yqyVnmcw6Fy1dqd-jfxSYoMxhAJpLjA",
+      "expected_error": "algorithm_key_mismatch"
+    },
+    {
+      "id": "dpop-invalid-required-claims",
+      "access_token": "Kz~8mXK1EalYznwH-LC-1fBAo.4Ljp~zsPE_NeO.gxU",
+      "compact_jws": "eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2IiwiandrIjp7Imt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJ4IjoiZjgzT0ozRDJ4RjFCZzh2dWI5dExlMWdITXpWNzZlOFR1czl1UEh2UlZFVSIsInkiOiJ4X0ZFelJ1OW0zNkhMTl90dWU2NTlMTnBYVzZwQ3lTdGlrWWpLSVdJNWEwIiwiYWxnIjoiRVMyNTYifX0.eyJqdGkiOiIiLCJodG0iOiJHRVQiLCJodHUiOiJodHRwczovL3Jlc291cmNlLmV4YW1wbGUub3JnL3Byb3RlY3RlZHJlc291cmNlIiwiaWF0IjoxNTYyMjYyNjE4LCJhdGgiOiJmVUh5TzJyMlozRFo1M0VzTnJXQmIweFdYb2FOeTU5SWlLQ0Fxa3NtUUVvIn0._kv0GMTUm3aaax7F1bdt8dT3UabtherxjQIwKn15WfXfCWYJxI3LIlfzN34Zxu3GTxt3Ehy3vwRDm1i9YThebw",
+      "expected_error": "invalid_dpop_claims"
+    }
+  ],
   "algorithm_negative_cases": [
     {
       "id": "unknown-algorithm",

@@ -12,24 +12,6 @@
       <p>Status: <output id="result" data-status="running">running</output></p>
       <pre id="details"></pre>
     </main>
-    <script type="module">
-      import { runCryptoConformance } from "./crypto-webcrypto.mjs";
-
-      const resultOutput = document.querySelector("#result");
-      const detailsOutput = document.querySelector("#details");
-
-      try {
-        const response = await fetch("./crypto-vectors.json");
-        const vectors = await response.json();
-        const result = await runCryptoConformance(vectors);
-        resultOutput.value = "passed";
-        resultOutput.dataset.status = "passed";
-        detailsOutput.textContent = JSON.stringify(result, null, 2);
-      } catch (error) {
-        resultOutput.value = "failed";
-        resultOutput.dataset.status = "failed";
-        detailsOutput.textContent = error.stack ?? String(error);
-      }
-    </script>
+    <script type="module" src="./crypto-browser-harness.mjs"></script>
   </body>
 </html>

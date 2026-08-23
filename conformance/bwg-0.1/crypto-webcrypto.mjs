@@ -7,8 +7,10 @@ export async function runCryptoConformance(vectors) {
   assertEqual(vectors.algorithms.browser_dpop_jws, "ES256", "unexpected_dpop_alg");
 
   const overlapKeys = trustedKeys(vectors, "overlap");
+  const gatePassJkts = new Set();
   for (const gatePass of vectors.gate_passes) {
     const verified = await verifyGatePass(gatePass.compact_jws, overlapKeys);
+    gatePassJkts.add(verified.claims.cnf.jkt);
     assertEqual(verified.kid, gatePass.kid, `${gatePass.id}:kid`);
     assertEqual(verified.claims.cnf.jkt, gatePass.claimant_jkt, `${gatePass.id}:jkt`);
     assertEqual(
@@ -39,11 +41,28 @@ export async function runCryptoConformance(vectors) {
     assertEqual(actual, negativeCase.expected_error, negativeCase.id);
   }
 
+  for (const negativeCase of vectors.critical_header_negative_cases) {
+    const operation =
+      negativeCase.kind === "gate_pass"
+        ? () => verifyGatePass(negativeCase.compact_jws, [authorityB])
+        : () => verifyDpop(negativeCase.compact_jws, negativeCase.access_token);
+    const actual = await outcome(operation);
+    assertEqual(actual, negativeCase.expected_error, negativeCase.id);
+  }
+
+  for (const negativeCase of vectors.dpop_negative_cases) {
+    const actual = await outcome(() =>
+      verifyDpop(negativeCase.compact_jws, negativeCase.access_token),
+    );
+    assertEqual(actual, negativeCase.expected_error, negativeCase.id);
+  }
+
   const claimantJkt = await p256JwkThumbprint(vectors.claimant_public_jwk);
   assertEqual(claimantJkt, vectors.claimant_jkt, "claimant_jkt");
   const verifiedDpop = await verifyDpop(vectors.dpop.compact_jws, vectors.dpop.access_token);
   assertEqual(verifiedDpop.jkt, vectors.dpop.jkt, "dpop_jkt");
   assertEqual(verifiedDpop.ath, vectors.dpop.ath, "dpop_ath");
+  assertEqual(gatePassJkts.has(verifiedDpop.jkt), true, "gate_pass_dpop_key_mismatch");
 
   const keyExtractability = await proveNonExtractableClaimantKey();
 
@@ -51,24 +70,31 @@ export async function runCryptoConformance(vectors) {
     gatePassesVerified: vectors.gate_passes.length,
     rotationCasesVerified: vectors.rotation_cases.length,
     algorithmFailuresVerified: vectors.algorithm_negative_cases.length,
+    criticalHeaderFailuresVerified: vectors.critical_header_negative_cases.length,
+    dpopFailuresVerified: vectors.dpop_negative_cases.length,
     dpopVerified: true,
     ...keyExtractability,
   };
 }
 
-async function verifyGatePass(compactJws, keys) {
+export async function verifyGatePass(compactJws, keys) {
   const compact = parseCompactJws(compactJws);
   const header = decodeJson(compact.protectedHeader);
+  validateCriticalHeaders(header);
   assertEqual(header.typ, "bwg-gate-pass+jwt", "invalid_gate_pass_type");
   validateGatePassAlgorithm(header.alg);
 
-  const maybeKey = keys.find((key) => key.kid === header.kid);
-  if (!maybeKey) {
+  const matchingKeys = keys.filter((key) => key.kid === header.kid);
+  if (matchingKeys.length === 0) {
     throw new Error("unknown_kid");
   }
-  validateAuthorityKey(maybeKey, header.alg);
+  if (matchingKeys.length > 1) {
+    throw new Error("ambiguous_kid");
+  }
+  const key = matchingKeys[0];
+  validateAuthorityKey(key, header.alg);
 
-  const cryptoKey = await crypto.subtle.importKey("jwk", maybeKey, "Ed25519", false, ["verify"]);
+  const cryptoKey = await crypto.subtle.importKey("jwk", key, "Ed25519", false, ["verify"]);
   const valid = await crypto.subtle.verify(
     "Ed25519",
     cryptoKey,
@@ -100,9 +126,10 @@ async function verifyGatePass(compactJws, keys) {
   return { kid: header.kid, claims };
 }
 
-async function verifyDpop(compactJws, accessToken) {
+export async function verifyDpop(compactJws, accessToken) {
   const compact = parseCompactJws(compactJws);
   const header = decodeJson(compact.protectedHeader);
+  validateCriticalHeaders(header);
   assertEqual(header.typ, "dpop+jwt", "invalid_dpop_type");
   assertEqual(header.alg, "ES256", "unknown_algorithm");
   validateP256PublicJwk(header.jwk);
@@ -208,6 +235,15 @@ function validateP256PublicJwk(jwk) {
   if (decodeBase64Url(jwk.x).length !== 32 || decodeBase64Url(jwk.y).length !== 32) {
     throw new Error("invalid_claimant_key");
   }
+  if (jwk.alg !== undefined && jwk.alg !== "ES256") {
+    throw new Error("algorithm_key_mismatch");
+  }
+}
+
+function validateCriticalHeaders(header) {
+  if (Object.hasOwn(header, "crit")) {
+    throw new Error("unsupported_critical_header");
+  }
 }
 
 function trustedKeys(vectors, snapshotId) {
@@ -245,13 +281,25 @@ function parseCompactJws(value) {
 }
 
 function decodeJson(value) {
-  return JSON.parse(textDecoder.decode(decodeBase64Url(value)));
+  try {
+    return JSON.parse(textDecoder.decode(decodeBase64Url(value)));
+  } catch (error) {
+    if (error.message === "invalid_base64url") throw error;
+    throw new Error("invalid_json");
+  }
 }
 
 function decodeBase64Url(value) {
-  const base64 = value.replaceAll("-", "+").replaceAll("_", "/");
-  const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
-  return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+  if (!/^[A-Za-z0-9_-]*$/.test(value) || value.length % 4 === 1) {
+    throw new Error("invalid_base64url");
+  }
+  try {
+    const base64 = value.replaceAll("-", "+").replaceAll("_", "/");
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+    return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+  } catch {
+    throw new Error("invalid_base64url");
+  }
 }
 
 function encodeBase64Url(bytes) {

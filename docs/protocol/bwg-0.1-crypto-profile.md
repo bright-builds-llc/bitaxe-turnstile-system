@@ -20,6 +20,7 @@ The former polymorphic `EdDSA` JOSE identifier is rejected because RFC 9864 depr
 - The protected `alg` is exactly `Ed25519`.
 - The protected `kid` selects only an explicitly trusted configured or discovered Authority JWKS key.
 - Authority JWKs use `kty: OKP`, `crv: Ed25519`, `alg: Ed25519`, `use: sig`, and `key_ops: [verify]`.
+- No critical JOSE extensions are defined in `BWG/0.1`; a protected `crit` header therefore fails closed.
 - The payload carries the required BWG claims and binds the Claimant key through `cnf.jkt`.
 - Token-provided key URLs or arbitrary Authority keys do not become trusted inputs.
 
@@ -34,6 +35,8 @@ The Claimant key confirmation is the base64url-without-padding SHA-256 digest of
 ```
 
 The DPoP `ath` claim is the base64url-without-padding SHA-256 digest of the ASCII compact Gate Pass. Later Redemption validation must additionally enforce method, URI, time window, unique proof identity, replay state, exact Action Reference, and atomic pass consumption.
+
+If the DPoP public JWK includes optional `alg` metadata, it must be exactly `ES256`. Redemption compares the thumbprint verified from the DPoP public JWK directly with the `cnf.jkt` recovered from the verified Gate Pass; independently valid but differently bound artifacts fail closed.
 
 ## JWKS rotation
 

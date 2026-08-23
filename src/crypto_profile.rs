@@ -11,9 +11,9 @@ pub const DPOP_JWS_ALGORITHM: &str = "ES256";
 const GATE_PASS_TYPE: &str = "bwg-gate-pass+jwt";
 const DPOP_TYPE: &str = "dpop+jwt";
 
-/// A trusted Authority verification key from a configured JWKS snapshot.
+/// Untrusted Authority JWK fields received at a JSON boundary.
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct AuthorityJwk {
+pub struct AuthorityJwkWire {
     kid: String,
     kty: String,
     crv: String,
@@ -24,9 +24,55 @@ pub struct AuthorityJwk {
     key_ops: Vec<String>,
 }
 
-/// The public P-256 JWK shape used by browser-held DPoP keys.
+impl AuthorityJwkWire {
+    /// Returns the unvalidated key identifier for fixture and boundary routing.
+    pub fn kid(&self) -> &str {
+        &self.kid
+    }
+}
+
+/// A validated trusted Authority verification key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthorityJwk {
+    kid: String,
+    public_key: [u8; signature::ED25519_PUBLIC_KEY_LEN],
+}
+
+impl AuthorityJwk {
+    /// Returns the case-sensitive key identifier used during rotation.
+    pub fn kid(&self) -> &str {
+        &self.kid
+    }
+}
+
+impl TryFrom<AuthorityJwkWire> for AuthorityJwk {
+    type Error = CryptoProfileError;
+
+    fn try_from(wire: AuthorityJwkWire) -> Result<Self, Self::Error> {
+        if wire.alg != GATE_PASS_JWS_ALGORITHM {
+            return Err(CryptoProfileError::AlgorithmKeyMismatch);
+        }
+        if wire.kid.is_empty()
+            || wire.kty != "OKP"
+            || wire.crv != "Ed25519"
+            || wire.public_key_use != "sig"
+            || wire.key_ops.as_slice() != ["verify"]
+        {
+            return Err(CryptoProfileError::InvalidAuthorityKey);
+        }
+
+        let public_key =
+            decode_fixed_base64url(&wire.x).map_err(|_| CryptoProfileError::InvalidAuthorityKey)?;
+        Ok(Self {
+            kid: wire.kid,
+            public_key,
+        })
+    }
+}
+
+/// Untrusted public P-256 JWK fields received at a JSON boundary.
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct P256PublicJwk {
+pub struct P256PublicJwkWire {
     kty: String,
     crv: String,
     x: String,
@@ -37,12 +83,31 @@ pub struct P256PublicJwk {
     maybe_private_key: Option<String>,
 }
 
+/// A validated public P-256 key used for DPoP.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct P256PublicJwk {
+    x: [u8; 32],
+    y: [u8; 32],
+}
+
 impl P256PublicJwk {
-    fn sec1_public_key(&self) -> Result<Vec<u8>, CryptoProfileError> {
-        if self.kty != "EC" || self.crv != "P-256" || self.maybe_private_key.is_some() {
+    fn sec1_public_key(&self) -> Vec<u8> {
+        let mut public_key = Vec::with_capacity(65);
+        public_key.push(0x04);
+        public_key.extend(self.x);
+        public_key.extend(self.y);
+        public_key
+    }
+}
+
+impl TryFrom<P256PublicJwkWire> for P256PublicJwk {
+    type Error = CryptoProfileError;
+
+    fn try_from(wire: P256PublicJwkWire) -> Result<Self, Self::Error> {
+        if wire.kty != "EC" || wire.crv != "P-256" || wire.maybe_private_key.is_some() {
             return Err(CryptoProfileError::InvalidClaimantKey);
         }
-        if self
+        if wire
             .maybe_alg
             .as_deref()
             .is_some_and(|algorithm| algorithm != DPOP_JWS_ALGORITHM)
@@ -50,44 +115,11 @@ impl P256PublicJwk {
             return Err(CryptoProfileError::AlgorithmKeyMismatch);
         }
 
-        let x = decode_base64url(&self.x)?;
-        let y = decode_base64url(&self.y)?;
-        if x.len() != 32 || y.len() != 32 {
-            return Err(CryptoProfileError::InvalidClaimantKey);
-        }
-
-        let mut public_key = Vec::with_capacity(65);
-        public_key.push(0x04);
-        public_key.extend(x);
-        public_key.extend(y);
-        Ok(public_key)
-    }
-}
-
-impl AuthorityJwk {
-    /// Returns the case-sensitive key identifier used during rotation.
-    pub fn kid(&self) -> &str {
-        &self.kid
-    }
-
-    fn public_key_bytes(&self) -> Result<Vec<u8>, CryptoProfileError> {
-        if self.alg != GATE_PASS_JWS_ALGORITHM {
-            return Err(CryptoProfileError::AlgorithmKeyMismatch);
-        }
-        if self.kty != "OKP"
-            || self.crv != "Ed25519"
-            || self.public_key_use != "sig"
-            || self.key_ops.as_slice() != ["verify"]
-        {
-            return Err(CryptoProfileError::InvalidAuthorityKey);
-        }
-
-        let bytes = decode_base64url(&self.x)?;
-        if bytes.len() != signature::ED25519_PUBLIC_KEY_LEN {
-            return Err(CryptoProfileError::InvalidAuthorityKey);
-        }
-
-        Ok(bytes)
+        let x =
+            decode_fixed_base64url(&wire.x).map_err(|_| CryptoProfileError::InvalidClaimantKey)?;
+        let y =
+            decode_fixed_base64url(&wire.y).map_err(|_| CryptoProfileError::InvalidClaimantKey)?;
+        Ok(Self { x, y })
     }
 }
 
@@ -96,6 +128,18 @@ impl AuthorityJwk {
 pub struct VerifiedGatePass {
     authority_kid: String,
     claimant_jkt: String,
+}
+
+impl VerifiedGatePass {
+    /// Returns the trusted Authority key identifier that signed the pass.
+    pub fn authority_kid(&self) -> &str {
+        &self.authority_kid
+    }
+
+    /// Returns the RFC 7638 Claimant-key thumbprint bound into the pass.
+    pub fn claimant_jkt(&self) -> &str {
+        &self.claimant_jkt
+    }
 }
 
 /// DPoP values established by a valid Claimant signature.
@@ -117,37 +161,29 @@ impl VerifiedDpop {
     }
 }
 
-impl VerifiedGatePass {
-    /// Returns the trusted Authority key identifier that signed the pass.
-    pub fn authority_kid(&self) -> &str {
-        &self.authority_kid
-    }
-
-    /// Returns the RFC 7638 Claimant-key thumbprint bound into the pass.
-    pub fn claimant_jkt(&self) -> &str {
-        &self.claimant_jkt
-    }
-}
-
 /// Verifies the cryptographic BWG/0.1 Gate Pass profile against trusted keys.
 pub fn verify_gate_pass(
     compact_jws: &str,
     trusted_keys: &[AuthorityJwk],
 ) -> Result<VerifiedGatePass, CryptoProfileError> {
     let compact = CompactJws::parse(compact_jws)?;
-    let header: GatePassHeader = decode_json(compact.protected_header)?;
+    let header: GatePassHeaderWire = decode_json(compact.protected_header)?;
+    validate_critical_headers(header.maybe_critical.as_ref())?;
     if header.typ != GATE_PASS_TYPE {
         return Err(CryptoProfileError::InvalidGatePassType);
     }
-    validate_gate_pass_algorithm(&header.alg)?;
+    validate_algorithm(&header.alg, GATE_PASS_JWS_ALGORITHM)?;
 
-    let maybe_key = trusted_keys.iter().find(|key| key.kid == header.kid);
-    let Some(key) = maybe_key else {
+    let mut matching_keys = trusted_keys.iter().filter(|key| key.kid == header.kid);
+    let Some(key) = matching_keys.next() else {
         return Err(CryptoProfileError::UnknownKeyId);
     };
-    let public_key = key.public_key_bytes()?;
+    if matching_keys.next().is_some() {
+        return Err(CryptoProfileError::AmbiguousKeyId);
+    }
+
     let signature_bytes = decode_base64url(compact.signature)?;
-    signature::UnparsedPublicKey::new(&signature::ED25519, public_key)
+    signature::UnparsedPublicKey::new(&signature::ED25519, key.public_key)
         .verify(compact.signing_input.as_bytes(), &signature_bytes)
         .map_err(|_| CryptoProfileError::InvalidSignature)?;
 
@@ -166,17 +202,21 @@ pub fn verify_dpop(
     access_token: &str,
 ) -> Result<VerifiedDpop, CryptoProfileError> {
     let compact = CompactJws::parse(compact_jws)?;
-    let header: DpopHeader = decode_json(compact.protected_header)?;
+    let header: DpopHeaderWire = decode_json(compact.protected_header)?;
+    validate_critical_headers(header.maybe_critical.as_ref())?;
     if header.typ != DPOP_TYPE {
         return Err(CryptoProfileError::InvalidDpopType);
     }
-    validate_dpop_algorithm(&header.alg)?;
+    validate_algorithm(&header.alg, DPOP_JWS_ALGORITHM)?;
 
-    let public_key = header.jwk.sec1_public_key()?;
+    let claimant_key = P256PublicJwk::try_from(header.jwk)?;
     let signature_bytes = decode_base64url(compact.signature)?;
-    signature::UnparsedPublicKey::new(&signature::ECDSA_P256_SHA256_FIXED, public_key)
-        .verify(compact.signing_input.as_bytes(), &signature_bytes)
-        .map_err(|_| CryptoProfileError::InvalidSignature)?;
+    signature::UnparsedPublicKey::new(
+        &signature::ECDSA_P256_SHA256_FIXED,
+        claimant_key.sec1_public_key(),
+    )
+    .verify(compact.signing_input.as_bytes(), &signature_bytes)
+    .map_err(|_| CryptoProfileError::InvalidSignature)?;
 
     let claims: DpopClaims = decode_json(compact.payload)?;
     claims.validate()?;
@@ -186,7 +226,7 @@ pub fn verify_dpop(
     }
 
     Ok(VerifiedDpop {
-        claimant_jkt: p256_jwk_thumbprint(&header.jwk)?,
+        claimant_jkt: p256_jwk_thumbprint(&claimant_key),
         access_token_hash: claims.ath,
     })
 }
@@ -197,15 +237,13 @@ pub fn access_token_hash(access_token: &str) -> String {
     URL_SAFE_NO_PAD.encode(hash.as_ref())
 }
 
-/// Computes an RFC 7638 SHA-256 thumbprint for a public P-256 JWK.
-pub fn p256_jwk_thumbprint(jwk: &P256PublicJwk) -> Result<String, CryptoProfileError> {
-    jwk.sec1_public_key()?;
-    let canonical = format!(
-        r#"{{"crv":"P-256","kty":"EC","x":"{}","y":"{}"}}"#,
-        jwk.x, jwk.y
-    );
+/// Computes an RFC 7638 SHA-256 thumbprint for a validated P-256 JWK.
+pub fn p256_jwk_thumbprint(jwk: &P256PublicJwk) -> String {
+    let x = URL_SAFE_NO_PAD.encode(jwk.x);
+    let y = URL_SAFE_NO_PAD.encode(jwk.y);
+    let canonical = format!(r#"{{"crv":"P-256","kty":"EC","x":"{x}","y":"{y}"}}"#);
     let hash = digest::digest(&digest::SHA256, canonical.as_bytes());
-    Ok(URL_SAFE_NO_PAD.encode(hash.as_ref()))
+    URL_SAFE_NO_PAD.encode(hash.as_ref())
 }
 
 struct CompactJws<'a> {
@@ -241,17 +279,21 @@ impl<'a> CompactJws<'a> {
 }
 
 #[derive(Deserialize)]
-struct GatePassHeader {
+struct GatePassHeaderWire {
     typ: String,
     alg: String,
     kid: String,
+    #[serde(default, rename = "crit")]
+    maybe_critical: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
-struct DpopHeader {
+struct DpopHeaderWire {
     typ: String,
     alg: String,
-    jwk: P256PublicJwk,
+    jwk: P256PublicJwkWire,
+    #[serde(default, rename = "crit")]
+    maybe_critical: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -280,7 +322,6 @@ impl GatePassClaims {
         {
             return Err(CryptoProfileError::InvalidGatePassClaims);
         }
-
         Ok(())
     }
 }
@@ -309,7 +350,6 @@ impl DpopClaims {
         {
             return Err(CryptoProfileError::InvalidDpopClaims);
         }
-
         Ok(())
     }
 }
@@ -322,6 +362,8 @@ pub enum CryptoProfileError {
     InvalidBase64Url,
     #[error("JWS JSON is invalid")]
     InvalidJson,
+    #[error("unsupported critical JOSE header")]
+    UnsupportedCriticalHeader,
     #[error("Gate Pass type is invalid")]
     InvalidGatePassType,
     #[error("Gate Pass claims are invalid")]
@@ -342,6 +384,8 @@ pub enum CryptoProfileError {
     AlgorithmKeyMismatch,
     #[error("Authority key identifier is not trusted")]
     UnknownKeyId,
+    #[error("Authority key identifier is ambiguous")]
+    AmbiguousKeyId,
     #[error("Authority JWK does not match the BWG profile")]
     InvalidAuthorityKey,
     #[error("Claimant JWK does not match the BWG profile")]
@@ -352,30 +396,38 @@ pub enum CryptoProfileError {
     AccessTokenHashMismatch,
 }
 
+fn validate_algorithm(algorithm: &str, required_algorithm: &str) -> Result<(), CryptoProfileError> {
+    if algorithm == required_algorithm {
+        return Ok(());
+    }
+    match algorithm {
+        "none" => Err(CryptoProfileError::UnsecuredAlgorithm),
+        "HS256" | "HS384" | "HS512" => Err(CryptoProfileError::SymmetricAlgorithm),
+        "EdDSA" => Err(CryptoProfileError::DeprecatedAlgorithm),
+        _ => Err(CryptoProfileError::UnknownAlgorithm),
+    }
+}
+
+fn validate_critical_headers(
+    maybe_critical: Option<&Vec<String>>,
+) -> Result<(), CryptoProfileError> {
+    if maybe_critical.is_some() {
+        return Err(CryptoProfileError::UnsupportedCriticalHeader);
+    }
+    Ok(())
+}
+
 fn decode_base64url(value: &str) -> Result<Vec<u8>, CryptoProfileError> {
     URL_SAFE_NO_PAD
         .decode(value)
         .map_err(|_| CryptoProfileError::InvalidBase64Url)
 }
 
-fn validate_gate_pass_algorithm(algorithm: &str) -> Result<(), CryptoProfileError> {
-    match algorithm {
-        GATE_PASS_JWS_ALGORITHM => Ok(()),
-        "none" => Err(CryptoProfileError::UnsecuredAlgorithm),
-        "HS256" | "HS384" | "HS512" => Err(CryptoProfileError::SymmetricAlgorithm),
-        "EdDSA" => Err(CryptoProfileError::DeprecatedAlgorithm),
-        _ => Err(CryptoProfileError::UnknownAlgorithm),
-    }
-}
-
-fn validate_dpop_algorithm(algorithm: &str) -> Result<(), CryptoProfileError> {
-    match algorithm {
-        DPOP_JWS_ALGORITHM => Ok(()),
-        "none" => Err(CryptoProfileError::UnsecuredAlgorithm),
-        "HS256" | "HS384" | "HS512" => Err(CryptoProfileError::SymmetricAlgorithm),
-        "EdDSA" => Err(CryptoProfileError::DeprecatedAlgorithm),
-        _ => Err(CryptoProfileError::UnknownAlgorithm),
-    }
+fn decode_fixed_base64url<const LENGTH: usize>(
+    value: &str,
+) -> Result<[u8; LENGTH], CryptoProfileError> {
+    let bytes = decode_base64url(value)?;
+    <[u8; LENGTH]>::try_from(bytes).map_err(|_| CryptoProfileError::InvalidBase64Url)
 }
 
 fn decode_json<T>(value: &str) -> Result<T, CryptoProfileError>
