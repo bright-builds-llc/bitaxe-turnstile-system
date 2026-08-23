@@ -125,6 +125,7 @@ impl PostgresGovernanceRepository {
     ) -> Result<GovernanceExportPage, GovernanceError> {
         let started = Instant::now();
         let mut transaction = self.pool.begin().await?;
+        let is_resume = maybe_job.is_none();
         let job = match maybe_job {
             Some(job) => job,
             None => load_export_job(&mut transaction, export_id).await?,
@@ -132,7 +133,7 @@ impl PostgresGovernanceRepository {
         if after_sequence > job.total_items {
             return Err(GovernanceError::InvalidExportCursor);
         }
-        if after_sequence > 0 {
+        if is_resume {
             insert_audit_event(
                 &mut transaction,
                 NewAuditEvent {

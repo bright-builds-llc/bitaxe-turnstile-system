@@ -81,7 +81,7 @@ async fn governance_audit_records_safe_success_failure_and_ninety_day_deletion()
             "--export-id",
             &export_id,
             "--after-sequence",
-            "1",
+            "0",
             "--page-size",
             "1000",
         ],
