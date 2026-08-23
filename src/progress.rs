@@ -223,6 +223,25 @@ struct AcceptedEventRecord {
     acknowledgement: AcceptedWorkAcknowledgement,
 }
 
+impl AcceptedEventRecord {
+    fn new(event: AcceptedWorkEvent, acknowledgement: AcceptedWorkAcknowledgement) -> Self {
+        Self {
+            event,
+            acknowledgement,
+        }
+    }
+
+    fn replay_acknowledgement(
+        &self,
+        event: &AcceptedWorkEvent,
+    ) -> Result<AcceptedWorkAcknowledgement, ProgressError> {
+        if !self.event.matches_authoritative_replay(event) {
+            return Err(ProgressError::ConflictingEventReplay);
+        }
+        Ok(self.acknowledgement.clone())
+    }
+}
+
 impl ChallengeProgress {
     /// Creates a zero-progress projection with an immutable Work Requirement.
     pub fn new(work_requirement: CreditedWork) -> Self {
@@ -257,10 +276,7 @@ impl ChallengeProgress {
         globally_duplicate_share: bool,
     ) -> Result<AcceptedWorkAcknowledgement, ProgressError> {
         if let Some(record) = self.event_records.get(&event.event_id) {
-            if !record.event.matches_authoritative_replay(&event) {
-                return Err(ProgressError::ConflictingEventReplay);
-            }
-            return Ok(record.acknowledgement.clone());
+            return record.replay_acknowledgement(&event);
         }
         if !self.work_sessions.contains(&event.work_session_id) {
             return Err(ProgressError::UnknownWorkSession);
@@ -298,10 +314,7 @@ impl ChallengeProgress {
         };
         self.event_records.insert(
             event.event_id,
-            AcceptedEventRecord {
-                event: recorded_event,
-                acknowledgement: acknowledgement.clone(),
-            },
+            AcceptedEventRecord::new(recorded_event, acknowledgement.clone()),
         );
         Ok(acknowledgement)
     }
@@ -344,9 +357,8 @@ struct ProgressServiceState {
 }
 
 struct GlobalEventRecord {
-    event: AcceptedWorkEvent,
     challenge_id: ChallengeId,
-    acknowledgement: AcceptedWorkAcknowledgement,
+    accepted_event: AcceptedEventRecord,
 }
 
 struct ChallengeChannel {
@@ -406,19 +418,17 @@ impl ProgressService {
             return Err(ProgressError::UnknownWorkSession);
         };
         if let Some(record) = state.events.get(&event.event_id) {
-            if record.challenge_id != challenge_id
-                || !record.event.matches_authoritative_replay(&event)
-            {
+            if record.challenge_id != challenge_id {
                 return Err(ProgressError::ConflictingEventReplay);
             }
-            return Ok(record.acknowledgement.clone());
+            return record.accepted_event.replay_acknowledgement(&event);
         }
 
         let event_id = event.event_id.clone();
         let share_fingerprint = event.share_fingerprint.clone();
         let recorded_event = event.clone();
         let globally_duplicate_share = state.share_fingerprints.contains_key(&share_fingerprint);
-        let acknowledgement = {
+        let (acknowledgement, maybe_notification) = {
             let channel = state
                 .challenges
                 .get_mut(&challenge_id)
@@ -427,15 +437,14 @@ impl ProgressService {
             let acknowledgement = channel
                 .progress
                 .accept_with_global_duplicate(event, globally_duplicate_share)?;
-            if channel.progress.verified_progress() != progress_before
-                && channel.updates.receiver_count() > 0
-            {
-                channel
-                    .updates
-                    .send(channel.progress.update(challenge_id.clone()))
-                    .map_err(|_| ProgressError::ProgressStreamUnavailable)?;
-            }
-            acknowledgement
+            let maybe_notification = (channel.progress.verified_progress() != progress_before)
+                .then(|| {
+                    (
+                        channel.updates.clone(),
+                        channel.progress.update(challenge_id.clone()),
+                    )
+                });
+            (acknowledgement, maybe_notification)
         };
         state
             .share_fingerprints
@@ -444,11 +453,17 @@ impl ProgressService {
         state.events.insert(
             event_id,
             GlobalEventRecord {
-                event: recorded_event,
                 challenge_id,
-                acknowledgement: acknowledgement.clone(),
+                accepted_event: AcceptedEventRecord::new(recorded_event, acknowledgement.clone()),
             },
         );
+        drop(state);
+        if let Some((updates, update)) = maybe_notification
+            && updates.receiver_count() > 0
+            && let Err(error) = updates.send(update)
+        {
+            tracing::debug!(%error, "progress subscriber disconnected before notification");
+        }
         Ok(acknowledgement)
     }
 
@@ -493,8 +508,6 @@ pub enum ProgressError {
     UnknownChallenge,
     #[error("progress projection state is unavailable")]
     ProgressStateUnavailable,
-    #[error("progress stream is unavailable")]
-    ProgressStreamUnavailable,
     #[error(transparent)]
     InvalidWork(#[from] WorkError),
 }

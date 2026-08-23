@@ -32,3 +32,5 @@ Work Sessions are registered against exactly one opaque Work Challenge before ev
 - a separate `activity_estimate` object.
 
 Activity Estimate is currently `unavailable`. It is structurally separate so future share cadence or local telemetry cannot be mistaken for accepted target-derived work. A lagged subscriber receives `resync_required` and reconnects for a fresh exact snapshot.
+
+Canonical event/share indexes, the projection, and the acknowledgement commit before SSE notification. A subscriber disconnect or fan-out failure cannot reject or partially roll back accepted accounting; reconnecting always starts from the exact committed snapshot.
