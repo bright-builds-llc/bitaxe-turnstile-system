@@ -27,6 +27,9 @@ roadmap.
 - [Ticket 05](./issues/05-export-governance-audit.md) added resumable frozen NDJSON snapshots,
   byte-bound integrity manifests, prohibited-data scans, metadata-only lifecycle audits, failure
   categories, and day-90 retirement for audit and redacted snapshot records.
+- [Ticket 06](./issues/06-composed-recovery.md) proved independent context failure and recovery in
+  one cluster, connected every public and CLI evidence seam, and closed the BWG Core lifecycle
+  governance gap.
 
 ## Delivery order
 

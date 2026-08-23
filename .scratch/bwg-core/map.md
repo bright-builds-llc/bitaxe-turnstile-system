@@ -10,6 +10,10 @@
 - [Ticket 06](./issues/06-authority-persistence-issuance-recovery.md) made Gate Authority accounting and issuance PostgreSQL-authoritative: one transaction persists accepted work, stable acknowledgement, progress, and threshold outbox intent; leased workers recover signing and store one exact pass; fresh Claimant Issuance Proofs retrieve durable `pending`, `issued`, or `failed` state.
 - [Ticket 07](./issues/07-relying-service-redemption-outcomes.md) made Relying Service authorization and outcomes PostgreSQL-authoritative: Action References pin Claimant/type/policy before challenge issuance, atomic Redemption separates pass consumption from action idempotency, leased workers produce immutable outcomes, and fresh Claimant Outcome Proofs provide bounded read-only recovery.
 - [Ticket 08](./issues/08-dpop-gate-pass-redemption.md) finalized the BWG/0.1 proof-of-possession wire journey: mandatory action/type/policy pass claims, dedicated Issuance and Outcome proof profiles, OpenAPI 3.1, shared Rust/WebCrypto lookup vectors, and one complete Standard-policy public acceptance path.
+- [Ticket 09](./issues/09-persistent-lifecycle.md) completed composed persistence recovery and the
+  [`bwg-data-governance`](../bwg-data-governance/map.md) child effort: service-local 30/90-day
+  retirement, exact resumable exports, metadata-only audits, and independent context failure
+  recovery now close the remaining lifecycle gap.
 
 ## Persistence boundary split
 

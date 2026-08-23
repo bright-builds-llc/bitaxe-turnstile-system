@@ -16,6 +16,13 @@ This matrix composes the PostgreSQL-backed public-interface evidence for the Gat
 | During Protected Action execution | A live lease blocks takeover; expiry creates a new bounded attempt | `expired_action_lease_recovers_one_immutable_success` recovers account creation after process replacement. |
 | At attempt/deadline exhaustion | Pending outcome becomes immutable failed and attempts are terminal | The exhaustion and non-retryable executor tests observe safe terminal failure and no later execution. |
 | After action completion or lookup response loss | Terminal outcome and safe result remain stable | The Outcome Lookup test drops an unread response, rejects replay, returns identical results with a fresh proof, and confirms workers cannot re-execute. |
+| Before a Retention Floor | Governed records and public behavior remain unchanged | Pure floor vectors plus the Authority and Relying Service governance CLI tests return no destructive candidate before expiry, operational retention, or public lookup ends. |
+| During signed-byte or marker retirement | Expired artifacts retire without disturbing still-live aggregate behavior | `retired_pass_lookup_is_gone_while_active_adapter_acknowledgements_remain_stable` replays the same acknowledgement and progress after process replacement; `outcome_lookup_survives_marker_retirement_until_aggregate_retention_floor` returns the same immutable success while Pass Consumption retires. |
+| During aggregate pseudonymization | Every context-owned child transition commits atomically or rolls back | Complete Authority and Relying Service aggregate fixtures prove missing-key failure leaves the same candidate, while successful apply creates tombstones and removes all protocol children without touching account business data. |
+| Concurrent context failure | One context's failure cannot roll back or authorize the other | `independent_context_failure_recovery_and_export_converge_in_one_cluster` races Authority failure with successful Relying Service apply in one cluster, then resumes Authority from its unchanged manifest. |
+| After cleanup response loss | Repeating the same manifest is a zero-effect completion | Governance CLI tests repeat completed apply commands and observe stable completion cursors with zero new deletion or pseudonymization. |
+| During export response loss | The same export ID and sequence reproduce identical redacted bytes | The Authority export test freezes a snapshot, mutates domain state, resumes and repeats a page byte-for-byte, and independently verifies counts, total bytes, and SHA-256. |
+| After audit/export retention | Temporary governance evidence is physically removed at day 90 | The governance audit test plans and applies deletion for both old metadata events and structured redacted snapshot state, then observes no remaining candidate. |
 
 ## Retention invariants already enforced
 
@@ -23,5 +30,8 @@ This matrix composes the PostgreSQL-backed public-interface evidence for the Gat
 - Claimant-facing Outcome Lookup uses a configurable window defaulting to 24 hours.
 - Unsigned issuance cannot survive its Work Challenge deadline, and signed pass acceptance remains bounded by its signed expiry.
 - Gate Authority and Relying Service migrations, schemas, transactions, and replay indexes remain context-local even in one PostgreSQL database.
+- Hosted operational records pseudonymize at terminal day 30 and their minimal tombstones delete at day 90, with direct overdue deletion when the first run occurs after the final floor.
+- Public lookup windows and artifact expiry are independent lower bounds; a longer configured lookup or Pass Consumption floor delays internal aggregate retirement.
+- Export pages are regenerated from frozen structured redacted state, never persisted as a framed export file, and metadata-only audits carry explicit context, cutoff, counts, duration, outcome, and bounded failure category.
 
-Longer audit/product retention, operator-authorized export, and destructive or pseudonymizing deletion require a separate governance contract. They cannot be inferred from claimant-facing protocol authorization.
+Longer deployment retention may extend these defaults but cannot shorten protocol floors. Claimant-facing proofs remain bounded read credentials and never authorize governance operations.

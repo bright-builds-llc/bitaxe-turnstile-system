@@ -9,5 +9,5 @@ The product and architecture decisions are closed for BWG Core planning. These b
 5. Define the USB capability, provisioning, settings-preservation, schema-migration, local backup, and redacted verification protocol for Reference Firmware.
 6. Verify fully specified Ed25519 JOSE support, JWKS rotation, and hosted non-exportable signing-key options.
 7. Prototype the SolidJS Web Component across Chromium Web Serial permission, trusted-origin confirmation, accessibility, recovery, and non-Bitaxe advanced flows.
-8. Define concrete record-retention, deletion, export, audit, and incident-response operations consistent with the context privacy boundaries.
+8. **Resolved:** concrete record-retention, deletion, export, audit, and incident-response operations are defined in [`bwg-0.1-data-governance.md`](../protocol/bwg-0.1-data-governance.md) with executable evidence under `.scratch/bwg-data-governance/`.
 9. Threat-review the mainnet pool deployment and run deterministic equivalents continuously without converting regtest into an environment stage gate.
