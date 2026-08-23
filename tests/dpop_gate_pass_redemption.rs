@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use axum::Router;
 use bwg_core::{
     authority::{
-        self, AuthorityApplication, AuthorityPublicConfig, CLAIMANT_PROOF_HEADER, CLIENT_ID_HEADER,
+        self, AuthorityApplication, AuthorityPublicConfig, CLAIMANT_PROOF_HEADER,
         Config as AuthorityConfig, DeploymentEnvironment, IssuanceWorkerId, ServiceCredential,
     },
     challenge::{ActionPolicy, ChallengeId},
@@ -40,22 +40,17 @@ async fn complete_work_pass_redeem_journey_is_idempotent() -> Result<(), Box<dyn
 {
     // Arrange
     let database = PostgresTestDatabase::start().await?;
-    let application =
+    let authority_application =
         AuthorityApplication::connect_postgres(authority_config()?, database.database_url())
             .await?;
-    let adapter = application.simulated_pool_adapter();
-    let authority_url = spawn_http(authority::router(application.clone())).await?;
-    let (reference_url, redemption_url) = spawn_reference_service(authority_url.clone()).await?;
+    let adapter = authority_application.simulated_pool_adapter();
+    let authority_url = spawn_http(authority::router(authority_application.clone())).await?;
+    let (reference_url, redemption_url, reference_application) =
+        spawn_reference_service(authority_url.clone(), database.database_url()).await?;
     let claimant = Claimant::generate()?;
     let challenge = reqwest::Client::new()
-        .post(format!("{authority_url}/v0/challenges"))
-        .header(CLIENT_ID_HEADER, CLIENT_ID)
-        .bearer_auth(SERVICE_SECRET)
-        .json(&json!({
-            "action_policy": "account-creation.light.v1",
-            "action_reference": "action_redemption_01",
-            "claimant_key": claimant.public_jwk_json.clone()
-        }))
+        .post(format!("{reference_url}/account-creation/challenge"))
+        .json(&json!({ "claimant_key": claimant.public_jwk_json.clone() }))
         .send()
         .await?
         .json::<Value>()
@@ -64,15 +59,19 @@ async fn complete_work_pass_redeem_journey_is_idempotent() -> Result<(), Box<dyn
         .as_str()
         .ok_or("challenge identifier is missing")?;
     let challenge_id = ChallengeId::try_from(challenge_id_text.to_owned())?;
+    let action_reference = challenge["action_reference"]
+        .as_str()
+        .ok_or("challenge Action Reference is missing")?
+        .to_owned();
     let session_id = WorkSessionId::try_from("session_redemption01".to_owned())?;
     adapter
         .register_session(&challenge_id, session_id.clone())
         .await?;
 
     // Act
-    let acknowledgement = adapter.report(light_target_event(session_id)?).await?;
+    let acknowledgement = adapter.report(standard_target_event(session_id)?).await?;
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-    application
+    authority_application
         .process_next_issuance(
             &IssuanceWorkerId::try_from("worker_redemption01".to_owned())?,
             now,
@@ -114,37 +113,46 @@ async fn complete_work_pass_redeem_journey_is_idempotent() -> Result<(), Box<dyn
         .ok_or("repeated Gate Pass response is missing token")?
         .to_owned();
     let first_proof = claimant.sign_dpop(&gate_pass, &redemption_url, "dpop_redemption01", now)?;
-    let first_response = redeem(
-        &reference_url,
-        &gate_pass,
-        &first_proof,
-        "action_redemption_01",
-    )
-    .await?;
+    let first_response =
+        redeem(&reference_url, &gate_pass, &first_proof, &action_reference).await?;
     let first_record = first_response.json::<Value>().await?;
+    reference_application
+        .process_next_action(
+            &reference_service::ActionWorkerId::try_from("action_worker_redemption_01".to_owned())?,
+            now,
+        )
+        .await?;
+    let outcome_url = format!("{reference_url}/account-creation/outcomes/{action_reference}");
+    let outcome_proof = claimant.sign_outcome_proof(
+        &outcome_url,
+        &action_reference,
+        "proof_redemption_outcome_01",
+        now,
+    )?;
+    let outcome = reqwest::Client::new()
+        .get(outcome_url)
+        .header(CLAIMANT_PROOF_HEADER, outcome_proof)
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<Value>()
+        .await?;
     let retry_proof = claimant.sign_dpop(&gate_pass, &redemption_url, "dpop_redemption02", now)?;
-    let retry_record = redeem(
-        &reference_url,
-        &gate_pass,
-        &retry_proof,
-        "action_redemption_01",
-    )
-    .await?
-    .json::<Value>()
-    .await?;
-    let replay = redeem(
-        &reference_url,
-        &gate_pass,
-        &first_proof,
-        "action_redemption_01",
-    )
-    .await?;
+    let consumed_retry =
+        redeem(&reference_url, &gate_pass, &retry_proof, &action_reference).await?;
+    let replay = redeem(&reference_url, &gate_pass, &first_proof, &action_reference).await?;
 
     // Assert
     assert!(acknowledgement.issuance_intent_created());
     assert_eq!(gate_pass, repeated_gate_pass);
-    assert_eq!(first_record, retry_record);
-    assert!(first_record["account_id"].as_str().is_some());
+    assert_eq!(first_record["outcome"]["status"], "pending");
+    assert_eq!(outcome["outcome"]["status"], "succeeded");
+    assert!(
+        outcome["outcome"]["result"]["account_id"]
+            .as_str()
+            .is_some()
+    );
+    assert_eq!(consumed_retry.status(), reqwest::StatusCode::UNAUTHORIZED);
     assert_eq!(replay.status(), reqwest::StatusCode::UNAUTHORIZED);
 
     Ok(())
@@ -465,7 +473,7 @@ fn authority_config() -> Result<AuthorityConfig, Box<dyn std::error::Error>> {
         DeploymentEnvironment::Development,
         RELYING_SERVICE_AUDIENCE.to_owned(),
         vec!["https://app.relying.example".to_owned()],
-        vec![ActionPolicy::AccountCreationLightV1],
+        vec![ActionPolicy::AccountCreationStandardV1],
     )?;
     let public = AuthorityPublicConfig::new(
         "https://authority.example",
@@ -483,7 +491,8 @@ fn authority_config() -> Result<AuthorityConfig, Box<dyn std::error::Error>> {
 
 async fn spawn_reference_service(
     authority_url: String,
-) -> Result<(String, String), Box<dyn std::error::Error>> {
+    database_url: &str,
+) -> Result<(String, String, reference_service::ReferenceApplication), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = listener.local_addr()?;
     let reference_url = format!("http://{address}");
@@ -497,22 +506,25 @@ async fn spawn_reference_service(
         RELYING_SERVICE_AUDIENCE,
         redemption_url.clone(),
         trusted,
-    )?;
-    let router = reference_service::router(config);
+    )?
+    .with_account_creation_executor();
+    let application =
+        reference_service::ReferenceApplication::connect_postgres(config, database_url).await?;
+    let router = reference_service::router(application.clone());
     tokio::spawn(async move {
         axum::serve(listener, router)
             .await
             .expect("test reference service should remain available");
     });
-    Ok((reference_url, redemption_url))
+    Ok((reference_url, redemption_url, application))
 }
 
-fn light_target_event(
+fn standard_target_event(
     session_id: WorkSessionId,
 ) -> Result<AcceptedWorkEvent, Box<dyn std::error::Error>> {
     let mut target = [0xff_u8; 32];
     target[..5].fill(0);
-    target[5] = 0x3f;
+    target[5] = 0x0f;
     Ok(AcceptedWorkEvent::try_from(AcceptedWorkEventInput {
         event_id: AcceptedWorkEventId::try_from("event_redemption01".to_owned())?,
         work_session_id: session_id,

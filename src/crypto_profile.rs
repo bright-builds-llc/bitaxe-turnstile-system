@@ -5,11 +5,14 @@ use ring::{digest, signature};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-mod issuance_proof;
+mod claimant_proof;
 mod signing;
 #[cfg(test)]
 pub(crate) mod test_support;
-pub use issuance_proof::{VerifiedIssuanceProof, verify_issuance_proof};
+pub use claimant_proof::{
+    VerifiedDpop, VerifiedIssuanceProof, VerifiedOutcomeProof, verify_dpop, verify_issuance_proof,
+    verify_outcome_proof,
+};
 pub use signing::{AuthoritySigningKey, GatePassClaimsInput, GatePassConfirmationInput};
 pub(crate) use signing::{GatePassClaimsSeed, GatePassClaimsTemplate};
 
@@ -19,7 +22,6 @@ pub const GATE_PASS_JWS_ALGORITHM: &str = "Ed25519";
 pub const DPOP_JWS_ALGORITHM: &str = "ES256";
 
 const GATE_PASS_TYPE: &str = "bwg-gate-pass+jwt";
-const DPOP_TYPE: &str = "dpop+jwt";
 
 /// Untrusted Authority JWK fields received at a JSON boundary.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -255,49 +257,6 @@ impl VerifiedGatePass {
     }
 }
 
-/// DPoP values established by a valid Claimant signature.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VerifiedDpop {
-    claimant_jkt: String,
-    access_token_hash: String,
-    proof_id: String,
-    http_method: String,
-    http_uri: String,
-    issued_at: u64,
-}
-
-impl VerifiedDpop {
-    /// Returns the RFC 7638 thumbprint of the proof's public JWK.
-    pub fn claimant_jkt(&self) -> &str {
-        &self.claimant_jkt
-    }
-
-    /// Returns the verified RFC 9449 `ath` value.
-    pub fn access_token_hash(&self) -> &str {
-        &self.access_token_hash
-    }
-
-    /// Returns the unique verified DPoP proof identity.
-    pub fn proof_id(&self) -> &str {
-        &self.proof_id
-    }
-
-    /// Returns the HTTP method covered by the proof.
-    pub fn http_method(&self) -> &str {
-        &self.http_method
-    }
-
-    /// Returns the HTTP URI covered by the proof.
-    pub fn http_uri(&self) -> &str {
-        &self.http_uri
-    }
-
-    /// Returns the proof issue time.
-    pub fn issued_at(&self) -> u64 {
-        self.issued_at
-    }
-}
-
 /// Verifies the cryptographic BWG/0.1 Gate Pass profile against trusted keys.
 pub fn verify_gate_pass(
     compact_jws: &str,
@@ -339,45 +298,6 @@ pub fn verify_gate_pass(
         protected_action_type: claims.protected_action_type,
         action_reference: claims.action_reference,
         action_policy: claims.action_policy,
-    })
-}
-
-/// Verifies the BWG browser DPoP signature and access-token binding.
-pub fn verify_dpop(
-    compact_jws: &str,
-    access_token: &str,
-) -> Result<VerifiedDpop, CryptoProfileError> {
-    let compact = CompactJws::parse(compact_jws)?;
-    let header: DpopHeaderWire = decode_json(compact.protected_header)?;
-    validate_critical_headers(&header.critical_headers)?;
-    if header.typ != DPOP_TYPE {
-        return Err(CryptoProfileError::InvalidDpopType);
-    }
-    validate_algorithm(&header.alg, DPOP_JWS_ALGORITHM)?;
-
-    let claimant_key = P256PublicJwk::try_from(header.jwk)?;
-    let signature_bytes = decode_base64url(compact.signature)?;
-    signature::UnparsedPublicKey::new(
-        &signature::ECDSA_P256_SHA256_FIXED,
-        claimant_key.sec1_public_key(),
-    )
-    .verify(compact.signing_input.as_bytes(), &signature_bytes)
-    .map_err(|_| CryptoProfileError::InvalidSignature)?;
-
-    let claims: DpopClaims = decode_json(compact.payload)?;
-    claims.validate()?;
-    let expected_access_token_hash = access_token_hash(access_token);
-    if claims.ath != expected_access_token_hash {
-        return Err(CryptoProfileError::AccessTokenHashMismatch);
-    }
-
-    Ok(VerifiedDpop {
-        claimant_jkt: p256_jwk_thumbprint(&claimant_key),
-        access_token_hash: claims.ath,
-        proof_id: claims.jti,
-        http_method: claims.htm,
-        http_uri: claims.htu,
-        issued_at: claims.iat,
     })
 }
 
@@ -500,29 +420,6 @@ struct ConfirmationClaim {
     jkt: String,
 }
 
-#[derive(Deserialize)]
-struct DpopClaims {
-    jti: String,
-    htm: String,
-    htu: String,
-    iat: u64,
-    ath: String,
-}
-
-impl DpopClaims {
-    fn validate(&self) -> Result<(), CryptoProfileError> {
-        if self.jti.is_empty()
-            || self.htm.is_empty()
-            || self.htu.is_empty()
-            || self.iat == 0
-            || self.ath.is_empty()
-        {
-            return Err(CryptoProfileError::InvalidDpopClaims);
-        }
-        Ok(())
-    }
-}
-
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum CryptoProfileError {
     #[error("JWS compact serialization is malformed")]
@@ -545,6 +442,10 @@ pub enum CryptoProfileError {
     InvalidIssuanceProofType,
     #[error("Claimant Issuance Proof claims are invalid")]
     InvalidIssuanceProofClaims,
+    #[error("Claimant Outcome Proof type is invalid")]
+    InvalidOutcomeProofType,
+    #[error("Claimant Outcome Proof claims are invalid")]
+    InvalidOutcomeProofClaims,
     #[error("JWS algorithm is unknown")]
     UnknownAlgorithm,
     #[error("symmetric JWS algorithms are forbidden")]

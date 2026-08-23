@@ -75,6 +75,7 @@ impl Claimant {
         )
     }
 
+    #[allow(dead_code)]
     pub fn sign_issuance_proof(
         &self,
         lookup_url: &str,
@@ -90,6 +91,26 @@ impl Claimant {
                 "htu": lookup_url,
                 "iat": issued_at,
                 "challenge_id": challenge_id
+            }),
+        )
+    }
+
+    #[allow(dead_code)]
+    pub fn sign_outcome_proof(
+        &self,
+        lookup_url: &str,
+        action_reference: &str,
+        proof_id: &str,
+        issued_at: u64,
+    ) -> Result<String, Box<dyn Error>> {
+        self.sign(
+            "bwg-outcome-proof+jwt",
+            json!({
+                "jti": proof_id,
+                "htm": "GET",
+                "htu": lookup_url,
+                "iat": issued_at,
+                "action_reference": action_reference
             }),
         )
     }

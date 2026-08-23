@@ -8,6 +8,7 @@
 - [Ticket 04](./issues/04-secure-issuance-authority-discovery.md) secured hosted issuance with verifier-only environment/audience/origin/policy-scoped credentials and overlap rotation, pinned bounded overrides into immutable challenges, and published a trust-neutral Authority Descriptor plus JWKS with fail-closed critical fields.
 - [Ticket 05](./issues/05-accepted-work-progress.md) established target-derived Accepted Work accounting: challenge-scoped sessions, stable event/share deduplication and replay acknowledgements feed exact Verified Progress through SSE while Activity Estimate and every Worker-reported value remain non-authoritative.
 - [Ticket 06](./issues/06-authority-persistence-issuance-recovery.md) made Gate Authority accounting and issuance PostgreSQL-authoritative: one transaction persists accepted work, stable acknowledgement, progress, and threshold outbox intent; leased workers recover signing and store one exact pass; fresh Claimant Issuance Proofs retrieve durable `pending`, `issued`, or `failed` state.
+- [Ticket 07](./issues/07-relying-service-redemption-outcomes.md) made Relying Service authorization and outcomes PostgreSQL-authoritative: Action References pin Claimant/type/policy before challenge issuance, atomic Redemption separates pass consumption from action idempotency, leased workers produce immutable outcomes, and fresh Claimant Outcome Proofs provide bounded read-only recovery.
 
 ## Persistence boundary split
 

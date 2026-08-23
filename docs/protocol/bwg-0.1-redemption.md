@@ -16,6 +16,12 @@ The reference Relying Service accepts `POST /account-creation/redeem` only when:
 - the proof is within the 60-second freshness window and its proof identity has not been used;
 - the DPoP `ath` matches the exact compact Gate Pass.
 
-The first valid Redemption atomically creates one account outcome keyed by pass identity. Concurrent requests with different fresh proofs converge on that same record. A response-loss retry with a new fresh proof retrieves the accepted outcome without executing the protected action again. Replaying one DPoP proof, copying the pass to another key, or changing issuer, audience, action, method, URI, or time fails closed.
+The first valid Redemption transaction consumes `(issuer, pass_id)`, consumes the DPoP proof identity, creates one Redemption Record keyed by audience and Action Reference, creates a separate pending Protected Action Outcome, and inserts one execution intent. Later valid same-Claimant passes for that Action Reference are also consumed and linked to the existing record without restarting execution. A consumed pass cannot retrieve the record; response recovery uses Outcome Lookup.
 
-Gate Authority intent, signing recovery, pass metadata, and lookup replay state are durable in PostgreSQL. Relying Service Pass Consumption, Redemption Records, and Protected Action Outcomes remain the separately owned persistence work in Ticket 07.
+The Reference Service's internal worker claims execution with a durable lease and applies the Action Policy's deadline, attempt bound, and retryable-error classes. Reference account creation uses the Action Reference as its idempotency key and commits with immutable terminal `succeeded`; exhausted or non-retryable execution commits immutable `failed`. Neither outcome changes Redemption acceptance or reverses Pass Consumption.
+
+`GET /account-creation/outcomes/{action_reference}` requires a fresh `bwg-outcome-proof+jwt` in `bwg-claimant-proof`, bound to `GET`, the exact URI, issue time, unique proof identity, Action Reference, and the Redemption Record's Claimant key. It returns only the existing Redemption Record with `pending`, `succeeded`, or `failed` outcome during a configurable public window defaulting to 24 hours. Unknown references, wrong keys, and expired lookup windows are externally indistinguishable; lookup cannot authorize, execute, retry, or restart an action.
+
+Replaying a proof, copying a pass or lookup proof to another key, or changing issuer, audience, action type, policy, reference, method, URI, or time fails closed.
+
+Gate Authority and Relying Service persistence use separate schemas, migration histories, repository ports, and transactions even when deployed in one PostgreSQL cluster.

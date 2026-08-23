@@ -31,16 +31,21 @@ use postgres_support::PostgresTestDatabase;
 async fn reference_backend_issues_a_browser_safe_standard_challenge()
 -> Result<(), Box<dyn std::error::Error>> {
     // Arrange
-    let (authority_url, _database) = spawn_authority(authority_config()?).await?;
-    let reference_url = spawn_http(reference_service::router(reference_service::Config::new(
+    let (authority_url, database) = spawn_authority(authority_config()?).await?;
+    let reference_config = reference_service::Config::new(
         authority_url,
         SERVICE_CLIENT_ID,
         SERVICE_CREDENTIAL,
         RELYING_SERVICE_AUDIENCE,
         REDEMPTION_URL,
         trusted_authority()?,
-    )?))
+    )?;
+    let reference = reference_service::ReferenceApplication::connect_postgres(
+        reference_config,
+        database.database_url(),
+    )
     .await?;
+    let reference_url = spawn_http(reference_service::router(reference)).await?;
     let client = reqwest::Client::new();
     let request_started_at = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
@@ -111,16 +116,21 @@ async fn reference_backend_issues_a_browser_safe_standard_challenge()
 async fn browser_cannot_supply_authoritative_challenge_terms()
 -> Result<(), Box<dyn std::error::Error>> {
     // Arrange
-    let (authority_url, _database) = spawn_authority(authority_config()?).await?;
-    let reference_url = spawn_http(reference_service::router(reference_service::Config::new(
+    let (authority_url, database) = spawn_authority(authority_config()?).await?;
+    let reference_config = reference_service::Config::new(
         authority_url,
         SERVICE_CLIENT_ID,
         SERVICE_CREDENTIAL,
         RELYING_SERVICE_AUDIENCE,
         REDEMPTION_URL,
         trusted_authority()?,
-    )?))
+    )?;
+    let reference = reference_service::ReferenceApplication::connect_postgres(
+        reference_config,
+        database.database_url(),
+    )
     .await?;
+    let reference_url = spawn_http(reference_service::router(reference)).await?;
 
     // Act
     let response = reqwest::Client::new()

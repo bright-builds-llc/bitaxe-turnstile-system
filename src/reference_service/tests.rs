@@ -122,6 +122,32 @@ fn reference_config_rejects_weak_service_secret() -> Result<(), Box<dyn std::err
     Ok(())
 }
 
+#[test]
+fn outcome_lookup_window_is_configurable_and_positive() -> Result<(), Box<dyn std::error::Error>> {
+    // Arrange
+    let config = Config::new(
+        "https://authority.example",
+        "reference-service",
+        VALID_SECRET,
+        "https://relying.example",
+        "http://127.0.0.1:1/account-creation/redeem",
+        trusted_authority()?,
+    )?;
+
+    // Act
+    let configured = config.clone().with_outcome_lookup_window_seconds(3_600)?;
+    let invalid = config.with_outcome_lookup_window_seconds(0);
+
+    // Assert
+    assert_eq!(configured.outcome_lookup_window_seconds(), 3_600);
+    assert!(matches!(
+        invalid,
+        Err(ReferenceConfigError::InvalidOutcomeLookupWindow)
+    ));
+
+    Ok(())
+}
+
 fn trusted_authority() -> Result<TrustedAuthority, Box<dyn std::error::Error>> {
     Ok(TrustedAuthority::new(
         "https://authority.example",

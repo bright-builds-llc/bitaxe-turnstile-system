@@ -16,7 +16,7 @@ BWG provides resource-backed abuse resistance. It does not claim to prove humani
 
 ## Status
 
-The repository contains the protocol language, accepted architectural decisions, and an executable BWG Core spine. The Rust Gate Authority persists challenge accounting and crash-recoverable Gate Pass issuance in PostgreSQL, while the reference account-creation backend exercises the public challenge and Redemption interfaces.
+The repository contains the protocol language, accepted architectural decisions, and an executable BWG Core spine. PostgreSQL separately persists Gate Authority accounting and crash-recoverable issuance plus Reference Relying Service Pass Consumption, Redemption, execution, and durable Outcome Lookup.
 
 ## Development
 

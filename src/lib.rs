@@ -8,6 +8,8 @@ pub mod challenge;
 pub mod crypto_profile;
 pub mod progress;
 pub mod redemption;
+mod reference_application;
+mod reference_persistence;
 pub mod reference_service;
 pub mod service_auth;
 pub mod web_url;

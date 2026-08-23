@@ -9,6 +9,7 @@ This development profile fixes the cryptographic choices needed by Gate Pass and
 | Gate Authority compact JWS signature | `Ed25519` | `Ed25519` | Fully specifies the curve selected by ADR 0023 and RFC 9864. |
 | Claimant DPoP proof | `ES256` | ECDSA with P-256 and SHA-256 | Fully specified in JOSE, required by this profile, and supported by browser WebCrypto. |
 | Claimant Issuance Proof | `ES256` | ECDSA with P-256 and SHA-256 | Reuses the challenge-bound Claimant key for read-only issuance recovery without making the Gate Pass a lookup credential. |
+| Claimant Outcome Proof | `ES256` | ECDSA with P-256 and SHA-256 | Authenticates bounded read-only retrieval of an existing Redemption Record and outcome. |
 | Claimant JWK thumbprint (`cnf.jkt`) | SHA-256 | `digest("SHA-256", ...)` | Required by RFC 7638 and RFC 9449. |
 | Gate Pass access-token hash (`ath`) | SHA-256 | `digest("SHA-256", ...)` | Required by RFC 9449 over the ASCII compact Gate Pass value. |
 
@@ -42,6 +43,10 @@ If the DPoP public JWK includes optional `alg` metadata, it must be exactly `ES2
 ## Claimant Issuance Proof
 
 Issuance Lookup uses a dedicated compact JWS with protected `typ: bwg-issuance-proof+jwt`, `alg: ES256`, and the Claimant public JWK. Its payload requires unique `jti`, `iat`, `htm: GET`, the exact public lookup URI in `htu`, and the Work Challenge ID. The Authority verifies the signature, request binding, 60-second freshness window, challenge-bound JWK thumbprint, and durable one-time proof identity before returning only the existing issuance state.
+
+## Claimant Outcome Proof
+
+Outcome Lookup uses a distinct compact JWS with protected `typ: bwg-outcome-proof+jwt`, `alg: ES256`, and the Claimant public JWK. Its payload requires unique `jti`, `iat`, `htm: GET`, the exact public lookup URI in `htu`, and the Action Reference. The Relying Service verifies signature, request binding, 60-second freshness, Redemption-key thumbprint, public lookup retention, and durable one-time proof identity before returning only the existing record and outcome.
 
 ## JWKS rotation
 
