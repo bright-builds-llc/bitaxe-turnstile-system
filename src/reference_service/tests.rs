@@ -1,13 +1,12 @@
-use serde_json::Value;
-
 use super::*;
+use crate::crypto_profile::test_support::authority_key_wires;
 
 const VALID_SECRET: &str = "reference-secret-P9vK2mQ7xR4tY8uN3cF6wL1zA5dH0sJ";
 
 #[test]
 fn trusted_authority_rejects_invalid_issuer() -> Result<(), serde_json::Error> {
     // Arrange
-    let keys = authority_keys()?;
+    let keys = authority_key_wires()?;
 
     // Act
     let result = TrustedAuthority::new("http://authority.example", keys);
@@ -36,7 +35,7 @@ fn trusted_authority_rejects_empty_key_set() {
 #[test]
 fn trusted_authority_rejects_duplicate_key_ids() -> Result<(), serde_json::Error> {
     // Arrange
-    let keys = authority_keys()?;
+    let keys = authority_key_wires()?;
 
     // Act
     let result = TrustedAuthority::new(
@@ -120,13 +119,6 @@ fn reference_config_rejects_weak_service_secret() -> Result<(), Box<dyn std::err
 fn trusted_authority() -> Result<TrustedAuthority, Box<dyn std::error::Error>> {
     Ok(TrustedAuthority::new(
         "https://authority.example",
-        authority_keys()?,
+        authority_key_wires()?,
     )?)
-}
-
-fn authority_keys() -> Result<Vec<AuthorityJwkWire>, serde_json::Error> {
-    let vectors: Value = serde_json::from_str(include_str!(
-        "../../conformance/bwg-0.1/crypto-vectors.json"
-    ))?;
-    serde_json::from_value(vectors["authority_keys"].clone())
 }

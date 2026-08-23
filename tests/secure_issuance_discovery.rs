@@ -6,7 +6,6 @@ use bwg_core::{
     },
     authority_descriptor::AuthorityDescriptor,
     challenge::ActionPolicy,
-    crypto_profile::AuthorityJwkWire,
     reference_service,
 };
 use serde_json::{Value, json};
@@ -14,6 +13,10 @@ use tokio::net::TcpListener;
 
 const CLIENT_ID: &str = "reference-service-production";
 const SERVICE_SECRET: &str = "production-secret-7zZszCLVD82lfejKM4g4nXGQ9";
+
+#[path = "support/authority_keys.rs"]
+mod authority_key_support;
+use authority_key_support::authority_keys;
 
 #[tokio::test]
 async fn scoped_backend_credential_issues_browser_safe_challenge()
@@ -493,12 +496,6 @@ fn public_config() -> Result<AuthorityPublicConfig, Box<dyn std::error::Error>> 
         "https://authority.example/privacy",
         "https://authority.example/terms",
     )?)
-}
-
-fn authority_keys() -> Result<Vec<AuthorityJwkWire>, serde_json::Error> {
-    let vectors: Value =
-        serde_json::from_str(include_str!("../conformance/bwg-0.1/crypto-vectors.json"))?;
-    serde_json::from_value(vectors["authority_keys"].clone())
 }
 
 async fn post_challenge(

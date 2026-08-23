@@ -1,7 +1,5 @@
-use serde_json::Value;
-
 use super::*;
-use crate::crypto_profile::AuthorityJwkWire;
+use crate::crypto_profile::test_support::authority_key_wires;
 
 const VALID_SECRET: &str = "authority-secret-P9vK2mQ7xR4tY8uN3cF6wL1zA5dH0sJ";
 
@@ -116,16 +114,9 @@ fn public_config() -> Result<AuthorityPublicConfig, Box<dyn std::error::Error>> 
     Ok(AuthorityPublicConfig::new(
         "https://authority.example",
         "https://authority.example",
-        authority_keys()?,
+        authority_key_wires()?,
         "https://authority.example/policies/operator",
         "https://authority.example/privacy",
         "https://authority.example/terms",
     )?)
-}
-
-fn authority_keys() -> Result<Vec<AuthorityJwkWire>, serde_json::Error> {
-    let vectors: Value = serde_json::from_str(include_str!(
-        "../../conformance/bwg-0.1/crypto-vectors.json"
-    ))?;
-    serde_json::from_value(vectors["authority_keys"].clone())
 }

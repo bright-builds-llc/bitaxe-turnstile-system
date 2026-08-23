@@ -51,17 +51,42 @@ struct FailureWindow {
     failures: u32,
 }
 
+impl FailureWindow {
+    fn new(now: Instant) -> Self {
+        Self {
+            started_at: now,
+            failures: 0,
+        }
+    }
+
+    fn is_expired(&self, now: Instant) -> bool {
+        now.duration_since(self.started_at) >= AUTHENTICATION_THROTTLE_WINDOW
+    }
+
+    fn is_limited(&self) -> bool {
+        self.failures >= MAXIMUM_FAILED_AUTHENTICATIONS
+    }
+
+    fn record_failure(&mut self, now: Instant) {
+        if self.is_expired(now) {
+            *self = Self::new(now);
+        }
+        self.failures += 1;
+    }
+}
+
 impl AuthenticationThrottle {
     fn check(&self, client_id: &str, now: Instant) -> Result<(), ApiError> {
         let mut failures = self.failures.lock().map_err(|_| ApiError::InternalState)?;
-        if failures.get(client_id).is_some_and(|window| {
-            now.duration_since(window.started_at) >= AUTHENTICATION_THROTTLE_WINDOW
-        }) {
+        if failures
+            .get(client_id)
+            .is_some_and(|window| window.is_expired(now))
+        {
             failures.remove(client_id);
         }
         if failures
             .get(client_id)
-            .is_some_and(|window| window.failures >= MAXIMUM_FAILED_AUTHENTICATIONS)
+            .is_some_and(FailureWindow::is_limited)
         {
             return Err(ApiError::TooManyAuthenticationAttempts);
         }
@@ -72,17 +97,8 @@ impl AuthenticationThrottle {
         let mut failures = self.failures.lock().map_err(|_| ApiError::InternalState)?;
         let window = failures
             .entry(client_id.to_owned())
-            .or_insert(FailureWindow {
-                started_at: now,
-                failures: 0,
-            });
-        if now.duration_since(window.started_at) >= AUTHENTICATION_THROTTLE_WINDOW {
-            *window = FailureWindow {
-                started_at: now,
-                failures: 0,
-            };
-        }
-        window.failures += 1;
+            .or_insert_with(|| FailureWindow::new(now));
+        window.record_failure(now);
         Ok(())
     }
 

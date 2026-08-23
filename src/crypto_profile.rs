@@ -5,6 +5,9 @@ use ring::{digest, signature};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+#[cfg(test)]
+pub(crate) mod test_support;
+
 /// Mandatory fully specified JOSE algorithm for BWG Gate Passes.
 pub const GATE_PASS_JWS_ALGORITHM: &str = "Ed25519";
 /// Mandatory browser DPoP JOSE algorithm for BWG Redemption.

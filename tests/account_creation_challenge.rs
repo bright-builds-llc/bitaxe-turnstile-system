@@ -7,7 +7,6 @@ use axum::Router;
 use bwg_core::{
     authority::{self, AuthorityPublicConfig, DeploymentEnvironment, ServiceCredential},
     challenge::ActionPolicy,
-    crypto_profile::AuthorityJwkWire,
     reference_service,
 };
 use serde_json::{Value, json};
@@ -16,6 +15,10 @@ use tokio::net::TcpListener;
 const SERVICE_CREDENTIAL: &str = "test-secret-P9vK2mQ7xR4tY8uN3cF6wL1zA5dH0sJ";
 const SERVICE_CLIENT_ID: &str = "reference-service-test";
 const TRUSTED_AUTHORITY_ISSUER: &str = "https://authority.example";
+
+#[path = "support/authority_keys.rs"]
+mod authority_key_support;
+use authority_key_support::authority_keys;
 
 #[tokio::test]
 async fn reference_backend_issues_a_browser_safe_standard_challenge()
@@ -190,12 +193,6 @@ fn authority_config() -> Result<authority::Config, Box<dyn std::error::Error>> {
         vec![credential],
         public,
     )?)
-}
-
-fn authority_keys() -> Result<Vec<AuthorityJwkWire>, serde_json::Error> {
-    let vectors: Value =
-        serde_json::from_str(include_str!("../conformance/bwg-0.1/crypto-vectors.json"))?;
-    serde_json::from_value(vectors["authority_keys"].clone())
 }
 
 fn trusted_authority() -> Result<reference_service::TrustedAuthority, Box<dyn std::error::Error>> {

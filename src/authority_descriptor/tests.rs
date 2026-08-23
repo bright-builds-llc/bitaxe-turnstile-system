@@ -1,11 +1,12 @@
 use serde_json::Value;
 
 use super::*;
+use crate::crypto_profile::test_support::authority_key_wires;
 
 #[test]
 fn public_config_rejects_malformed_https_url() -> Result<(), serde_json::Error> {
     // Arrange
-    let keys = authority_keys()?;
+    let keys = authority_key_wires()?;
 
     // Act
     let result = AuthorityPublicConfig::new(
@@ -79,17 +80,10 @@ fn valid_descriptor_json() -> Result<Value, Box<dyn std::error::Error>> {
     let config = AuthorityPublicConfig::new(
         "https://authority.example",
         "https://authority.example",
-        authority_keys()?,
+        authority_key_wires()?,
         "https://authority.example/policies/operator",
         "https://authority.example/privacy",
         "https://authority.example/terms",
     )?;
     Ok(serde_json::to_value(config.descriptor())?)
-}
-
-fn authority_keys() -> Result<Vec<AuthorityJwkWire>, serde_json::Error> {
-    let vectors: Value = serde_json::from_str(include_str!(
-        "../../conformance/bwg-0.1/crypto-vectors.json"
-    ))?;
-    serde_json::from_value(vectors["authority_keys"].clone())
 }
