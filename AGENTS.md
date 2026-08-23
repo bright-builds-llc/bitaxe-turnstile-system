@@ -33,3 +33,17 @@ Use this routing map when deciding what to load next:
 - If instructions elsewhere in `AGENTS.md` conflict with `AGENTS.bright-builds.md`, follow the repo-local instructions and treat them as an explicit local exception.
 
 <!-- bright-builds-rules-managed:end -->
+
+## Agent skills
+
+### Issue tracker
+
+Specs and tickets are version-controlled Markdown under `.scratch/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Local ticket status uses the five default triage roles. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a multi-context repository rooted at `CONTEXT-MAP.md`, with system-wide decisions under `docs/adr/`. See `docs/agents/domain.md`.
