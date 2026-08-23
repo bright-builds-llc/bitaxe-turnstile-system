@@ -57,6 +57,7 @@ bun run verify
 - [Implementation research](./docs/design/implementation-research.md)
 - [Architectural decisions](./docs/adr/)
 - [BWG/0.1 OpenAPI contract](./openapi/bwg-0.1.json)
+- [BWG/0.1 recovery matrix](./docs/protocol/bwg-0.1-recovery-matrix.md)
 - [Original project brief](./initial-prompt.md)
 
 ## License
