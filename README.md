@@ -58,6 +58,7 @@ bun run verify
 - [Architectural decisions](./docs/adr/)
 - [BWG/0.1 OpenAPI contract](./openapi/bwg-0.1.json)
 - [BWG/0.1 recovery matrix](./docs/protocol/bwg-0.1-recovery-matrix.md)
+- [Data-governance open questions](./docs/design/data-governance-open-questions.md)
 - [Original project brief](./initial-prompt.md)
 
 ## License
