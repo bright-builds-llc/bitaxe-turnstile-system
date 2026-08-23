@@ -1,8 +1,8 @@
-# 20: Onboard Bitaxe with settings-preserving Reference Firmware
+# 22: Onboard Bitaxe with settings-preserving Reference Firmware
 
 **What to build:** A first-time Bitaxe owner can enter the reference account-creation journey over USB, safely install compatible signed Reference Firmware when needed, preserve admitted settings, and return to the challenge without an account or mobile app.
 
-**Blocked by:** 11: Protect account creation with an accessible Web Component; 19: Publish the Worker Controller and USB contract with a simulator.
+**Blocked by:** 13: Protect account creation with an accessible Web Component; 21: Publish the Worker Controller and USB contract with a simulator.
 
 **Status:** ready-for-agent
 

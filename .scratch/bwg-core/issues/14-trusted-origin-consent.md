@@ -1,8 +1,8 @@
-# 12: Require trusted-origin consent for Elevated work
+# 14: Require trusted-origin consent for Elevated work
 
 **What to build:** Elevated Work Requirements and materially changed Pool Offer terms require confirmation on a trusted Authority origin that an embedding website cannot silently suppress or replace.
 
-**Blocked by:** 11: Protect account creation with an accessible Web Component.
+**Blocked by:** 13: Protect account creation with an accessible Web Component.
 
 **Status:** ready-for-agent
 

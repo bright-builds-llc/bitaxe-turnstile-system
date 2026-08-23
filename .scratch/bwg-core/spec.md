@@ -160,6 +160,7 @@ The reference deployment is a modular Rust Gate Authority backed by PostgreSQL, 
 - The transparent Pool Adapter proxy is a separate process because its public Stratum endpoint, network failure mode, licensing adjacency, and deployment locality are genuine seams.
 - The Web Component and headless client share one lifecycle implementation. The custom element is an adapter over the headless interface rather than a second domain implementation.
 - The reference Relying Service uses the same published challenge and Redemption interfaces expected of third parties.
+- The Gate Authority and Relying Service own separate PostgreSQL schemas, forward-only migrations, and repository ports. A reference deployment may share one cluster, but no cross-schema foreign key, query, or transaction crosses the context boundary.
 
 ### Public and service interfaces
 
@@ -176,6 +177,7 @@ The reference deployment is a modular Rust Gate Authority backed by PostgreSQL, 
 
 - Only an authenticated Relying Service backend may create a Work Challenge.
 - Challenge creation selects an audited Action Policy revision and provides an opaque Action Reference plus only allowed bounded overrides.
+- The immutable Action Policy revision also pins the Protected Action's execution deadline, maximum attempts, and retryable-error classes.
 - An issued challenge immutably binds the Relying Service audience, Protected Action type, Action Reference, Claimant key, Work Requirement, Reward Policy, Pool Offers, expiry, and protocol version.
 - Browser hints such as locale or available Worker class are non-authoritative and cannot reduce work, alter rewards, extend expiry, or change action binding.
 - The reference account-creation Action Policy uses Standard work: `2^44` expected hashes, represented to users as 44 bits of Equivalent Binary-Zero Work.
@@ -185,7 +187,7 @@ The reference deployment is a modular Rust Gate Authority backed by PostgreSQL, 
 
 ### Claimant keys, consent, and privacy
 
-- The browser generates a fresh, non-extractable, pairwise proof-of-possession key for each challenge context and retains it only through challenge and Gate Pass expiry.
+- The browser generates a fresh, non-extractable, pairwise proof-of-possession key for each challenge context and retains it through the bounded public Outcome Lookup window before deleting it.
 - Work Consent is user-initiated and records the disclosed Work Requirement, selected Workers, Pool Offer, Reward Policy, Payout Destination, estimates, cancellation behavior, and applicable safety limits.
 - Work never starts on page load. Client work ceilings are mandatory.
 - Light and Standard local work may be confirmed in the conforming Web Component. Elevated work and materially changed Pool Offer terms require a trusted-origin confirmation surface.
@@ -220,30 +222,36 @@ The reference deployment is a modular Rust Gate Authority backed by PostgreSQL, 
 ### Persistence and event delivery
 
 - PostgreSQL is the authoritative store for immutable challenge policy, Work Sessions, append-only Accepted Work Events, Credited Work projections, pass metadata, expiry state, downstream issuance intent, and adapter acknowledgement state.
+- The Relying Service's separate PostgreSQL schema authoritatively stores Action Reference binding, Trusted Authority Keys, Pass Consumption, Redemption Records, Protected Action Outcomes, action-execution intent and attempts, and proof replay state.
+- Runnable services, integration tests, and acceptance tests use PostgreSQL. In-memory adapters are limited to isolated domain-unit tests and cannot provide durability evidence.
 - Event delivery is at least once. The Pool Adapter durably records an Accepted Work Event before returning an accepted response to the Worker and resends until acknowledged.
 - Exactly-once distributed transactions are not required; idempotent event processing provides the observable guarantee.
 - Redis or another cache may accelerate progress fan-out but never becomes the source of truth.
-- Gate Pass signing, SSE delivery, and other downstream effects use durable outbox-style intent so process failure cannot lose a completed transition.
+- Gate Pass signing, Protected Action execution, SSE delivery, and other downstream effects use durable outbox-style intent and reclaimable leases so process failure cannot lose a completed transition.
 
 ### Lifecycle and expiry
 
-- Work Challenge states are issued, active, satisfied, pass issued, cancelled, and expired.
+- Work Challenge satisfaction remains a durable accounting fact independent of the associated issuance state.
+- Gate Pass issuance states are `pending`, `signing`, `issued`, and terminal `failed`; an expired signing lease is reclaimable, but an unsigned intent fails permanently at Work Challenge expiry.
 - Work Session states are ready, leased, stopping, restored, and failed.
 - A Work Challenge expires 15 minutes after issuance by default.
-- A completed Gate Pass expires two minutes after issuance and cannot be refreshed, extended, banked, exchanged, or reused.
+- A Gate Pass's `iat` and two-minute expiry begin when the first exact compact JWS is durably stored and retrievable; it cannot be refreshed, extended, banked, exchanged, or reused.
 - A DPoP Redemption proof is single-use and accepted only within a 60-second clock window.
 - Accepted Work Events received after challenge expiry do not count toward authorization.
 - Pool handling of a possible network-valid block remains independent of challenge expiry and gate accounting.
 
 ### Gate Pass and Redemption
 
-- Gate Passes use a tightly constrained compact JWS profile with an explicit BWG type, fully specified Ed25519 issuer signatures, trusted Authority keys, and mandatory issuer, audience, issue/expiry time, unique pass identity, challenge identity, Action Reference, and Claimant-key confirmation claims.
-- Authority keys come from configured trust or the Authority's known JWKS endpoint. A token-supplied arbitrary key URL is not trusted.
+- Gate Passes use a tightly constrained compact JWS profile with an explicit BWG type, fully specified Ed25519 issuer signatures, and mandatory issuer, audience, issue/expiry time, unique pass identity, challenge identity, Protected Action Type, Action Reference, immutable Action Policy revision, and Claimant-key confirmation claims.
+- The issuance intent pins the pass identity, claims, algorithm, and challenge-expiry signing deadline. The first successful signer selects an eligible active key and atomically stores its `kid` with the one exact compact JWS.
+- Claimant Issuance Proof authenticates bounded read-only lookup by Work Challenge ID, returning `pending`, the exact stored pass, or terminal `failed` without causing signing or extending expiry.
+- Authority keys come from the Relying Service's durable explicitly trusted local key set. An unfamiliar `kid` may cause one bounded refresh before Redemption begins, but a token-supplied arbitrary key URL is not trusted and no live Authority call occurs inside Redemption.
 - Redemption uses DPoP to bind the Claimant key to the HTTP method, target URI, and Gate Pass hash.
-- The Relying Service validates the unexpired pass and fresh DPoP proof, then atomically consumes the unique pass identity for the exact Action Reference.
-- First valid Redemption creates a durable Redemption Record. The pass grants no continuing authority after consumption.
-- The Relying Service owns internal retry of an accepted Protected Action and returns one stable outcome for the idempotency key.
-- Bounded status lookup may retrieve the accepted outcome through the Claimant key and Action Reference but cannot execute or restart the action.
+- The Relying Service validates the unexpired pass and fresh DPoP proof, then atomically consumes `(issuer, pass_id)` while enforcing one Redemption Record for `(audience, Action Reference)`.
+- The first valid Redemption atomically creates that Redemption Record, one pending Protected Action Outcome, and one Action Execution Intent. Later valid same-Claimant passes are consumed and linked to the existing record without restarting execution; conflicting Claimant keys fail without consumption or disclosure.
+- Protected Action execution uses the Action Reference as a downstream idempotency key and advances the outcome from `pending` to immutable terminal `succeeded` or `failed`. Failure never reverses Redemption or Pass Consumption.
+- Claimant Outcome Proof authenticates read-only lookup by Action Reference for a configurable window defaulting to 24 hours. Lookup returns only safe `pending`, `succeeded`, or `failed` representations and cannot authorize, execute, retry, or restart the action.
+- Unknown Action References, wrong Claimant keys, and expired public lookup windows are externally indistinguishable.
 
 ### Pool Offer, rewards, and mainnet
 
@@ -291,6 +299,7 @@ The reference deployment is a modular Rust Gate Authority backed by PostgreSQL, 
 ### Testing philosophy
 
 - Tests verify observable behavior through module interfaces and public protocol seams rather than private methods, internal database queries, implementation-specific call counts, or hidden collaborators.
+- Every persistence, restart, concurrency, response-loss, or recovery claim is tested against PostgreSQL rather than an in-memory repository.
 - Each unit test covers one concern and follows Arrange, Act, Assert structure. Explicit section comments are used unless the structure is unmistakable without them.
 - Expected values come from independent worked vectors, Bitcoin specifications, external protocol fixtures, or accepted scenario outcomes rather than recomputing results through the same implementation logic.
 - One vertical red-green slice is implemented at a time. Bulk horizontal test suites are not written ahead of the behavior they exercise.
@@ -300,8 +309,8 @@ The reference deployment is a modular Rust Gate Authority backed by PostgreSQL, 
 
 - The primary acceptance harness drives the Reference Relying Service, Web Component or headless client, public Gate Authority HTTP/SSE interface, simulated Pool Adapter and Worker, JWS Gate Pass, DPoP Redemption, and idempotent account-creation outcome.
 - The harness uses public role interfaces only and does not inspect PostgreSQL or private application state to prove behavior.
-- Positive scenarios cover challenge issuance, Work Consent, multiple Accepted Work Events, Verified Progress, threshold completion, Work Lease termination, Gate Pass issuance, DPoP Redemption, and one durable action outcome.
-- Negative scenarios cover invalid Action Policy, browser policy tampering, insufficient work, duplicate event identity, duplicate share fingerprint, event replay, expired challenge, expired pass, replayed DPoP proof, wrong audience, wrong Action Reference, wrong Claimant key, concurrent Redemption, and backend response loss.
+- Positive scenarios cover challenge issuance, Work Consent, multiple Accepted Work Events, Verified Progress, threshold completion, Work Lease termination, crash-recoverable Gate Pass issuance, DPoP Redemption, Action Execution, and durable Outcome Lookup.
+- Negative scenarios cover invalid Action Policy, browser policy tampering, insufficient work, duplicate event identity, duplicate share fingerprint, event replay, expired challenge, issuance deadline failure, expired pass, replayed proofs, wrong audience, wrong Action Reference, wrong Claimant key, concurrent Redemption, backend response loss, and worker lease expiry.
 - Lifecycle scenarios cover Pause, resume, explicit Cancel, tab loss, Worker replacement, equivalent pool failover, changed terms requiring consent, and Authority or pool outage with explicit fallback labeling.
 - Privacy scenarios assert that prohibited identity, payout, credential, network, and action-payload data never appears in public challenge, Gate Pass, SSE, log, or Relying Service surfaces.
 - Browser scenarios cover keyboard operation, screen-reader semantics, contrast, reduced motion, closed progress semantics, trusted-origin confirmation, and framework-independent custom-element use.

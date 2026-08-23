@@ -1,8 +1,8 @@
-# 22: Package a reproducible self-hosted reference deployment
+# 24: Package a reproducible self-hosted reference deployment
 
 **What to build:** A self-hoster can launch the complete reference BWG Core stack through one documented, reproducible path and receive the same public interfaces, trust controls, provenance, health signals, and safety behavior as the hosted deployment.
 
-**Blocked by:** 04: Secure challenge issuance and publish Authority discovery; 07: Persist and recover the gate lifecycle; 11: Protect account creation with an accessible Web Component; 17: Submit block candidates independently of gate outages.
+**Blocked by:** 04: Secure challenge issuance and publish Authority discovery; 09: Prove persistent lifecycle recovery and data governance; 13: Protect account creation with an accessible Web Component; 19: Submit block candidates independently of gate outages.
 
 **Status:** ready-for-agent
 

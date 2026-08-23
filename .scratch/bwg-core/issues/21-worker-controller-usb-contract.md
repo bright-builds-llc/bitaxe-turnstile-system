@@ -1,8 +1,8 @@
-# 19: Publish the Worker Controller and USB contract with a simulator
+# 21: Publish the Worker Controller and USB contract with a simulator
 
 **What to build:** A versioned cross-repository contract and simulated device let the browser client discover a local Worker, execute bounded Work Leases, and observe safe Mining Baseline restoration without depending on firmware internals.
 
-**Blocked by:** 08: Pause, cancel, expire, and resume safely; 10: Obtain Work Consent through the headless client.
+**Blocked by:** 10: Pause, cancel, expire, and resume safely; 12: Obtain Work Consent through the headless client.
 
 **Status:** ready-for-agent
 

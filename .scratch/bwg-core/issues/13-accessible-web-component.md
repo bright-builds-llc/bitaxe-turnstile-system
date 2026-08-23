@@ -1,8 +1,8 @@
-# 11: Protect account creation with an accessible Web Component
+# 13: Protect account creation with an accessible Web Component
 
 **What to build:** A Relying Service can protect reference account creation through a framework-agnostic SolidJS custom element that uses the headless client and completes the full simulated BWG journey accessibly.
 
-**Blocked by:** 10: Obtain Work Consent through the headless client.
+**Blocked by:** 12: Obtain Work Consent through the headless client.
 
 **Status:** ready-for-agent
 

@@ -16,8 +16,12 @@ _Avoid_: Human, user account, worker
 An action whose authorization is conditioned on satisfying a proof-of-work gate, such as creating an account.
 _Avoid_: Request, API call
 
+**Protected Action Type**:
+A stable Relying Service classification of what operation a Gate Pass may authorize, independent of the opaque identity of one particular action.
+_Avoid_: Action Reference, Action Policy, endpoint
+
 **Action Reference**:
-An opaque Relying Service identifier that binds a Work Challenge and Gate Pass to a Protected Action without revealing the action payload or personal data.
+A Relying Service identifier that binds one Protected Action, its Claimant-key thumbprint, Work Challenge, and Gate Passes without revealing the action payload or personal data; a different Claimant key is an integrity conflict rather than an idempotent retry.
 _Avoid_: Email address, account identifier, serialized request
 
 **Work Challenge**:
@@ -37,7 +41,7 @@ The Relying Service's bounded rules for deriving a Work Requirement from the Pro
 _Avoid_: Estimated duration, pool variable difficulty, self-reported hashrate
 
 **Action Policy**:
-An audited, versioned Gate Policy configuration for one Protected Action type, pinned immutably into every challenge it issues.
+A versioned configuration belonging to one stable Protected Action Type that pins its Gate Policy and bounded action-execution finality rules immutably into every challenge it issues; several policy revisions may price and govern the same type.
 _Avoid_: Arbitrary browser parameters, mutable active policy, Action Reference
 
 **Abuse Policy**:
@@ -73,16 +77,56 @@ A non-authoritative indication that work is ongoing, derived from recent share c
 _Avoid_: Credited Work, completion evidence
 
 **Gate Pass**:
-A short-lived, single-use authorization bound to both the protected action associated with a completed work challenge and the Claimant's proof-of-possession key.
+A short-lived, single-use authorization bound to the Protected Action Type, exact Action Reference, immutable Action Policy revision, Relying Service, and Claimant proof-of-possession key.
 _Avoid_: Credit, balance, reusable token
+
+**Gate Pass Issuance Intent**:
+A durable exactly-once record created when a Work Challenge first becomes satisfied, requiring Gate Pass signing no later than that challenge's expiry without itself granting authorization; an unsigned intent becomes terminally failed at that deadline and can never mint a pass afterward.
+_Avoid_: Unsigned Gate Pass, transient signing job, Gate Pass
+
+**Issuance Lookup**:
+A Claimant-key-authenticated read of the Gate Pass Issuance Intent associated with one Work Challenge, returning `pending`, the exact stored Gate Pass when `issued`, or terminal `failed` without signing, retrying, or extending anything.
+_Avoid_: Gate Pass issuance, pass refresh, Redemption
+
+**Claimant Issuance Proof**:
+A fresh, replay-protected JWS bound to an exact Issuance Lookup request and Work Challenge ID whose public-key thumbprint must match the challenge; it grants only read access to that challenge's issuance state.
+_Avoid_: Gate Pass, Claimant Outcome Proof, access token
 
 **Redemption**:
 The one-time exercise of a Gate Pass by its Claimant to authorize the associated protected action.
 _Avoid_: Login, payment, token validation
 
+**Pass Consumption**:
+The durable one-time burn of one Authority-scoped Gate Pass identity during an accepted Redemption, linked to the Action Reference's single Redemption Record even when another pass created that record first; it prevents that authorization artifact from being exercised again.
+_Avoid_: Challenge cancellation, Action Reference idempotency, token validation
+
 **Redemption Record**:
-The durable server-side outcome created when an unexpired Gate Pass is atomically consumed; it supports idempotency but grants no continuing authority.
-_Avoid_: Reusable Gate Pass, refresh token, service credit
+The durable authorization-acceptance fact created when an unexpired Gate Pass is atomically consumed for one exact Protected Action; it supports idempotency but is not the action's execution result.
+_Avoid_: Protected Action Outcome, reusable Gate Pass, refresh token, service credit
+
+**Protected Action Outcome**:
+The durable execution state and result associated one-to-one with an accepted Redemption Record, advanced only by the Relying Service's internal action processing and retry policy from `pending` to immutable terminal `succeeded` or `failed`; failure never reverses Redemption or Pass Consumption.
+_Avoid_: Redemption Record, Gate Pass, authorization
+
+**Action Execution Attempt**:
+A durably leased internal attempt to advance a pending Protected Action Outcome under the deadline, attempt limit, and retryable-error classes pinned by its Action Policy.
+_Avoid_: Redemption retry, Gate Pass retry, Outcome Lookup
+
+**Action Execution Intent**:
+A durable outbox record created atomically with the first Redemption Record and pending Protected Action Outcome, claimed only after commit to begin idempotent action execution.
+_Avoid_: Redemption Record, in-memory job, execution result
+
+**Outcome Lookup**:
+A bounded Claimant-key-authenticated retrieval of an existing Redemption Record and its Protected Action Outcome, publicly available for a configurable window defaulting to 24 hours after Redemption acceptance, that cannot consume a Gate Pass, authorize, create, retry, or restart a Protected Action.
+_Avoid_: Gate Pass retry, re-Redemption, action retry
+
+**Claimant Outcome Proof**:
+A fresh, replay-protected ES256 JWS bound to an exact Outcome Lookup request and Action Reference whose public-key thumbprint must match the accepted Redemption Record; it grants only read access to that existing outcome.
+_Avoid_: Gate Pass, Redemption proof, access token
+
+**Trusted Authority Key Set**:
+The durable local set of explicitly trusted Gate Authority verification keys a Relying Service uses to validate Gate Passes without depending on a live Authority during Redemption.
+_Avoid_: Discovered JWKS, trust-on-first-use, signing keys
 
 **Gate Authority**:
 The party responsible for work-challenge policy, completion, and issuance of gate passes on behalf of a relying service.

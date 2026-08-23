@@ -1,8 +1,8 @@
-# 18: Aggregate Workers and fail over equivalent Pool Offers
+# 20: Aggregate Workers and fail over equivalent Pool Offers
 
 **What to build:** Several Workers and successive Work Sessions can contribute to one Work Challenge, and an unavailable session or pool can be replaced without losing Verified Progress or silently changing consented terms.
 
-**Blocked by:** 08: Pause, cancel, expire, and resume safely; 09: Disclose and select a solo Pool Offer; 13: Accept standard Stratum V1 work through the transparent proxy.
+**Blocked by:** 10: Pause, cancel, expire, and resume safely; 11: Disclose and select a solo Pool Offer; 15: Accept standard Stratum V1 work through the transparent proxy.
 
 **Status:** ready-for-agent
 

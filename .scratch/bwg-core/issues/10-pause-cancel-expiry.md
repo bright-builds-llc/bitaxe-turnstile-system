@@ -1,8 +1,8 @@
-# 08: Pause, cancel, expire, and resume safely
+# 10: Pause, cancel, expire, and resume safely
 
 **What to build:** Claimants and Workers receive deterministic outcomes for every interruption and terminal state. Pause preserves accepted progress, Cancel is terminal, stale artifacts fail closed, and loss of continuity cannot leave challenge mining unbounded.
 
-**Blocked by:** 07: Persist and recover the gate lifecycle.
+**Blocked by:** 09: Prove persistent lifecycle recovery and data governance.
 
 **Status:** ready-for-agent
 

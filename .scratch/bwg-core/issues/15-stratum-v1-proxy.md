@@ -1,8 +1,8 @@
-# 13: Accept standard Stratum V1 work through the transparent proxy
+# 15: Accept standard Stratum V1 work through the transparent proxy
 
 **What to build:** A non-Bitaxe Worker can use short-lived challenge credentials against the MIT Rust Pool Adapter proxy, mine through a simulated upstream pool, and advance the same Gate Authority progress path without custom Stratum extensions.
 
-**Blocked by:** 05: Credit accepted work and stream Verified Progress; 09: Disclose and select a solo Pool Offer.
+**Blocked by:** 05: Credit accepted work and stream Verified Progress; 11: Disclose and select a solo Pool Offer.
 
 **Status:** ready-for-agent
 

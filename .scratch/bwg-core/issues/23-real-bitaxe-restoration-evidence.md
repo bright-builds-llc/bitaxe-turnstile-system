@@ -1,8 +1,8 @@
-# 21: Prove Work Lease restoration on real Bitaxe hardware
+# 23: Prove Work Lease restoration on real Bitaxe hardware
 
 **What to build:** Real Bitaxe evidence proves that bounded mainnet-capable challenge work can run through Reference Firmware and restore the exact Mining Baseline across every terminal and interruption path.
 
-**Blocked by:** 16: Admit only exact BIP 23-valid mainnet jobs; 18: Aggregate Workers and fail over equivalent Pool Offers; 20: Onboard Bitaxe with settings-preserving Reference Firmware.
+**Blocked by:** 18: Admit only exact BIP 23-valid mainnet jobs; 20: Aggregate Workers and fail over equivalent Pool Offers; 22: Onboard Bitaxe with settings-preserving Reference Firmware.
 
 **Status:** ready-for-agent
 

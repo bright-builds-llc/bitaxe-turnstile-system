@@ -1,8 +1,8 @@
-# 16: Admit only exact BIP 23-valid mainnet jobs
+# 18: Admit only exact BIP 23-valid mainnet jobs
 
 **What to build:** No mainnet job reaches a Worker until the exact candidate represented by that job has independently matched its Reward Policy and received the successful pre-work BIP 23 proposal response from Bitcoin Core.
 
-**Blocked by:** 15: Integrate pinned Hydra in solo direct-payout mode.
+**Blocked by:** 17: Integrate pinned Hydra in solo direct-payout mode.
 
 **Status:** ready-for-agent
 

@@ -1,0 +1,3 @@
+# Separate Gate Pass consumption from Protected Action idempotency
+
+Relying Services will atomically consume each Gate Pass by `(issuer, pass_id)` while independently enforcing one Redemption Record for `(audience, Action Reference)`. A Work Challenge issues at most one pass identity, but multiple valid same-Claimant passes accidentally completed for the same Protected Action are each consumed and linked to the existing action record rather than executing the action twice. A pass whose Claimant key conflicts with the key pinned to the Action Reference is rejected without consumption or disclosure.

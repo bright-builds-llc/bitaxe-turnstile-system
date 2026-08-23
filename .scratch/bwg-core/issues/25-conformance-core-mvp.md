@@ -1,8 +1,8 @@
-# 23: Publish BWG/0.x Conformance Profiles and prove the Core MVP
+# 25: Publish BWG/0.x Conformance Profiles and prove the Core MVP
 
 **What to build:** Versioned executable Client, Gate Authority, Pool Adapter, and Relying Service Conformance Profiles plus one reproducible end-to-end evidence set demonstrate every BWG Core MVP success criterion.
 
-**Blocked by:** 12: Require trusted-origin consent for Elevated work; 17: Submit block candidates independently of gate outages; 18: Aggregate Workers and fail over equivalent Pool Offers; 21: Prove Work Lease restoration on real Bitaxe hardware; 22: Package a reproducible self-hosted reference deployment.
+**Blocked by:** 14: Require trusted-origin consent for Elevated work; 19: Submit block candidates independently of gate outages; 20: Aggregate Workers and fail over equivalent Pool Offers; 23: Prove Work Lease restoration on real Bitaxe hardware; 24: Package a reproducible self-hosted reference deployment.
 
 **Status:** ready-for-agent
 

@@ -1,0 +1,3 @@
+# Separate Redemption acceptance from Protected Action outcome
+
+The Relying Service transaction that consumes the first Gate Pass for an Action Reference creates one Redemption Record as the durable authorization-acceptance fact, one linked Protected Action Outcome beginning in `pending`, and one Action Execution Intent. Internal action workers, not Redemption or Outcome Lookup, advance that outcome to immutable terminal `succeeded` or `failed`, keeping response-loss idempotency and execution retries separate from authorization. A terminal action failure never reverses the accepted Redemption, unconsumes the pass, refunds work, or permits the same pass to authorize another attempt.

@@ -1,8 +1,8 @@
-# 14: Prove the Hydra/P2Pool job-admission seam
+# 16: Prove the Hydra/P2Pool job-admission seam
 
 **What to build:** Source-level and runnable evidence identifying the smallest generic Hydra/P2Pool extension that can validate the exact constructed candidate before `mining.notify`, without introducing BWG Protected Action concepts into the pool.
 
-**Blocked by:** 13: Accept standard Stratum V1 work through the transparent proxy.
+**Blocked by:** 15: Accept standard Stratum V1 work through the transparent proxy.
 
 **Status:** ready-for-agent
 

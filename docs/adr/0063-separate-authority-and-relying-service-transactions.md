@@ -1,0 +1,3 @@
+# Separate Gate Authority and Relying Service persistence transactions
+
+Gate Authority persistence owns challenge policy, Work Sessions, Accepted Work Events, progress, Gate Pass issuance intent, and pass metadata, while each Relying Service persistence boundary owns pass consumption, Protected Action idempotency, Redemption Records, and action outcomes. A reference deployment may place both in one PostgreSQL cluster, but each context owns a separate schema and forward-only migration set with no cross-schema foreign keys, repository queries, or transactions, so Redemption remains independent of Authority availability.

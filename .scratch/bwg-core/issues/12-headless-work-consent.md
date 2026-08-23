@@ -1,8 +1,8 @@
-# 10: Obtain Work Consent through the headless client
+# 12: Obtain Work Consent through the headless client
 
 **What to build:** A framework-independent browser client lets the Claimant understand, approve, observe, Pause, and Cancel bounded work without exposing private keys or trusting estimates as completion evidence.
 
-**Blocked by:** 08: Pause, cancel, expire, and resume safely; 09: Disclose and select a solo Pool Offer.
+**Blocked by:** 10: Pause, cancel, expire, and resume safely; 11: Disclose and select a solo Pool Offer.
 
 **Status:** ready-for-agent
 

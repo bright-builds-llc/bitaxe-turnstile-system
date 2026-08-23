@@ -1,8 +1,8 @@
-# 09: Disclose and select a solo Pool Offer
+# 11: Disclose and select a solo Pool Offer
 
 **What to build:** A Claimant can select an approved solo/direct-payout Pool Offer whose Reward Policy, fees, Payout Destinations, privacy terms, source, and license are immutable and visible before Work Consent.
 
-**Blocked by:** 04: Secure challenge issuance and publish Authority discovery; 06: Complete and redeem a proof-of-possession Gate Pass.
+**Blocked by:** 04: Secure challenge issuance and publish Authority discovery; 08: Complete and redeem a proof-of-possession Gate Pass.
 
 **Status:** ready-for-agent
 
