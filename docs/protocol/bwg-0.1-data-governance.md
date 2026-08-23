@@ -111,7 +111,8 @@ respectively.
   are not rewritten or deleted by governance transitions.
 - Aggregate and marker tombstones expire at the latest applicable terminal day 90 or artifact floor.
   A first cleanup after that final floor declares a direct overdue deletion instead of creating an
-  already-expired tombstone.
+  already-expired tombstone. This applies independently to a Pass Consumption marker when a longer
+  public lookup window keeps its aggregate identifying beyond marker day 90.
 
 ## Export contract
 

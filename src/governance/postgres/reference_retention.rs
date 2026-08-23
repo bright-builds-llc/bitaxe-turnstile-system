@@ -3,7 +3,8 @@ use uuid::Uuid;
 
 use super::{PlannedItem, to_i64, to_u64};
 use crate::governance::{
-    GovernanceContext, GovernanceError, GovernedRecordClass, PseudonymizationKey, RetentionPolicy,
+    GovernanceContext, GovernanceError, GovernedRecordClass, PassRetentionMarker,
+    PseudonymizationKey, RetentionFloors, RetentionPolicy, pass_retention_floors,
     pseudonymize_record, relying_retention_floors,
 };
 
@@ -97,26 +98,70 @@ pub(super) async fn delete_reference_tombstone(
     Ok(deleted.rows_affected())
 }
 
-pub(super) async fn delete_overdue_reference_aggregate(
+pub(super) async fn delete_overdue_reference_record(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     context: GovernanceContext,
     item: &PlannedItem,
     as_of_unix_seconds: u64,
     policy: RetentionPolicy,
 ) -> Result<u64, GovernanceError> {
-    if context != GovernanceContext::RelyingService
-        || item.record_class != GovernedRecordClass::RelyingServiceOperational
-    {
+    if context != GovernanceContext::RelyingService {
+        return Err(GovernanceError::InvalidPersistedData);
+    }
+    if item.record_class == GovernedRecordClass::PassConsumption {
+        return delete_overdue_pass_consumption(transaction, item, as_of_unix_seconds, policy)
+            .await;
+    }
+    if item.record_class != GovernedRecordClass::RelyingServiceOperational {
         return Err(GovernanceError::InvalidPersistedData);
     }
     let Some(aggregate) = maybe_relying_aggregate(transaction, &item.record_key).await? else {
         return Ok(0);
     };
-    let (_, final_floor) = aggregate_floors(&aggregate, policy)?;
-    if final_floor != item.retention_floor_unix_seconds || final_floor > as_of_unix_seconds {
+    let floors = aggregate_floors(&aggregate, policy)?;
+    if floors.final_deletion != item.retention_floor_unix_seconds
+        || floors.final_deletion > as_of_unix_seconds
+    {
         return Ok(0);
     }
     delete_relying_aggregate(transaction, &item.record_key).await
+}
+
+async fn delete_overdue_pass_consumption(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    item: &PlannedItem,
+    as_of_unix_seconds: u64,
+    policy: RetentionPolicy,
+) -> Result<u64, GovernanceError> {
+    let (issuer, pass_id) = parse_pass_marker_key(&item.record_key)?;
+    let maybe_row = sqlx::query(include_str!(
+        "../queries/select_pass_consumption_for_retention.sql"
+    ))
+    .bind(&issuer)
+    .bind(&pass_id)
+    .fetch_optional(&mut **transaction)
+    .await?;
+    let Some(row) = maybe_row else {
+        return Ok(0);
+    };
+    let marker = PassRetentionMarker {
+        consumed_at: to_u64(row.try_get("consumed_at_unix_seconds")?)?,
+        expires_at: to_u64(row.try_get("gate_pass_expires_at_unix_seconds")?)?,
+    };
+    let floors = pass_retention_floors(marker, policy)?;
+    if floors.final_deletion != item.retention_floor_unix_seconds
+        || floors.final_deletion > as_of_unix_seconds
+    {
+        return Ok(0);
+    }
+    let deleted = sqlx::query(include_str!("../queries/delete_pass_consumption.sql"))
+        .bind(&issuer)
+        .bind(&pass_id)
+        .bind(to_i64(marker.consumed_at)?)
+        .bind(to_i64(marker.expires_at)?)
+        .execute(&mut **transaction)
+        .await?;
+    Ok(deleted.rows_affected())
 }
 
 async fn pseudonymize_relying_aggregate(
@@ -129,9 +174,9 @@ async fn pseudonymize_relying_aggregate(
     let Some(aggregate) = maybe_relying_aggregate(transaction, &item.record_key).await? else {
         return Ok(0);
     };
-    let (operational_floor, final_floor) = aggregate_floors(&aggregate, policy)?;
-    if operational_floor != item.retention_floor_unix_seconds
-        || operational_floor > as_of_unix_seconds
+    let floors = aggregate_floors(&aggregate, policy)?;
+    if floors.operational != item.retention_floor_unix_seconds
+        || floors.operational > as_of_unix_seconds
     {
         return Ok(0);
     }
@@ -154,7 +199,7 @@ async fn pseudonymize_relying_aggregate(
             maybe_action_policy: Some(&aggregate.action_policy),
             terminal_at: aggregate.terminal_at,
             pseudonymized_at: as_of_unix_seconds,
-            delete_after: final_floor,
+            delete_after: floors.final_deletion,
         },
     )
     .await?;
@@ -185,13 +230,9 @@ async fn pseudonymize_pass_consumption(
         consumed_at: to_u64(row.try_get("consumed_at_unix_seconds")?)?,
         expires_at: to_u64(row.try_get("gate_pass_expires_at_unix_seconds")?)?,
     };
-    let operational_floor = marker
-        .consumed_at
-        .checked_add(policy.operational_retention_seconds())
-        .map(|floor| floor.max(marker.expires_at))
-        .ok_or(GovernanceError::InvalidPersistedData)?;
-    if operational_floor != item.retention_floor_unix_seconds
-        || operational_floor > as_of_unix_seconds
+    let floors = pass_retention_floors(marker.retention(), policy)?;
+    if floors.operational != item.retention_floor_unix_seconds
+        || floors.operational > as_of_unix_seconds
     {
         return Ok(0);
     }
@@ -248,11 +289,11 @@ async fn maybe_relying_aggregate(
 fn aggregate_floors(
     aggregate: &RelyingAggregate,
     policy: RetentionPolicy,
-) -> Result<(u64, u64), GovernanceError> {
+) -> Result<RetentionFloors, GovernanceError> {
     let pass_markers = aggregate
         .pass_markers
         .iter()
-        .map(|marker| (marker.consumed_at, marker.expires_at))
+        .map(PassMarker::retention)
         .collect::<Vec<_>>();
     relying_retention_floors(
         aggregate.terminal_at,
@@ -276,11 +317,7 @@ async fn insert_pass_tombstone(
         GovernedRecordClass::PassConsumption,
         &record_key,
     );
-    let delete_after = marker
-        .consumed_at
-        .checked_add(policy.tombstone_retention_seconds())
-        .ok_or(GovernanceError::InvalidPersistedData)?
-        .max(marker.expires_at);
+    let delete_after = pass_retention_floors(marker.retention(), policy)?.final_deletion;
     insert_tombstone(
         transaction,
         NewTombstone {
@@ -339,5 +376,14 @@ fn parse_terminal_status(value: &str) -> Result<RelyingTerminalStatus, Governanc
         "succeeded" => Ok(RelyingTerminalStatus::Succeeded),
         "failed" => Ok(RelyingTerminalStatus::Failed),
         _ => Err(GovernanceError::InvalidPersistedData),
+    }
+}
+
+impl PassMarker {
+    const fn retention(&self) -> PassRetentionMarker {
+        PassRetentionMarker {
+            consumed_at: self.consumed_at,
+            expires_at: self.expires_at,
+        }
     }
 }

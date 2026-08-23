@@ -420,12 +420,42 @@ fn pseudonymize_record(
         .collect()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PassRetentionMarker {
+    consumed_at: u64,
+    expires_at: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RetentionFloors {
+    operational: u64,
+    final_deletion: u64,
+}
+
+fn pass_retention_floors(
+    marker: PassRetentionMarker,
+    policy: RetentionPolicy,
+) -> Result<RetentionFloors, GovernanceError> {
+    Ok(RetentionFloors {
+        operational: marker
+            .consumed_at
+            .checked_add(policy.operational_retention_seconds())
+            .ok_or(GovernanceError::InvalidPersistedData)?
+            .max(marker.expires_at),
+        final_deletion: marker
+            .consumed_at
+            .checked_add(policy.tombstone_retention_seconds())
+            .ok_or(GovernanceError::InvalidPersistedData)?
+            .max(marker.expires_at),
+    })
+}
+
 fn relying_retention_floors(
     terminal_at: u64,
     public_lookup_expires_at: u64,
-    pass_markers: &[(u64, u64)],
+    pass_markers: &[PassRetentionMarker],
     policy: RetentionPolicy,
-) -> Result<(u64, u64), GovernanceError> {
+) -> Result<RetentionFloors, GovernanceError> {
     let mut operational_floor = terminal_at
         .checked_add(policy.operational_retention_seconds())
         .ok_or(GovernanceError::InvalidPersistedData)?
@@ -434,21 +464,15 @@ fn relying_retention_floors(
         .checked_add(policy.tombstone_retention_seconds())
         .ok_or(GovernanceError::InvalidPersistedData)?
         .max(public_lookup_expires_at);
-    for (consumed_at, expires_at) in pass_markers {
-        operational_floor = operational_floor.max(
-            consumed_at
-                .checked_add(policy.operational_retention_seconds())
-                .ok_or(GovernanceError::InvalidPersistedData)?
-                .max(*expires_at),
-        );
-        final_floor = final_floor.max(
-            consumed_at
-                .checked_add(policy.tombstone_retention_seconds())
-                .ok_or(GovernanceError::InvalidPersistedData)?
-                .max(*expires_at),
-        );
+    for marker in pass_markers {
+        let marker_floors = pass_retention_floors(*marker, policy)?;
+        operational_floor = operational_floor.max(marker_floors.operational);
+        final_floor = final_floor.max(marker_floors.final_deletion);
     }
-    Ok((operational_floor, final_floor))
+    Ok(RetentionFloors {
+        operational: operational_floor,
+        final_deletion: final_floor,
+    })
 }
 
 /// Observable result of one bounded Destructive Apply invocation.

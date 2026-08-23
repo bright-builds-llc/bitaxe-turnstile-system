@@ -65,12 +65,29 @@ FROM (
     UNION ALL
 
     SELECT JSON_BUILD_ARRAY(consumption.issuer, consumption.pass_id)::TEXT AS record_key,
-           GREATEST(
-               consumption.consumed_at_unix_seconds + policy.operational_retention_seconds,
-               consumption.gate_pass_expires_at_unix_seconds
-           ) AS retention_floor_unix_seconds,
+           CASE
+               WHEN GREATEST(
+                   consumption.consumed_at_unix_seconds + policy.tombstone_retention_seconds,
+                   consumption.gate_pass_expires_at_unix_seconds
+               ) <= policy.as_of_unix_seconds
+               THEN GREATEST(
+                   consumption.consumed_at_unix_seconds + policy.tombstone_retention_seconds,
+                   consumption.gate_pass_expires_at_unix_seconds
+               )
+               ELSE GREATEST(
+                   consumption.consumed_at_unix_seconds + policy.operational_retention_seconds,
+                   consumption.gate_pass_expires_at_unix_seconds
+               )
+           END AS retention_floor_unix_seconds,
            'pass_consumption' AS record_class,
-           'identifying' AS retention_state
+           CASE
+               WHEN GREATEST(
+                   consumption.consumed_at_unix_seconds + policy.tombstone_retention_seconds,
+                   consumption.gate_pass_expires_at_unix_seconds
+               ) <= policy.as_of_unix_seconds
+               THEN 'overdue_identifying'
+               ELSE 'identifying'
+           END AS retention_state
     FROM pass_consumptions AS consumption
     LEFT JOIN aggregate_floors AS aggregate
         ON aggregate.redemption_id = consumption.redemption_id

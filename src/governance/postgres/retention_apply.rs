@@ -106,7 +106,7 @@ pub(super) async fn apply_transition(
             RetentionAction::Delete,
             EligibilityReason::OverdueRetentionWindowElapsed,
         ) => AppliedTransition::Deleted(
-            reference_retention::delete_overdue_reference_aggregate(
+            reference_retention::delete_overdue_reference_record(
                 transaction,
                 context,
                 item,

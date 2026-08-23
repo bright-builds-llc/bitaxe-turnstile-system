@@ -24,3 +24,5 @@ Redemption, outcome, attempt, intent, consumption, and Protected Action rows. Ac
 remain intact. Day-90 and overdue-first-run paths delete the remaining protocol evidence, while
 public tests prove a terminal success remains immutable and lookup survives marker cleanup until its
 configured window ends.
+Standalone markers whose aggregates remain public past marker day 90 now plan a typed overdue direct
+deletion, avoiding an already-expired tombstone while leaving the public outcome untouched.

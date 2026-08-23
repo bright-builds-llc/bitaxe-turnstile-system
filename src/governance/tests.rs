@@ -1,6 +1,7 @@
 use super::{
-    GovernanceContext, GovernanceError, GovernedRecordClass, PseudonymizationKey, RetentionPolicy,
-    pseudonymize_record, relying_retention_floors,
+    GovernanceContext, GovernanceError, GovernedRecordClass, PassRetentionMarker,
+    PseudonymizationKey, RetentionPolicy, pass_retention_floors, pseudonymize_record,
+    relying_retention_floors,
 };
 
 #[test]
@@ -25,11 +26,11 @@ fn relying_retention_floor_preserves_the_longer_public_lookup_window()
     let policy = RetentionPolicy::hosted_default();
 
     // Act
-    let (operational, final_floor) = relying_retention_floors(100, 10_000_000, &[], policy)?;
+    let floors = relying_retention_floors(100, 10_000_000, &[], policy)?;
 
     // Assert
-    assert_eq!(operational, 10_000_000);
-    assert_eq!(final_floor, 10_000_000);
+    assert_eq!(floors.operational, 10_000_000);
+    assert_eq!(floors.final_deletion, 10_000_000);
 
     Ok(())
 }
@@ -39,14 +40,17 @@ fn relying_retention_floor_preserves_the_longer_pass_marker_floor()
 -> Result<(), Box<dyn std::error::Error>> {
     // Arrange
     let policy = RetentionPolicy::hosted_default();
-    let pass_markers = [(200, 20_000_000)];
+    let pass_markers = [PassRetentionMarker {
+        consumed_at: 200,
+        expires_at: 20_000_000,
+    }];
 
     // Act
-    let (operational, final_floor) = relying_retention_floors(100, 200, &pass_markers, policy)?;
+    let floors = relying_retention_floors(100, 200, &pass_markers, policy)?;
 
     // Assert
-    assert_eq!(operational, 20_000_000);
-    assert_eq!(final_floor, 20_000_000);
+    assert_eq!(floors.operational, 20_000_000);
+    assert_eq!(floors.final_deletion, 20_000_000);
 
     Ok(())
 }
@@ -61,6 +65,42 @@ fn relying_retention_floor_rejects_timestamp_overflow() {
 
     // Assert
     assert!(matches!(result, Err(GovernanceError::InvalidPersistedData)));
+}
+
+#[test]
+fn relying_retention_floor_uses_normal_terminal_policy_durations()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Arrange
+    let policy = RetentionPolicy::hosted_default();
+
+    // Act
+    let floors = relying_retention_floors(100, 200, &[], policy)?;
+
+    // Assert
+    assert_eq!(floors.operational, 100 + 30 * 24 * 60 * 60);
+    assert_eq!(floors.final_deletion, 100 + 90 * 24 * 60 * 60);
+
+    Ok(())
+}
+
+#[test]
+fn pass_retention_floor_uses_normal_marker_policy_durations()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Arrange
+    let policy = RetentionPolicy::hosted_default();
+    let marker = PassRetentionMarker {
+        consumed_at: 100,
+        expires_at: 200,
+    };
+
+    // Act
+    let floors = pass_retention_floors(marker, policy)?;
+
+    // Assert
+    assert_eq!(floors.operational, 100 + 30 * 24 * 60 * 60);
+    assert_eq!(floors.final_deletion, 100 + 90 * 24 * 60 * 60);
+
+    Ok(())
 }
 
 #[test]

@@ -212,3 +212,63 @@ async fn relying_retention_respects_lookup_then_preserves_account_through_tombst
 
     Ok(())
 }
+
+#[tokio::test]
+async fn overdue_pass_marker_deletes_directly_while_aggregate_lookup_remains_public()
+-> Result<(), Box<dyn Error>> {
+    // Arrange
+    let database = PostgresTestDatabase::start().await?;
+    let bootstrap = run_reference(
+        database.database_url(),
+        &["plan-retention", "--as-of", "1"],
+        false,
+    )?;
+    assert!(bootstrap.status.success());
+    let pool = sqlx::PgPool::connect(database.database_url()).await?;
+    sqlx::raw_sql(include_str!(
+        "../fixtures/governance/insert_relying_retention_aggregate.sql"
+    ))
+    .execute(&pool)
+    .await?;
+    let lookup_end = 100_u64 + 120 * 24 * 60 * 60;
+    sqlx::query(include_str!(
+        "../fixtures/governance/open_relying_public_lookup.sql"
+    ))
+    .bind("redemption_retention")
+    .bind(i64::try_from(lookup_end)?)
+    .execute(&pool)
+    .await?;
+    let marker_final_floor = (100 + 90 * 24 * 60 * 60).to_string();
+
+    // Act
+    let plan = run_reference(
+        database.database_url(),
+        &["plan-retention", "--as-of", &marker_final_floor],
+        false,
+    )?;
+    let manifest = serde_json::from_slice::<Value>(&plan.stdout)?;
+    let apply = apply_reference_manifest(database.database_url(), &manifest)?;
+    let remaining = run_reference(
+        database.database_url(),
+        &["plan-retention", "--as-of", &marker_final_floor],
+        false,
+    )?;
+    let apply = serde_json::from_slice::<Value>(&apply.stdout)?;
+    let remaining = serde_json::from_slice::<Value>(&remaining.stdout)?;
+
+    // Assert
+    assert_eq!(manifest["eligible_items"], 1);
+    assert_eq!(
+        manifest["planned_counts"][0]["record_class"],
+        "pass_consumption"
+    );
+    assert_eq!(
+        manifest["planned_counts"][0]["reason"],
+        "overdue_retention_window_elapsed"
+    );
+    assert_eq!(apply["deleted_items"], 1);
+    assert_eq!(apply["pseudonymized_items"], 0);
+    assert_eq!(remaining["eligible_items"], 0);
+
+    Ok(())
+}
