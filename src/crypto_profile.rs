@@ -168,7 +168,7 @@ pub fn verify_gate_pass(
 ) -> Result<VerifiedGatePass, CryptoProfileError> {
     let compact = CompactJws::parse(compact_jws)?;
     let header: GatePassHeaderWire = decode_json(compact.protected_header)?;
-    validate_critical_headers(header.maybe_critical.as_ref())?;
+    validate_critical_headers(&header.critical_headers)?;
     if header.typ != GATE_PASS_TYPE {
         return Err(CryptoProfileError::InvalidGatePassType);
     }
@@ -203,7 +203,7 @@ pub fn verify_dpop(
 ) -> Result<VerifiedDpop, CryptoProfileError> {
     let compact = CompactJws::parse(compact_jws)?;
     let header: DpopHeaderWire = decode_json(compact.protected_header)?;
-    validate_critical_headers(header.maybe_critical.as_ref())?;
+    validate_critical_headers(&header.critical_headers)?;
     if header.typ != DPOP_TYPE {
         return Err(CryptoProfileError::InvalidDpopType);
     }
@@ -283,8 +283,12 @@ struct GatePassHeaderWire {
     typ: String,
     alg: String,
     kid: String,
-    #[serde(default, rename = "crit")]
-    maybe_critical: Option<Vec<String>>,
+    #[serde(
+        default,
+        rename = "crit",
+        deserialize_with = "deserialize_critical_header_presence"
+    )]
+    critical_headers: CriticalHeaderPresence,
 }
 
 #[derive(Deserialize)]
@@ -292,8 +296,19 @@ struct DpopHeaderWire {
     typ: String,
     alg: String,
     jwk: P256PublicJwkWire,
-    #[serde(default, rename = "crit")]
-    maybe_critical: Option<Vec<String>>,
+    #[serde(
+        default,
+        rename = "crit",
+        deserialize_with = "deserialize_critical_header_presence"
+    )]
+    critical_headers: CriticalHeaderPresence,
+}
+
+#[derive(Default)]
+enum CriticalHeaderPresence {
+    #[default]
+    Absent,
+    Present,
 }
 
 #[derive(Deserialize)]
@@ -409,12 +424,22 @@ fn validate_algorithm(algorithm: &str, required_algorithm: &str) -> Result<(), C
 }
 
 fn validate_critical_headers(
-    maybe_critical: Option<&Vec<String>>,
+    critical_headers: &CriticalHeaderPresence,
 ) -> Result<(), CryptoProfileError> {
-    if maybe_critical.is_some() {
+    if matches!(critical_headers, CriticalHeaderPresence::Present) {
         return Err(CryptoProfileError::UnsupportedCriticalHeader);
     }
     Ok(())
+}
+
+fn deserialize_critical_header_presence<'de, D>(
+    deserializer: D,
+) -> Result<CriticalHeaderPresence, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let _ = serde::de::IgnoredAny::deserialize(deserializer)?;
+    Ok(CriticalHeaderPresence::Present)
 }
 
 fn decode_base64url(value: &str) -> Result<Vec<u8>, CryptoProfileError> {

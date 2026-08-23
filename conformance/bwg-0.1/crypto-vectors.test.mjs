@@ -20,7 +20,7 @@ test("WebCrypto verifies the BWG/0.1 cryptographic vectors", async () => {
     gatePassesVerified: 2,
     rotationCasesVerified: 5,
     algorithmFailuresVerified: 5,
-    criticalHeaderFailuresVerified: 2,
+    criticalHeaderFailuresVerified: 4,
     dpopFailuresVerified: 2,
     dpopVerified: true,
     claimantPrivateKeyExtractable: false,
