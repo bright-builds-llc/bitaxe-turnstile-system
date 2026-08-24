@@ -5,6 +5,7 @@ use thiserror::Error;
 
 use crate::{
     lifecycle::WORK_CHALLENGE_TTL_SECONDS,
+    pool_offer::SignedPoolOfferSet,
     web_url::{HttpsOrigin, HttpsUrl},
     work::CreditedWork,
 };
@@ -369,6 +370,8 @@ pub struct WorkChallengeDescriptor {
     relying_service_audience: RelyingServiceAudience,
     allowed_origins: AllowedOrigins,
     work_requirement: WorkRequirement,
+    #[serde(rename = "pool_offers", skip_serializing_if = "Option::is_none")]
+    maybe_pool_offers: Option<SignedPoolOfferSet>,
     expires_at_unix_seconds: ExpiresAtUnixSeconds,
     protocol_version: ProtocolVersion,
 }
@@ -408,6 +411,11 @@ impl WorkChallengeDescriptor {
     pub fn expires_at_unix_seconds(&self) -> u64 {
         self.expires_at_unix_seconds.0
     }
+
+    /// Returns the exact visible set of Authority-signed approved Pool Offers.
+    pub fn maybe_pool_offers(&self) -> Option<&SignedPoolOfferSet> {
+        self.maybe_pool_offers.as_ref()
+    }
 }
 
 #[derive(Deserialize)]
@@ -420,6 +428,8 @@ struct WorkChallengeDescriptorWire {
     relying_service_audience: String,
     allowed_origins: Vec<String>,
     work_requirement: WorkRequirement,
+    #[serde(default, rename = "pool_offers")]
+    maybe_pool_offers: Option<SignedPoolOfferSet>,
     expires_at_unix_seconds: u64,
     protocol_version: String,
 }
@@ -433,6 +443,11 @@ impl TryFrom<WorkChallengeDescriptorWire> for WorkChallengeDescriptor {
         if !action_policy.accepts(&work_requirement) {
             return Err(ChallengeError::PolicyWorkMismatch);
         }
+        if let Some(pool_offers) = &wire.maybe_pool_offers {
+            pool_offers
+                .validate_shape()
+                .map_err(|_| ChallengeError::InvalidPoolOffers)?;
+        }
 
         Ok(Self {
             challenge_id: ChallengeId::try_from(wire.challenge_id)?,
@@ -444,6 +459,7 @@ impl TryFrom<WorkChallengeDescriptorWire> for WorkChallengeDescriptor {
             )?,
             allowed_origins: AllowedOrigins::try_from(wire.allowed_origins)?,
             work_requirement,
+            maybe_pool_offers: wire.maybe_pool_offers,
             expires_at_unix_seconds: ExpiresAtUnixSeconds::try_from(wire.expires_at_unix_seconds)?,
             protocol_version: ProtocolVersion::parse(&wire.protocol_version)?,
         })
@@ -458,6 +474,7 @@ pub struct IssueChallengeCommand {
     pub claimant_key: ClaimantKey,
     pub relying_service_audience: RelyingServiceAudience,
     pub allowed_origins: AllowedOrigins,
+    pub pool_offers: SignedPoolOfferSet,
     pub maybe_work_requirement_override: Option<WorkRequirementOverride>,
 }
 
@@ -482,6 +499,7 @@ pub fn issue_challenge(
         relying_service_audience: command.relying_service_audience,
         allowed_origins: command.allowed_origins,
         work_requirement,
+        maybe_pool_offers: Some(command.pool_offers),
         expires_at_unix_seconds: ExpiresAtUnixSeconds::try_from(expires_at_unix_seconds)?,
         protocol_version: ProtocolVersion::Development0_1,
     })
@@ -509,6 +527,8 @@ pub enum ChallengeError {
     ExpiryOverflow,
     #[error("challenge work does not match its Action Policy")]
     PolicyWorkMismatch,
+    #[error("challenge Pool Offers are invalid")]
+    InvalidPoolOffers,
     #[error("the selected Action Policy does not permit a work override")]
     OverrideNotPermitted,
     #[error("the work override is outside the Action Policy bounds")]

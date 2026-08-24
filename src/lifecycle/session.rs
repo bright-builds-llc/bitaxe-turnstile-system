@@ -152,6 +152,7 @@ pub enum SessionStopReason {
     LeaseExpired,
     SessionFailed,
     MigrationContinuityUnknown,
+    MigrationPoolSelectionUnknown,
 }
 
 impl SessionStopReason {
@@ -170,6 +171,7 @@ impl SessionStopReason {
             Self::LeaseExpired => "lease_expired",
             Self::SessionFailed => "session_failed",
             Self::MigrationContinuityUnknown => "migration_continuity_unknown",
+            Self::MigrationPoolSelectionUnknown => "migration_pool_selection_unknown",
         }
     }
 
@@ -187,6 +189,7 @@ impl SessionStopReason {
             "lease_expired" => Ok(Self::LeaseExpired),
             "session_failed" => Ok(Self::SessionFailed),
             "migration_continuity_unknown" => Ok(Self::MigrationContinuityUnknown),
+            "migration_pool_selection_unknown" => Ok(Self::MigrationPoolSelectionUnknown),
             _ => Err(LifecycleError::InvalidPersistedState),
         }
     }

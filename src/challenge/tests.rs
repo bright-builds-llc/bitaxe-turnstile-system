@@ -225,6 +225,23 @@ fn descriptor_deserialization_rejects_unknown_protocol_version() {
 }
 
 #[test]
+fn legacy_descriptor_without_pool_offers_remains_readable_but_unselectable() {
+    // Arrange
+    let mut descriptor = valid_descriptor_json();
+    descriptor
+        .as_object_mut()
+        .expect("test descriptor is an object")
+        .remove("pool_offers");
+
+    // Act
+    let parsed = serde_json::from_value::<WorkChallengeDescriptor>(descriptor)
+        .expect("legacy descriptor should remain readable");
+
+    // Assert
+    assert!(parsed.maybe_pool_offers().is_none());
+}
+
+#[test]
 fn work_override_requires_canonical_non_zero_decimal() {
     // Arrange
     let invalid_values = ["", "0", "01", "1.0", "-1", "abc"];
@@ -250,6 +267,9 @@ fn valid_command() -> Result<IssueChallengeCommand, ChallengeError> {
             "https://relying.example".to_owned(),
         )?,
         allowed_origins: AllowedOrigins::try_from(vec!["https://app.relying.example".to_owned()])?,
+        pool_offers: crate::pool_offer::test_signed_default_pool_offers(
+            ActionPolicy::AccountCreationLightV1,
+        ),
         maybe_work_requirement_override: None,
     })
 }
@@ -263,6 +283,9 @@ fn valid_descriptor_json() -> Value {
         "relying_service_audience": "https://relying.example",
         "allowed_origins": ["https://app.relying.example"],
         "work_requirement": { "expected_hashes": "4398046511104" },
+        "pool_offers": crate::pool_offer::test_signed_default_pool_offers(
+            ActionPolicy::AccountCreationLightV1,
+        ),
         "expires_at_unix_seconds": 1_900,
         "protocol_version": "BWG/0.1"
     })

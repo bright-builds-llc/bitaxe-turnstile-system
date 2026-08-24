@@ -13,6 +13,7 @@ use crate::{
     authority_descriptor::{AuthorityDescriptor, JwksDocument},
     challenge::{ActionPolicy, AllowedOrigins, ChallengeId, RelyingServiceAudience},
     crypto_profile::{AuthorityKeySet, AuthoritySigningKey},
+    pool_offer::{PoolOfferError, SignedPoolOfferSet, signed_default_pool_offers},
     service_auth::{ServiceClientId, ServiceSecret},
 };
 
@@ -253,8 +254,31 @@ impl Config {
         self.maybe_signer.clone()
     }
 
+    pub(crate) fn verification_keys(&self) -> &[crate::crypto_profile::AuthorityJwk] {
+        self.authority_keys.keys()
+    }
+
     pub(crate) fn issuance_lookup_url(&self, challenge_id: &ChallengeId) -> String {
         self.descriptor.gate_pass_url(challenge_id.as_str())
+    }
+
+    fn signed_pool_offers(
+        &self,
+        challenge_id: &str,
+        action_policy: ActionPolicy,
+    ) -> Result<SignedPoolOfferSet, PoolOfferError> {
+        let signer = self
+            .maybe_signer
+            .as_ref()
+            .ok_or(PoolOfferError::SigningUnavailable)?;
+        signed_default_pool_offers(
+            signer,
+            self.descriptor.issuer(),
+            challenge_id,
+            action_policy,
+            self.descriptor.privacy_url(),
+            self.descriptor.terms_url(),
+        )
     }
 
     fn authenticate(&self, headers: &HeaderMap) -> Result<&ServiceCredential, ApiError> {

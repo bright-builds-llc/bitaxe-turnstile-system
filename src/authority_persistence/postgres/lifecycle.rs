@@ -105,8 +105,12 @@ pub(super) async fn start_work_lease(
     let mut transaction = pool.begin().await?;
     let challenge_id = challenge_id_for_session(&mut transaction, session_id).await?;
     terminalize_expired(&mut transaction, &challenge_id, now).await?;
-    let (challenge_state, session_state) =
+    let (challenge_state, session_state, selection_consented) =
         lock_challenge_and_session(&mut transaction, session_id).await?;
+    if !selection_consented {
+        transaction.commit().await?;
+        return Err(AuthorityPersistenceError::PoolSelectionRequired);
+    }
     let target_challenge =
         apply_challenge_command(challenge_state, ChallengeLifecycleCommand::StartWork);
     let target_session = apply_session_command(session_state, SessionLifecycleCommand::StartLease);
@@ -447,13 +451,18 @@ async fn challenge_id_for_session(
 async fn lock_challenge_and_session(
     transaction: &mut Transaction<'_, Postgres>,
     session_id: &WorkSessionId,
-) -> Result<(ChallengeLifecycleState, SessionLifecycleState), AuthorityPersistenceError> {
+) -> Result<(ChallengeLifecycleState, SessionLifecycleState, bool), AuthorityPersistenceError> {
     let maybe_row = sqlx::query(
         "SELECT challenge.lifecycle_state AS challenge_state,
-                session.lifecycle_state AS session_state
+                session.lifecycle_state AS session_state,
+                selection.status = 'consented' AS selection_consented
          FROM gate_authority.work_sessions AS session
          JOIN gate_authority.work_challenges AS challenge
            ON challenge.challenge_id = session.challenge_id
+         LEFT JOIN gate_authority.pool_selections AS selection
+           ON selection.challenge_id = session.challenge_id
+          AND selection.pool_offer_id = session.pool_offer_id
+          AND selection.payout_commitment = session.payout_commitment
          WHERE session.session_id = $1
          FOR UPDATE OF challenge, session",
     )
@@ -466,6 +475,8 @@ async fn lock_challenge_and_session(
     Ok((
         ChallengeLifecycleState::parse(row.try_get("challenge_state")?)?,
         SessionLifecycleState::parse(row.try_get("session_state")?)?,
+        row.try_get::<Option<bool>, _>("selection_consented")?
+            .unwrap_or(false),
     ))
 }
 

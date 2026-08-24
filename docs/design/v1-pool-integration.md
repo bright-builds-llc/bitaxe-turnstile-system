@@ -8,7 +8,7 @@ Worker ──Stratum V1──> Pool Adapter proxy ──Stratum V1──> pinned
                              └──gRPC Accepted Work Events──> Gate Authority
 ```
 
-The Pool Adapter is the public Stratum endpoint. Hydra is co-located behind it and runs in solo/direct-payout mode. The adapter and Gate Authority are MIT project components; Hydra and its P2Pool v2 dependencies retain their disclosed AGPL licenses.
+The Pool Adapter is the public Stratum endpoint. Hydra is co-located behind it and runs in solo/direct-payout mode. The adapter and Gate Authority are MIT project components; the separately deployed [P2Poolv2 source](https://github.com/p2poolv2/p2poolv2) retains its disclosed `AGPL-3.0-only` license.
 
 ## Adapter responsibilities
 

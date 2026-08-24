@@ -234,22 +234,24 @@ async fn create_challenge(
     if !credential.permits(action_policy) {
         return Err(ApiError::PolicyNotPermitted);
     }
+    let challenge_id = format!("challenge_{}", Uuid::new_v4().simple());
     let command = IssueChallengeCommand {
         action_policy,
         action_reference: ActionReference::try_from(request.action_reference)?,
         claimant_key: ClaimantKey::try_from(request.claimant_key)?,
         relying_service_audience: credential.relying_service_audience.clone(),
         allowed_origins: credential.allowed_origins.clone(),
+        pool_offers: state
+            .application
+            .config
+            .signed_pool_offers(&challenge_id, action_policy)
+            .map_err(AuthorityApplicationError::from)?,
         maybe_work_requirement_override: request
             .maybe_overrides
             .map(|overrides| WorkRequirementOverride::expected_hashes(overrides.expected_hashes))
             .transpose()?,
     };
-    let descriptor = issue_challenge(
-        command,
-        format!("challenge_{}", Uuid::new_v4().simple()),
-        current_unix_seconds()?,
-    )?;
+    let descriptor = issue_challenge(command, challenge_id, current_unix_seconds()?)?;
     state.application.insert_challenge(&descriptor).await?;
     Ok((StatusCode::CREATED, Json(descriptor)))
 }
@@ -320,6 +322,12 @@ impl IntoResponse for ApiError {
             Self::InvalidApplication(AuthorityApplicationError::IssuanceRetired) => {
                 (StatusCode::GONE, "issuance_retired")
             }
+            Self::InvalidApplication(AuthorityApplicationError::PoolOffer(
+                crate::pool_offer::PoolOfferError::SigningUnavailable,
+            )) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "pool_offer_signing_unavailable",
+            ),
             Self::InvalidApplication(AuthorityApplicationError::ChallengeControlNotPermitted) => {
                 (StatusCode::FORBIDDEN, "challenge_control_not_permitted")
             }

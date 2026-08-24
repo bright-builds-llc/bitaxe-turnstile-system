@@ -8,6 +8,7 @@ use crate::{
         ChallengeLifecycle, PauseReason, SessionLifecycle, WorkLease, WorkerClock,
         WorkerInterruption,
     },
+    pool_offer::PoolSelectionCommitment,
     progress::{AcceptedWorkAcknowledgement, AcceptedWorkEvent, ProgressError, WorkSessionId},
     work::{CreditedWork, VerifiedProgress, WorkError},
 };
@@ -59,6 +60,21 @@ pub(crate) trait AuthorityRepository: Send + Sync {
         session_id: &WorkSessionId,
         now: u64,
     ) -> Result<(), AuthorityPersistenceError>;
+
+    async fn propose_pool_selection(
+        &self,
+        challenge_id: &ChallengeId,
+        pool_offer_id: &str,
+        payout_commitment: &str,
+        now: u64,
+    ) -> Result<PoolSelectionCommitment, AuthorityPersistenceError>;
+
+    async fn confirm_pool_selection(
+        &self,
+        challenge_id: &ChallengeId,
+        payout_commitment: &str,
+        now: u64,
+    ) -> Result<PoolSelectionCommitment, AuthorityPersistenceError>;
 
     async fn challenge_lifecycle(
         &self,
@@ -182,6 +198,12 @@ pub(crate) enum AuthorityPersistenceError {
     WorkerContinuityLost,
     #[error("Work Lease has reached its monotonic deadline")]
     WorkLeaseExpired,
+    #[error("a consented Pool Selection is required before work begins")]
+    PoolSelectionRequired,
+    #[error("Pool Selection is immutable after Work Consent")]
+    PoolSelectionLocked,
+    #[error("Pool Selection commitment does not match the proposed terms")]
+    PoolSelectionMismatch,
     #[error("Accepted Work Event identity conflicts with its canonical delivery")]
     ConflictingEventReplay,
     #[error("Gate Pass signing lease is no longer owned by this worker")]

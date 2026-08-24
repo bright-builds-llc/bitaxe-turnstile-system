@@ -8,6 +8,7 @@ use crate::{
         LifecycleError, SessionLifecycle, WORK_LEASE_MAX_DURATION_SECONDS,
         WORK_LEASE_RENEWAL_SECONDS, WorkLease, WorkerClock, WorkerInterruption,
     },
+    pool_offer::{PoolSelection, PoolSelectionCommitment, verify_pool_offer_set},
     progress::{AcceptedWorkAcknowledgement, AcceptedWorkEvent, WorkSessionId},
 };
 
@@ -18,6 +19,75 @@ pub struct SimulatedPoolAdapter {
 }
 
 impl SimulatedPoolAdapter {
+    /// Test-harness shortcut that explicitly selects and consents to an ephemeral test address.
+    pub async fn consent_default_pool_offer_for_simulation(
+        &self,
+        challenge_id: &ChallengeId,
+    ) -> Result<PoolSelectionCommitment, AuthorityApplicationError> {
+        let selection = PoolSelection::bitcoin_address(
+            "pool_offer_hydra_solo_v1".to_owned(),
+            "1BoatSLRHtKNngkdXEeobR76b53LETtpyT".to_owned(),
+        )?;
+        let proposed = self
+            .propose_pool_selection(challenge_id, &selection)
+            .await?;
+        self.confirm_pool_selection(challenge_id, proposed.commitment())
+            .await
+    }
+
+    /// Proposes an approved offer and raw payout choice while persisting only its commitment.
+    pub async fn propose_pool_selection(
+        &self,
+        challenge_id: &ChallengeId,
+        selection: &PoolSelection,
+    ) -> Result<PoolSelectionCommitment, AuthorityApplicationError> {
+        let descriptor = self.application.repository.challenge(challenge_id).await?;
+        let signed_offers = descriptor
+            .maybe_pool_offers()
+            .ok_or(AuthorityApplicationError::PoolSelectionRequired)?;
+        let verified_offers = verify_pool_offer_set(
+            signed_offers,
+            self.application.config.issuer(),
+            descriptor.challenge_id(),
+            descriptor.action_policy(),
+            self.application.config.verification_keys(),
+        )?;
+        let maybe_offer = verified_offers
+            .offers()
+            .iter()
+            .find(|offer| offer.offer_id() == selection.offer_id());
+        let Some(offer) = maybe_offer else {
+            return Err(AuthorityApplicationError::UnknownPoolOffer);
+        };
+        if !offer.accepts_selection(selection) {
+            return Err(AuthorityApplicationError::InvalidPoolSelection);
+        }
+        let commitment = selection.commitment(challenge_id.as_str());
+        Ok(self
+            .application
+            .repository
+            .propose_pool_selection(
+                challenge_id,
+                selection.offer_id(),
+                &commitment,
+                current_unix_seconds()?,
+            )
+            .await?)
+    }
+
+    /// Locks the exact proposed offer and payout commitment as part of Work Consent.
+    pub async fn confirm_pool_selection(
+        &self,
+        challenge_id: &ChallengeId,
+        payout_commitment: &str,
+    ) -> Result<PoolSelectionCommitment, AuthorityApplicationError> {
+        Ok(self
+            .application
+            .repository
+            .confirm_pool_selection(challenge_id, payout_commitment, current_unix_seconds()?)
+            .await?)
+    }
+
     /// Binds one ready Work Session to its immutable Work Challenge without starting work.
     pub async fn register_session(
         &self,

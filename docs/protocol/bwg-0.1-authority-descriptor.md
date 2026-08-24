@@ -9,11 +9,12 @@ The descriptor includes:
 - issuer identity and `BWG/0.1` protocol version;
 - versioned challenge, progress, descriptor, and JWKS endpoints;
 - the current and overlap-rotation Authority verification keys;
-- mandatory Gate Pass, browser DPoP, JWK-thumbprint, and access-token-hash algorithms;
+- mandatory Gate Pass, Pool Offer set, browser DPoP, JWK-thumbprint, and access-token-hash algorithms;
 - public API, progress, Pool Adapter, and Worker transports;
 - supported capabilities and their criticality;
 - Action Reference, Claimant key, challenge, Gate Pass, and DPoP limits;
 - immutable Action Policy revision defaults and permitted exact-work override bounds;
+- signed approved-Pool-Offer capability;
 - source repository, package version, commit, and build provenance;
 - operator policy, privacy, terms, and MIT license metadata.
 

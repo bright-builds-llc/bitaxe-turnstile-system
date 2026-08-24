@@ -8,7 +8,7 @@ use bwg_core::{
     authority::{
         self, AuthorityApplication, AuthorityApplicationError, AuthorityPublicConfig,
         CLAIMANT_PROOF_HEADER, CLIENT_ID_HEADER, Config, DeploymentEnvironment,
-        IssuanceProcessingOutcome, IssuanceWorkerId, ServiceCredential,
+        IssuanceProcessingOutcome, IssuanceWorkerId, ServiceCredential, SimulatedPoolAdapter,
     },
     challenge::{ActionPolicy, ChallengeId},
     crypto_profile::{AuthorityKeySet, verify_gate_pass},
@@ -99,9 +99,7 @@ async fn accepted_threshold_event_replays_identically_after_authority_restart()
             .to_owned(),
     )?;
     let session_id = WorkSessionId::try_from("session_persistence_01".to_owned())?;
-    first_adapter
-        .register_session(&challenge_id, session_id.clone())
-        .await?;
+    register_test_session(&first_adapter, &challenge_id, session_id.clone()).await?;
     let lease = first_adapter
         .start_lease(&session_id, WorkerClock::new("boot_persistence_01", 0)?)
         .await?;
@@ -158,9 +156,7 @@ async fn expired_signing_lease_recovers_one_exact_pass_across_restart() -> Resul
             .to_owned(),
     )?;
     let session_id = WorkSessionId::try_from("session_lease_recovery_01".to_owned())?;
-    first_adapter
-        .register_session(&challenge_id, session_id.clone())
-        .await?;
+    register_test_session(&first_adapter, &challenge_id, session_id.clone()).await?;
     let lease = first_adapter
         .start_lease(&session_id, WorkerClock::new("boot_lease_recovery_01", 0)?)
         .await?;
@@ -178,7 +174,12 @@ async fn expired_signing_lease_recovers_one_exact_pass_across_restart() -> Resul
         )
         .await?;
     let first_worker = IssuanceWorkerId::try_from("worker_first_01".to_owned())?;
-    let signing_failure = first_application
+    let unavailable_application = AuthorityApplication::connect_postgres(
+        authority_config_without_signer()?,
+        database.database_url(),
+    )
+    .await?;
+    let signing_failure = unavailable_application
         .process_next_issuance(&first_worker, accepted_at)
         .await;
     assert!(matches!(
@@ -294,9 +295,7 @@ async fn issuance_lookup_requires_fresh_claimant_proof_and_returns_identical_byt
             .to_owned(),
     )?;
     let session_id = WorkSessionId::try_from("session_proof_lookup_01".to_owned())?;
-    adapter
-        .register_session(&challenge_id, session_id.clone())
-        .await?;
+    register_test_session(&adapter, &challenge_id, session_id.clone()).await?;
     let lease = adapter
         .start_lease(&session_id, WorkerClock::new("boot_proof_lookup_01", 0)?)
         .await?;
@@ -418,17 +417,13 @@ async fn concurrent_duplicate_share_is_credited_only_once() -> Result<(), Box<dy
     )?;
     let first_session = WorkSessionId::try_from("session_concurrent_share_01".to_owned())?;
     let second_session = WorkSessionId::try_from("session_concurrent_share_02".to_owned())?;
-    adapter
-        .register_session(&challenge_id, first_session.clone())
-        .await?;
+    register_test_session(&adapter, &challenge_id, first_session.clone()).await?;
+    register_test_session(&adapter, &challenge_id, second_session.clone()).await?;
     let first_lease = adapter
         .start_lease(
             &first_session,
             WorkerClock::new("boot_concurrent_share_01", 0)?,
         )
-        .await?;
-    adapter
-        .register_session(&challenge_id, second_session.clone())
         .await?;
     let second_lease = adapter
         .start_lease(
@@ -495,6 +490,10 @@ async fn issue_challenge(authority_url: &str, claimant_key: &str) -> Result<Valu
 }
 
 fn authority_config() -> Result<Config, Box<dyn Error>> {
+    authority_config_with_signer_for_issuer("https://authority.example")
+}
+
+fn authority_config_without_signer() -> Result<Config, Box<dyn Error>> {
     authority_config_for_issuer("https://authority.example")
 }
 
@@ -533,6 +532,18 @@ fn authority_config_with_signer_for_issuer(issuer: &str) -> Result<Config, Box<d
 
 fn light_target_event(session_id: WorkSessionId) -> Result<AcceptedWorkEvent, Box<dyn Error>> {
     light_target_event_with_id("event_persistence_01", "share_persistence_01", session_id)
+}
+
+async fn register_test_session(
+    adapter: &SimulatedPoolAdapter,
+    challenge_id: &ChallengeId,
+    session_id: WorkSessionId,
+) -> Result<(), Box<dyn Error>> {
+    adapter
+        .consent_default_pool_offer_for_simulation(challenge_id)
+        .await?;
+    adapter.register_session(challenge_id, session_id).await?;
+    Ok(())
 }
 
 fn light_target_event_with_id(

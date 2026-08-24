@@ -10,6 +10,9 @@ WITH deleted_proofs AS (
 ), deleted_sessions AS (
     DELETE FROM work_sessions
     WHERE challenge_id = $1
+), deleted_pool_selection AS (
+    DELETE FROM pool_selections
+    WHERE challenge_id = $1
 ), deleted_outbox AS (
     DELETE FROM authority_outbox
     WHERE aggregate_id = $1

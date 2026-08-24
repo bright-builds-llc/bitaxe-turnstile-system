@@ -26,6 +26,7 @@ use postgres_support::PostgresTestDatabase;
 
 const CLIENT_ID: &str = "progress-reference-service";
 const SERVICE_SECRET: &str = "progress-secret-P9vK2mQ7xR4tY8uN3cF6wL1zA5dH0sJ";
+const AUTHORITY_SIGNING_SEED: &str = "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A";
 
 #[test]
 fn assigned_target_is_the_only_source_of_credited_work() -> Result<(), Box<dyn std::error::Error>> {
@@ -154,6 +155,9 @@ async fn verified_progress_streams_separately_from_activity_estimate()
     let progress_challenge_id = ChallengeId::try_from(challenge_id.to_owned())?;
     let session_id = WorkSessionId::try_from("session_stream_01".to_owned())?;
     adapter
+        .consent_default_pool_offer_for_simulation(&progress_challenge_id)
+        .await?;
+    adapter
         .register_session(&progress_challenge_id, session_id.clone())
         .await?;
     let lease = adapter
@@ -221,6 +225,9 @@ async fn work_received_at_challenge_expiry_cannot_advance_progress()
         .as_u64()
         .ok_or("challenge response needs an expiry")?;
     let session_id = WorkSessionId::try_from("session_expired_progress_01".to_owned())?;
+    adapter
+        .consent_default_pool_offer_for_simulation(&challenge_id)
+        .await?;
     adapter
         .register_session(&challenge_id, session_id.clone())
         .await?;
@@ -300,11 +307,10 @@ fn authority_config() -> Result<Config, Box<dyn std::error::Error>> {
         "https://authority.example/privacy",
         "https://authority.example/terms",
     )?;
-    Ok(Config::new(
-        DeploymentEnvironment::Development,
-        vec![credential],
-        public,
-    )?)
+    Ok(
+        Config::new(DeploymentEnvironment::Development, vec![credential], public)?
+            .with_signing_key_seed("authority-a".to_owned(), AUTHORITY_SIGNING_SEED)?,
+    )
 }
 
 async fn spawn_http(router: Router) -> Result<String, std::io::Error> {

@@ -200,11 +200,10 @@ fn authority_config() -> Result<authority::Config, Box<dyn Error>> {
         "https://authority.example/privacy",
         "https://authority.example/terms",
     )?;
-    Ok(authority::Config::new(
-        DeploymentEnvironment::Development,
-        vec![credential],
-        public,
-    )?)
+    Ok(
+        authority::Config::new(DeploymentEnvironment::Development, vec![credential], public)?
+            .with_signing_key_seed("authority-a".to_owned(), SIGNING_SEED)?,
+    )
 }
 
 fn reference_config(

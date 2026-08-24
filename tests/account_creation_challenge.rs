@@ -19,6 +19,7 @@ const SERVICE_CLIENT_ID: &str = "reference-service-test";
 const TRUSTED_AUTHORITY_ISSUER: &str = "https://authority.example";
 const RELYING_SERVICE_AUDIENCE: &str = "https://relying.example";
 const REDEMPTION_URL: &str = "http://127.0.0.1:1/account-creation/redeem";
+const AUTHORITY_SIGNING_SEED: &str = "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A";
 
 #[path = "support/authority_keys.rs"]
 mod authority_key_support;
@@ -75,6 +76,7 @@ async fn reference_backend_issues_a_browser_safe_standard_challenge()
         "challenge_id",
         "claimant_key",
         "expires_at_unix_seconds",
+        "pool_offers",
         "protocol_version",
         "relying_service_audience",
         "work_requirement",
@@ -97,6 +99,10 @@ async fn reference_backend_issues_a_browser_safe_standard_challenge()
         json!(["https://app.relying.example"])
     );
     assert_eq!(descriptor["protocol_version"], "BWG/0.1");
+    assert_eq!(
+        descriptor["pool_offers"]["offers"].as_array().map(Vec::len),
+        Some(1)
+    );
     assert_eq!(
         descriptor["work_requirement"]["expected_hashes"],
         "17592186044416"
@@ -219,11 +225,10 @@ fn authority_config() -> Result<authority::Config, Box<dyn std::error::Error>> {
         "https://authority.example/privacy",
         "https://authority.example/terms",
     )?;
-    Ok(authority::Config::new(
-        DeploymentEnvironment::Development,
-        vec![credential],
-        public,
-    )?)
+    Ok(
+        authority::Config::new(DeploymentEnvironment::Development, vec![credential], public)?
+            .with_signing_key_seed("authority-a".to_owned(), AUTHORITY_SIGNING_SEED)?,
+    )
 }
 
 fn trusted_authority() -> Result<reference_service::TrustedAuthority, Box<dyn std::error::Error>> {

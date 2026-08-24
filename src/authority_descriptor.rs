@@ -67,6 +67,7 @@ impl AuthorityPublicConfig {
             },
             algorithms: AuthorityAlgorithms {
                 gate_pass_jws: vec![GATE_PASS_JWS_ALGORITHM.to_owned()],
+                pool_offer_set_jws: vec![GATE_PASS_JWS_ALGORITHM.to_owned()],
                 browser_dpop_jws: vec![DPOP_JWS_ALGORITHM.to_owned()],
                 jwk_thumbprint: "SHA-256".to_owned(),
                 access_token_hash: "SHA-256".to_owned(),
@@ -83,6 +84,7 @@ impl AuthorityPublicConfig {
                 jwks_rotation: true,
                 bounded_overrides: true,
                 verified_progress_streaming: true,
+                approved_pool_offers: true,
             },
             critical_capabilities: Vec::new(),
             limits: AuthorityLimits {
@@ -145,6 +147,14 @@ impl AuthorityDescriptor {
     pub(crate) fn jwks(&self) -> JwksDocument {
         self.0.jwks.clone()
     }
+
+    pub(crate) fn privacy_url(&self) -> &str {
+        &self.0.privacy.url
+    }
+
+    pub(crate) fn terms_url(&self) -> &str {
+        &self.0.terms_url
+    }
 }
 
 impl<'de> Deserialize<'de> for AuthorityDescriptor {
@@ -201,6 +211,7 @@ impl AuthorityDescriptorFields {
         AuthorityKeySet::try_from(self.jwks.keys.clone())
             .map_err(|_| AuthorityDescriptorError::InvalidAuthorityKeys)?;
         if self.algorithms.gate_pass_jws != [GATE_PASS_JWS_ALGORITHM]
+            || self.algorithms.pool_offer_set_jws != [GATE_PASS_JWS_ALGORITHM]
             || self.algorithms.browser_dpop_jws != [DPOP_JWS_ALGORITHM]
             || self.algorithms.jwk_thumbprint != "SHA-256"
             || self.algorithms.access_token_hash != "SHA-256"
@@ -214,6 +225,7 @@ impl AuthorityDescriptorFields {
             "jwks_rotation",
             "bounded_overrides",
             "verified_progress_streaming",
+            "approved_pool_offers",
         ];
         if self
             .critical_capabilities
@@ -249,6 +261,7 @@ pub struct JwksDocument {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct AuthorityAlgorithms {
     gate_pass_jws: Vec<String>,
+    pool_offer_set_jws: Vec<String>,
     browser_dpop_jws: Vec<String>,
     jwk_thumbprint: String,
     access_token_hash: String,
@@ -269,6 +282,7 @@ struct AuthorityCapabilities {
     jwks_rotation: bool,
     bounded_overrides: bool,
     verified_progress_streaming: bool,
+    approved_pool_offers: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -49,6 +49,10 @@ fn openapi_contract_covers_the_complete_pass_and_outcome_journey()
         "PauseChallengeRequest",
         "CancelChallengeRequest",
         "VerifiedProgressUpdate",
+        "SignedPoolOfferSet",
+        "PoolOffer",
+        "RewardPolicy",
+        "PayoutRequirements",
     ] {
         assert!(schemas.contains_key(schema), "missing schema {schema}");
     }
@@ -87,6 +91,11 @@ fn openapi_contract_covers_the_complete_pass_and_outcome_journey()
     assert_eq!(
         schemas["ClaimantIssuanceProofClaims"]["allOf"][1]["properties"]["htm"]["const"],
         "GET"
+    );
+    assert!(
+        schemas["WorkChallenge"]["required"]
+            .as_array()
+            .is_some_and(|fields| fields.iter().any(|field| field == "pool_offers"))
     );
     for schema in ["IssuanceLookup", "ProtectedActionOutcome"] {
         let variants = schemas[schema]["oneOf"]

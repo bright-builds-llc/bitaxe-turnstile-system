@@ -429,6 +429,16 @@ pub enum AuthorityApplicationError {
     WorkerContinuityLost,
     #[error("Work Lease expired and was terminated")]
     WorkLeaseExpired,
+    #[error("a consented Pool Selection is required before work begins")]
+    PoolSelectionRequired,
+    #[error("Pool Selection is immutable after Work Consent")]
+    PoolSelectionLocked,
+    #[error("Pool Selection commitment does not match the proposed terms")]
+    PoolSelectionMismatch,
+    #[error("selected Pool Offer is not approved for this Work Challenge")]
+    UnknownPoolOffer,
+    #[error("selected payout is not permitted by this Pool Offer")]
+    InvalidPoolSelection,
     #[error("Accepted Work Event conflicts with its canonical delivery")]
     ConflictingEventReplay,
     #[error("issuance worker identity is invalid")]
@@ -462,6 +472,8 @@ pub enum AuthorityApplicationError {
     #[error(transparent)]
     Crypto(#[from] CryptoProfileError),
     #[error(transparent)]
+    PoolOffer(#[from] crate::pool_offer::PoolOfferError),
+    #[error(transparent)]
     Lifecycle(#[from] LifecycleError),
 }
 
@@ -478,6 +490,9 @@ impl From<AuthorityPersistenceError> for AuthorityApplicationError {
             AuthorityPersistenceError::WrongWorkLease => Self::WrongWorkLease,
             AuthorityPersistenceError::WorkerContinuityLost => Self::WorkerContinuityLost,
             AuthorityPersistenceError::WorkLeaseExpired => Self::WorkLeaseExpired,
+            AuthorityPersistenceError::PoolSelectionRequired => Self::PoolSelectionRequired,
+            AuthorityPersistenceError::PoolSelectionLocked => Self::PoolSelectionLocked,
+            AuthorityPersistenceError::PoolSelectionMismatch => Self::PoolSelectionMismatch,
             AuthorityPersistenceError::ConflictingEventReplay => Self::ConflictingEventReplay,
             AuthorityPersistenceError::ReplayedIssuanceProof => Self::ReplayedIssuanceProof,
             AuthorityPersistenceError::InvalidProgress(error) => Self::Progress(error),

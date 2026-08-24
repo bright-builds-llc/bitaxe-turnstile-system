@@ -5,6 +5,7 @@ use sqlx::{PgPool, Row as _, postgres::PgPoolOptions};
 
 mod accounting;
 mod lifecycle;
+mod pool_selection;
 
 use accounting::{
     AcceptedEventRecordInput, challenge_for_session, insert_accepted_event, insert_issuance_intent,
@@ -114,47 +115,7 @@ impl AuthorityRepository for PostgresAuthorityRepository {
         session_id: &WorkSessionId,
         now: u64,
     ) -> Result<(), AuthorityPersistenceError> {
-        let mut transaction = self.pool.begin().await?;
-        let maybe_row = sqlx::query_as::<_, (String, i64)>(
-            "SELECT lifecycle_state, expires_at_unix_seconds
-             FROM gate_authority.work_challenges
-             WHERE challenge_id = $1 FOR UPDATE",
-        )
-        .bind(challenge_id.as_str())
-        .fetch_optional(&mut *transaction)
-        .await?;
-        let Some((state, expires_at)) = maybe_row else {
-            return Err(AuthorityPersistenceError::UnknownChallenge);
-        };
-        let state = crate::lifecycle::ChallengeLifecycleState::parse(&state)?;
-        crate::lifecycle::apply_challenge_command(
-            state,
-            crate::lifecycle::ChallengeLifecycleCommand::RegisterSession,
-        )
-        .map_err(|_| AuthorityPersistenceError::ForbiddenLifecycleTransition)?;
-        if unix_seconds_to_i64(now)? >= expires_at {
-            return Err(AuthorityPersistenceError::ForbiddenLifecycleTransition);
-        }
-        let result = sqlx::query(include_str!("postgres/queries/insert_work_session.sql"))
-            .bind(session_id.as_str())
-            .bind(challenge_id.as_str())
-            .execute(&mut *transaction)
-            .await;
-
-        match result {
-            Ok(_) => {
-                transaction.commit().await?;
-                Ok(())
-            }
-            Err(error)
-                if error
-                    .as_database_error()
-                    .is_some_and(|error| error.is_unique_violation()) =>
-            {
-                Err(AuthorityPersistenceError::DuplicateWorkSession)
-            }
-            Err(error) => Err(error.into()),
-        }
+        pool_selection::insert_work_session(&self.pool, challenge_id, session_id, now).await
     }
 
     async fn challenge_lifecycle(
@@ -163,6 +124,33 @@ impl AuthorityRepository for PostgresAuthorityRepository {
         now: u64,
     ) -> Result<crate::lifecycle::ChallengeLifecycle, AuthorityPersistenceError> {
         lifecycle::challenge_lifecycle(&self.pool, challenge_id, now).await
+    }
+
+    async fn propose_pool_selection(
+        &self,
+        challenge_id: &ChallengeId,
+        pool_offer_id: &str,
+        payout_commitment: &str,
+        now: u64,
+    ) -> Result<crate::pool_offer::PoolSelectionCommitment, AuthorityPersistenceError> {
+        pool_selection::propose_pool_selection(
+            &self.pool,
+            challenge_id,
+            pool_offer_id,
+            payout_commitment,
+            now,
+        )
+        .await
+    }
+
+    async fn confirm_pool_selection(
+        &self,
+        challenge_id: &ChallengeId,
+        payout_commitment: &str,
+        now: u64,
+    ) -> Result<crate::pool_offer::PoolSelectionCommitment, AuthorityPersistenceError> {
+        pool_selection::confirm_pool_selection(&self.pool, challenge_id, payout_commitment, now)
+            .await
     }
 
     async fn pause_challenge(

@@ -1,5 +1,32 @@
-INSERT INTO gate_authority.work_sessions (session_id, challenge_id)
-VALUES ('session_authority_retention', 'challenge_authority_retention');
+INSERT INTO gate_authority.pool_selections (
+    challenge_id,
+    pool_offer_id,
+    payout_commitment,
+    status,
+    selected_at_unix_seconds,
+    consented_at_unix_seconds
+)
+VALUES (
+    'challenge_authority_retention',
+    'pool_offer_hydra_solo_v1',
+    REPEAT('1', 64),
+    'consented',
+    99,
+    99
+);
+
+INSERT INTO gate_authority.work_sessions (
+    session_id,
+    challenge_id,
+    pool_offer_id,
+    payout_commitment
+)
+VALUES (
+    'session_authority_retention',
+    'challenge_authority_retention',
+    'pool_offer_hydra_solo_v1',
+    REPEAT('1', 64)
+);
 
 INSERT INTO gate_authority.share_fingerprints (share_fingerprint, challenge_id)
 VALUES ('share_authority_retention', 'challenge_authority_retention');

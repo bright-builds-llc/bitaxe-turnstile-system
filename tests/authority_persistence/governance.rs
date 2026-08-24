@@ -23,9 +23,7 @@ async fn retired_pass_lookup_is_gone_while_active_adapter_acknowledgements_remai
         .ok_or("challenge response needs an identifier")?;
     let retired_challenge_id_value = ChallengeId::try_from(retired_challenge_id.to_owned())?;
     let session_id = WorkSessionId::try_from("session_during_governance_01".to_owned())?;
-    adapter
-        .register_session(&retired_challenge_id_value, session_id.clone())
-        .await?;
+    register_test_session(&adapter, &retired_challenge_id_value, session_id.clone()).await?;
     let lease = adapter
         .start_lease(
             &session_id,

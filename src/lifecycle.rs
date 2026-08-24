@@ -120,6 +120,8 @@ pub fn challenge_accepts_work(state: ChallengeLifecycleState) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChallengeLifecycleCommand {
     RegisterSession,
+    SelectPoolOffer,
+    ConfirmPoolSelection,
     StartWork,
     AcceptWork,
     Pause,
@@ -138,6 +140,11 @@ pub fn apply_challenge_command(
         (
             ChallengeLifecycleState::Issued | ChallengeLifecycleState::Active,
             ChallengeLifecycleCommand::RegisterSession | ChallengeLifecycleCommand::Pause,
+        ) => Some(state),
+        (
+            ChallengeLifecycleState::Issued,
+            ChallengeLifecycleCommand::SelectPoolOffer
+            | ChallengeLifecycleCommand::ConfirmPoolSelection,
         ) => Some(state),
         (ChallengeLifecycleState::Issued, ChallengeLifecycleCommand::StartWork) => {
             Some(ChallengeLifecycleState::Active)

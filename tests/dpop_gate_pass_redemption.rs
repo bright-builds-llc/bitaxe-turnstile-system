@@ -1,6 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::Router;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use bwg_core::{
     authority::{
         self, AuthorityApplication, AuthorityPublicConfig, CLAIMANT_PROOF_HEADER,
@@ -11,6 +12,7 @@ use bwg_core::{
         AuthorityKeySet, AuthoritySigningKey, GatePassClaimsInput, GatePassConfirmationInput,
     },
     lifecycle::WorkerClock,
+    pool_offer::PoolSelection,
     progress::{
         AcceptedWorkEvent, AcceptedWorkEventId, AcceptedWorkEventInput, NetworkTargetOutcome,
         ReceiptTime, ShareFingerprint, WorkSessionId,
@@ -65,6 +67,17 @@ async fn standard_issue_work_pass_redeem_outcome_journey_uses_public_interfaces(
         .ok_or("challenge Action Reference is missing")?
         .to_owned();
     let session_id = WorkSessionId::try_from("session_redemption01".to_owned())?;
+    let payout_destination = "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu";
+    let payout_selection = PoolSelection::bitcoin_address(
+        "pool_offer_hydra_solo_v1".to_owned(),
+        payout_destination.to_owned(),
+    )?;
+    let selection = adapter
+        .propose_pool_selection(&challenge_id, &payout_selection)
+        .await?;
+    adapter
+        .confirm_pool_selection(&challenge_id, selection.commitment())
+        .await?;
     adapter
         .register_session(&challenge_id, session_id.clone())
         .await?;
@@ -106,6 +119,11 @@ async fn standard_issue_work_pass_redeem_outcome_journey_uses_public_interfaces(
         .as_str()
         .ok_or("Gate Pass response is missing token")?
         .to_owned();
+    let gate_pass_payload = gate_pass
+        .split('.')
+        .nth(1)
+        .ok_or("Gate Pass payload is missing")?;
+    let gate_pass_payload = String::from_utf8(URL_SAFE_NO_PAD.decode(gate_pass_payload)?)?;
     let repeated_issuance_proof = claimant.sign_issuance_proof(
         &public_lookup_url,
         challenge_id_text,
@@ -157,6 +175,10 @@ async fn standard_issue_work_pass_redeem_outcome_journey_uses_public_interfaces(
     assert_eq!(gate_pass, repeated_gate_pass);
     assert_eq!(first_record["outcome"]["status"], "pending");
     assert_eq!(outcome["outcome"]["status"], "succeeded");
+    assert!(!challenge.to_string().contains(payout_destination));
+    assert!(!gate_pass_payload.contains(payout_destination));
+    assert!(!first_record.to_string().contains(payout_destination));
+    assert!(!outcome.to_string().contains(payout_destination));
     assert!(
         outcome["outcome"]["result"]["account_id"]
             .as_str()

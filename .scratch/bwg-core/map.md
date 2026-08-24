@@ -19,6 +19,10 @@
   new event is admitted under one continuous monotonic Work Lease, typed SSE publishes lifecycle
   and deadline expiry, and restart, clock-loss, and control/accounting races fail closed without
   losing stable event replay.
+- [Ticket 11](./issues/11-solo-pool-offer.md) made pool economics consentable and immutable:
+  challenge-bound signed Pool Offers disclose separate pool/adapter source and license terms,
+  checksum-valid direct-payout choices become durable opaque commitments, Work Sessions require a
+  consented selection, and equivalent failover is distinguished from economic or privacy change.
 
 ## Persistence boundary split
 

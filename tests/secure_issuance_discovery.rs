@@ -13,6 +13,7 @@ use tokio::net::TcpListener;
 
 const CLIENT_ID: &str = "reference-service-production";
 const SERVICE_SECRET: &str = "production-secret-7zZszCLVD82lfejKM4g4nXGQ9";
+const AUTHORITY_SIGNING_SEED: &str = "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A";
 
 #[path = "support/authority_keys.rs"]
 mod authority_key_support;
@@ -112,7 +113,7 @@ async fn credential_rotation_accepts_overlap_then_retires_old_secret()
     let old_secret = "old-production-secret-B7sT3XUqv9Jw5Ez2Kc8mP0";
     let new_secret = "new-production-secret-N8rK4YVpz6Mx2Fa3Hd7qW1";
     let policies = vec![ActionPolicy::AccountCreationLightV1];
-    let (overlap_url, _overlap_database) = spawn_authority(Config::new(
+    let (overlap_url, _overlap_database) = spawn_authority(signed_challenge_config(Config::new(
         DeploymentEnvironment::Production,
         vec![
             service_credential(
@@ -127,7 +128,7 @@ async fn credential_rotation_accepts_overlap_then_retires_old_secret()
             )?,
         ],
         public_config()?,
-    )?)
+    )?)?)
     .await?;
 
     // Act
@@ -135,7 +136,7 @@ async fn credential_rotation_accepts_overlap_then_retires_old_secret()
         post_challenge(&overlap_url, old_secret, "account-creation.light.v1", None).await?;
     let new_overlap =
         post_challenge(&overlap_url, new_secret, "account-creation.light.v1", None).await?;
-    let (retired_url, _retired_database) = spawn_authority(Config::new(
+    let (retired_url, _retired_database) = spawn_authority(signed_challenge_config(Config::new(
         DeploymentEnvironment::Production,
         vec![service_credential(
             new_secret,
@@ -143,7 +144,7 @@ async fn credential_rotation_accepts_overlap_then_retires_old_secret()
             policies,
         )?],
         public_config()?,
-    )?)
+    )?)?)
     .await?;
     let old_retired =
         post_challenge(&retired_url, old_secret, "account-creation.light.v1", None).await?;
@@ -236,11 +237,11 @@ async fn bounded_standard_override_is_pinned_without_mutating_policy()
         DeploymentEnvironment::Production,
         vec![ActionPolicy::AccountCreationStandardV1],
     )?;
-    let (authority_url, _database) = spawn_authority(Config::new(
+    let (authority_url, _database) = spawn_authority(signed_challenge_config(Config::new(
         DeploymentEnvironment::Production,
         vec![standard_credential],
         public_config()?,
-    )?)
+    )?)?)
     .await?;
 
     // Act
@@ -370,12 +371,14 @@ async fn authority_descriptor_publishes_complete_public_contract()
     assert_eq!(descriptor["jwks"], jwks);
     assert_eq!(descriptor["jwks"]["keys"].as_array().map(Vec::len), Some(2));
     assert_eq!(descriptor["algorithms"]["gate_pass_jws"][0], "Ed25519");
+    assert_eq!(descriptor["algorithms"]["pool_offer_set_jws"][0], "Ed25519");
     assert_eq!(descriptor["algorithms"]["browser_dpop_jws"][0], "ES256");
     assert_eq!(descriptor["capabilities"]["bounded_overrides"], true);
     assert_eq!(
         descriptor["capabilities"]["verified_progress_streaming"],
         true
     );
+    assert_eq!(descriptor["capabilities"]["approved_pool_offers"], true);
     assert_eq!(descriptor["limits"]["max_action_reference_bytes"], 256);
     assert_eq!(
         descriptor["source"]["repository"],
@@ -478,7 +481,8 @@ fn authority_config() -> Result<Config, Box<dyn std::error::Error>> {
         DeploymentEnvironment::Production,
         vec![credential],
         public_config()?,
-    )?)
+    )?
+    .with_signing_key_seed("authority-a".to_owned(), AUTHORITY_SIGNING_SEED)?)
 }
 
 fn service_credential(
@@ -550,12 +554,16 @@ async fn override_authority_url()
             ActionPolicy::AccountCreationStandardV1,
         ],
     )?;
-    spawn_authority(Config::new(
+    spawn_authority(signed_challenge_config(Config::new(
         DeploymentEnvironment::Production,
         vec![credential],
         public_config()?,
-    )?)
+    )?)?)
     .await
+}
+
+fn signed_challenge_config(config: Config) -> Result<Config, AuthorityConfigError> {
+    config.with_signing_key_seed("authority-a".to_owned(), AUTHORITY_SIGNING_SEED)
 }
 
 async fn spawn_authority(

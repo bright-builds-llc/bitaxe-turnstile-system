@@ -262,32 +262,18 @@ pub fn verify_gate_pass(
     compact_jws: &str,
     trusted_keys: &[AuthorityJwk],
 ) -> Result<VerifiedGatePass, CryptoProfileError> {
-    let compact = CompactJws::parse(compact_jws)?;
-    let header: GatePassHeaderWire = decode_json(compact.protected_header)?;
-    validate_critical_headers(&header.critical_headers)?;
-    if header.typ != GATE_PASS_TYPE {
-        return Err(CryptoProfileError::InvalidGatePassType);
-    }
-    validate_algorithm(&header.alg, GATE_PASS_JWS_ALGORITHM)?;
-
-    let mut matching_keys = trusted_keys.iter().filter(|key| key.kid == header.kid);
-    let Some(key) = matching_keys.next() else {
-        return Err(CryptoProfileError::UnknownKeyId);
-    };
-    if matching_keys.next().is_some() {
-        return Err(CryptoProfileError::AmbiguousKeyId);
-    }
-
-    let signature_bytes = decode_base64url(compact.signature)?;
-    signature::UnparsedPublicKey::new(&signature::ED25519, key.public_key)
-        .verify(compact.signing_input.as_bytes(), &signature_bytes)
-        .map_err(|_| CryptoProfileError::InvalidSignature)?;
-
-    let claims: GatePassClaims = decode_json(compact.payload)?;
+    let (authority_kid, claims) =
+        verify_authority_payload::<GatePassClaims>(compact_jws, GATE_PASS_TYPE, trusted_keys)
+            .map_err(|error| {
+                if error == CryptoProfileError::InvalidAuthorityPayloadType {
+                    return CryptoProfileError::InvalidGatePassType;
+                }
+                error
+            })?;
     claims.validate()?;
 
     Ok(VerifiedGatePass {
-        authority_kid: header.kid,
+        authority_kid,
         claimant_jkt: claims.cnf.jkt,
         issuer: claims.iss,
         audience: claims.aud,
@@ -299,6 +285,35 @@ pub fn verify_gate_pass(
         action_reference: claims.action_reference,
         action_policy: claims.action_policy,
     })
+}
+
+pub(crate) fn verify_authority_payload<T>(
+    compact_jws: &str,
+    expected_type: &str,
+    trusted_keys: &[AuthorityJwk],
+) -> Result<(String, T), CryptoProfileError>
+where
+    T: for<'de> Deserialize<'de>,
+{
+    let compact = CompactJws::parse(compact_jws)?;
+    let header: GatePassHeaderWire = decode_json(compact.protected_header)?;
+    validate_critical_headers(&header.critical_headers)?;
+    if header.typ != expected_type {
+        return Err(CryptoProfileError::InvalidAuthorityPayloadType);
+    }
+    validate_algorithm(&header.alg, GATE_PASS_JWS_ALGORITHM)?;
+    let mut matching_keys = trusted_keys.iter().filter(|key| key.kid == header.kid);
+    let Some(key) = matching_keys.next() else {
+        return Err(CryptoProfileError::UnknownKeyId);
+    };
+    if matching_keys.next().is_some() {
+        return Err(CryptoProfileError::AmbiguousKeyId);
+    }
+    let signature_bytes = decode_base64url(compact.signature)?;
+    signature::UnparsedPublicKey::new(&signature::ED25519, key.public_key)
+        .verify(compact.signing_input.as_bytes(), &signature_bytes)
+        .map_err(|_| CryptoProfileError::InvalidSignature)?;
+    Ok((header.kid, decode_json(compact.payload)?))
 }
 
 /// Computes the RFC 9449 SHA-256 hash of an ASCII access-token value.
@@ -432,6 +447,8 @@ pub enum CryptoProfileError {
     UnsupportedCriticalHeader,
     #[error("Gate Pass type is invalid")]
     InvalidGatePassType,
+    #[error("Authority-signed payload type is invalid")]
+    InvalidAuthorityPayloadType,
     #[error("Gate Pass claims are invalid")]
     InvalidGatePassClaims,
     #[error("DPoP type is invalid")]

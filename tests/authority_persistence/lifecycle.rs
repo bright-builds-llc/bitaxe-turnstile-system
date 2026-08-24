@@ -23,9 +23,7 @@ async fn challenge_expiry_permanently_fails_unsigned_issuance() -> Result<(), Bo
         .as_u64()
         .ok_or("challenge response needs an expiry")?;
     let session_id = WorkSessionId::try_from("session_deadline_failure_01".to_owned())?;
-    adapter
-        .register_session(&challenge_id, session_id.clone())
-        .await?;
+    register_test_session(&adapter, &challenge_id, session_id.clone()).await?;
     let lease = adapter
         .start_lease(
             &session_id,

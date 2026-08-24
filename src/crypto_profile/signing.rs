@@ -54,8 +54,16 @@ impl AuthoritySigningKey {
         claims: &GatePassClaimsInput,
     ) -> Result<String, CryptoProfileError> {
         claims.validate()?;
-        let header = GatePassSigningHeader {
-            typ: GATE_PASS_TYPE,
+        self.sign_authority_payload(GATE_PASS_TYPE, claims)
+    }
+
+    pub(crate) fn sign_authority_payload<T: Serialize>(
+        &self,
+        signature_type: &'static str,
+        payload: &T,
+    ) -> Result<String, CryptoProfileError> {
+        let header = AuthoritySigningHeader {
+            typ: signature_type,
             alg: GATE_PASS_JWS_ALGORITHM,
             kid: &self.kid,
         };
@@ -63,7 +71,7 @@ impl AuthoritySigningKey {
             serde_json::to_vec(&header).map_err(|_| CryptoProfileError::SerializationFailed)?,
         );
         let payload = URL_SAFE_NO_PAD.encode(
-            serde_json::to_vec(claims).map_err(|_| CryptoProfileError::SerializationFailed)?,
+            serde_json::to_vec(payload).map_err(|_| CryptoProfileError::SerializationFailed)?,
         );
         let signing_input = format!("{protected}.{payload}");
         let signature = self.key_pair.sign(signing_input.as_bytes());
@@ -75,7 +83,7 @@ impl AuthoritySigningKey {
 }
 
 #[derive(Serialize)]
-struct GatePassSigningHeader<'a> {
+struct AuthoritySigningHeader<'a> {
     typ: &'static str,
     alg: &'static str,
     kid: &'a str,

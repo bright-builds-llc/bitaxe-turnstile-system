@@ -25,7 +25,7 @@ period may be longer but never shorter than its applicable Retention Floor.
 | --- | --- | --- | --- |
 | Gate Authority | Claimant issuance proof replay identity | Proof freshness plus skew | Delete immediately after the floor |
 | Gate Authority | Signed Gate Pass bytes | Signed expiry; BWG/0.1 verifier skew is zero | Delete immediately after the floor |
-| Gate Authority | Challenge, Work Session, share fingerprint, and Accepted Work Event | Stable acknowledgement and reconstruction remain safe | Pseudonymize at day 30; delete tombstone at day 90 |
+| Gate Authority | Challenge, consented Pool Selection commitment, Work Session, share fingerprint, and Accepted Work Event | Stable acknowledgement and reconstruction remain safe | Pseudonymize at day 30; delete tombstone at day 90 |
 | Gate Authority | Gate Pass Issuance Intent and outbox metadata | Issuance is terminal and signed artifacts cannot validate | Pseudonymize at day 30; delete tombstone at day 90 |
 | Relying Service | DPoP and Claimant outcome proof replay identity | Proof freshness plus skew | Delete immediately after the floor |
 | Relying Service | Pass Consumption | No conforming verifier can accept the Gate Pass | Pseudonymize at day 30 or later floor; delete tombstone at day 90 or later floor |

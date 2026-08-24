@@ -195,8 +195,7 @@ fn session_commands_apply_the_shared_transition_policy() {
 }
 
 #[tokio::test]
-async fn migration_terminates_legacy_sessions_with_unknown_clock_continuity()
--> Result<(), Box<dyn Error>> {
+async fn migration_terminates_legacy_sessions_without_pool_consent() -> Result<(), Box<dyn Error>> {
     // Arrange
     let database = PostgresTestDatabase::start().await?;
     let bootstrap = sqlx::PgPool::connect(database.database_url()).await?;
@@ -241,7 +240,13 @@ async fn migration_terminates_legacy_sessions_with_unknown_clock_continuity()
     let failed_sessions = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM gate_authority.work_sessions
          WHERE lifecycle_state = 'failed'
-           AND stop_reason = 'migration_continuity_unknown'",
+           AND stop_reason = 'migration_pool_selection_unknown'",
+    )
+    .fetch_one(&pool)
+    .await?;
+    let challenge_state = sqlx::query_scalar::<_, String>(
+        "SELECT lifecycle_state FROM gate_authority.work_challenges
+         WHERE challenge_id = 'challenge_legacy_session'",
     )
     .fetch_one(&pool)
     .await?;
@@ -254,6 +259,7 @@ async fn migration_terminates_legacy_sessions_with_unknown_clock_continuity()
 
     // Assert
     assert_eq!(failed_sessions, 2);
+    assert_eq!(challenge_state, "expired");
     assert!(arbitrary_reason.is_err());
 
     Ok(())

@@ -103,12 +103,16 @@ impl LifecycleFixture {
             .error_for_status()?
             .json::<Value>()
             .await?;
-        Ok(ChallengeId::try_from(
+        let challenge_id = ChallengeId::try_from(
             body["challenge_id"]
                 .as_str()
                 .ok_or("challenge response needs an identifier")?
                 .to_owned(),
-        )?)
+        )?;
+        self.adapter
+            .consent_default_pool_offer_for_simulation(&challenge_id)
+            .await?;
+        Ok(challenge_id)
     }
 
     async fn pause(
