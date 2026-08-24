@@ -32,6 +32,9 @@ fn openapi_contract_covers_the_complete_pass_and_outcome_journey()
             "/v0/challenges",
             "/v0/challenges/{challenge_id}/events",
             "/v0/challenges/{challenge_id}/gate-pass",
+            "/v0/challenges/{challenge_id}/lifecycle",
+            "/v0/challenges/{challenge_id}/pause",
+            "/v0/challenges/{challenge_id}/cancel",
         ])
     );
     for schema in [
@@ -42,12 +45,44 @@ fn openapi_contract_covers_the_complete_pass_and_outcome_journey()
         "IssuanceLookup",
         "RedemptionRecord",
         "ProtectedActionOutcome",
+        "ChallengeLifecycle",
+        "PauseChallengeRequest",
+        "CancelChallengeRequest",
+        "VerifiedProgressUpdate",
     ] {
         assert!(schemas.contains_key(schema), "missing schema {schema}");
     }
     assert_eq!(
         contract["paths"]["/v0/challenges"]["post"]["security"][0]["ServiceClientId"],
         json!([])
+    );
+    for path in [
+        "/v0/challenges/{challenge_id}/pause",
+        "/v0/challenges/{challenge_id}/cancel",
+    ] {
+        assert_eq!(
+            contract["paths"][path]["post"]["security"][0]["ServiceClientId"],
+            json!([])
+        );
+    }
+    let sse_events =
+        contract["paths"]["/v0/challenges/{challenge_id}/events"]["get"]["x-bwg-sse-events"]
+            .as_object()
+            .ok_or("SSE event contract must be an object")?;
+    assert_eq!(
+        sse_events
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            "challenge_lifecycle",
+            "resync_required",
+            "verified_progress",
+        ])
+    );
+    assert_eq!(
+        sse_events["challenge_lifecycle"]["$ref"],
+        "#/components/schemas/ChallengeLifecycle"
     );
     assert_eq!(
         schemas["ClaimantIssuanceProofClaims"]["allOf"][1]["properties"]["htm"]["const"],

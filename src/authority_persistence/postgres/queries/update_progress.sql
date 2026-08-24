@@ -1,6 +1,8 @@
 UPDATE gate_authority.work_challenges
 SET verified_progress = $2::numeric,
     satisfied = $3,
+    lifecycle_state = CASE WHEN $3 THEN 'satisfied' ELSE lifecycle_state END,
+    lifecycle_changed_at_unix_seconds = CASE WHEN $3 THEN $4 ELSE lifecycle_changed_at_unix_seconds END,
     terminal_at_unix_seconds = CASE
         WHEN $3 AND NOT EXISTS (
             SELECT 1

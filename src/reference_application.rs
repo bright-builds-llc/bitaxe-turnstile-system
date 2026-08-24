@@ -11,6 +11,7 @@ use crate::{
         AuthorityJwk, AuthorityKeySet, CryptoProfileError, P256PublicJwk, P256PublicJwkWire,
         p256_jwk_thumbprint, verify_dpop, verify_gate_pass, verify_outcome_proof,
     },
+    lifecycle::DPOP_ACCEPTANCE_WINDOW_SECONDS,
     redemption::{
         RedemptionBindingInput, RedemptionRecord, RedemptionRequest, validate_redemption_binding,
     },
@@ -24,7 +25,6 @@ use crate::{
 const ACTION_EXECUTION_TIMEOUT_SECONDS: u64 = 5 * 60;
 const ACTION_MAXIMUM_ATTEMPTS: u32 = 3;
 const RETRYABLE_ERROR_CLASSES: [&str; 1] = ["transient"];
-const DPOP_FRESHNESS_WINDOW_SECONDS: u64 = 60;
 const ACTION_LEASE_SECONDS: u64 = 30;
 const MAXIMUM_WORKER_ID_LENGTH: usize = 128;
 const OUTCOME_PROOF_FRESHNESS_SECONDS: u64 = 60;
@@ -118,7 +118,7 @@ impl ReferenceApplication {
         .map_err(|_| ReferenceApplicationError::InvalidRedemptionBinding)?;
         let dpop_expires_at = dpop
             .issued_at()
-            .checked_add(DPOP_FRESHNESS_WINDOW_SECONDS)
+            .checked_add(DPOP_ACCEPTANCE_WINDOW_SECONDS)
             .ok_or(ReferenceApplicationError::TimeOverflow)?;
         Ok(self
             .repository

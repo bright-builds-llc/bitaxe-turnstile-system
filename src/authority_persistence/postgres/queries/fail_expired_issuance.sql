@@ -10,7 +10,9 @@ WITH expired AS (
     RETURNING challenge_id, signing_deadline_unix_seconds
 ), terminalized AS (
     UPDATE gate_authority.work_challenges AS challenge
-    SET terminal_at_unix_seconds = expired.signing_deadline_unix_seconds
+    SET terminal_at_unix_seconds = expired.signing_deadline_unix_seconds,
+        lifecycle_state = 'expired',
+        lifecycle_changed_at_unix_seconds = expired.signing_deadline_unix_seconds
     FROM expired
     WHERE challenge.challenge_id = expired.challenge_id
     RETURNING challenge.challenge_id

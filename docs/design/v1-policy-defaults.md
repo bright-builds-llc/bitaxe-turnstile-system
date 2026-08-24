@@ -28,6 +28,8 @@ Gate Pass issuance ends every challenge Work Lease and restores each participati
 
 Work Lease expiry restores the Mining Baseline but preserves Credited Work until the Work Challenge expires. A browser may retain the challenge's non-extractable ephemeral key only through challenge and pass expiry so an interrupted tab can resume without creating a persistent tracking identity.
 
+BWG/0.1 does not extend signed artifact deadlines with verifier clock skew. Synchronized server clocks are required, and the signed or persisted deadline is the first invalid instant.
+
 ## Progress cadence
 
 Verified Progress advances only through Accepted Work Events. The reference pool's variable-difficulty policy should target approximately one accepted share every two seconds for Bitaxe-class Workers and, when practical, keep one assigned share below 25% of the Work Requirement. Clients may animate a separate Activity Estimate but never count it toward completion.

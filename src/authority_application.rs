@@ -19,15 +19,22 @@ use crate::{
         CryptoProfileError, GATE_PASS_JWS_ALGORITHM, GatePassClaimsSeed, GatePassConfirmationInput,
         P256PublicJwk, P256PublicJwkWire, p256_jwk_thumbprint, verify_issuance_proof,
     },
+    lifecycle::{
+        ChallengeLifecycle, GATE_PASS_TTL_SECONDS, LifecycleError, PauseReason, WorkLease,
+        WorkerClock,
+    },
     progress::{
         AcceptedWorkAcknowledgement, AcceptedWorkEvent, ProgressError, ProgressUpdate,
         WorkSessionId,
     },
 };
 
+mod lifecycle_events;
+mod pool_adapter;
+pub use pool_adapter::SimulatedPoolAdapter;
+
 const PROGRESS_CHANNEL_CAPACITY: usize = 32;
 const SIGNING_LEASE_SECONDS: u64 = 30;
-const GATE_PASS_TTL_SECONDS: u64 = 2 * 60;
 const MAXIMUM_WORKER_ID_LENGTH: usize = 128;
 const ISSUANCE_PROOF_FRESHNESS_SECONDS: u64 = 60;
 
@@ -37,6 +44,8 @@ pub struct AuthorityApplication {
     pub(crate) config: Config,
     repository: Arc<dyn AuthorityRepository>,
     progress_channels: Arc<Mutex<HashMap<ChallengeId, broadcast::Sender<ProgressUpdate>>>>,
+    lifecycle_channels: Arc<Mutex<HashMap<ChallengeId, broadcast::Sender<ChallengeLifecycle>>>>,
+    lifecycle_expiry_deadlines: Arc<Mutex<HashMap<ChallengeId, u64>>>,
 }
 
 impl AuthorityApplication {
@@ -50,6 +59,8 @@ impl AuthorityApplication {
             config,
             repository: Arc::new(repository),
             progress_channels: Arc::new(Mutex::new(HashMap::new())),
+            lifecycle_channels: Arc::new(Mutex::new(HashMap::new())),
+            lifecycle_expiry_deadlines: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -77,6 +88,9 @@ impl AuthorityApplication {
         self.repository
             .insert_challenge(descriptor, &claims_seed)
             .await?;
+        let challenge_id = ChallengeId::try_from(descriptor.challenge_id().to_owned())
+            .map_err(|_| AuthorityApplicationError::InvalidChallengeDescriptor)?;
+        self.schedule_lifecycle_expiry(challenge_id, descriptor.expires_at_unix_seconds());
         Ok(())
     }
 
@@ -92,23 +106,108 @@ impl AuthorityApplication {
         challenge_id: &ChallengeId,
         session_id: &WorkSessionId,
     ) -> Result<(), AuthorityApplicationError> {
+        let now = current_unix_seconds()?;
         self.repository
-            .insert_work_session(challenge_id, session_id)
+            .insert_work_session(challenge_id, session_id, now)
             .await?;
         Ok(())
+    }
+
+    pub(crate) async fn challenge_lifecycle(
+        &self,
+        challenge_id: &ChallengeId,
+        now: u64,
+    ) -> Result<ChallengeLifecycle, AuthorityApplicationError> {
+        let lifecycle = self
+            .repository
+            .challenge_lifecycle(challenge_id, now)
+            .await?;
+        if matches!(
+            lifecycle.state(),
+            crate::lifecycle::ChallengeLifecycleState::Cancelled
+                | crate::lifecycle::ChallengeLifecycleState::Expired
+        ) {
+            self.cancel_scheduled_expiry(challenge_id)?;
+        }
+        self.notify_lifecycle(challenge_id, lifecycle.clone())?;
+        Ok(lifecycle)
+    }
+
+    pub(crate) async fn ensure_challenge_controller(
+        &self,
+        challenge_id: &ChallengeId,
+        relying_service_audience: &str,
+    ) -> Result<(), AuthorityApplicationError> {
+        let descriptor = self.repository.challenge(challenge_id).await?;
+        if descriptor.relying_service_audience() != relying_service_audience {
+            return Err(AuthorityApplicationError::ChallengeControlNotPermitted);
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn pause_challenge(
+        &self,
+        challenge_id: &ChallengeId,
+        reason: PauseReason,
+        now: u64,
+    ) -> Result<ChallengeLifecycle, AuthorityApplicationError> {
+        let lifecycle = self
+            .repository
+            .pause_challenge(challenge_id, reason, now)
+            .await?;
+        self.notify_lifecycle(challenge_id, lifecycle.clone())?;
+        Ok(lifecycle)
+    }
+
+    pub(crate) async fn cancel_challenge(
+        &self,
+        challenge_id: &ChallengeId,
+        now: u64,
+    ) -> Result<ChallengeLifecycle, AuthorityApplicationError> {
+        let lifecycle = self.repository.cancel_challenge(challenge_id, now).await?;
+        self.cancel_scheduled_expiry(challenge_id)?;
+        self.notify_lifecycle(challenge_id, lifecycle.clone())?;
+        Ok(lifecycle)
     }
 
     async fn accept_work(
         &self,
         event: AcceptedWorkEvent,
+        lease: &WorkLease,
+        clock: &WorkerClock,
     ) -> Result<AcceptedWorkAcknowledgement, AuthorityApplicationError> {
-        let acceptance = self.repository.accept_work(event).await?;
+        let session_id = event.work_session_id().clone();
+        let acceptance = match self
+            .repository
+            .accept_work(event, lease.lease_id(), clock)
+            .await
+        {
+            Ok(acceptance) => acceptance,
+            Err(error) => {
+                let application_error = AuthorityApplicationError::from(error);
+                if matches!(
+                    application_error,
+                    AuthorityApplicationError::WorkerContinuityLost
+                        | AuthorityApplicationError::WorkLeaseExpired
+                ) {
+                    self.notify_lifecycle_for_session(&session_id).await?;
+                }
+                return Err(application_error);
+            }
+        };
         let update = ProgressUpdate::persisted(
             acceptance.challenge_id.clone(),
             acceptance.acknowledgement.verified_progress(),
             acceptance.acknowledgement.work_requirement(),
         );
         self.notify_progress(&acceptance.challenge_id, update)?;
+        if acceptance.acknowledgement.issuance_intent_created() {
+            let lifecycle = self
+                .repository
+                .challenge_lifecycle(&acceptance.challenge_id, current_unix_seconds()?)
+                .await?;
+            self.notify_lifecycle(&acceptance.challenge_id, lifecycle)?;
+        }
         Ok(acceptance.acknowledgement)
     }
 
@@ -151,6 +250,12 @@ impl AuthorityApplication {
                 expires_at,
             )
             .await?;
+        let lifecycle = self
+            .repository
+            .challenge_lifecycle(&claimed.challenge_id, issued_at)
+            .await?;
+        self.notify_lifecycle(&claimed.challenge_id, lifecycle)?;
+        self.schedule_lifecycle_expiry(claimed.challenge_id.clone(), expires_at);
         Ok(IssuanceProcessingOutcome::Issued {
             challenge_id: claimed.challenge_id,
         })
@@ -300,33 +405,6 @@ pub(crate) enum IssuanceLookup {
     Failed,
 }
 
-/// Simulated Pool Adapter interface for the future authenticated gRPC transport.
-#[derive(Clone)]
-pub struct SimulatedPoolAdapter {
-    application: AuthorityApplication,
-}
-
-impl SimulatedPoolAdapter {
-    /// Binds one Work Session to its immutable Work Challenge.
-    pub async fn register_session(
-        &self,
-        challenge_id: &ChallengeId,
-        session_id: WorkSessionId,
-    ) -> Result<(), AuthorityApplicationError> {
-        self.application
-            .insert_work_session(challenge_id, &session_id)
-            .await
-    }
-
-    /// Atomically records one target-qualified accepted result and its stable acknowledgement.
-    pub async fn report(
-        &self,
-        event: AcceptedWorkEvent,
-    ) -> Result<AcceptedWorkAcknowledgement, AuthorityApplicationError> {
-        self.application.accept_work(event).await
-    }
-}
-
 #[derive(Debug, Error)]
 pub enum AuthorityApplicationError {
     #[error("Gate Authority application state is unavailable")]
@@ -335,10 +413,22 @@ pub enum AuthorityApplicationError {
     DuplicateChallenge,
     #[error("Work Challenge is not persisted")]
     UnknownChallenge,
+    #[error("Work Challenge descriptor identity is invalid")]
+    InvalidChallengeDescriptor,
     #[error("Work Session is already persisted")]
     DuplicateWorkSession,
     #[error("Work Session is not persisted")]
     UnknownWorkSession,
+    #[error("service credential does not control this Work Challenge")]
+    ChallengeControlNotPermitted,
+    #[error("requested lifecycle transition is forbidden")]
+    ForbiddenLifecycleTransition,
+    #[error("Work Lease identity does not match the active lease")]
+    WrongWorkLease,
+    #[error("Worker continuity was lost and the Work Lease was terminated")]
+    WorkerContinuityLost,
+    #[error("Work Lease expired and was terminated")]
+    WorkLeaseExpired,
     #[error("Accepted Work Event conflicts with its canonical delivery")]
     ConflictingEventReplay,
     #[error("issuance worker identity is invalid")]
@@ -371,6 +461,8 @@ pub enum AuthorityApplicationError {
     Progress(#[from] ProgressError),
     #[error(transparent)]
     Crypto(#[from] CryptoProfileError),
+    #[error(transparent)]
+    Lifecycle(#[from] LifecycleError),
 }
 
 impl From<AuthorityPersistenceError> for AuthorityApplicationError {
@@ -380,9 +472,16 @@ impl From<AuthorityPersistenceError> for AuthorityApplicationError {
             AuthorityPersistenceError::UnknownChallenge => Self::UnknownChallenge,
             AuthorityPersistenceError::DuplicateWorkSession => Self::DuplicateWorkSession,
             AuthorityPersistenceError::UnknownWorkSession => Self::UnknownWorkSession,
+            AuthorityPersistenceError::ForbiddenLifecycleTransition => {
+                Self::ForbiddenLifecycleTransition
+            }
+            AuthorityPersistenceError::WrongWorkLease => Self::WrongWorkLease,
+            AuthorityPersistenceError::WorkerContinuityLost => Self::WorkerContinuityLost,
+            AuthorityPersistenceError::WorkLeaseExpired => Self::WorkLeaseExpired,
             AuthorityPersistenceError::ConflictingEventReplay => Self::ConflictingEventReplay,
             AuthorityPersistenceError::ReplayedIssuanceProof => Self::ReplayedIssuanceProof,
             AuthorityPersistenceError::InvalidProgress(error) => Self::Progress(error),
+            AuthorityPersistenceError::InvalidLifecycle(error) => Self::Lifecycle(error),
             error => Self::Persistence(Box::new(error)),
         }
     }

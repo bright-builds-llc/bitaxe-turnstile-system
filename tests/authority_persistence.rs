@@ -12,6 +12,7 @@ use bwg_core::{
     },
     challenge::{ActionPolicy, ChallengeId},
     crypto_profile::{AuthorityKeySet, verify_gate_pass},
+    lifecycle::WorkerClock,
     progress::{
         AcceptedWorkEvent, AcceptedWorkEventId, AcceptedWorkEventInput, NetworkTargetOutcome,
         ReceiptTime, ShareFingerprint, WorkSessionId,
@@ -28,6 +29,8 @@ mod claimant_support;
 mod governance;
 #[path = "support/http.rs"]
 mod http_support;
+#[path = "authority_persistence/lifecycle.rs"]
+mod lifecycle;
 #[path = "support/postgres.rs"]
 mod postgres_support;
 
@@ -99,8 +102,17 @@ async fn accepted_threshold_event_replays_identically_after_authority_restart()
     first_adapter
         .register_session(&challenge_id, session_id.clone())
         .await?;
+    let lease = first_adapter
+        .start_lease(&session_id, WorkerClock::new("boot_persistence_01", 0)?)
+        .await?;
     let event = light_target_event(session_id)?;
-    let accepted = first_adapter.report(event.clone()).await?;
+    let accepted = first_adapter
+        .report(
+            event.clone(),
+            &lease,
+            WorkerClock::new("boot_persistence_01", 1)?,
+        )
+        .await?;
     first_server.stop();
 
     // Act
@@ -108,7 +120,13 @@ async fn accepted_threshold_event_replays_identically_after_authority_restart()
         AuthorityApplication::connect_postgres(authority_config()?, database.database_url())
             .await?;
     let restarted_adapter = restarted_application.simulated_pool_adapter();
-    let replayed = restarted_adapter.report(event).await?;
+    let replayed = restarted_adapter
+        .report(
+            event,
+            &lease,
+            WorkerClock::new("boot_persistence_01", 60_000)?,
+        )
+        .await?;
 
     // Assert
     assert!(accepted.issuance_intent_created());
@@ -143,13 +161,22 @@ async fn expired_signing_lease_recovers_one_exact_pass_across_restart() -> Resul
     first_adapter
         .register_session(&challenge_id, session_id.clone())
         .await?;
+    let lease = first_adapter
+        .start_lease(&session_id, WorkerClock::new("boot_lease_recovery_01", 0)?)
+        .await?;
     let event = light_target_event_with_id(
         "event_lease_recovery_01",
         "share_lease_recovery_01",
         session_id,
     )?;
     let accepted_at = event.received_at_unix_seconds();
-    first_adapter.report(event).await?;
+    first_adapter
+        .report(
+            event,
+            &lease,
+            WorkerClock::new("boot_lease_recovery_01", 1)?,
+        )
+        .await?;
     let first_worker = IssuanceWorkerId::try_from("worker_first_01".to_owned())?;
     let signing_failure = first_application
         .process_next_issuance(&first_worker, accepted_at)
@@ -270,10 +297,15 @@ async fn issuance_lookup_requires_fresh_claimant_proof_and_returns_identical_byt
     adapter
         .register_session(&challenge_id, session_id.clone())
         .await?;
+    let lease = adapter
+        .start_lease(&session_id, WorkerClock::new("boot_proof_lookup_01", 0)?)
+        .await?;
     let event =
         light_target_event_with_id("event_proof_lookup_01", "share_proof_lookup_01", session_id)?;
     let issued_at = event.received_at_unix_seconds();
-    adapter.report(event).await?;
+    adapter
+        .report(event, &lease, WorkerClock::new("boot_proof_lookup_01", 1)?)
+        .await?;
     let worker_id = IssuanceWorkerId::try_from("worker_proof_lookup_01".to_owned())?;
     application
         .process_next_issuance(&worker_id, issued_at)
@@ -369,78 +401,6 @@ async fn issuance_lookup_requires_fresh_claimant_proof_and_returns_identical_byt
 }
 
 #[tokio::test]
-async fn challenge_expiry_permanently_fails_unsigned_issuance() -> Result<(), Box<dyn Error>> {
-    // Arrange
-    let database = PostgresTestDatabase::start().await?;
-    let application = AuthorityApplication::connect_postgres(
-        authority_config_with_signer()?,
-        database.database_url(),
-    )
-    .await?;
-    let adapter = application.simulated_pool_adapter();
-    let server = RunningServer::spawn(authority::router(application.clone())).await?;
-    let claimant = Claimant::generate()?;
-    let challenge = issue_challenge(&server.base_url, &claimant.public_jwk_json).await?;
-    let challenge_id = ChallengeId::try_from(
-        challenge["challenge_id"]
-            .as_str()
-            .ok_or("challenge response needs an identifier")?
-            .to_owned(),
-    )?;
-    let challenge_expiry = challenge["expires_at_unix_seconds"]
-        .as_u64()
-        .ok_or("challenge response needs an expiry")?;
-    let session_id = WorkSessionId::try_from("session_deadline_failure_01".to_owned())?;
-    adapter
-        .register_session(&challenge_id, session_id.clone())
-        .await?;
-    adapter
-        .report(light_target_event_with_id(
-            "event_deadline_failure_01",
-            "share_deadline_failure_01",
-            session_id,
-        )?)
-        .await?;
-
-    // Act
-    let processing = application
-        .process_next_issuance(
-            &IssuanceWorkerId::try_from("worker_deadline_failure_01".to_owned())?,
-            challenge_expiry,
-        )
-        .await?;
-    let public_lookup_url = format!(
-        "https://authority.example/v0/challenges/{}/gate-pass",
-        challenge_id.as_str()
-    );
-    let proof_now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-    let proof = claimant.sign_issuance_proof(
-        &public_lookup_url,
-        challenge_id.as_str(),
-        "proof_deadline_failure_01",
-        proof_now,
-    )?;
-    let lookup = reqwest::Client::new()
-        .get(format!(
-            "{}/v0/challenges/{}/gate-pass",
-            server.base_url,
-            challenge_id.as_str()
-        ))
-        .header(CLAIMANT_PROOF_HEADER, proof)
-        .send()
-        .await?
-        .error_for_status()?
-        .json::<Value>()
-        .await?;
-
-    // Assert
-    assert_eq!(processing, IssuanceProcessingOutcome::NoWork);
-    assert_eq!(lookup, json!({ "status": "failed" }));
-
-    Ok(())
-}
-
-#[tokio::test]
 async fn concurrent_duplicate_share_is_credited_only_once() -> Result<(), Box<dyn Error>> {
     // Arrange
     let database = PostgresTestDatabase::start().await?;
@@ -461,8 +421,20 @@ async fn concurrent_duplicate_share_is_credited_only_once() -> Result<(), Box<dy
     adapter
         .register_session(&challenge_id, first_session.clone())
         .await?;
+    let first_lease = adapter
+        .start_lease(
+            &first_session,
+            WorkerClock::new("boot_concurrent_share_01", 0)?,
+        )
+        .await?;
     adapter
         .register_session(&challenge_id, second_session.clone())
+        .await?;
+    let second_lease = adapter
+        .start_lease(
+            &second_session,
+            WorkerClock::new("boot_concurrent_share_02", 0)?,
+        )
         .await?;
     let first_event = difficulty_one_event(
         "event_concurrent_share_01",
@@ -476,7 +448,18 @@ async fn concurrent_duplicate_share_is_credited_only_once() -> Result<(), Box<dy
     )?;
 
     // Act
-    let (first, second) = tokio::join!(adapter.report(first_event), adapter.report(second_event),);
+    let (first, second) = tokio::join!(
+        adapter.report(
+            first_event,
+            &first_lease,
+            WorkerClock::new("boot_concurrent_share_01", 1)?,
+        ),
+        adapter.report(
+            second_event,
+            &second_lease,
+            WorkerClock::new("boot_concurrent_share_02", 1)?,
+        ),
+    );
     let first = first?;
     let second = second?;
 

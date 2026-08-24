@@ -24,7 +24,7 @@ Work Sessions are registered against exactly one opaque Work Challenge before ev
 
 ## Public lifecycle stream
 
-`GET /v0/challenges/{challenge_id}/events` returns Server-Sent Events. A new subscriber first receives the current snapshot and then receives changes that actually advanced Verified Progress. Each `verified_progress` event contains:
+`GET /v0/challenges/{challenge_id}/events` returns Server-Sent Events. A new subscriber first receives current `verified_progress` and `challenge_lifecycle` snapshots. It then receives progress changes, lifecycle control/terminal updates, and an `expired` lifecycle event at the active challenge or Gate Pass deadline. Each `verified_progress` event contains:
 
 - exact decimal `verified_progress`;
 - exact decimal immutable `work_requirement`;
@@ -32,5 +32,7 @@ Work Sessions are registered against exactly one opaque Work Challenge before ev
 - a separate `activity_estimate` object.
 
 Activity Estimate is currently `unavailable`. It is structurally separate so future share cadence or local telemetry cannot be mistaken for accepted target-derived work. A lagged subscriber receives `resync_required` and reconnects for a fresh exact snapshot.
+
+Each `challenge_lifecycle` event uses the same redacted payload as the lifecycle snapshot endpoint, including current state, authorization eligibility, immutable challenge expiry, and the deadline that will next expire the challenge or its issued Gate Pass. Pause emits an `active` lifecycle event even though it deliberately preserves the challenge state; the event occurrence tells clients that current leases ended.
 
 Canonical event/share indexes, the projection, and the acknowledgement commit before SSE notification. A subscriber disconnect or fan-out failure cannot reject or partially roll back accepted accounting; reconnecting always starts from the exact committed snapshot.

@@ -14,6 +14,11 @@
   [`bwg-data-governance`](../bwg-data-governance/map.md) child effort: service-local 30/90-day
   retirement, exact resumable exports, metadata-only audits, and independent context failure
   recovery now close the remaining lifecycle gap.
+- [Ticket 10](./issues/10-pause-cancel-expiry.md) made interruption behavior deterministic: a pure
+  persisted challenge/session state model drives authenticated Pause and terminal Cancel, every
+  new event is admitted under one continuous monotonic Work Lease, typed SSE publishes lifecycle
+  and deadline expiry, and restart, clock-loss, and control/accounting races fail closed without
+  losing stable event replay.
 
 ## Persistence boundary split
 

@@ -4,6 +4,10 @@ use thiserror::Error;
 use crate::{
     challenge::{ChallengeId, WorkChallengeDescriptor},
     crypto_profile::{GatePassClaimsSeed, GatePassClaimsTemplate},
+    lifecycle::{
+        ChallengeLifecycle, PauseReason, SessionLifecycle, WorkLease, WorkerClock,
+        WorkerInterruption,
+    },
     progress::{AcceptedWorkAcknowledgement, AcceptedWorkEvent, ProgressError, WorkSessionId},
     work::{CreditedWork, VerifiedProgress, WorkError},
 };
@@ -53,11 +57,74 @@ pub(crate) trait AuthorityRepository: Send + Sync {
         &self,
         challenge_id: &ChallengeId,
         session_id: &WorkSessionId,
+        now: u64,
     ) -> Result<(), AuthorityPersistenceError>;
+
+    async fn challenge_lifecycle(
+        &self,
+        challenge_id: &ChallengeId,
+        now: u64,
+    ) -> Result<ChallengeLifecycle, AuthorityPersistenceError>;
+
+    async fn pause_challenge(
+        &self,
+        challenge_id: &ChallengeId,
+        reason: PauseReason,
+        now: u64,
+    ) -> Result<ChallengeLifecycle, AuthorityPersistenceError>;
+
+    async fn cancel_challenge(
+        &self,
+        challenge_id: &ChallengeId,
+        now: u64,
+    ) -> Result<ChallengeLifecycle, AuthorityPersistenceError>;
+
+    async fn start_work_lease(
+        &self,
+        session_id: &WorkSessionId,
+        clock: &WorkerClock,
+        lease_id: &str,
+        renew_at_monotonic_milliseconds: u64,
+        expires_at_monotonic_milliseconds: u64,
+        now: u64,
+    ) -> Result<WorkLease, AuthorityPersistenceError>;
+
+    async fn renew_work_lease(
+        &self,
+        session_id: &WorkSessionId,
+        lease_id: &str,
+        clock: &WorkerClock,
+        renew_at_monotonic_milliseconds: u64,
+        expires_at_monotonic_milliseconds: u64,
+        now: u64,
+    ) -> Result<WorkLease, AuthorityPersistenceError>;
+
+    async fn interrupt_work_session(
+        &self,
+        session_id: &WorkSessionId,
+        interruption: WorkerInterruption,
+    ) -> Result<(), AuthorityPersistenceError>;
+
+    async fn confirm_work_session_restored(
+        &self,
+        session_id: &WorkSessionId,
+    ) -> Result<(), AuthorityPersistenceError>;
+
+    async fn fail_work_session(
+        &self,
+        session_id: &WorkSessionId,
+    ) -> Result<(), AuthorityPersistenceError>;
+
+    async fn work_session_lifecycle(
+        &self,
+        session_id: &WorkSessionId,
+    ) -> Result<SessionLifecycle, AuthorityPersistenceError>;
 
     async fn accept_work(
         &self,
         event: AcceptedWorkEvent,
+        lease_id: &str,
+        clock: &WorkerClock,
     ) -> Result<PersistedAcceptance, AuthorityPersistenceError>;
 
     async fn maybe_claim_issuance(
@@ -107,6 +174,14 @@ pub(crate) enum AuthorityPersistenceError {
     DuplicateWorkSession,
     #[error("Work Session is not persisted")]
     UnknownWorkSession,
+    #[error("requested lifecycle transition is forbidden")]
+    ForbiddenLifecycleTransition,
+    #[error("Work Lease identity does not match the active lease")]
+    WrongWorkLease,
+    #[error("Worker continuity was lost")]
+    WorkerContinuityLost,
+    #[error("Work Lease has reached its monotonic deadline")]
+    WorkLeaseExpired,
     #[error("Accepted Work Event identity conflicts with its canonical delivery")]
     ConflictingEventReplay,
     #[error("Gate Pass signing lease is no longer owned by this worker")]
@@ -125,4 +200,6 @@ pub(crate) enum AuthorityPersistenceError {
     InvalidWork(#[from] WorkError),
     #[error(transparent)]
     InvalidProgress(#[from] ProgressError),
+    #[error(transparent)]
+    InvalidLifecycle(#[from] crate::lifecycle::LifecycleError),
 }

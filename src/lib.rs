@@ -7,6 +7,7 @@ mod authority_persistence;
 pub mod challenge;
 pub mod crypto_profile;
 pub mod governance;
+pub mod lifecycle;
 pub mod progress;
 pub mod redemption;
 mod reference_application;

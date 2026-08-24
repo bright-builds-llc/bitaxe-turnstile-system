@@ -6,6 +6,10 @@ use crate::{
     authority_persistence::{AuthorityPersistenceError, PersistedAcceptance},
     challenge::ChallengeId,
     crypto_profile::{GATE_PASS_JWS_ALGORITHM, GatePassClaimsSeed},
+    lifecycle::{
+        LeaseObservation, LeaseObservationInput, SessionLifecycleCommand, SessionLifecycleState,
+        WorkerClock, apply_session_command, observe_work_lease,
+    },
     progress::{
         AcceptedWorkAcknowledgement, AcceptedWorkDisposition, AcceptedWorkEvent,
         AcceptedWorkEventId, NetworkTargetOutcome, PersistedAcknowledgementInput, ReceiptTime,
@@ -18,13 +22,104 @@ pub(super) async fn challenge_for_session(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     event: &AcceptedWorkEvent,
 ) -> Result<String, AuthorityPersistenceError> {
-    sqlx::query_scalar::<_, String>(
+    let maybe_challenge_id = sqlx::query_scalar::<_, String>(
         "SELECT challenge_id FROM gate_authority.work_sessions WHERE session_id = $1",
     )
     .bind(event.work_session_id().as_str())
     .fetch_optional(&mut **transaction)
-    .await?
-    .ok_or(AuthorityPersistenceError::UnknownWorkSession)
+    .await?;
+    let Some(challenge_id) = maybe_challenge_id else {
+        return Err(AuthorityPersistenceError::UnknownWorkSession);
+    };
+    Ok(challenge_id)
+}
+
+pub(super) async fn observe_session_lease(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    event: &AcceptedWorkEvent,
+    challenge_id: &str,
+    lease_id: &str,
+    clock: &WorkerClock,
+) -> Result<LeaseObservation, AuthorityPersistenceError> {
+    let maybe_row = sqlx::query(
+        "SELECT challenge_id, lifecycle_state, lease_id::text AS lease_id, continuity_id,
+                last_monotonic_milliseconds, expires_at_monotonic_milliseconds
+         FROM gate_authority.work_sessions WHERE session_id = $1 FOR UPDATE",
+    )
+    .bind(event.work_session_id().as_str())
+    .fetch_optional(&mut **transaction)
+    .await?;
+    let Some(row) = maybe_row else {
+        return Err(AuthorityPersistenceError::UnknownWorkSession);
+    };
+    let persisted_challenge_id = row.try_get::<String, _>("challenge_id")?;
+    let state = SessionLifecycleState::parse(row.try_get("lifecycle_state")?)?;
+    if persisted_challenge_id != challenge_id {
+        return Err(AuthorityPersistenceError::ForbiddenLifecycleTransition);
+    }
+    apply_session_command(state, SessionLifecycleCommand::ObserveLease).map_err(map_lease_error)?;
+    let persisted_lease_id = row.try_get::<String, _>("lease_id")?;
+    let continuity_id = row.try_get::<String, _>("continuity_id")?;
+    let last_monotonic_milliseconds = to_u64(row.try_get("last_monotonic_milliseconds")?)?;
+    let expires_at_monotonic_milliseconds =
+        to_u64(row.try_get("expires_at_monotonic_milliseconds")?)?;
+    let observation = observe_work_lease(LeaseObservationInput {
+        state,
+        expected_lease_id: &persisted_lease_id,
+        expected_continuity_id: &continuity_id,
+        last_monotonic_milliseconds,
+        expires_at_monotonic_milliseconds,
+        presented_lease_id: lease_id,
+        clock,
+    })
+    .map_err(map_lease_error)?;
+    match observation {
+        LeaseObservation::Accepted => {
+            sqlx::query(
+                "UPDATE gate_authority.work_sessions
+                 SET last_monotonic_milliseconds = $2 WHERE session_id = $1",
+            )
+            .bind(event.work_session_id().as_str())
+            .bind(to_i64(clock.monotonic_milliseconds())?)
+            .execute(&mut **transaction)
+            .await?;
+        }
+        LeaseObservation::Stop(reason) => {
+            sqlx::query(
+                "UPDATE gate_authority.work_sessions
+                 SET lifecycle_state = 'stopping', lease_id = NULL, continuity_id = NULL,
+                     last_monotonic_milliseconds = NULL,
+                     renew_at_monotonic_milliseconds = NULL,
+                     expires_at_monotonic_milliseconds = NULL, stop_reason = $2
+                 WHERE session_id = $1",
+            )
+            .bind(event.work_session_id().as_str())
+            .bind(reason.as_str())
+            .execute(&mut **transaction)
+            .await?;
+        }
+    }
+    Ok(observation)
+}
+
+fn map_lease_error(error: crate::lifecycle::LifecycleError) -> AuthorityPersistenceError {
+    match error {
+        crate::lifecycle::LifecycleError::ForbiddenTransition => {
+            AuthorityPersistenceError::ForbiddenLifecycleTransition
+        }
+        crate::lifecycle::LifecycleError::WrongWorkLease => {
+            AuthorityPersistenceError::WrongWorkLease
+        }
+        error => AuthorityPersistenceError::InvalidLifecycle(error),
+    }
+}
+
+fn to_i64(value: u64) -> Result<i64, AuthorityPersistenceError> {
+    i64::try_from(value).map_err(|_| AuthorityPersistenceError::InvalidPersistedData)
+}
+
+fn to_u64(value: i64) -> Result<u64, AuthorityPersistenceError> {
+    u64::try_from(value).map_err(|_| AuthorityPersistenceError::InvalidPersistedData)
 }
 
 pub(super) async fn insert_share_fingerprint(
@@ -45,11 +140,13 @@ pub(super) async fn update_progress(
     challenge_id: &str,
     verified_progress: VerifiedProgress,
     satisfied: bool,
+    changed_at: u64,
 ) -> Result<(), AuthorityPersistenceError> {
     sqlx::query(include_str!("queries/update_progress.sql"))
         .bind(challenge_id)
         .bind(verified_progress.to_decimal_string())
         .bind(satisfied)
+        .bind(unix_seconds_to_i64(changed_at)?)
         .execute(&mut **transaction)
         .await?;
     Ok(())

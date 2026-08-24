@@ -27,13 +27,18 @@
     },
     "/v0/challenges/{challenge_id}/events": {
       "get": {
-        "summary": "Stream Verified Progress",
+        "summary": "Stream Verified Progress and Work Challenge lifecycle",
         "parameters": [{ "$ref": "#/components/parameters/ChallengeId" }],
         "responses": {
           "200": {
-            "description": "SSE progress snapshots and updates",
+            "description": "SSE verified_progress and challenge_lifecycle snapshots/updates; resync_required tells a lagged client to reconnect",
             "content": { "text/event-stream": { "schema": { "type": "string" } } }
           }
+        },
+        "x-bwg-sse-events": {
+          "verified_progress": { "$ref": "#/components/schemas/VerifiedProgressUpdate" },
+          "challenge_lifecycle": { "$ref": "#/components/schemas/ChallengeLifecycle" },
+          "resync_required": { "type": "string" }
         }
       }
     },
@@ -52,6 +57,68 @@
             }
           },
           "401": { "$ref": "#/components/responses/InvalidClaimantProof" }
+        }
+      }
+    },
+    "/v0/challenges/{challenge_id}/lifecycle": {
+      "get": {
+        "summary": "Read the redacted durable Work Challenge lifecycle",
+        "parameters": [{ "$ref": "#/components/parameters/ChallengeId" }],
+        "responses": {
+          "200": {
+            "description": "Current lifecycle and authorization eligibility",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ChallengeLifecycle" } }
+            }
+          },
+          "404": { "description": "Unknown Work Challenge" }
+        }
+      }
+    },
+    "/v0/challenges/{challenge_id}/pause": {
+      "post": {
+        "summary": "End active Work Leases while preserving challenge progress",
+        "security": [{ "ServiceCredential": [], "ServiceClientId": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ChallengeId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/PauseChallengeRequest" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Paused lifecycle",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ChallengeLifecycle" } }
+            }
+          },
+          "403": { "description": "Credential does not control this Work Challenge" },
+          "409": { "description": "Challenge is terminal or otherwise cannot be paused" }
+        }
+      }
+    },
+    "/v0/challenges/{challenge_id}/cancel": {
+      "post": {
+        "summary": "Terminally cancel a challenge after confirming progress loss",
+        "security": [{ "ServiceCredential": [], "ServiceClientId": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/ChallengeId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/CancelChallengeRequest" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Terminal cancelled lifecycle",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ChallengeLifecycle" } }
+            }
+          },
+          "400": { "description": "Destructive progress-loss confirmation is absent" },
+          "403": { "description": "Credential does not control this Work Challenge" },
+          "409": { "description": "Challenge can no longer be cancelled" }
         }
       }
     },
@@ -181,6 +248,64 @@
         "required": ["claimant_key"],
         "properties": {
           "claimant_key": { "type": "string", "contentMediaType": "application/jwk+json" }
+        }
+      },
+      "PauseChallengeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reason"],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": ["user_requested", "tab_closed", "connectivity_lost"]
+          }
+        }
+      },
+      "CancelChallengeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["confirm_progress_loss"],
+        "properties": {
+          "confirm_progress_loss": { "const": true }
+        }
+      },
+      "ChallengeLifecycle": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "challenge_id", "state", "verified_progress", "work_requirement",
+          "authorization_eligible", "expires_at_unix_seconds", "lifecycle_deadline_unix_seconds"
+        ],
+        "properties": {
+          "challenge_id": { "type": "string" },
+          "state": {
+            "type": "string",
+            "enum": ["issued", "active", "satisfied", "pass_issued", "cancelled", "expired"]
+          },
+          "verified_progress": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+          "work_requirement": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+          "authorization_eligible": { "type": "boolean" },
+          "expires_at_unix_seconds": { "type": "integer", "minimum": 1 },
+          "lifecycle_deadline_unix_seconds": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "VerifiedProgressUpdate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "challenge_id", "verified_progress", "work_requirement", "satisfied", "activity_estimate"
+        ],
+        "properties": {
+          "challenge_id": { "type": "string" },
+          "verified_progress": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+          "work_requirement": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+          "satisfied": { "type": "boolean" },
+          "activity_estimate": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status"],
+            "properties": { "status": { "const": "unavailable" } }
+          }
         }
       },
       "WorkChallenge": {

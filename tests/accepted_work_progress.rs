@@ -7,6 +7,7 @@ use bwg_core::{
         CLIENT_ID_HEADER, Config, DeploymentEnvironment, ServiceCredential,
     },
     challenge::{ActionPolicy, ChallengeId},
+    lifecycle::WorkerClock,
     progress::{
         AcceptedWorkEvent, AcceptedWorkEventId, AcceptedWorkEventInput, ChallengeProgress,
         NetworkTargetOutcome, ReceiptTime, ShareFingerprint, WorkSessionId, WorkerReport,
@@ -155,29 +156,26 @@ async fn verified_progress_streams_separately_from_activity_estimate()
     adapter
         .register_session(&progress_challenge_id, session_id.clone())
         .await?;
+    let lease = adapter
+        .start_lease(&session_id, WorkerClock::new("boot_stream_01", 0)?)
+        .await?;
     let mut stream = reqwest::get(format!(
         "{authority_url}/v0/challenges/{challenge_id}/events"
     ))
     .await?;
-    let initial = timeout(Duration::from_secs(2), stream.chunk())
-        .await??
-        .ok_or("progress stream ended before its snapshot")?;
+    let initial_text = read_sse_until(&mut stream, "\"verified_progress\":\"0\"").await?;
 
     // Act
     let acknowledgement = adapter
-        .report(difficulty_one_event(
-            "event_stream_01",
-            session_id,
-            "share_stream_01",
-        )?)
+        .report(
+            difficulty_one_event("event_stream_01", session_id, "share_stream_01")?,
+            &lease,
+            WorkerClock::new("boot_stream_01", 1)?,
+        )
         .await?;
-    let updated = timeout(Duration::from_secs(2), stream.chunk())
-        .await??
-        .ok_or("progress stream ended before its update")?;
+    let updated_text = read_sse_until(&mut stream, "\"verified_progress\":\"4295032833\"").await?;
 
     // Assert
-    let initial_text = String::from_utf8(initial.to_vec())?;
-    let updated_text = String::from_utf8(updated.to_vec())?;
     assert!(initial_text.contains("\"verified_progress\":\"0\""));
     assert!(initial_text.contains("\"activity_estimate\":{\"status\":\"unavailable\"}"));
     assert!(updated_text.contains("\"verified_progress\":\"4295032833\""));
@@ -226,6 +224,12 @@ async fn work_received_at_challenge_expiry_cannot_advance_progress()
     adapter
         .register_session(&challenge_id, session_id.clone())
         .await?;
+    let lease = adapter
+        .start_lease(
+            &session_id,
+            WorkerClock::new("boot_expired_progress_01", 0)?,
+        )
+        .await?;
     let event = AcceptedWorkEvent::try_from(AcceptedWorkEventInput {
         event_id: AcceptedWorkEventId::try_from("event_expired_progress_01".to_owned())?,
         work_session_id: session_id,
@@ -237,7 +241,13 @@ async fn work_received_at_challenge_expiry_cannot_advance_progress()
     })?;
 
     // Act
-    let result = adapter.report(event).await;
+    let result = adapter
+        .report(
+            event,
+            &lease,
+            WorkerClock::new("boot_expired_progress_01", 1)?,
+        )
+        .await;
 
     // Assert
     assert!(matches!(
@@ -308,4 +318,24 @@ async fn spawn_http(router: Router) -> Result<String, std::io::Error> {
     });
 
     Ok(format!("http://{address}"))
+}
+
+async fn read_sse_until(
+    response: &mut reqwest::Response,
+    needle: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    timeout(Duration::from_secs(2), async {
+        let mut received = String::new();
+        loop {
+            let chunk = response
+                .chunk()
+                .await?
+                .ok_or("SSE stream ended before the expected event")?;
+            received.push_str(&String::from_utf8(chunk.to_vec())?);
+            if received.contains(needle) {
+                return Ok::<String, Box<dyn std::error::Error>>(received);
+            }
+        }
+    })
+    .await?
 }

@@ -26,12 +26,24 @@ async fn retired_pass_lookup_is_gone_while_active_adapter_acknowledgements_remai
     adapter
         .register_session(&retired_challenge_id_value, session_id.clone())
         .await?;
+    let lease = adapter
+        .start_lease(
+            &session_id,
+            WorkerClock::new("boot_during_governance_01", 0)?,
+        )
+        .await?;
     let accepted_event = light_target_event_with_id(
         "event_during_governance_01",
         "share_during_governance_01",
         session_id,
     )?;
-    let first_acknowledgement = adapter.report(accepted_event.clone()).await?;
+    let first_acknowledgement = adapter
+        .report(
+            accepted_event.clone(),
+            &lease,
+            WorkerClock::new("boot_during_governance_01", 1)?,
+        )
+        .await?;
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     let pool = sqlx::PgPool::connect(database.database_url()).await?;
     sqlx::query(include_str!(
@@ -98,7 +110,13 @@ async fn retired_pass_lookup_is_gone_while_active_adapter_acknowledgements_remai
     .await?;
     let restarted_adapter = restarted_application.simulated_pool_adapter();
     let restarted_server = RunningServer::spawn(authority::router(restarted_application)).await?;
-    let replayed_acknowledgement = restarted_adapter.report(accepted_event).await?;
+    let replayed_acknowledgement = restarted_adapter
+        .report(
+            accepted_event,
+            &lease,
+            WorkerClock::new("boot_during_governance_01", 60_000)?,
+        )
+        .await?;
     let mut progress_response = reqwest::get(format!(
         "{}/v0/challenges/{retired_challenge_id}/events",
         restarted_server.base_url

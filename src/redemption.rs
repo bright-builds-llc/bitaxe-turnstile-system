@@ -7,9 +7,10 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::crypto_profile::{AuthorityJwk, verify_dpop, verify_gate_pass};
-
-const DPOP_FRESHNESS_WINDOW_SECONDS: u64 = 60;
+use crate::{
+    crypto_profile::{AuthorityJwk, verify_dpop, verify_gate_pass},
+    lifecycle::{DPOP_FRESHNESS_SECONDS, request_proof_is_fresh, signed_artifact_is_time_valid},
+};
 
 pub(crate) struct RedemptionBindingInput<'a> {
     pub trusted_issuer: &'a str,
@@ -47,10 +48,14 @@ pub(crate) fn validate_redemption_binding(
     if input.dpop_method != "POST" || input.dpop_uri != input.redemption_url {
         return Err(RedemptionError::WrongDpopRequest);
     }
-    if input.now.abs_diff(input.dpop_issued_at) > DPOP_FRESHNESS_WINDOW_SECONDS {
+    if !request_proof_is_fresh(input.now, input.dpop_issued_at, DPOP_FRESHNESS_SECONDS) {
         return Err(RedemptionError::StaleDpopProof);
     }
-    if input.now < input.gate_pass_issued_at || input.now >= input.gate_pass_expires_at {
+    if !signed_artifact_is_time_valid(
+        input.now,
+        input.gate_pass_issued_at,
+        input.gate_pass_expires_at,
+    ) {
         return Err(RedemptionError::ExpiredGatePass);
     }
     Ok(())
@@ -319,6 +324,19 @@ mod tests {
         // Arrange
         let mut input = valid_binding();
         input.dpop_issued_at = 39;
+
+        // Act
+        let result = validate_redemption_binding(input);
+
+        // Assert
+        assert!(matches!(result, Err(RedemptionError::StaleDpopProof)));
+    }
+
+    #[test]
+    fn redemption_binding_rejects_future_proof_with_zero_skew() {
+        // Arrange
+        let mut input = valid_binding();
+        input.dpop_issued_at = 101;
 
         // Act
         let result = validate_redemption_binding(input);

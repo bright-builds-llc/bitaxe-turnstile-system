@@ -4,10 +4,11 @@ use async_trait::async_trait;
 use sqlx::{PgPool, Row as _, postgres::PgPoolOptions};
 
 mod accounting;
+mod lifecycle;
 
 use accounting::{
     AcceptedEventRecordInput, challenge_for_session, insert_accepted_event, insert_issuance_intent,
-    insert_share_fingerprint, persisted_acceptance, update_progress,
+    insert_share_fingerprint, observe_session_lease, persisted_acceptance, update_progress,
 };
 
 use super::{
@@ -111,18 +112,40 @@ impl AuthorityRepository for PostgresAuthorityRepository {
         &self,
         challenge_id: &ChallengeId,
         session_id: &WorkSessionId,
+        now: u64,
     ) -> Result<(), AuthorityPersistenceError> {
+        let mut transaction = self.pool.begin().await?;
+        let maybe_row = sqlx::query_as::<_, (String, i64)>(
+            "SELECT lifecycle_state, expires_at_unix_seconds
+             FROM gate_authority.work_challenges
+             WHERE challenge_id = $1 FOR UPDATE",
+        )
+        .bind(challenge_id.as_str())
+        .fetch_optional(&mut *transaction)
+        .await?;
+        let Some((state, expires_at)) = maybe_row else {
+            return Err(AuthorityPersistenceError::UnknownChallenge);
+        };
+        let state = crate::lifecycle::ChallengeLifecycleState::parse(&state)?;
+        crate::lifecycle::apply_challenge_command(
+            state,
+            crate::lifecycle::ChallengeLifecycleCommand::RegisterSession,
+        )
+        .map_err(|_| AuthorityPersistenceError::ForbiddenLifecycleTransition)?;
+        if unix_seconds_to_i64(now)? >= expires_at {
+            return Err(AuthorityPersistenceError::ForbiddenLifecycleTransition);
+        }
         let result = sqlx::query(include_str!("postgres/queries/insert_work_session.sql"))
             .bind(session_id.as_str())
             .bind(challenge_id.as_str())
-            .execute(&self.pool)
+            .execute(&mut *transaction)
             .await;
 
         match result {
-            Ok(result) if result.rows_affected() == 0 => {
-                Err(AuthorityPersistenceError::UnknownChallenge)
+            Ok(_) => {
+                transaction.commit().await?;
+                Ok(())
             }
-            Ok(_) => Ok(()),
             Err(error)
                 if error
                     .as_database_error()
@@ -134,9 +157,107 @@ impl AuthorityRepository for PostgresAuthorityRepository {
         }
     }
 
+    async fn challenge_lifecycle(
+        &self,
+        challenge_id: &ChallengeId,
+        now: u64,
+    ) -> Result<crate::lifecycle::ChallengeLifecycle, AuthorityPersistenceError> {
+        lifecycle::challenge_lifecycle(&self.pool, challenge_id, now).await
+    }
+
+    async fn pause_challenge(
+        &self,
+        challenge_id: &ChallengeId,
+        reason: crate::lifecycle::PauseReason,
+        now: u64,
+    ) -> Result<crate::lifecycle::ChallengeLifecycle, AuthorityPersistenceError> {
+        lifecycle::pause_challenge(&self.pool, challenge_id, reason, now).await
+    }
+
+    async fn cancel_challenge(
+        &self,
+        challenge_id: &ChallengeId,
+        now: u64,
+    ) -> Result<crate::lifecycle::ChallengeLifecycle, AuthorityPersistenceError> {
+        lifecycle::cancel_challenge(&self.pool, challenge_id, now).await
+    }
+
+    async fn start_work_lease(
+        &self,
+        session_id: &WorkSessionId,
+        clock: &crate::lifecycle::WorkerClock,
+        lease_id: &str,
+        renew_at_monotonic_milliseconds: u64,
+        expires_at_monotonic_milliseconds: u64,
+        now: u64,
+    ) -> Result<crate::lifecycle::WorkLease, AuthorityPersistenceError> {
+        lifecycle::start_work_lease(
+            &self.pool,
+            session_id,
+            clock,
+            lease_id,
+            renew_at_monotonic_milliseconds,
+            expires_at_monotonic_milliseconds,
+            now,
+        )
+        .await
+    }
+
+    async fn renew_work_lease(
+        &self,
+        session_id: &WorkSessionId,
+        lease_id: &str,
+        clock: &crate::lifecycle::WorkerClock,
+        renew_at_monotonic_milliseconds: u64,
+        expires_at_monotonic_milliseconds: u64,
+        now: u64,
+    ) -> Result<crate::lifecycle::WorkLease, AuthorityPersistenceError> {
+        lifecycle::renew_work_lease(
+            &self.pool,
+            session_id,
+            lease_id,
+            clock,
+            renew_at_monotonic_milliseconds,
+            expires_at_monotonic_milliseconds,
+            now,
+        )
+        .await
+    }
+
+    async fn interrupt_work_session(
+        &self,
+        session_id: &WorkSessionId,
+        interruption: crate::lifecycle::WorkerInterruption,
+    ) -> Result<(), AuthorityPersistenceError> {
+        lifecycle::interrupt_work_session(&self.pool, session_id, interruption).await
+    }
+
+    async fn confirm_work_session_restored(
+        &self,
+        session_id: &WorkSessionId,
+    ) -> Result<(), AuthorityPersistenceError> {
+        lifecycle::confirm_work_session_restored(&self.pool, session_id).await
+    }
+
+    async fn fail_work_session(
+        &self,
+        session_id: &WorkSessionId,
+    ) -> Result<(), AuthorityPersistenceError> {
+        lifecycle::fail_work_session(&self.pool, session_id).await
+    }
+
+    async fn work_session_lifecycle(
+        &self,
+        session_id: &WorkSessionId,
+    ) -> Result<crate::lifecycle::SessionLifecycle, AuthorityPersistenceError> {
+        lifecycle::work_session_lifecycle(&self.pool, session_id).await
+    }
+
     async fn accept_work(
         &self,
         event: AcceptedWorkEvent,
+        lease_id: &str,
+        clock: &crate::lifecycle::WorkerClock,
     ) -> Result<PersistedAcceptance, AuthorityPersistenceError> {
         let mut transaction = self.pool.begin().await?;
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
@@ -164,6 +285,14 @@ impl AuthorityRepository for PostgresAuthorityRepository {
         let progress_before =
             VerifiedProgress::try_from(challenge.try_get::<String, _>("verified_progress")?)?;
         let already_satisfied = challenge.try_get::<bool, _>("satisfied")?;
+        let lifecycle_state = crate::lifecycle::ChallengeLifecycleState::parse(
+            challenge.try_get("lifecycle_state")?,
+        )?;
+        crate::lifecycle::apply_challenge_command(
+            lifecycle_state,
+            crate::lifecycle::ChallengeLifecycleCommand::AcceptWork,
+        )
+        .map_err(|_| AuthorityPersistenceError::ForbiddenLifecycleTransition)?;
         let signing_deadline = challenge.try_get::<i64, _>("expires_at_unix_seconds")?;
         let claims_seed = serde_json::from_value::<GatePassClaimsSeed>(
             challenge.try_get("gate_pass_claims_seed")?,
@@ -175,16 +304,57 @@ impl AuthorityRepository for PostgresAuthorityRepository {
             return Err(AuthorityPersistenceError::InvalidPersistedData);
         }
 
+        if let Err(error) = crate::progress::ensure_event_before_challenge_expiry(
+            event.received_at().unix_seconds(),
+            challenge_expires_at,
+        ) {
+            sqlx::query(
+                "UPDATE gate_authority.work_challenges
+                 SET lifecycle_state = 'expired',
+                     lifecycle_changed_at_unix_seconds = $2,
+                     terminal_at_unix_seconds = $2
+                 WHERE challenge_id = $1",
+            )
+            .bind(&challenge_id)
+            .bind(signing_deadline)
+            .execute(&mut *transaction)
+            .await?;
+            sqlx::query(
+                "UPDATE gate_authority.work_sessions
+                 SET lifecycle_state = 'stopping', lease_id = NULL, continuity_id = NULL,
+                     last_monotonic_milliseconds = NULL,
+                     renew_at_monotonic_milliseconds = NULL,
+                     expires_at_monotonic_milliseconds = NULL, stop_reason = $2
+                 WHERE challenge_id = $1 AND lifecycle_state IN ('ready', 'leased')",
+            )
+            .bind(&challenge_id)
+            .bind(crate::lifecycle::SessionStopReason::ChallengeExpired.as_str())
+            .execute(&mut *transaction)
+            .await?;
+            transaction.commit().await?;
+            return Err(error.into());
+        }
+        let lease_observation =
+            observe_session_lease(&mut transaction, &event, &challenge_id, lease_id, clock).await?;
+        if let crate::lifecycle::LeaseObservation::Stop(reason) = lease_observation {
+            transaction.commit().await?;
+            return Err(match reason {
+                crate::lifecycle::SessionStopReason::LeaseExpired => {
+                    AuthorityPersistenceError::WorkLeaseExpired
+                }
+                crate::lifecycle::SessionStopReason::WorkerReboot
+                | crate::lifecycle::SessionStopReason::MonotonicReset => {
+                    AuthorityPersistenceError::WorkerContinuityLost
+                }
+                _ => AuthorityPersistenceError::InvalidPersistedData,
+            });
+        }
         let fingerprint_inserted = insert_share_fingerprint(
             &mut transaction,
             event.share_fingerprint().as_str(),
             &challenge_id,
         )
         .await?;
-        crate::progress::ensure_event_before_challenge_expiry(
-            event.received_at().unix_seconds(),
-            challenge_expires_at,
-        )?;
         let transition = crate::progress::accepted_work_transition(
             crate::progress::AcceptedWorkTransitionInput {
                 progress_before,
@@ -198,12 +368,20 @@ impl AuthorityRepository for PostgresAuthorityRepository {
         let verified_progress = transition.verified_progress;
         let satisfied = transition.satisfied;
         let issuance_intent_created = transition.issuance_intent_created;
+        if issuance_intent_created {
+            crate::lifecycle::apply_challenge_command(
+                lifecycle_state,
+                crate::lifecycle::ChallengeLifecycleCommand::Satisfy,
+            )
+            .map_err(|_| AuthorityPersistenceError::ForbiddenLifecycleTransition)?;
+        }
 
         update_progress(
             &mut transaction,
             &challenge_id,
             verified_progress,
             satisfied,
+            event.received_at().unix_seconds(),
         )
         .await?;
         if issuance_intent_created {
@@ -214,6 +392,18 @@ impl AuthorityRepository for PostgresAuthorityRepository {
                 event.received_at().unix_seconds(),
                 claims_seed,
             )
+            .await?;
+            sqlx::query(
+                "UPDATE gate_authority.work_sessions
+                 SET lifecycle_state = 'stopping', lease_id = NULL, continuity_id = NULL,
+                     last_monotonic_milliseconds = NULL,
+                     renew_at_monotonic_milliseconds = NULL,
+                     expires_at_monotonic_milliseconds = NULL, stop_reason = $2
+                 WHERE challenge_id = $1 AND lifecycle_state = 'leased'",
+            )
+            .bind(&challenge_id)
+            .bind(crate::lifecycle::SessionStopReason::ChallengeSatisfied.as_str())
+            .execute(&mut *transaction)
             .await?;
         }
         insert_accepted_event(

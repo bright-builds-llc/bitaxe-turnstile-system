@@ -10,6 +10,7 @@ use bwg_core::{
     crypto_profile::{
         AuthorityKeySet, AuthoritySigningKey, GatePassClaimsInput, GatePassConfirmationInput,
     },
+    lifecycle::WorkerClock,
     progress::{
         AcceptedWorkEvent, AcceptedWorkEventId, AcceptedWorkEventInput, NetworkTargetOutcome,
         ReceiptTime, ShareFingerprint, WorkSessionId,
@@ -67,9 +68,18 @@ async fn standard_issue_work_pass_redeem_outcome_journey_uses_public_interfaces(
     adapter
         .register_session(&challenge_id, session_id.clone())
         .await?;
+    let lease = adapter
+        .start_lease(&session_id, WorkerClock::new("boot_redemption01", 0)?)
+        .await?;
 
     // Act
-    let acknowledgement = adapter.report(standard_target_event(session_id)?).await?;
+    let acknowledgement = adapter
+        .report(
+            standard_target_event(session_id)?,
+            &lease,
+            WorkerClock::new("boot_redemption01", 1)?,
+        )
+        .await?;
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     authority_application
         .process_next_issuance(
@@ -119,7 +129,7 @@ async fn standard_issue_work_pass_redeem_outcome_journey_uses_public_interfaces(
     reference_application
         .process_next_action(
             &reference_service::ActionWorkerId::try_from("action_worker_redemption_01".to_owned())?,
-            now,
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
         )
         .await?;
     let outcome_url = format!("{reference_url}/account-creation/outcomes/{action_reference}");

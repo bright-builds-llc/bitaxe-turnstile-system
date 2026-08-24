@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use thiserror::Error;
 
 use crate::{
+    lifecycle::WORK_CHALLENGE_TTL_SECONDS,
     web_url::{HttpsOrigin, HttpsUrl},
     work::CreditedWork,
 };
@@ -15,7 +16,6 @@ const LIGHT_EXPECTED_HASHES_VALUE: u64 = 1_u64 << 42;
 const STANDARD_EXPECTED_HASHES_VALUE: u64 = 1_u64 << 44;
 const STANDARD_OVERRIDE_MINIMUM: u64 = 1_u64 << 43;
 const STANDARD_OVERRIDE_MAXIMUM: u64 = 1_u64 << 45;
-const LIGHT_TTL_SECONDS: u64 = 15 * 60;
 
 #[cfg(test)]
 mod tests;
@@ -58,7 +58,7 @@ const ACTION_POLICY_SPECS: [ActionPolicySpec; 2] = [
         default_expected_hashes: NonZeroU64::new(LIGHT_EXPECTED_HASHES_VALUE)
             .expect("the Light preset is non-zero"),
         maybe_override_bounds: None,
-        challenge_ttl_seconds: LIGHT_TTL_SECONDS,
+        challenge_ttl_seconds: WORK_CHALLENGE_TTL_SECONDS,
     },
     ActionPolicySpec {
         policy: ActionPolicy::AccountCreationStandardV1,
@@ -66,7 +66,7 @@ const ACTION_POLICY_SPECS: [ActionPolicySpec; 2] = [
         default_expected_hashes: NonZeroU64::new(STANDARD_EXPECTED_HASHES_VALUE)
             .expect("the Standard preset is non-zero"),
         maybe_override_bounds: Some((STANDARD_OVERRIDE_MINIMUM, STANDARD_OVERRIDE_MAXIMUM)),
-        challenge_ttl_seconds: LIGHT_TTL_SECONDS,
+        challenge_ttl_seconds: WORK_CHALLENGE_TTL_SECONDS,
     },
 ];
 

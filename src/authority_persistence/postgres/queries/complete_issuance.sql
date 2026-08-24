@@ -11,5 +11,5 @@ WHERE
     challenge_id = $1
     AND status = 'signing'
     AND signing_lease_owner = $2
-    AND signing_lease_expires_at_unix_seconds > EXTRACT(EPOCH FROM clock_timestamp())::bigint
-    AND signing_deadline_unix_seconds > EXTRACT(EPOCH FROM clock_timestamp())::bigint
+    AND signing_lease_expires_at_unix_seconds > FLOOR(EXTRACT(EPOCH FROM clock_timestamp()))::bigint
+    AND signing_deadline_unix_seconds > FLOOR(EXTRACT(EPOCH FROM clock_timestamp()))::bigint
