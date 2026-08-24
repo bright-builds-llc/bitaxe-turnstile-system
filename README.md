@@ -29,6 +29,10 @@ bun run verify
 
 `bun run verify` checks Rust formatting, linting, all targets, tests, and the managed Bright Builds repository rules.
 
+The framework-independent browser SDK is exported as the package subpath `bwg-core/headless`; run
+`bun run build:browser` to emit its self-hostable ESM and declarations, then see
+[`docs/protocol/bwg-0.1-headless-client.md`](docs/protocol/bwg-0.1-headless-client.md).
+
 ## Principles
 
 - Every qualifying hash searches a valid Bitcoin block candidate.

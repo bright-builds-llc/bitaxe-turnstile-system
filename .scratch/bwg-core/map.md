@@ -23,6 +23,11 @@
   challenge-bound signed Pool Offers disclose separate pool/adapter source and license terms,
   checksum-valid direct-payout choices become durable opaque commitments, Work Sessions require a
   consented selection, and equivalent failover is distinguished from economic or privacy change.
+- [Ticket 12](./issues/12-headless-work-consent.md) made bounded browser work explicitly
+  consentable: a publishable framework-independent client verifies challenge/key and signed Pool
+  Offer bindings, persists non-extractable pairwise keys and immutable consent for recovery, keeps
+  Authority Verified Progress separate from activity estimates, and maps valid lifecycle controls
+  through independently signed fixtures exercised in real Chromium.
 
 ## Persistence boundary split
 
