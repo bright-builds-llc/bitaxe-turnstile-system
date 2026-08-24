@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "noEmit": false,
+    "outDir": "dist/component"
+  },
+  "include": ["web/bwg-work-gate.ts", "web/static-assets.d.ts"]
+}

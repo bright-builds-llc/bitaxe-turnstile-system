@@ -1,0 +1,79 @@
+<article class="gate stack" aria-busy="false">
+  <header>
+    <p class="eyebrow">Bitcoin Work Gate</p>
+    <h2 id="bwg-title">Confirm account creation with useful work</h2>
+    <p class="muted">Review the exact requirement and pool terms before choosing Start.</p>
+  </header>
+  <p data-panel="loading" role="status">Loading the Work Challenge…</p>
+  <section data-panel="terms" class="stack" hidden>
+    <dl class="panel terms">
+      <div class="term"><dt>Expected hashes</dt><dd data-field="work"></dd></div>
+      <div class="term"><dt>Equivalent binary-zero work</dt><dd data-field="bits"></dd></div>
+      <div class="term"><dt>Estimated duration</dt><dd data-field="duration"></dd></div>
+      <div class="term"><dt>Estimated energy</dt><dd data-field="energy"></dd></div>
+    <div class="term"><dt>Mining Pool</dt><dd data-field="pool"></dd></div>
+    <div class="term"><dt>Pool Adapter</dt><dd data-field="adapter"></dd></div>
+    <div class="term"><dt>Mining Pool source</dt><dd><a data-field="pool-source" target="_blank" rel="noreferrer"></a></dd></div>
+    <div class="term"><dt>Pool Adapter source</dt><dd><a data-field="adapter-source" target="_blank" rel="noreferrer"></a></dd></div>
+      <div class="term"><dt>Mining transport</dt><dd data-field="transport"></dd></div>
+      <div class="term"><dt>Selected-destination allocation</dt><dd data-field="reward"></dd></div>
+      <div class="term"><dt>Pool fee</dt><dd data-field="pool-fee"></dd></div>
+      <div class="term"><dt>Service fee</dt><dd data-field="service-fee"></dd></div>
+    <div class="term"><dt>Network-valid result</dt><dd data-field="network-result"></dd></div>
+    <div class="term"><dt>Accepted-work revenue</dt><dd data-field="revenue-claim"></dd></div>
+    <div class="term"><dt>Custody</dt><dd data-field="custody"></dd></div>
+    <div class="term"><dt>Accepted payout types</dt><dd data-field="payout-types"></dd></div>
+    <div class="term"><dt>Payout Destination</dt><dd data-field="payout"></dd></div>
+    <div class="term"><dt>Payout privacy</dt><dd data-field="ephemeral-payout"></dd></div>
+    <div class="term"><dt>Approved beneficiaries</dt><dd data-field="beneficiaries"></dd></div>
+      <div class="term"><dt>Workers</dt><dd data-field="workers"></dd></div>
+      <div class="term"><dt>Claimant work ceiling</dt><dd data-field="claimant-ceiling"></dd></div>
+      <div class="term"><dt>Client safety ceiling</dt><dd data-field="client-ceiling"></dd></div>
+      <div class="term"><dt>Cancellation behavior</dt><dd data-field="cancellation"></dd></div>
+      <div class="term"><dt>Privacy terms</dt><dd><a data-field="privacy" target="_blank" rel="noreferrer">Review privacy terms</a></dd></div>
+      <div class="term"><dt>Operator terms</dt><dd><a data-field="operator-terms" target="_blank" rel="noreferrer">Review operator terms</a></dd></div>
+    </dl>
+    <section class="panel" aria-labelledby="bwg-progress-title">
+      <h3 id="bwg-progress-title">Verified Progress</h3>
+      <progress value="0" max="1" aria-labelledby="bwg-progress-title"></progress>
+      <p data-field="progress"></p>
+      <p class="activity" data-field="activity"></p>
+    </section>
+    <div class="status" data-field="status" role="status" aria-live="polite">
+      <strong data-field="status-text"></strong>
+    </div>
+    <div class="actions">
+      <button class="primary" data-action="primary" type="button"></button>
+      <button class="secondary" data-action="cancel" type="button">Cancel work</button>
+    </div>
+  </section>
+  <section data-panel="fallback" class="panel" hidden>
+    <h3 data-field="fallback-heading"></h3>
+    <p data-field="fallback-explanation"></p>
+    <p data-field="fallback-requirement"></p>
+    <div class="alternatives" data-field="alternatives"></div>
+  </section>
+  <p data-panel="error" class="status" data-tone="danger" role="alert" hidden>
+    <strong data-field="error"></strong>
+  </p>
+  <p data-panel="outcome" class="status" data-tone="success" role="status" aria-live="polite" hidden>
+    <strong data-field="outcome"></strong>
+  </p>
+  <section class="cancel-dialog stack" data-panel="cancel-dialog" role="alertdialog"
+    aria-modal="true" aria-labelledby="bwg-cancel-title" hidden>
+    <h3 id="bwg-cancel-title">Cancel this Work Challenge?</h3>
+    <p>Cancel is terminal. Verified progress cannot be resumed for this challenge.</p>
+    <div class="actions">
+      <button class="danger" data-action="confirm-cancel" type="button">Confirm cancel</button>
+      <button class="secondary" data-action="keep-working" type="button">Keep working</button>
+    </div>
+  </section>
+  <footer class="provenance" aria-label="Build provenance">
+    <a data-field="source" target="_blank" rel="noreferrer">Source</a>
+    <span>Protocol <strong data-field="protocol"></strong></span>
+    <span>Version <strong data-field="app-version"></strong></span>
+    <span>Commit <a data-field="commit" target="_blank" rel="noreferrer"></a></span>
+    <span>Build <a data-field="build" target="_blank" rel="noreferrer"></a></span>
+    <span>Free and open source · By <a href="https://openlinks.us/" target="_blank" rel="me noreferrer">Peter Ryszkiewicz</a></span>
+  </footer>
+</article>

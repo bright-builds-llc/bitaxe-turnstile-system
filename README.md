@@ -33,6 +33,10 @@ The framework-independent browser SDK is exported as the package subpath `bwg-co
 `bun run build:browser` to emit its self-hostable ESM and declarations, then see
 [`docs/protocol/bwg-0.1-headless-client.md`](docs/protocol/bwg-0.1-headless-client.md).
 
+The SolidJS custom element is exported as `bwg-core/component` for plain HTML, inline, modal, and
+full-page integrations; see
+[`docs/protocol/bwg-0.1-web-component.md`](docs/protocol/bwg-0.1-web-component.md).
+
 ## Principles
 
 - Every qualifying hash searches a valid Bitcoin block candidate.

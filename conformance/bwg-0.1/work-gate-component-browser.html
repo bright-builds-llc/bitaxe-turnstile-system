@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>BWG/0.1 Web Component Conformance</title>
+    <style>
+      bwg-work-gate { color: hotpink !important; font-size: 1px !important; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>BWG/0.1 Web Component Conformance</h1>
+      <p>Status: <output id="result" data-status="running">running</output></p>
+      <pre id="details"></pre>
+      <bwg-work-gate id="inline" presentation="inline"></bwg-work-gate>
+      <bwg-work-gate id="modal" presentation="modal"></bwg-work-gate>
+      <bwg-work-gate id="full" presentation="full-page"></bwg-work-gate>
+      <bwg-work-gate id="expired" presentation="inline"></bwg-work-gate>
+    </main>
+    <script type="module" src="./work-gate-component-browser-harness.mjs"></script>
+  </body>
+</html>

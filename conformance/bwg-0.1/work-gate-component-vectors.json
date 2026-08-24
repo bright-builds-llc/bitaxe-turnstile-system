@@ -1,0 +1,90 @@
+{
+  "profile": "BWG/0.1",
+  "challenge": {
+    "challengeId": "challenge_headless_01",
+    "actionPolicy": "account-creation.standard.v1",
+    "expectedHashes": "17592186044416",
+    "expiresAtUnixSeconds": 2000
+  },
+  "authorityTrust": {
+    "issuer": "https://authority.example",
+    "trustedKeys": [
+      {
+        "crv": "Ed25519",
+        "x": "d8_QOuK-RcBf9c5M7Cly-5k60hdpZ4OyW4PmXQRZbAA",
+        "kty": "OKP",
+        "kid": "component-fixture-authority",
+        "alg": "Ed25519",
+        "use": "sig",
+        "key_ops": [
+          "verify"
+        ]
+      }
+    ]
+  },
+  "signedPoolOfferSet": {
+    "offers": [
+      {
+        "offerId": "pool_offer_hydra_solo_v1",
+        "miningPool": {
+          "componentId": "p2poolv2_hydra",
+          "displayName": "Hydra / P2Pool v2",
+          "version": "v0.12",
+          "sourceUrl": "https://github.com/p2poolv2/p2poolv2",
+          "license": "AGPL-3.0-only"
+        },
+        "poolAdapter": {
+          "componentId": "bwg_reference_stratum_adapter",
+          "displayName": "BWG Reference Stratum V1 Adapter",
+          "version": "0.1.0",
+          "sourceUrl": "https://github.com/bright-builds-llc/bitaxe-turnstile-system",
+          "license": "MIT"
+        },
+        "miningTransport": "stratum_v1",
+        "endpoint": "stratum+tcp://pool.example:3333/",
+        "rewardPolicy": {
+          "mode": "solo_direct_coinbase",
+          "selectedDestinationBasisPoints": 9500,
+          "poolFeeBasisPoints": 250,
+          "serviceFeeBasisPoints": 250,
+          "acceptedWorkCreatesRevenueClaim": false,
+          "createsCustodialBalance": false,
+          "networkValidResult": "direct_coinbase_payout"
+        },
+        "payoutRequirements": {
+          "selectionRequired": true,
+          "ephemeralByDefault": true,
+          "acceptedDestinationTypes": [
+            "bitcoin_mainnet_address",
+            "approved_beneficiary"
+          ],
+          "approvedBeneficiaries": [
+            {
+              "beneficiaryId": "open_source_bitcoin_research",
+              "displayName": "Open-source Bitcoin research",
+              "termsUrl": "https://pool.example/beneficiaries/open-source-bitcoin-research"
+            }
+          ]
+        },
+        "privacyTermsUrl": "https://authority.example/privacy",
+        "operatorTermsUrl": "https://authority.example/terms"
+      }
+    ],
+    "signature": "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoiY29tcG9uZW50LWZpeHR1cmUtYXV0aG9yaXR5IiwidHlwIjoiYndnLXBvb2wtb2ZmZXItc2V0K2p3cyJ9.eyJpc3MiOiJodHRwczovL2F1dGhvcml0eS5leGFtcGxlIiwiY2hhbGxlbmdlX2lkIjoiY2hhbGxlbmdlX2hlYWRsZXNzXzAxIiwiYWN0aW9uX3BvbGljeSI6ImFjY291bnQtY3JlYXRpb24uc3RhbmRhcmQudjEiLCJvZmZlcnMiOlt7Im9mZmVyX2lkIjoicG9vbF9vZmZlcl9oeWRyYV9zb2xvX3YxIiwibWluaW5nX3Bvb2wiOnsiY29tcG9uZW50X2lkIjoicDJwb29sdjJfaHlkcmEiLCJkaXNwbGF5X25hbWUiOiJIeWRyYSAvIFAyUG9vbCB2MiIsInZlcnNpb24iOiJ2MC4xMiIsInNvdXJjZV91cmwiOiJodHRwczovL2dpdGh1Yi5jb20vcDJwb29sdjIvcDJwb29sdjIiLCJsaWNlbnNlIjoiQUdQTC0zLjAtb25seSJ9LCJwb29sX2FkYXB0ZXIiOnsiY29tcG9uZW50X2lkIjoiYndnX3JlZmVyZW5jZV9zdHJhdHVtX2FkYXB0ZXIiLCJkaXNwbGF5X25hbWUiOiJCV0cgUmVmZXJlbmNlIFN0cmF0dW0gVjEgQWRhcHRlciIsInZlcnNpb24iOiIwLjEuMCIsInNvdXJjZV91cmwiOiJodHRwczovL2dpdGh1Yi5jb20vYnJpZ2h0LWJ1aWxkcy1sbGMvYml0YXhlLXR1cm5zdGlsZS1zeXN0ZW0iLCJsaWNlbnNlIjoiTUlUIn0sIm1pbmluZ190cmFuc3BvcnQiOiJzdHJhdHVtX3YxIiwiZW5kcG9pbnQiOiJzdHJhdHVtK3RjcDovL3Bvb2wuZXhhbXBsZTozMzMzLyIsInJld2FyZF9wb2xpY3kiOnsibW9kZSI6InNvbG9fZGlyZWN0X2NvaW5iYXNlIiwic2VsZWN0ZWRfZGVzdGluYXRpb25fYmFzaXNfcG9pbnRzIjo5NTAwLCJwb29sX2ZlZV9iYXNpc19wb2ludHMiOjI1MCwic2VydmljZV9mZWVfYmFzaXNfcG9pbnRzIjoyNTAsImFjY2VwdGVkX3dvcmtfY3JlYXRlc19yZXZlbnVlX2NsYWltIjpmYWxzZSwiY3JlYXRlc19jdXN0b2RpYWxfYmFsYW5jZSI6ZmFsc2UsIm5ldHdvcmtfdmFsaWRfcmVzdWx0IjoiZGlyZWN0X2NvaW5iYXNlX3BheW91dCJ9LCJwYXlvdXRfcmVxdWlyZW1lbnRzIjp7InNlbGVjdGlvbl9yZXF1aXJlZCI6dHJ1ZSwiZXBoZW1lcmFsX2J5X2RlZmF1bHQiOnRydWUsImFjY2VwdGVkX2Rlc3RpbmF0aW9uX3R5cGVzIjpbImJpdGNvaW5fbWFpbm5ldF9hZGRyZXNzIiwiYXBwcm92ZWRfYmVuZWZpY2lhcnkiXSwiYXBwcm92ZWRfYmVuZWZpY2lhcmllcyI6W3siYmVuZWZpY2lhcnlfaWQiOiJvcGVuX3NvdXJjZV9iaXRjb2luX3Jlc2VhcmNoIiwiZGlzcGxheV9uYW1lIjoiT3Blbi1zb3VyY2UgQml0Y29pbiByZXNlYXJjaCIsInRlcm1zX3VybCI6Imh0dHBzOi8vcG9vbC5leGFtcGxlL2JlbmVmaWNpYXJpZXMvb3Blbi1zb3VyY2UtYml0Y29pbi1yZXNlYXJjaCJ9XX0sInByaXZhY3lfdGVybXNfdXJsIjoiaHR0cHM6Ly9hdXRob3JpdHkuZXhhbXBsZS9wcml2YWN5Iiwib3BlcmF0b3JfdGVybXNfdXJsIjoiaHR0cHM6Ly9hdXRob3JpdHkuZXhhbXBsZS90ZXJtcyJ9XSwiYndnX3ZlcnNpb24iOiJCV0cvMC4xIn0.J9Aeh_P-HiBnlkJd1s3mD9WAHtbEegR4fYcSTe2UgdkV1H2zYRa-OOjZx2DesAwXw182BFbCKxr7ZCW9YMSDDA"
+  },
+  "selection": {
+    "poolOfferId": "pool_offer_hydra_solo_v1",
+    "payoutDestinationType": "bitcoin_mainnet_address",
+    "bitcoinMainnetAddress": "1BoatSLRHtKNngkdXEeobR76b53LETtpyT"
+  },
+  "workers": [
+    {
+      "workerId": "worker_local_01",
+      "displayName": "Local Bitaxe",
+      "hashrateHs": "400000000000",
+      "maybePowerWatts": 15
+    }
+  ],
+  "claimantWorkCeiling": "17592186044416",
+  "clientSafetyCeiling": "70368744177664"
+}

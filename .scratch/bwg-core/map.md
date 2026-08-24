@@ -28,6 +28,10 @@
   Offer bindings, persists non-extractable pairwise keys and immutable consent for recovery, keeps
   Authority Verified Progress separate from activity estimates, and maps valid lifecycle controls
   through independently signed fixtures exercised in real Chromium.
+- [Ticket 13](./issues/13-accessible-web-component.md) added the packaged SolidJS custom element:
+  inline, modal, and full-page Shadow DOM presentations adapt the headless lifecycle, disclose exact
+  signed economics before consent, expose accessible progress/control/fallback states, and complete
+  a plain-HTML simulated account-creation journey with visible build and source provenance.
 
 ## Persistence boundary split
 

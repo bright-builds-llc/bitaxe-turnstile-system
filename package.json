@@ -6,7 +6,9 @@
   "packageManager": "bun@1.3.14",
   "files": [
     "dist/headless",
+    "dist/component",
     "docs/protocol/bwg-0.1-headless-client.md",
+    "docs/protocol/bwg-0.1-web-component.md",
     "LICENSE",
     "README.md"
   ],
@@ -14,6 +16,10 @@
     "./headless": {
       "types": "./dist/headless/headless-client.d.ts",
       "import": "./dist/headless/headless-client.js"
+    },
+    "./component": {
+      "types": "./dist/component/bwg-work-gate.d.ts",
+      "import": "./dist/component/bwg-work-gate.js"
     }
   },
   "scripts": {
@@ -22,7 +28,7 @@
     "lint": "cargo clippy --all-targets --all-features -- -D warnings",
     "typecheck": "tsc --noEmit",
     "build": "cargo build --all-targets --all-features && bun run build:browser",
-    "build:browser": "bun build web/headless-client.ts --target=browser --format=esm --outdir=dist/headless && tsc --project tsconfig.browser.json",
+    "build:browser": "bun build web/headless-client.ts --target=browser --format=esm --outdir=dist/headless && tsc --project tsconfig.browser.json && bun build web/bwg-work-gate.ts --target=browser --format=esm --loader .css:text --loader .html:text --outdir=dist/component && tsc --project tsconfig.component.json",
     "test": "bun run test:rust && bun run test:webcrypto && bun run test:browser && bun run verify:lookup-vectors",
     "test:rust": "cargo test --all-features",
     "test:webcrypto": "bun test conformance/bwg-0.1/*.test.mjs web/*.test.ts",
@@ -36,5 +42,8 @@
   "devDependencies": {
     "@playwright/cli": "0.1.18",
     "@types/bun": "^1.4.0"
+  },
+  "dependencies": {
+    "solid-js": "1.9.15"
   }
 }
