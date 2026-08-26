@@ -46,7 +46,7 @@ export const poolOffer: PoolOfferDisclosure = {
     displayName: "Hydra / P2Pool v2",
     version: "v0.12",
     sourceUrl: "https://github.com/p2poolv2/p2poolv2",
-    license: "AGPL-3.0-only",
+    license: "AGPL-3.0-or-later",
   },
   poolAdapter: {
     componentId: "bwg_reference_stratum_adapter",

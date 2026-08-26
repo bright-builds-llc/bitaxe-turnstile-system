@@ -442,7 +442,7 @@ fn default_pool_offer(
             display_name: "Hydra / P2Pool v2".to_owned(),
             version: "v0.12".to_owned(),
             source_url: HttpsUrl::try_from("https://github.com/p2poolv2/p2poolv2".to_owned())?,
-            license: "AGPL-3.0-only".to_owned(),
+            license: "AGPL-3.0-or-later".to_owned(),
         },
         pool_adapter: OfferComponentIdentity {
             component_id: "bwg_reference_stratum_adapter".to_owned(),

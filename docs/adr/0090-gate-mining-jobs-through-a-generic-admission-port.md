@@ -1,0 +1,7 @@
+# Gate mining jobs through a generic pre-notify admission port
+
+Pinned Mining Pool engines will expose a generic fail-closed Job Admission port between exact per-connection job-variant construction and Worker notification. The port receives a serialized candidate whose coinbase already contains every pool-generated commitment, timestamp, assigned extranonce, and reward output plus immutable template identity; outputs are derived from that block rather than supplied independently. It may return digest-bound admission evidence only after independent output checks and a successful pre-work proposal, while timeout, rejection, stale identity, or an unavailable port withholds the job. It contains no Work Challenge, Claimant, Gate Pass, or Protected Action concepts, and the later network-valid block-submission path never depends on Job Admission or Gate Authority availability.
+
+## Consequences
+
+Only byte-identical candidate digests may be coalesced under a bounded deadline; sharing a prepared template is insufficient because Hydra adds pool-owned per-connection coinbase fields. A new Bitcoin tip or changed payout input invalidates every in-flight or cached result before socket release. The pinned v0.12 helper's `"duplicate"` success interpretation cannot be reused: pre-work BIP 23 admission requires the successful proposal response for a fresh candidate, and rollback to a build without the port is fail-closed for mainnet job release.

@@ -74,7 +74,7 @@ try {
   assertEqual(challengeCreations, 1, "plain_html_challenge_creation");
   assertText(shadow(inline), "Expected hashes", "prestart_disclosure");
   assertText(shadow(inline), "Hydra / P2Pool v2", "pool_offer_disclosure");
-  assertText(shadow(inline), "AGPL-3.0-only", "pool_license_disclosure");
+  assertText(shadow(inline), "AGPL-3.0-or-later", "pool_license_disclosure");
   assertText(shadow(inline), "MIT", "adapter_license_disclosure");
   assertEqual(
     shadow(inline).querySelector("[data-field=pool-source]").href,

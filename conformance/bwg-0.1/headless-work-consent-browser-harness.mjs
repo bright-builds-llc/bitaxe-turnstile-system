@@ -43,7 +43,7 @@ try {
   assertEqual(calls.length, 0, "work_started_before_consent");
   assertEqual(disclosure.expectedHashes, vector.challenge.expectedHashes, "work_requirement");
   assertEqual(disclosure.poolOffer.offerId, vector.selection.poolOfferId, "pool_offer");
-  assertEqual(disclosure.poolOffer.miningPool.license, "AGPL-3.0-only", "pool_license");
+  assertEqual(disclosure.poolOffer.miningPool.license, "AGPL-3.0-or-later", "pool_license");
   assertEqual(disclosure.poolOffer.poolAdapter.license, "MIT", "adapter_license");
   assertEqual(Object.hasOwn(client.claimantPublicJwk(), "d"), false, "private_key_exposed");
 

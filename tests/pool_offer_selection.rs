@@ -82,7 +82,7 @@ async fn challenge_discloses_one_authority_signed_solo_direct_payout_offer()
     assert!(!offer.reward_policy().creates_custodial_balance());
     assert!(offer.payout_requirements().selection_required());
     assert!(offer.payout_requirements().ephemeral_by_default());
-    assert_eq!(offer.mining_pool().license(), "AGPL-3.0-only");
+    assert_eq!(offer.mining_pool().license(), "AGPL-3.0-or-later");
     assert_eq!(offer.pool_adapter().license(), "MIT");
     assert!(offer.privacy_terms_url().starts_with("https://"));
     assert!(offer.operator_terms_url().starts_with("https://"));

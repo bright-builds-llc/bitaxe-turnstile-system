@@ -186,6 +186,10 @@ _Avoid_: Synthetic hashing, arbitrary hash puzzle
 The party that coordinates Bitcoin-productive work and handles share acceptance, candidate blocks, and mining rewards independently of gate policy.
 _Avoid_: Gate Authority, relying website
 
+**Job Admission**:
+The Mining Pool's fail-closed decision that one fully constructed candidate, its reward outputs, and its current template identity are safe to release as Worker work; it is independent of Gate Passes and later block submission.
+_Avoid_: Share acceptance, Gate Policy, block submission
+
 **Pool Offer**:
 A Gate-Authority-approved choice of Mining Pool, Pool Adapter, Mining Transport, Reward Policy, payout requirements, and disclosed operator terms available for a Work Challenge.
 _Avoid_: Arbitrary pool endpoint, Work Requirement, hidden routing

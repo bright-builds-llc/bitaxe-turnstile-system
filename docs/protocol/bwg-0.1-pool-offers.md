@@ -10,7 +10,7 @@ other signed byte without a new valid signature fails closed.
 Each offer discloses the Mining Pool and Pool Adapter identities, versions, source repositories,
 and licenses; Stratum transport and endpoint; Reward Policy and all fees; accepted payout-choice
 types; privacy terms; and operator terms. The reference offer uses the separately deployed
-[P2Poolv2](https://github.com/p2poolv2/p2poolv2) engine under `AGPL-3.0-only` and the BWG Stratum V1
+[P2Poolv2](https://github.com/p2poolv2/p2poolv2) engine under `AGPL-3.0-or-later` and the BWG Stratum V1
 adapter under MIT. Its solo/direct-coinbase policy allocates 100% to the selected destination with
 zero pool and service fees. Lower-difficulty Accepted Work creates only gate
 progress: it creates no future-revenue claim, custodial balance, payout threshold, or PPLNS record.

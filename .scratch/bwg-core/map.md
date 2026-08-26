@@ -38,6 +38,11 @@
   Accepted Work Events; submit-time lease observations, persistence-before-acknowledgement,
   upstream-first ordering, at-least-once Authority delivery, and bounded operational retirement
   preserve accounting and block-candidate safety across failure and restart.
+- [Ticket 16](./issues/16-hydra-job-admission-seam.md) fixed the generic Hydra/P2Pool extension seam:
+  pinned primary-source evidence and a runnable source prototype place a latest-generation-wins Job
+  Admission port between exact per-connection candidate construction and tracker/socket publication;
+  fresh BIP 23 JSON-null acceptance is fail-closed, while network-valid block submission remains
+  independent of BWG accounting.
 
 ## Persistence boundary split
 
