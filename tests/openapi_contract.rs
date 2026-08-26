@@ -35,6 +35,11 @@ fn openapi_contract_covers_the_complete_pass_and_outcome_journey()
             "/v0/challenges/{challenge_id}/lifecycle",
             "/v0/challenges/{challenge_id}/pause",
             "/v0/challenges/{challenge_id}/cancel",
+            "/v0/challenges/{challenge_id}/trusted-consent",
+            "/v0/challenges/{challenge_id}/trusted-consent/{ceremony_id}",
+            "/v0/trusted-consent",
+            "/v0/trusted-consent.js",
+            "/v0/trusted-consent.css",
         ])
     );
     for schema in [
@@ -53,6 +58,11 @@ fn openapi_contract_covers_the_complete_pass_and_outcome_journey()
         "PoolOffer",
         "RewardPolicy",
         "PayoutRequirements",
+        "TrustedConsentBeginRequest",
+        "TrustedConsentBeginResponse",
+        "TrustedConsentChallengeResponse",
+        "TrustedConsentFinishResponse",
+        "WebauthnRegistrationCredential",
     ] {
         assert!(schemas.contains_key(schema), "missing schema {schema}");
     }
@@ -96,6 +106,13 @@ fn openapi_contract_covers_the_complete_pass_and_outcome_journey()
         schemas["WorkChallenge"]["required"]
             .as_array()
             .is_some_and(|fields| fields.iter().any(|field| field == "pool_offers"))
+    );
+    assert!(
+        schemas["WorkChallenge"]["required"]
+            .as_array()
+            .is_some_and(|fields| fields
+                .iter()
+                .any(|field| field == "trusted_consent_disclosure_digest_sha256"))
     );
     for schema in ["IssuanceLookup", "ProtectedActionOutcome"] {
         let variants = schemas[schema]["oneOf"]

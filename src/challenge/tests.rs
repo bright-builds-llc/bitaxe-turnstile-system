@@ -19,6 +19,13 @@ fn light_policy_owns_issued_terms() -> Result<(), Box<dyn std::error::Error>> {
     );
     assert_eq!(serialized["expires_at_unix_seconds"], 1_900);
     assert_eq!(serialized["protocol_version"], "BWG/0.1");
+    assert_eq!(
+        serialized["trusted_consent_disclosure_digest_sha256"]
+            .as_str()
+            .ok_or("trusted consent digest")?
+            .len(),
+        43
+    );
 
     Ok(())
 }
@@ -246,6 +253,40 @@ fn descriptor_deserialization_rejects_unknown_protocol_version() {
 
     // Assert
     assert!(result.is_err());
+}
+
+#[test]
+fn descriptor_deserialization_rejects_a_tampered_trusted_consent_digest() {
+    // Arrange
+    let mut descriptor = valid_descriptor_json();
+    descriptor["trusted_consent_disclosure_digest_sha256"] = Value::String("Z".repeat(43));
+
+    // Act
+    let result = serde_json::from_value::<WorkChallengeDescriptor>(descriptor);
+
+    // Assert
+    assert!(result.is_err());
+}
+
+#[test]
+fn issued_descriptor_round_trips_its_trusted_consent_digest()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Arrange
+    let descriptor = issue_challenge(valid_command()?, "challenge_roundtrip01".to_owned(), 1_000)?;
+    let expected_digest = descriptor
+        .trusted_consent_disclosure_digest_sha256()
+        .to_owned();
+
+    // Act
+    let round_trip =
+        serde_json::from_value::<WorkChallengeDescriptor>(serde_json::to_value(descriptor)?)?;
+
+    // Assert
+    assert_eq!(
+        round_trip.trusted_consent_disclosure_digest_sha256(),
+        expected_digest
+    );
+    Ok(())
 }
 
 #[test]

@@ -45,6 +45,16 @@ focus-trapped terminal confirmation. Verified Progress uses a native closed-rang
 element and Authority values, while Activity Estimate stays separate text. Success, expiry,
 failure, and policy fallback use distinct live regions and labels.
 
+When the authenticated headless disclosure requires trusted confirmation, the same primary action
+opens the fixed `https://<authority>/v0/trusted-consent` surface. The popup receives only opaque
+challenge/digest/state values, independently renders the Authority-owned ceremony, and returns a
+compact signed receipt through an exact-origin, exact-source-window, state-bound `postMessage`.
+Popup blocking, closure, cancellation, wrong origin/source/state, or an invalid receipt leaves
+consent unrecorded and work stopped. A custom popup launcher may be supplied for host integration,
+but the component still passes its output through the headless signature and binding checks.
+Disconnecting the component aborts the ceremony, closes the default popup, removes listeners and
+timers, and ignores a late custom-launcher result before either consent or Start can run.
+
 The dark default meets WCAG contrast targets, resets inherited host styling, exposes visible focus,
 honors reduced motion, and traps focus in modal and Cancel surfaces. When no compatible Worker is
 available, the component repeats the exact work requirement and presents only configured

@@ -130,6 +130,13 @@ impl AuthorityApplication {
         Ok(())
     }
 
+    pub(crate) async fn challenge_descriptor(
+        &self,
+        challenge_id: &ChallengeId,
+    ) -> Result<WorkChallengeDescriptor, AuthorityApplicationError> {
+        Ok(self.repository.challenge(challenge_id).await?)
+    }
+
     /// Returns the Pool Adapter interface backed by the same Authority transaction module.
     pub fn simulated_pool_adapter(&self) -> SimulatedPoolAdapter {
         SimulatedPoolAdapter {

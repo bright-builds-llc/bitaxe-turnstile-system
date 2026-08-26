@@ -73,6 +73,7 @@ export class PreparedClaimantIdentity {
     bindToChallenge(challengeId: string, expiresAtUnixSeconds: number): Promise<void>;
     retainThrough(expiresAtUnixSeconds: number): Promise<void>;
     recordConsent(challengeId: string, receipt: WorkConsentReceipt): Promise<void>;
+    clearConsent(challengeId: string): Promise<void>;
     maybeConsentFor(challengeId: string): WorkConsentReceipt | undefined;
     sign(payload: Uint8Array): Promise<ArrayBuffer>;
   } {
@@ -120,6 +121,11 @@ export class PreparedClaimantIdentity {
         const consentBinding = updated.maybeConsentBinding;
         if (!consentBinding) throw new Error("Work Consent storage lost its binding");
         this.#record.maybeConsentBinding = consentBinding;
+      },
+      clearConsent: async (challengeId) => {
+        if (this.#record.maybeConsentBinding?.challengeId !== challengeId) return;
+        delete this.#record.maybeConsentBinding;
+        await this.#store.put(this.#record);
       },
       maybeConsentFor: (challengeId) => {
         if (this.#record.maybeConsentBinding?.challengeId !== challengeId) return undefined;
@@ -278,7 +284,9 @@ function parseConsentBinding(
     maybeBinding.challengeId.length === 0 ||
     !maybeReceipt ||
     typeof maybeReceipt.disclosureDigestSha256 !== "string" ||
-    typeof maybeReceipt.poolOfferSetSignature !== "string"
+    typeof maybeReceipt.poolOfferSetSignature !== "string" ||
+    (maybeReceipt.maybeTrustedConsentReceipt !== undefined &&
+      typeof maybeReceipt.maybeTrustedConsentReceipt !== "string")
   ) {
     return undefined;
   }
@@ -287,6 +295,9 @@ function parseConsentBinding(
     receipt: {
       disclosureDigestSha256: maybeReceipt.disclosureDigestSha256,
       poolOfferSetSignature: maybeReceipt.poolOfferSetSignature,
+      ...(typeof maybeReceipt.maybeTrustedConsentReceipt === "string"
+        ? { maybeTrustedConsentReceipt: maybeReceipt.maybeTrustedConsentReceipt }
+        : {}),
     },
   };
 }

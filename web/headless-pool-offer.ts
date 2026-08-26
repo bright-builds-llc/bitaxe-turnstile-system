@@ -13,7 +13,11 @@ export async function verifyPoolOfferSet(
   signed: SignedPoolOfferSetInput,
   challenge: WorkChallengeInput,
   trust: AuthorityTrustInput,
-): Promise<{ authorityKeyId: string; offers: readonly PoolOfferDisclosure[] }> {
+): Promise<{
+  authorityKeyId: string;
+  offers: readonly PoolOfferDisclosure[];
+  trustedConfirmationRequired: boolean;
+}> {
   if (signed.offers.length === 0) throw new Error("Pool Offer set must not be empty");
   if (new Set(signed.offers.map((offer) => offer.offerId)).size !== signed.offers.length) {
     throw new Error("Pool Offer identities must be unique");
@@ -59,10 +63,25 @@ export async function verifyPoolOfferSet(
   ) {
     throw new Error("signed Pool Offers do not match the Work Challenge");
   }
+  const maybeTrustedConfirmationRequired = claims.trusted_confirmation_required;
+  if (
+    maybeTrustedConfirmationRequired !== undefined &&
+    typeof maybeTrustedConfirmationRequired !== "boolean"
+  ) {
+    throw new Error("signed Pool Offer confirmation requirement is invalid");
+  }
+  const elevatedPolicy = challenge.actionPolicy === "account-creation.elevated.v1";
+  if (elevatedPolicy && maybeTrustedConfirmationRequired !== true) {
+    throw new Error("Elevated Pool Offers must require trusted confirmation");
+  }
   if (canonicalJson(claims.offers) !== canonicalJson(signed.offers.map(poolOfferToWire))) {
     throw new Error("visible Pool Offers differ from signed claims");
   }
-  return { authorityKeyId: header.kid, offers: signed.offers };
+  return {
+    authorityKeyId: header.kid,
+    offers: signed.offers,
+    trustedConfirmationRequired: maybeTrustedConfirmationRequired === true,
+  };
 }
 
 export async function selectPoolOffer(

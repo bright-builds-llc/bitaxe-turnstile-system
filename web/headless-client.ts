@@ -4,9 +4,13 @@ export {
   prepareClaimantIdentity,
   restoreClaimantIdentity,
 } from "./headless-key";
+export { requestTrustedConsentWithPopup } from "./trusted-consent-popup";
+export { verifyTrustedConsentReceipt } from "./trusted-consent";
+export { verifyPoolOfferSet } from "./headless-pool-offer";
 
 import {
   ConsentRequiredError,
+  TrustedConsentRequiredError,
   WorkCeilingExceededError,
   type ChallengeLifecycleState,
   type HeadlessClient,
@@ -16,9 +20,11 @@ import {
   type PoolSelectionInput,
   type WorkConsentDisclosure,
   type WorkConsentReceipt,
+  type TrustedConsentRequest,
 } from "./headless-client.types";
 import { claimantIdentityAccess } from "./headless-key";
 import { selectPoolOffer, verifyPoolOfferSet } from "./headless-pool-offer";
+import { prepareTrustedConsent } from "./headless-trusted-consent";
 import {
   canonicalJson,
   canonicalNonNegativeBigInt,
@@ -26,6 +32,7 @@ import {
   estimateWork,
   sha256Base64Url,
 } from "./headless-values";
+import { verifyTrustedConsentReceipt } from "./trusted-consent";
 
 export async function createHeadlessClient(input: HeadlessClientInput): Promise<HeadlessClient> {
   const snapshot = snapshotInput(input);
@@ -56,6 +63,16 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
     snapshot.authorityTrust,
   );
   const selectedOffer = await selectPoolOffer(verifiedOfferSet.offers, snapshot.selection);
+  const trustedConsent = await prepareTrustedConsent({
+    challenge: snapshot.challenge,
+    authorityTrust: snapshot.authorityTrust,
+    poolOfferSetSignature: snapshot.signedPoolOfferSet.signature,
+    trustedConfirmationRequired: verifiedOfferSet.trustedConfirmationRequired,
+    ...(snapshot.maybeNowUnixSeconds
+      ? { maybeNowUnixSeconds: snapshot.maybeNowUnixSeconds }
+      : {}),
+  });
+  const maybeTrustedConsentRequirement = trustedConsent.maybeRequirement;
   const estimates = estimateWork(expectedHashes, snapshot.workers);
   const disclosureSnapshot: WorkConsentDisclosure = {
     challengeId: snapshot.challenge.challengeId,
@@ -74,14 +91,20 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
     cancellationBehavior: "pause_preserves_progress_cancel_is_terminal",
     claimantWorkCeiling: claimantCeiling.toString(),
     clientSafetyCeiling: safetyCeiling.toString(),
+    ...(maybeTrustedConsentRequirement ? { maybeTrustedConsentRequirement } : {}),
   };
   const disclosureDigest = await sha256Base64Url(canonicalJson(disclosureSnapshot));
-  let maybeConsentReceipt = restoredConsent(
+  const maybeTrustedConsentRequest = trustedConsent.maybeRequest;
+  const nowUnixSeconds = trustedConsent.nowUnixSeconds;
+  let maybeConsentReceipt = await restoredConsent(
     input,
     identityAccess.maybeConsentFor(snapshot.challenge.challengeId),
     disclosureDigest,
     disclosureSnapshot,
+    maybeTrustedConsentRequest,
+    nowUnixSeconds(),
   );
+  let consentGeneration = 0;
   let lifecycle = restoredLifecycle(input);
   const listeners = new Set<(event: HeadlessEvent) => void>();
   const emit = (event: HeadlessEvent) => {
@@ -106,14 +129,28 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       });
       return;
     }
-    setLifecycle(authorityLifecycleTransition(lifecycle, event.state));
+    const nextLifecycle = authorityLifecycleTransition(lifecycle, event.state);
+    if (
+      lifecycle.challengeState === "issued" &&
+      lifecycle.controlState === "awaiting_consent" &&
+      (nextLifecycle.challengeState !== "issued" ||
+        nextLifecycle.controlState !== "awaiting_consent")
+    ) {
+      consentGeneration += 1;
+    }
+    setLifecycle(nextLifecycle);
   });
 
   return {
     claimantPublicJwk: () => identity.claimantPublicJwk(),
     signClaimantProof: (payload) => identityAccess.sign(payload),
     disclosure: () => structuredClone(disclosureSnapshot),
-    async grantConsent() {
+    trustedConsentRequest: () => maybeTrustedConsentRequest
+      ? structuredClone(maybeTrustedConsentRequest)
+      : undefined,
+    async grantConsent(maybeTrustedConsentReceipt, maybeSignal) {
+      const generation = consentGeneration;
+      throwIfConsentAborted(maybeSignal, generation, consentGeneration);
       if (
         lifecycle.challengeState !== "issued" ||
         lifecycle.controlState !== "awaiting_consent"
@@ -123,11 +160,28 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       if (expectedHashes > claimantCeiling || expectedHashes > safetyCeiling) {
         throw new WorkCeilingExceededError();
       }
+      if (maybeTrustedConsentRequest && !maybeTrustedConsentReceipt) {
+        throw new TrustedConsentRequiredError();
+      }
+      if (maybeTrustedConsentRequest && maybeTrustedConsentReceipt) {
+        await verifyTrustedConsentReceipt(
+          maybeTrustedConsentReceipt,
+          maybeTrustedConsentRequest,
+          snapshot.authorityTrust,
+          nowUnixSeconds(),
+        );
+      }
+      throwIfConsentAborted(maybeSignal, generation, consentGeneration);
       const consentReceipt = {
         disclosureDigestSha256: disclosureDigest,
         poolOfferSetSignature: disclosureSnapshot.poolOfferSetSignature,
+        ...(maybeTrustedConsentReceipt ? { maybeTrustedConsentReceipt } : {}),
       };
       await identityAccess.recordConsent(snapshot.challenge.challengeId, consentReceipt);
+      if (maybeSignal?.aborted || generation !== consentGeneration) {
+        await identityAccess.clearConsent(snapshot.challenge.challengeId);
+        throw new Error("trusted consent was aborted");
+      }
       maybeConsentReceipt = consentReceipt;
       setLifecycle({ type: "lifecycle", challengeState: "issued", controlState: "ready" });
       return structuredClone(maybeConsentReceipt);
@@ -137,7 +191,7 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       if (lifecycle.challengeState !== "issued" || lifecycle.controlState !== "ready") {
         throw new Error("lifecycle transition is forbidden");
       }
-      await snapshot.transport.start();
+      await snapshot.transport.start(maybeConsentReceipt.maybeTrustedConsentReceipt);
       if (lifecycle.challengeState === "issued") {
         setLifecycle({ type: "lifecycle", challengeState: "active", controlState: "running" });
       }
@@ -164,7 +218,9 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       if (lifecycle.challengeState !== "issued" && lifecycle.challengeState !== "active") {
         throw new Error("lifecycle transition is forbidden");
       }
+      consentGeneration += 1;
       await snapshot.transport.cancel();
+      await identityAccess.clearConsent(snapshot.challenge.challengeId);
       if (lifecycle.challengeState === "issued" || lifecycle.challengeState === "active") {
         setLifecycle({ type: "lifecycle", challengeState: "cancelled", controlState: "cancelled" });
       }
@@ -187,6 +243,16 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
   };
 }
 
+function throwIfConsentAborted(
+  maybeSignal: AbortSignal | undefined,
+  generation: number,
+  currentGeneration: number,
+): void {
+  if (maybeSignal?.aborted || generation !== currentGeneration) {
+    throw new Error("trusted consent was aborted");
+  }
+}
+
 function snapshotInput(input: HeadlessClientInput): Omit<HeadlessClientInput, "claimantIdentity"> {
   return {
     challenge: structuredClone(input.challenge),
@@ -197,18 +263,21 @@ function snapshotInput(input: HeadlessClientInput): Omit<HeadlessClientInput, "c
     claimantWorkCeiling: input.claimantWorkCeiling,
     clientSafetyCeiling: input.clientSafetyCeiling,
     transport: input.transport,
+    ...(input.maybeNowUnixSeconds ? { maybeNowUnixSeconds: input.maybeNowUnixSeconds } : {}),
     ...(input.maybeRestoration
       ? { maybeRestoration: structuredClone(input.maybeRestoration) }
       : {}),
   };
 }
 
-function restoredConsent(
+async function restoredConsent(
   input: HeadlessClientInput,
   maybePersistedReceipt: WorkConsentReceipt | undefined,
   disclosureDigest: string,
   disclosure: WorkConsentDisclosure,
-): WorkConsentReceipt | undefined {
+  maybeTrustedConsentRequest: TrustedConsentRequest | undefined,
+  nowUnixSeconds: number,
+): Promise<WorkConsentReceipt | undefined> {
   if (!input.maybeRestoration) return undefined;
   if (!maybePersistedReceipt) throw new Error("restored work has no persisted Work Consent");
   if (
@@ -216,6 +285,17 @@ function restoredConsent(
     maybePersistedReceipt.poolOfferSetSignature !== disclosure.poolOfferSetSignature
   ) {
     throw new Error("restored Work Consent does not match the disclosure");
+  }
+  if (maybeTrustedConsentRequest && !maybePersistedReceipt.maybeTrustedConsentReceipt) {
+    throw new Error("restored work lacks required trusted consent");
+  }
+  if (maybeTrustedConsentRequest && maybePersistedReceipt.maybeTrustedConsentReceipt) {
+    await verifyTrustedConsentReceipt(
+      maybePersistedReceipt.maybeTrustedConsentReceipt,
+      maybeTrustedConsentRequest,
+      input.authorityTrust,
+      nowUnixSeconds,
+    );
   }
   return structuredClone(maybePersistedReceipt);
 }

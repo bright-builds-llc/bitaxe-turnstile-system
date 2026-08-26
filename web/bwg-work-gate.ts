@@ -1,10 +1,12 @@
 import { createEffect, createSignal, onCleanup } from "solid-js";
 import { render } from "solid-js/web";
 
-import type {
+import {
+  requestTrustedConsentWithPopup,
   HeadlessClient,
   HeadlessEvent,
   LifecycleEvent,
+  type TrustedConsentRequest,
   WorkConsentDisclosure,
 } from "./headless-client";
 import workGateStyles from "./bwg-work-gate.css" with { type: "text" };
@@ -27,6 +29,10 @@ export type WorkGateSession = {
 export type WorkGateConfiguration = {
   loadSession(): Promise<WorkGateSession>;
   alternatives: readonly AlternativeAuthorization[];
+  maybeRequestTrustedConsent?: (
+    request: TrustedConsentRequest,
+    signal: AbortSignal,
+  ) => Promise<string>;
   provenance: {
     sourceUrl: string;
     protocolVersion: string;
@@ -118,6 +124,7 @@ function createWorkGateView(
   const [unavailable, setUnavailable] = createSignal(false);
   const [confirmingCancel, setConfirmingCancel] = createSignal(false);
   let maybeUnsubscribe: (() => void) | undefined;
+  let maybeTrustedConsentAbort: AbortController | undefined;
   let disposed = false;
   let redemptionStarted = false;
 
@@ -132,7 +139,9 @@ function createWorkGateView(
     try {
       await operation();
     } catch (error) {
-      setMaybeError(error instanceof Error ? error.message : "The BWG operation failed");
+      if (!disposed) {
+        setMaybeError(error instanceof Error ? error.message : "The BWG operation failed");
+      }
     }
   };
 
@@ -143,8 +152,29 @@ function createWorkGateView(
       if (!maybeSessionValue || !maybeLifecycleValue) return;
       const action = lifecycleView(maybeLifecycleValue).primaryAction;
       if (action === "consent_start") {
-        await maybeSessionValue.client.grantConsent();
-        await maybeSessionValue.client.start();
+        const maybeTrustedRequest = maybeSessionValue.client.trustedConsentRequest();
+        maybeTrustedConsentAbort?.abort();
+        const confirmation = new AbortController();
+        maybeTrustedConsentAbort = confirmation;
+        try {
+          const maybeTrustedReceipt = maybeTrustedRequest
+            ? await (
+                configuration.maybeRequestTrustedConsent ??
+                ((request, signal) => requestTrustedConsentWithPopup(request, {
+                  maybeSignal: signal,
+                }))
+              )(maybeTrustedRequest, confirmation.signal)
+            : undefined;
+          if (disposed || confirmation.signal.aborted) return;
+          await maybeSessionValue.client.grantConsent(
+            maybeTrustedReceipt,
+            confirmation.signal,
+          );
+          if (disposed || confirmation.signal.aborted) return;
+          await maybeSessionValue.client.start();
+        } finally {
+          if (maybeTrustedConsentAbort === confirmation) maybeTrustedConsentAbort = undefined;
+        }
       } else if (action === "start") {
         await maybeSessionValue.client.start();
       } else if (action === "pause") {
@@ -166,6 +196,7 @@ function createWorkGateView(
     void (async () => {
       setMaybeError(undefined);
       try {
+        maybeTrustedConsentAbort?.abort();
         await maybeSession()?.client.cancel();
         setConfirmingCancel(false);
       } catch (error) {
@@ -210,7 +241,12 @@ function createWorkGateView(
   });
 
   function observeClientEvent(event: HeadlessEvent): void {
-    if (event.type === "lifecycle") setMaybeLifecycle(event);
+    if (event.type === "lifecycle") {
+      setMaybeLifecycle(event);
+      if (["cancelled", "expired", "satisfied", "pass_issued"].includes(event.challengeState)) {
+        maybeTrustedConsentAbort?.abort();
+      }
+    }
     if (event.type === "verified_progress") setVerifiedProgress(event.verifiedProgress);
     if (event.type === "activity_estimate") {
       setMaybeActivity(event.status === "active" ? event.hashrateHs : undefined);
@@ -228,6 +264,7 @@ function createWorkGateView(
 
   onCleanup(() => {
     disposed = true;
+    maybeTrustedConsentAbort?.abort();
     maybeUnsubscribe?.();
     maybeSession()?.client.close();
   });
@@ -367,6 +404,18 @@ function renderDisclosure(root: HTMLElement, disclosure: WorkConsentDisclosure):
   text(root, "[data-field=workers]", disclosure.workers.map((worker) => worker.displayName).join(", "));
   text(root, "[data-field=claimant-ceiling]", disclosure.claimantWorkCeiling);
   text(root, "[data-field=client-ceiling]", disclosure.clientSafetyCeiling);
+  const trustedConfirmationTerm = requiredElement<HTMLElement>(
+    root,
+    "[data-field=trusted-confirmation-term]",
+  );
+  trustedConfirmationTerm.hidden = !disclosure.maybeTrustedConsentRequirement;
+  text(
+    root,
+    "[data-field=trusted-confirmation]",
+    disclosure.maybeTrustedConsentRequirement
+      ? `Authority-origin WebAuthn required · ${disclosure.maybeTrustedConsentRequirement.authorityOrigin}`
+      : "",
+  );
   text(
     root,
     "[data-field=cancellation]",

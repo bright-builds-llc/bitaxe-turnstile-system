@@ -1,5 +1,7 @@
 use std::{collections::HashSet, num::NonZeroU64};
 
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use ring::digest;
 use serde::{Deserialize, Serialize, Serializer};
 use thiserror::Error;
 
@@ -391,6 +393,7 @@ pub struct WorkChallengeDescriptor {
     work_requirement: WorkRequirement,
     #[serde(rename = "pool_offers", skip_serializing_if = "Option::is_none")]
     maybe_pool_offers: Option<SignedPoolOfferSet>,
+    trusted_consent_disclosure_digest_sha256: String,
     expires_at_unix_seconds: ExpiresAtUnixSeconds,
     protocol_version: ProtocolVersion,
 }
@@ -435,6 +438,11 @@ impl WorkChallengeDescriptor {
     pub fn maybe_pool_offers(&self) -> Option<&SignedPoolOfferSet> {
         self.maybe_pool_offers.as_ref()
     }
+
+    /// Authority-derived digest that a Trusted Consent Receipt must bind.
+    pub fn trusted_consent_disclosure_digest_sha256(&self) -> &str {
+        &self.trusted_consent_disclosure_digest_sha256
+    }
 }
 
 #[derive(Deserialize)]
@@ -449,6 +457,8 @@ struct WorkChallengeDescriptorWire {
     work_requirement: WorkRequirement,
     #[serde(default, rename = "pool_offers")]
     maybe_pool_offers: Option<SignedPoolOfferSet>,
+    #[serde(default, rename = "trusted_consent_disclosure_digest_sha256")]
+    maybe_trusted_consent_disclosure_digest_sha256: Option<String>,
     expires_at_unix_seconds: u64,
     protocol_version: String,
 }
@@ -468,7 +478,7 @@ impl TryFrom<WorkChallengeDescriptorWire> for WorkChallengeDescriptor {
                 .map_err(|_| ChallengeError::InvalidPoolOffers)?;
         }
 
-        Ok(Self {
+        let descriptor = Self {
             challenge_id: ChallengeId::try_from(wire.challenge_id)?,
             action_policy,
             action_reference: ActionReference::try_from(wire.action_reference)?,
@@ -479,9 +489,14 @@ impl TryFrom<WorkChallengeDescriptorWire> for WorkChallengeDescriptor {
             allowed_origins: AllowedOrigins::try_from(wire.allowed_origins)?,
             work_requirement,
             maybe_pool_offers: wire.maybe_pool_offers,
+            trusted_consent_disclosure_digest_sha256: String::new(),
             expires_at_unix_seconds: ExpiresAtUnixSeconds::try_from(wire.expires_at_unix_seconds)?,
             protocol_version: ProtocolVersion::parse(&wire.protocol_version)?,
-        })
+        };
+        descriptor.with_validated_trusted_consent_digest(
+            wire.maybe_trusted_consent_disclosure_digest_sha256
+                .as_deref(),
+        )
     }
 }
 
@@ -510,7 +525,7 @@ pub fn issue_challenge(
         .checked_add(command.action_policy.challenge_ttl_seconds())
         .ok_or(ChallengeError::ExpiryOverflow)?;
 
-    Ok(WorkChallengeDescriptor {
+    WorkChallengeDescriptor {
         challenge_id: ChallengeId::try_from(challenge_id)?,
         action_policy: command.action_policy,
         action_reference: command.action_reference,
@@ -519,9 +534,54 @@ pub fn issue_challenge(
         allowed_origins: command.allowed_origins,
         work_requirement,
         maybe_pool_offers: Some(command.pool_offers),
+        trusted_consent_disclosure_digest_sha256: String::new(),
         expires_at_unix_seconds: ExpiresAtUnixSeconds::try_from(expires_at_unix_seconds)?,
         protocol_version: ProtocolVersion::Development0_1,
-    })
+    }
+    .with_validated_trusted_consent_digest(None)
+}
+
+impl WorkChallengeDescriptor {
+    fn with_validated_trusted_consent_digest(
+        mut self,
+        maybe_expected: Option<&str>,
+    ) -> Result<Self, ChallengeError> {
+        let material = TrustedConsentDisclosureMaterial {
+            challenge_id: &self.challenge_id,
+            action_policy: self.action_policy,
+            action_reference: &self.action_reference,
+            claimant_key: &self.claimant_key,
+            relying_service_audience: &self.relying_service_audience,
+            allowed_origins: &self.allowed_origins,
+            work_requirement: &self.work_requirement,
+            maybe_pool_offers: self.maybe_pool_offers.as_ref(),
+            expires_at_unix_seconds: &self.expires_at_unix_seconds,
+            protocol_version: self.protocol_version,
+        };
+        let bytes = serde_json::to_vec(&material)
+            .map_err(|_| ChallengeError::InvalidTrustedConsentDisclosureDigest)?;
+        let disclosure_digest = URL_SAFE_NO_PAD.encode(digest::digest(&digest::SHA256, &bytes));
+        if maybe_expected.is_some_and(|expected| expected != disclosure_digest) {
+            return Err(ChallengeError::InvalidTrustedConsentDisclosureDigest);
+        }
+        self.trusted_consent_disclosure_digest_sha256 = disclosure_digest;
+        Ok(self)
+    }
+}
+
+#[derive(Serialize)]
+struct TrustedConsentDisclosureMaterial<'a> {
+    challenge_id: &'a ChallengeId,
+    action_policy: ActionPolicy,
+    action_reference: &'a ActionReference,
+    claimant_key: &'a ClaimantKey,
+    relying_service_audience: &'a RelyingServiceAudience,
+    allowed_origins: &'a AllowedOrigins,
+    work_requirement: &'a WorkRequirement,
+    #[serde(rename = "pool_offers", skip_serializing_if = "Option::is_none")]
+    maybe_pool_offers: Option<&'a SignedPoolOfferSet>,
+    expires_at_unix_seconds: &'a ExpiresAtUnixSeconds,
+    protocol_version: ProtocolVersion,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -544,6 +604,8 @@ pub enum ChallengeError {
     InvalidExpiry,
     #[error("challenge expiry is outside the supported time range")]
     ExpiryOverflow,
+    #[error("trusted consent disclosure digest is invalid")]
+    InvalidTrustedConsentDisclosureDigest,
     #[error("challenge work does not match its Action Policy")]
     PolicyWorkMismatch,
     #[error("challenge Pool Offers are invalid")]

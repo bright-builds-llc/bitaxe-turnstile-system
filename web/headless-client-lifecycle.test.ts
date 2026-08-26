@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { createHeadlessClient, type HeadlessEvent } from "./headless-client";
+import {
+  ConsentRequiredError,
+  createHeadlessClient,
+  type HeadlessEvent,
+} from "./headless-client";
 import { headlessInput, transportHarness } from "./headless-client.test-support";
 
 describe("headless lifecycle controls", () => {
@@ -250,6 +254,20 @@ describe("Authority observations", () => {
       controlState: "expired",
     });
     await expect(client.start()).rejects.toThrow("lifecycle transition is forbidden");
+  });
+
+  test("Authority expiry invalidates consent that is still being persisted", async () => {
+    // Arrange
+    const harness = transportHarness();
+    const client = await createHeadlessClient(await headlessInput(harness.transport));
+
+    // Act
+    const consent = client.grantConsent();
+    await harness.emitAuthority({ type: "challenge_lifecycle", state: "expired" });
+
+    // Assert
+    await expect(consent).rejects.toThrow("trusted consent was aborted");
+    await expect(client.start()).rejects.toBeInstanceOf(ConsentRequiredError);
   });
 
   test("emits metadata-only events", async () => {

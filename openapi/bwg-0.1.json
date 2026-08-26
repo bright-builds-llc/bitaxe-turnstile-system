@@ -26,6 +26,117 @@
         }
       }
     },
+    "/v0/trusted-consent": {
+      "get": {
+        "summary": "Load the Authority-owned Trusted Consent surface",
+        "responses": {
+          "200": {
+            "description": "No-store trusted confirmation HTML",
+            "content": { "text/html": { "schema": { "type": "string" } } }
+          }
+        }
+      }
+    },
+    "/v0/trusted-consent.js": {
+      "get": {
+        "summary": "Load the Authority-owned Trusted Consent browser module",
+        "responses": {
+          "200": {
+            "description": "No-store browser module",
+            "content": { "text/javascript": { "schema": { "type": "string" } } }
+          }
+        }
+      }
+    },
+    "/v0/trusted-consent.css": {
+      "get": {
+        "summary": "Load the Authority-owned Trusted Consent styles",
+        "responses": {
+          "200": {
+            "description": "No-store dark surface styles",
+            "content": { "text/css": { "schema": { "type": "string" } } }
+          }
+        }
+      }
+    },
+    "/v0/challenges/{challenge_id}/trusted-consent": {
+      "get": {
+        "summary": "Reload the Authority challenge and verification keys for trusted rendering",
+        "parameters": [{ "$ref": "#/components/parameters/ChallengeId" }],
+        "responses": {
+          "200": {
+            "description": "Current immutable challenge and Authority JWKS",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TrustedConsentChallengeResponse" }
+              }
+            }
+          },
+          "404": { "description": "Unknown Work Challenge" }
+        }
+      },
+      "post": {
+        "summary": "Start or recover an Authority-owned Trusted Consent ceremony",
+        "parameters": [{ "$ref": "#/components/parameters/ChallengeId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/TrustedConsentBeginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact persisted WebAuthn creation options",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TrustedConsentBeginResponse" }
+              }
+            }
+          },
+          "400": { "description": "Challenge does not require or match Trusted Consent" },
+          "409": { "description": "Ceremony operation is already in progress" },
+          "503": { "description": "Trusted authenticator verification is unavailable" }
+        }
+      }
+    },
+    "/v0/challenges/{challenge_id}/trusted-consent/{ceremony_id}": {
+      "post": {
+        "summary": "Finish Trusted Consent and recover its deterministic signed receipt",
+        "parameters": [
+          { "$ref": "#/components/parameters/ChallengeId" },
+          {
+            "name": "ceremony_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "pattern": "^ceremony_[A-Za-z0-9_]+$" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/WebauthnRegistrationCredential" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Terminal verified ceremony and exact signed receipt",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TrustedConsentFinishResponse" }
+              }
+            }
+          },
+          "400": { "description": "Malformed, mismatched, or rejected WebAuthn response" },
+          "409": { "description": "Ceremony operation is already in progress" },
+          "410": { "description": "Ceremony or receipt lifetime has expired" },
+          "503": { "description": "Trusted authenticator verification or receipt signing is unavailable" }
+        }
+      }
+    },
     "/v0/challenges/{challenge_id}/events": {
       "get": {
         "summary": "Stream Verified Progress and Work Challenge lifecycle",
@@ -309,13 +420,83 @@
           }
         }
       },
+      "TrustedConsentBeginRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["pool_offer_set_signature_sha256", "reason", "authority_origin"],
+        "properties": {
+          "pool_offer_set_signature_sha256": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "reason": { "enum": ["elevated_work", "material_pool_terms"] },
+          "authority_origin": { "type": "string", "format": "uri" }
+        }
+      },
+      "TrustedConsentChallengeResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["challenge", "issuer", "jwks"],
+        "properties": {
+          "challenge": { "$ref": "#/components/schemas/WorkChallenge" },
+          "issuer": { "type": "string", "format": "uri" },
+          "jwks": { "type": "object" }
+        }
+      },
+      "TrustedConsentBeginResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ceremony_id", "authority_disclosure_digest_sha256", "public_key",
+          "expires_at_unix_seconds"
+        ],
+        "properties": {
+          "ceremony_id": { "type": "string", "pattern": "^ceremony_[A-Za-z0-9_]+$" },
+          "authority_disclosure_digest_sha256": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "public_key": { "type": "object" },
+          "expires_at_unix_seconds": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "WebauthnRegistrationCredential": {
+        "type": "object",
+        "required": ["id", "rawId", "response", "type"],
+        "properties": {
+          "id": { "type": "string" },
+          "rawId": { "type": "string" },
+          "type": { "const": "public-key" },
+          "response": {
+            "type": "object",
+            "required": ["attestationObject", "clientDataJSON"],
+            "properties": {
+              "attestationObject": { "type": "string" },
+              "clientDataJSON": { "type": "string" }
+            }
+          }
+        }
+      },
+      "TrustedConsentFinishResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony_id", "status", "trusted_consent_receipt"],
+        "properties": {
+          "ceremony_id": { "type": "string", "pattern": "^ceremony_[A-Za-z0-9_]+$" },
+          "status": { "const": "verified" },
+          "trusted_consent_receipt": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+          }
+        }
+      },
       "WorkChallenge": {
         "type": "object",
         "additionalProperties": false,
         "required": [
           "challenge_id", "action_policy", "action_reference", "claimant_key",
           "relying_service_audience", "allowed_origins", "work_requirement", "expires_at_unix_seconds",
-          "pool_offers", "protocol_version"
+          "pool_offers", "trusted_consent_disclosure_digest_sha256", "protocol_version"
         ],
         "properties": {
           "challenge_id": { "type": "string" },
@@ -326,6 +507,10 @@
           "allowed_origins": { "type": "array", "items": { "type": "string", "format": "uri" } },
           "work_requirement": { "type": "object" },
           "pool_offers": { "$ref": "#/components/schemas/SignedPoolOfferSet" },
+          "trusted_consent_disclosure_digest_sha256": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
           "expires_at_unix_seconds": { "type": "integer", "minimum": 1 },
           "protocol_version": { "const": "BWG/0.1" }
         }

@@ -5,7 +5,7 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode, header::RETRY_AFTER},
     response::{
-        IntoResponse, Response, Sse,
+        Html, IntoResponse, Response, Sse,
         sse::{Event, KeepAlive},
     },
     routing::{get, post},
@@ -91,13 +91,80 @@ pub fn router(application: AuthorityApplication) -> Router {
         )
         .route(
             "/v0/challenges/{challenge_id}/trusted-consent",
-            post(begin_trusted_consent),
+            get(trusted_consent_challenge).post(begin_trusted_consent),
         )
         .route(
             "/v0/challenges/{challenge_id}/trusted-consent/{ceremony_id}",
             post(finish_trusted_consent),
         )
+        .route("/v0/trusted-consent", get(trusted_consent_surface))
+        .route(
+            "/v0/trusted-consent.css",
+            get(trusted_consent_surface_styles),
+        )
+        .route(
+            "/v0/trusted-consent.js",
+            get(trusted_consent_surface_script),
+        )
         .with_state(AuthorityState { application })
+}
+
+async fn trusted_consent_surface() -> impl IntoResponse {
+    (
+        [
+            (axum::http::header::CACHE_CONTROL, "no-store"),
+            (axum::http::header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+            (
+                axum::http::header::CONTENT_SECURITY_POLICY,
+                "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+            ),
+        ],
+        Html(include_str!("../../web/trusted-consent-surface.html")),
+    )
+}
+
+async fn trusted_consent_surface_styles() -> impl IntoResponse {
+    (
+        [
+            (axum::http::header::CONTENT_TYPE, "text/css; charset=utf-8"),
+            (axum::http::header::CACHE_CONTROL, "no-store"),
+            (axum::http::header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        include_str!("../../web/trusted-consent-surface.css"),
+    )
+}
+
+async fn trusted_consent_surface_script() -> impl IntoResponse {
+    (
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                "text/javascript; charset=utf-8",
+            ),
+            (axum::http::header::CACHE_CONTROL, "no-store"),
+            (axum::http::header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        include_str!("../../web/generated/trusted-consent-surface.js"),
+    )
+}
+
+async fn trusted_consent_challenge(
+    State(state): State<AuthorityState>,
+    Path(challenge_id): Path<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    let challenge_id = ChallengeId::try_from(challenge_id)?;
+    let challenge = state
+        .application
+        .challenge_descriptor(&challenge_id)
+        .await?;
+    Ok((
+        [(axum::http::header::CACHE_CONTROL, "no-store")],
+        Json(serde_json::json!({
+            "challenge": challenge,
+            "issuer": state.application.config.issuer(),
+            "jwks": state.application.config.jwks.clone(),
+        })),
+    ))
 }
 
 async fn begin_trusted_consent(

@@ -28,6 +28,19 @@ Progress. A reconnect may also initialize directly from the Authority's current 
 performs no transport work until `grantConsent` succeeds and refuses requirements above either
 ceiling.
 
+Elevated Action Policies and an Authority-signed `trusted_confirmation_required` Pool Offer claim
+add a `TrustedConsentRequest` to the immutable disclosure. `grantConsent` then requires a compact
+Authority-signed receipt whose challenge, disclosure digest, signed-offer digest, reason, origin,
+and lifetime match exactly. The receipt must assert WebAuthn user presence, user verification, and
+trusted non-self attestation. A missing, stale, wrong-origin, malformed, or invalidly signed receipt
+fails before transport Start; the verified compact receipt is persisted with consent and forwarded
+to the lease-start adapter for server-side enforcement.
+
+The challenge field `trusted_consent_disclosure_digest_sha256` is Authority-derived and separately
+validated from the client-local Work Consent disclosure digest. A trusted-required challenge without
+that canonical 43-character value fails during client construction; an embedding backend cannot
+substitute its own digest because the eventual Authority receipt must match it.
+
 The caller supplies a narrow transport implementation for the public client, Pool Adapter, and
 Authority-event seams; the headless module never accepts a Relying Service credential. Start,
 Pause, resume, and terminal Cancel emit typed lifecycle events carrying the public challenge state
@@ -41,5 +54,10 @@ identity.
 The independent fixture at `conformance/bwg-0.1/headless-work-consent-vectors.json` includes a real
 Ed25519-signed offer set. `bun run test:browser` loads the emitted ESM in Chromium and exercises
 pre-issuance key binding, IndexedDB restoration, disclosure, explicit consent, controls, progress
-separation, event privacy, and key exposure through browser-native WebCrypto. This browser run is
-also part of `bun run test` and the aggregate `bun run verify` gate.
+separation, event privacy, and key exposure through browser-native WebCrypto. A second Chromium path
+drives the production Authority begin/finish routes with a virtual authenticator, verifies the real
+signed receipt in browser WebCrypto, and proves missing-versus-valid receipt behavior at production
+lease admission. Exact-origin/source/state popup negatives and teardown abort behavior run alongside
+it. This browser run is also part of `bun run test` and the aggregate `bun run verify` gate.
+The dedicated Playwright conformance session ignores certificate errors only for its intercepted
+synthetic `https://authority.example` route; production Authority TLS validation is unchanged.

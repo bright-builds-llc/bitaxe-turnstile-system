@@ -189,6 +189,106 @@ try {
     "unlinked_build_has_no_href",
   );
 
+  const teardownHarness = await sessionHarness(vector, true);
+  const teardownGate = document.createElement("bwg-work-gate");
+  const main = document.querySelector("main");
+  if (!main) throw new Error("component conformance main is missing");
+  main.append(teardownGate);
+  let maybeConfirmationSignal;
+  let resolveLateReceipt;
+  let teardownGrants = 0;
+  let teardownStarts = 0;
+  const teardownClient = {
+    ...teardownHarness.client,
+    trustedConsentRequest: () => ({
+      reason: "elevated_work",
+      authorityOrigin: "https://authority.example",
+      challengeId: "challenge_teardown_01",
+      disclosureDigestSha256: "A".repeat(43),
+      poolOfferSetSignatureSha256: "B".repeat(43),
+      expiresAtUnixSeconds: 2_000,
+    }),
+    async grantConsent() {
+      teardownGrants += 1;
+    },
+    async start() {
+      teardownStarts += 1;
+    },
+  };
+  teardownGate.configure({
+    alternatives,
+    provenance,
+    async loadSession() {
+      return {
+        client: teardownClient,
+        compatibleWorkerAvailable: true,
+        redeem: async () => ({ message: "unused" }),
+      };
+    },
+    maybeRequestTrustedConsent(_request, signal) {
+      maybeConfirmationSignal = signal;
+      return new Promise((resolve) => {
+        resolveLateReceipt = resolve;
+      });
+    },
+  });
+  await waitFor(() => shadow(teardownGate).querySelector("[data-panel=terms]:not([hidden])"));
+  click(teardownGate, "Consent and start work");
+  await waitFor(() => maybeConfirmationSignal);
+  teardownGate.remove();
+  assertEqual(maybeConfirmationSignal.aborted, true, "teardown_aborts_trusted_consent");
+  if (!resolveLateReceipt) throw new Error("late receipt resolver is missing");
+  resolveLateReceipt("late-receipt");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assertEqual(teardownGrants, 0, "teardown_blocks_late_consent");
+  assertEqual(teardownStarts, 0, "teardown_blocks_late_start");
+
+  const cancelConsentHarness = await sessionHarness(vector, true);
+  const cancelConsentGate = document.createElement("bwg-work-gate");
+  main.append(cancelConsentGate);
+  let maybeCancelSignal;
+  let resolveCancelledReceipt;
+  let cancelGrants = 0;
+  let cancelStarts = 0;
+  const cancelConsentClient = {
+    ...cancelConsentHarness.client,
+    trustedConsentRequest: teardownClient.trustedConsentRequest,
+    async grantConsent() {
+      cancelGrants += 1;
+    },
+    async start() {
+      cancelStarts += 1;
+    },
+  };
+  cancelConsentGate.configure({
+    alternatives,
+    provenance,
+    async loadSession() {
+      return {
+        client: cancelConsentClient,
+        compatibleWorkerAvailable: true,
+        redeem: async () => ({ message: "unused" }),
+      };
+    },
+    maybeRequestTrustedConsent(_request, signal) {
+      maybeCancelSignal = signal;
+      return new Promise((resolve) => {
+        resolveCancelledReceipt = resolve;
+      });
+    },
+  });
+  await waitFor(() => shadow(cancelConsentGate).querySelector("[data-panel=terms]:not([hidden])"));
+  click(cancelConsentGate, "Consent and start work");
+  await waitFor(() => maybeCancelSignal);
+  click(cancelConsentGate, "Cancel work");
+  click(cancelConsentGate, "Confirm cancel");
+  await waitFor(() => maybeCancelSignal.aborted);
+  if (!resolveCancelledReceipt) throw new Error("cancelled receipt resolver is missing");
+  resolveCancelledReceipt("late-receipt");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assertEqual(cancelGrants, 0, "cancel_blocks_late_consent");
+  assertEqual(cancelStarts, 0, "cancel_blocks_late_start");
+
   const gateStyle = getComputedStyle(container(full));
   assertEqual(gateStyle.fontSize === "1px", false, "host_style_isolation");
   assertEqual(contrastRatio(gateStyle.color, gateStyle.backgroundColor) >= 4.5, true, "contrast");

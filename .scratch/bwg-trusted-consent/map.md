@@ -19,5 +19,5 @@ Core roadmap.
 
 1. [x] [Authority attested WebAuthn ceremony](./issues/01-authority-webauthn-ceremony.md)
 2. [x] [Signed receipt and lease enforcement](./issues/02-receipt-lease-enforcement.md)
-3. [Browser hardening and end-to-end evidence](./issues/03-browser-hardening-evidence.md)
+3. [x] [Browser hardening and end-to-end evidence](./issues/03-browser-hardening-evidence.md)
 4. [Material-change bridge](./issues/04-material-change-bridge.md)

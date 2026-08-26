@@ -352,9 +352,9 @@ fn begin_response(
 pub(super) fn authoritative_disclosure_digest(
     challenge: &crate::challenge::WorkChallengeDescriptor,
 ) -> Result<String, AuthorityApplicationError> {
-    let bytes =
-        serde_json::to_vec(challenge).map_err(|_| TrustedConsentError::InvalidWebauthnState)?;
-    Ok(URL_SAFE_NO_PAD.encode(digest::digest(&digest::SHA256, &bytes)))
+    Ok(challenge
+        .trusted_consent_disclosure_digest_sha256()
+        .to_owned())
 }
 
 pub(super) fn binding_for_challenge(

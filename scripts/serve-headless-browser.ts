@@ -7,7 +7,15 @@ const server = Bun.serve({
   port: 0,
   async fetch(request) {
     const pathname = decodeURIComponent(new URL(request.url).pathname);
-    const relativePath = pathname === "/" ? "README.md" : `.${pathname}`;
+    if (pathname === "/fixture-upstream") {
+      const maybeUpstream = process.env.BWG_TRUSTED_CONSENT_FIXTURE_URL;
+      return maybeUpstream
+        ? new Response(maybeUpstream, { headers: { "content-type": "text/plain" } })
+        : new Response("unavailable", { status: 503 });
+    }
+    const relativePath = pathname === "/"
+      ? "README.md"
+      : `.${pathname}`;
     const filePath = resolve(repositoryRoot, relativePath);
     if (filePath !== repositoryRoot && !filePath.startsWith(`${repositoryRoot}${sep}`)) {
       return new Response("not found", { status: 404 });

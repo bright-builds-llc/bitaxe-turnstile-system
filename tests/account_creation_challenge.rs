@@ -79,6 +79,7 @@ async fn reference_backend_issues_a_browser_safe_standard_challenge()
         "pool_offers",
         "protocol_version",
         "relying_service_audience",
+        "trusted_consent_disclosure_digest_sha256",
         "work_requirement",
     ]);
 

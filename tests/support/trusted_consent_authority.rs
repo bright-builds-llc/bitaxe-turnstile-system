@@ -56,11 +56,19 @@ pub(crate) fn offer_digest(challenge: &Value) -> Result<String, Box<dyn Error>> 
 }
 
 pub(crate) fn authority_config() -> Result<Config, Box<dyn Error>> {
-    Ok(authority_config_without_signer()?
+    authority_config_with_issuer("https://authority.example")
+}
+
+pub(crate) fn authority_config_with_issuer(issuer: &str) -> Result<Config, Box<dyn Error>> {
+    Ok(authority_config_without_signer_for_issuer(issuer)?
         .with_signing_key_seed("authority-a".to_owned(), SIGNING_SEED)?)
 }
 
 pub(crate) fn authority_config_without_signer() -> Result<Config, Box<dyn Error>> {
+    authority_config_without_signer_for_issuer("https://authority.example")
+}
+
+fn authority_config_without_signer_for_issuer(issuer: &str) -> Result<Config, Box<dyn Error>> {
     let credential = ServiceCredential::new(
         CLIENT_ID,
         SERVICE_SECRET,
@@ -73,7 +81,7 @@ pub(crate) fn authority_config_without_signer() -> Result<Config, Box<dyn Error>
         ],
     )?;
     let public = AuthorityPublicConfig::new(
-        "https://authority.example",
+        issuer,
         "https://authority.example",
         authority_keys()?,
         "https://authority.example/policies/operator",

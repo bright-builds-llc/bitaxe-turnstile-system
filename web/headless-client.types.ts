@@ -6,6 +6,7 @@ export type WorkChallengeInput = {
   claimantKey: string;
   expectedHashes: string;
   expiresAtUnixSeconds: number;
+  trustedConsentDisclosureDigestSha256?: string;
 };
 export type WorkerDisclosure = {
   workerId: string;
@@ -107,11 +108,27 @@ export type WorkConsentDisclosure = {
   cancellationBehavior: "pause_preserves_progress_cancel_is_terminal";
   claimantWorkCeiling: string;
   clientSafetyCeiling: string;
+  maybeTrustedConsentRequirement?: TrustedConsentRequirement;
 };
 
 export type WorkConsentReceipt = {
   disclosureDigestSha256: string;
   poolOfferSetSignature: string;
+  maybeTrustedConsentReceipt?: string;
+};
+
+export type TrustedConsentReason = "elevated_work" | "material_pool_terms";
+
+export type TrustedConsentRequirement = {
+  reason: TrustedConsentReason;
+  authorityOrigin: string;
+};
+
+export type TrustedConsentRequest = TrustedConsentRequirement & {
+  challengeId: string;
+  disclosureDigestSha256: string;
+  poolOfferSetSignatureSha256: string;
+  expiresAtUnixSeconds: number;
 };
 
 export type AuthorityClientEvent =
@@ -120,7 +137,7 @@ export type AuthorityClientEvent =
   | { type: "artifact_expiry"; expiresAtUnixSeconds: number };
 
 export type HeadlessTransport = {
-  start(): Promise<void>;
+  start(maybeTrustedConsentReceipt?: string): Promise<void>;
   pause(): Promise<void>;
   resume(): Promise<void>;
   cancel(): Promise<void>;
@@ -141,6 +158,13 @@ export class WorkCeilingExceededError extends Error {
   }
 }
 
+export class TrustedConsentRequiredError extends Error {
+  constructor() {
+    super("Authority-origin WebAuthn confirmation is required before Start");
+    this.name = "TrustedConsentRequiredError";
+  }
+}
+
 export type HeadlessClientInput = {
   challenge: WorkChallengeInput;
   claimantIdentity: PreparedClaimantIdentity;
@@ -151,6 +175,7 @@ export type HeadlessClientInput = {
   claimantWorkCeiling: string;
   clientSafetyCeiling: string;
   transport: HeadlessTransport;
+  maybeNowUnixSeconds?: () => number;
   maybeRestoration?: {
     challengeState: "issued" | "active" | "satisfied" | "pass_issued";
   };
@@ -218,7 +243,11 @@ export type HeadlessClient = {
   claimantPublicJwk(): JsonWebKey;
   signClaimantProof(payload: Uint8Array): Promise<ArrayBuffer>;
   disclosure(): WorkConsentDisclosure;
-  grantConsent(): Promise<WorkConsentReceipt>;
+  trustedConsentRequest(): TrustedConsentRequest | undefined;
+  grantConsent(
+    maybeTrustedConsentReceipt?: string,
+    maybeSignal?: AbortSignal,
+  ): Promise<WorkConsentReceipt>;
   start(): Promise<void>;
   pause(): Promise<void>;
   resume(): Promise<void>;

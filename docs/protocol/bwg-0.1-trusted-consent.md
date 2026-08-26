@@ -16,10 +16,11 @@ payout behavior, or privacy terms.
 ## Ceremony
 
 The component opens the fixed `/v0/trusted-consent` path on the configured Authority origin with an
-opaque challenge ID, disclosure SHA-256 digest, signed-offer SHA-256 digest, reason, and random
-browser state. It accepts a response only from that exact origin and popup window with the exact
-state. The trusted page independently reloads the challenge and signed terms before asking for
-confirmation.
+opaque challenge ID, Authority-derived disclosure SHA-256 digest, signed-offer SHA-256 digest,
+reason, opener origin, and random browser state. It accepts a response only from that exact origin
+and popup window with the exact state. The trusted page independently reloads the challenge,
+verifies the signed Pool Offer terms, compares the published digest with the Authority begin
+response, and matches every opaque input before asking for confirmation.
 
 The Authority issues and retains a fresh unpredictable WebAuthn challenge, requires
 `userVerification: "required"`, and requests direct attestation. It verifies the returned challenge,
@@ -60,7 +61,16 @@ are cleared in bounded batches at signed expiry while terminal metadata remains.
 a Gate Pass, login, identity assertion, or reusable permission.
 
 The conformance profile combines unit vectors for signed receipt binding and negative cases with a
-real Chromium virtual-authenticator path for WebAuthn challenge/origin and UP/UV behavior. Production
-attestation trust still requires testing with every supported physical authenticator model.
+real Chromium virtual-authenticator path through production begin/finish and lease admission. The
+virtual verifier covers challenge, origin, UP, and UV; the packed YubiKey vector covers the separate
+production attestation-chain and AAGUID leg.
+
+Before enabling an authenticator model, operators must test representative physical devices and
+browser/OS combinations against the exact configured root and AAGUID. Root rotation needs an overlap
+window, representative dry-run evidence, and an explicit rollback plan; removing an old root too
+early can strand valid users, while broad roots or AAGUIDs admit unintended models. Unknown, missing,
+self, synced, or newly changed attestation must fail closed until operator policy is deliberately
+updated. Platform credential sync, discoverability, and device replacement remain compatibility and
+recovery risks, not identity evidence.
 
 Primary WebAuthn requirements: [W3C Web Authentication Level 3](https://www.w3.org/TR/webauthn-3/).

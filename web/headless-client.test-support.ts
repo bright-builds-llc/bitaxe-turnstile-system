@@ -124,6 +124,7 @@ export async function headlessInput(
   transport: HeadlessTransport,
   options: {
     maybeClock?: () => number;
+    maybeNowUnixSeconds?: () => number;
     maybeIdentity?: PreparedClaimantIdentity;
     maybeClaimantWorkCeiling?: string;
     maybeClientSafetyCeiling?: string;
@@ -157,6 +158,7 @@ export async function headlessInput(
     clientSafetyCeiling:
       options.maybeClientSafetyCeiling ?? "70368744177664",
     transport,
+    maybeNowUnixSeconds: options.maybeNowUnixSeconds ?? (() => 1_000),
     ...(options.maybeRestoration ? { maybeRestoration: options.maybeRestoration } : {}),
   };
 }
