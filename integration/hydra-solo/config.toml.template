@@ -40,6 +40,7 @@ wait_for_chain_sync = false
 require_job_admission = true
 job_admission_timeout_ms = 2000
 job_admission_max_concurrency = 8
+block_submission_timeout_ms = 2000
 mode = "hydrapool"
 
 [bitcoinrpc]

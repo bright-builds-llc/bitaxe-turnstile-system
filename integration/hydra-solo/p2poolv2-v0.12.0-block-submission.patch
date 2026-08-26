@@ -1,0 +1,554 @@
+diff --git a/bitcoindrpc/src/lib.rs b/bitcoindrpc/src/lib.rs
+index cdb2880..b478479 100644
+--- a/bitcoindrpc/src/lib.rs
++++ b/bitcoindrpc/src/lib.rs
+@@ -115,6 +115,21 @@ pub struct GetBlockchainInfo {
+     pub initial_block_download: bool,
+ }
+ 
++/// Classified Bitcoin Core `submitblock` result without unbounded reason text.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum SubmitBlockOutcome {
++    /// Bitcoin Core returned JSON null.
++    Accepted,
++    /// Bitcoin Core already knows the valid block.
++    Duplicate,
++    /// Bitcoin Core already knows the block is invalid.
++    DuplicateInvalid,
++    /// Bitcoin Core could not conclusively validate the duplicate.
++    Inconclusive,
++    /// Bitcoin Core returned another bounded rejection class.
++    Rejected,
++}
++
+ #[derive(Debug, Clone)]
+ #[allow(dead_code)]
+ pub struct BitcoindRpcClient {
+@@ -326,16 +341,32 @@ impl BitcoindRpcClient {
+         }
+     }
+ 
+-    pub async fn submit_block(&self, block: &bitcoin::Block) -> Result<String, BitcoindRpcError> {
++    pub async fn submit_block(
++        &self,
++        block: &bitcoin::Block,
++    ) -> Result<SubmitBlockOutcome, BitcoindRpcError> {
+         // Serialize the block to hex string
+         let block_hex = serialize_hex(block);
+ 
+         // Prepare params for the RPC call
+         let params = vec![serde_json::Value::String(block_hex)];
+ 
+-        // Make the RPC request - submitblock returns null on success, or error string on failure
++        // Make the RPC request - submitblock returns null on success, or a reason string on failure.
+         let result: serde_json::Value = self.request("submitblock", params).await?;
+-        Ok(result.to_string())
++        if result.is_null() {
++            return Ok(SubmitBlockOutcome::Accepted);
++        }
++        let reason = result
++            .as_str()
++            .ok_or_else(|| BitcoindRpcError::ParseError {
++                message: "submitblock result must be null or a reason string".to_string(),
++            })?;
++        Ok(match reason {
++            "duplicate" => SubmitBlockOutcome::Duplicate,
++            "duplicate-invalid" => SubmitBlockOutcome::DuplicateInvalid,
++            "duplicate-inconclusive" | "inconclusive" => SubmitBlockOutcome::Inconclusive,
++            _ => SubmitBlockOutcome::Rejected,
++        })
+     }
+ }
+ 
+@@ -605,12 +636,8 @@ mod tests {
+         assert_eq!(decoded_tx, tx);
+     }
+ 
+-    #[tokio::test]
+-    async fn test_submit_block() {
+-        let mock_server = MockServer::start().await;
+-
+-        // Create a simple block
+-        let block = bitcoin::Block {
++    fn submit_test_block() -> bitcoin::Block {
++        bitcoin::Block {
+             header: bitcoin::blockdata::block::Header {
+                 version: bitcoin::blockdata::block::Version::from_consensus(1),
+                 prev_blockhash: "5e9a183768460fbf56eab199a66057375b424bdca195e7ecc808374365a7ea67"
+@@ -624,11 +651,15 @@ mod tests {
+                 nonce: 12345,
+             },
+             txdata: vec![],
+-        };
++        }
++    }
+ 
++    #[tokio::test]
++    async fn test_submit_block() {
++        // Arrange
++        let mock_server = MockServer::start().await;
++        let block = submit_test_block();
+         let block_hex = serialize_hex(&block);
+-
+-        // Setup mock for submitblock (JSON-RPC 1.0)
+         Mock::given(method("POST"))
+             .and(path("/"))
+             .and(header("Authorization", "Basic cDJwb29sOnAycG9vbA=="))
+@@ -647,8 +678,38 @@ mod tests {
+ 
+         let client = BitcoindRpcClient::new(&mock_server.uri(), "p2pool", "p2pool").unwrap();
+ 
++        // Act
+         let result = client.submit_block(&block).await.unwrap();
+-        assert_eq!(result, "null"); // Successful submission returns null
++
++        // Assert
++        assert_eq!(result, SubmitBlockOutcome::Accepted);
++    }
++
++    #[tokio::test]
++    async fn submit_block_classifies_every_non_success_result() {
++        // Arrange, Act, and Assert every public result class independently.
++        let cases = [
++            ("duplicate", SubmitBlockOutcome::Duplicate),
++            ("duplicate-invalid", SubmitBlockOutcome::DuplicateInvalid),
++            ("duplicate-inconclusive", SubmitBlockOutcome::Inconclusive),
++            ("bad-cb-amount", SubmitBlockOutcome::Rejected),
++        ];
++        for (reason, expected) in cases {
++            let mock_server = MockServer::start().await;
++            Mock::given(method("POST"))
++                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
++                    "result": reason,
++                    "error": null,
++                    "id": 0
++                })))
++                .mount(&mock_server)
++                .await;
++            let client = BitcoindRpcClient::new(&mock_server.uri(), "p2pool", "p2pool").unwrap();
++
++            let outcome = client.submit_block(&submit_test_block()).await.unwrap();
++
++            assert_eq!(outcome, expected);
++        }
+     }
+ 
+     #[tokio::test]
+diff --git a/p2poolv2_config/src/lib.rs b/p2poolv2_config/src/lib.rs
+index ebd7120..3dfc574 100644
+--- a/p2poolv2_config/src/lib.rs
++++ b/p2poolv2_config/src/lib.rs
+@@ -138,6 +138,9 @@ pub struct StratumConfig<State = Raw> {
+     /// Maximum concurrent Bitcoin Core proposal requests.
+     #[serde(default = "default_job_admission_max_concurrency")]
+     pub job_admission_max_concurrency: usize,
++    /// Maximum duration of the latency-critical Bitcoin Core block submission attempt.
++    #[serde(default = "default_block_submission_timeout_ms")]
++    pub block_submission_timeout_ms: u64,
+     /// Pool operating mode. Defaults to P2Poolv2 when not specified.
+     #[serde(default)]
+     pub mode: PoolMode,
+@@ -170,6 +173,11 @@ impl StratumConfig<Raw> {
+                 message: "job_admission_max_concurrency must be between 1 and 1024".to_string(),
+             });
+         }
++        if self.block_submission_timeout_ms == 0 || self.block_submission_timeout_ms > 60_000 {
++            return Err(ConfigError {
++                message: "block_submission_timeout_ms must be between 1 and 60000".to_string(),
++            });
++        }
+         if self.pool_signature.clone().unwrap_or("".to_string()).len() > MAX_POOL_SIGNATURE_LENGTH {
+             return Err(ConfigError {
+                 message: format!("Pool signature length is limited to {MAX_POOL_SIGNATURE_LENGTH}"),
+@@ -231,6 +239,7 @@ impl StratumConfig<Raw> {
+             require_job_admission: self.require_job_admission,
+             job_admission_timeout_ms: self.job_admission_timeout_ms,
+             job_admission_max_concurrency: self.job_admission_max_concurrency,
++            block_submission_timeout_ms: self.block_submission_timeout_ms,
+             mode: self.mode,
+             bootstrap_address_parsed: Some(bootstrap_address_parsed),
+             solo_address_parsed,
+@@ -295,6 +304,7 @@ impl StratumConfig<Raw> {
+             require_job_admission: false,
+             job_admission_timeout_ms: default_job_admission_timeout_ms(),
+             job_admission_max_concurrency: default_job_admission_max_concurrency(),
++            block_submission_timeout_ms: default_block_submission_timeout_ms(),
+             mode: PoolMode::default(),
+             bootstrap_address_parsed: None,
+             solo_address_parsed: None,
+@@ -390,6 +400,10 @@ fn default_job_admission_max_concurrency() -> usize {
+     8
+ }
+ 
++fn default_block_submission_timeout_ms() -> u64 {
++    2_000
++}
++
+ fn default_background_task_frequency_hours() -> u64 {
+     1
+ }
+@@ -651,9 +665,12 @@ mod tests {
+         zero_timeout.job_admission_timeout_ms = 0;
+         let mut zero_concurrency = StratumConfig::new_for_test_default();
+         zero_concurrency.job_admission_max_concurrency = 0;
++        let mut zero_submission_timeout = StratumConfig::new_for_test_default();
++        zero_submission_timeout.block_submission_timeout_ms = 0;
+ 
+         assert!(zero_timeout.parse().is_err());
+         assert!(zero_concurrency.parse().is_err());
++        assert!(zero_submission_timeout.parse().is_err());
+     }
+ 
+     #[test]
+diff --git a/p2poolv2_lib/src/stratum/message_handlers/submit.rs b/p2poolv2_lib/src/stratum/message_handlers/submit.rs
+index b9007b8..9873d9c 100644
+--- a/p2poolv2_lib/src/stratum/message_handlers/submit.rs
++++ b/p2poolv2_lib/src/stratum/message_handlers/submit.rs
+@@ -30,10 +30,10 @@ use crate::stratum::{
+     },
+ };
+ use bitcoin::{block::Header, blockdata::block::Block, hashes::Hash};
+-use bitcoindrpc::BitcoindRpcClient;
++use bitcoindrpc::{BitcoindRpcClient, SubmitBlockOutcome as RpcSubmitBlockOutcome};
+ use serde_json::json;
+-use std::time::SystemTime;
+-use tracing::{debug, error, info};
++use std::time::{Duration, Instant, SystemTime};
++use tracing::{debug, info};
+ 
+ /// Handle the "mining.submit" message
+ /// This function is called when a miner submits a share to the Stratum server.
+@@ -125,7 +125,12 @@ pub(crate) async fn handle_submit<'a, D: DifficultyAdjusterTrait>(
+             validation_result.coinbase.clone(),
+             &job.blocktemplate,
+         );
+-        submit_block(&block, &stratum_context.bitcoindrpc_client).await;
++        let _block_submission = submit_block(
++            &block,
++            &stratum_context.bitcoindrpc_client,
++            stratum_context.block_submission_timeout(),
++        )
++        .await;
+     }
+ 
+     // In P2Poolv2 mode, reject shares that do not meet the pool difficulty target.
+@@ -230,16 +235,41 @@ pub(crate) async fn handle_submit<'a, D: DifficultyAdjusterTrait>(
+     }
+ }
+ 
+-/// Submit block to bitcoind using the shared RPC client.
+-pub async fn submit_block(block: &Block, bitcoindrpc_client: &BitcoindRpcClient) {
+-    tracing::info!(
+-        "Submitting block to bitcoind: {:?}",
+-        block.header.block_hash()
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub(crate) enum BlockSubmissionOutcome {
++    Accepted,
++    Duplicate,
++    Rejected,
++    Inconclusive,
++    Unavailable,
++}
++
++/// Submit a network-qualified block to Bitcoin Core without consulting pool or gate accounting.
++pub(crate) async fn submit_block(
++    block: &Block,
++    bitcoindrpc_client: &BitcoindRpcClient,
++    deadline: Duration,
++) -> BlockSubmissionOutcome {
++    let started = Instant::now();
++    let block_hash = block.header.block_hash();
++    let submission = tokio::time::timeout(deadline, bitcoindrpc_client.submit_block(block)).await;
++    let outcome = match submission {
++        Err(_) => BlockSubmissionOutcome::Unavailable,
++        Ok(Ok(RpcSubmitBlockOutcome::Accepted)) => BlockSubmissionOutcome::Accepted,
++        Ok(Ok(RpcSubmitBlockOutcome::Duplicate)) => BlockSubmissionOutcome::Duplicate,
++        Ok(Ok(RpcSubmitBlockOutcome::Inconclusive)) => BlockSubmissionOutcome::Inconclusive,
++        Ok(Ok(RpcSubmitBlockOutcome::DuplicateInvalid | RpcSubmitBlockOutcome::Rejected)) => {
++            BlockSubmissionOutcome::Rejected
++        }
++        Ok(Err(_)) => BlockSubmissionOutcome::Unavailable,
++    };
++    info!(
++        block_hash = %block_hash,
++        outcome = ?outcome,
++        latency_milliseconds = started.elapsed().as_millis(),
++        "Bitcoin block submission completed"
+     );
+-    match bitcoindrpc_client.submit_block(block).await {
+-        Ok(_) => info!("Block submitted successfully"),
+-        Err(e) => error!("Failed to submit block: {}", e),
+-    }
++    outcome
+ }
+ 
+ /// Build full block from header, coinbase and blocktemplate
+@@ -259,6 +289,10 @@ fn build_full_block(
+     }
+ }
+ 
++#[cfg(test)]
++#[path = "submit/block_submission_tests.rs"]
++mod block_submission_tests;
++
+ /// Use bitcoin mainnet max attainable target to convert the hash into difficulty
+ /// This global difficulty to used to track difficult adjustment by the pool, independent of the chain that is being mined.
+ fn get_true_difficulty(hash: &bitcoin::BlockHash) -> u128 {
+diff --git a/p2poolv2_lib/src/stratum/message_handlers/submit/block_submission_tests.rs b/p2poolv2_lib/src/stratum/message_handlers/submit/block_submission_tests.rs
+new file mode 100644
+index 0000000..deacc6c
+--- /dev/null
++++ b/p2poolv2_lib/src/stratum/message_handlers/submit/block_submission_tests.rs
+@@ -0,0 +1,92 @@
++use super::*;
++use std::time::Duration;
++use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
++
++fn test_block() -> Block {
++    Block {
++        header: bitcoin::block::Header {
++            version: bitcoin::block::Version::from_consensus(1),
++            prev_blockhash: bitcoin::BlockHash::all_zeros(),
++            merkle_root: bitcoin::TxMerkleNode::all_zeros(),
++            time: 1,
++            bits: bitcoin::CompactTarget::from_consensus(0x207f_ffff),
++            nonce: 0,
++        },
++        txdata: vec![],
++    }
++}
++
++async fn client_returning(result: serde_json::Value) -> (MockServer, BitcoindRpcClient) {
++    let server = MockServer::start().await;
++    Mock::given(method("POST"))
++        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
++            "result": result,
++            "error": null,
++            "id": 0
++        })))
++        .mount(&server)
++        .await;
++    let client = BitcoindRpcClient::new(&server.uri(), "testuser", "testpass")
++        .expect("test RPC client should build");
++    (server, client)
++}
++
++#[tokio::test]
++async fn submission_outcomes_are_explicit_and_do_not_retry_through_gate_services() {
++    // Arrange
++    let cases = [
++        (serde_json::Value::Null, BlockSubmissionOutcome::Accepted),
++        (
++            serde_json::json!("duplicate"),
++            BlockSubmissionOutcome::Duplicate,
++        ),
++        (
++            serde_json::json!("duplicate-inconclusive"),
++            BlockSubmissionOutcome::Inconclusive,
++        ),
++        (
++            serde_json::json!("bad-cb-amount"),
++            BlockSubmissionOutcome::Rejected,
++        ),
++    ];
++
++    // Act and Assert
++    for (result, expected) in cases {
++        let (_server, client) = client_returning(result).await;
++        assert_eq!(
++            submit_block(&test_block(), &client, Duration::from_secs(1)).await,
++            expected
++        );
++    }
++}
++
++#[tokio::test]
++async fn unavailable_bitcoin_core_has_an_explicit_non_gate_outcome() {
++    // Arrange
++    let client = BitcoindRpcClient::new("http://127.0.0.1:1", "testuser", "testpass")
++        .expect("unavailable RPC client should build");
++
++    // Act
++    let outcome = submit_block(&test_block(), &client, Duration::from_secs(1)).await;
++
++    // Assert
++    assert_eq!(outcome, BlockSubmissionOutcome::Unavailable);
++}
++
++#[tokio::test]
++async fn hanging_bitcoin_core_is_bounded_by_the_submission_deadline() {
++    // Arrange
++    let server = MockServer::start().await;
++    Mock::given(method("POST"))
++        .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(1)))
++        .mount(&server)
++        .await;
++    let client = BitcoindRpcClient::new(&server.uri(), "testuser", "testpass")
++        .expect("test RPC client should build");
++
++    // Act
++    let outcome = submit_block(&test_block(), &client, Duration::from_millis(10)).await;
++
++    // Assert
++    assert_eq!(outcome, BlockSubmissionOutcome::Unavailable);
++}
+diff --git a/p2poolv2_lib/src/stratum/server.rs b/p2poolv2_lib/src/stratum/server.rs
+index 4fb04f3..7b731aa 100644
+--- a/p2poolv2_lib/src/stratum/server.rs
++++ b/p2poolv2_lib/src/stratum/server.rs
+@@ -51,6 +51,33 @@ use tracing::{debug, error, info, warn};
+ 
+ const JOB_RELEASE_TIMEOUT: Duration = Duration::from_millis(250);
+ 
++/// Independently bounded deadline for the latency-critical Bitcoin Core submit path.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub struct BlockSubmissionTimeout(Duration);
++
++impl TryFrom<Duration> for BlockSubmissionTimeout {
++    type Error = &'static str;
++
++    fn try_from(value: Duration) -> Result<Self, Self::Error> {
++        if value < Duration::from_millis(1) || value > Duration::from_secs(60) {
++            return Err("block submission timeout must be between 1 ms and 60 seconds");
++        }
++        Ok(Self(value))
++    }
++}
++
++impl Default for BlockSubmissionTimeout {
++    fn default() -> Self {
++        Self(Duration::from_secs(2))
++    }
++}
++
++impl BlockSubmissionTimeout {
++    fn duration(self) -> Duration {
++        self.0
++    }
++}
++
+ // A struct to represent a Stratum server configuration
+ // This struct contains the port and address of the Stratum server
+ pub struct StratumServer {
+@@ -69,6 +96,7 @@ pub struct StratumServer {
+     require_job_admission: bool,
+     job_admission_timeout: Duration,
+     job_admission_max_concurrency: usize,
++    block_submission_timeout: BlockSubmissionTimeout,
+     expected_payout_script: Option<bitcoin::ScriptBuf>,
+     generation_gate: JobGenerationGate,
+     shutdown_rx: oneshot::Receiver<()>,
+@@ -100,6 +128,7 @@ pub struct StratumServerBuilder {
+     require_job_admission: Option<bool>,
+     job_admission_timeout: Option<Duration>,
+     job_admission_max_concurrency: Option<usize>,
++    block_submission_timeout: Option<BlockSubmissionTimeout>,
+     expected_payout_script: Option<bitcoin::ScriptBuf>,
+     generation_gate: Option<JobGenerationGate>,
+ }
+@@ -205,6 +234,11 @@ impl StratumServerBuilder {
+         self
+     }
+ 
++    pub fn block_submission_timeout(mut self, timeout: BlockSubmissionTimeout) -> Self {
++        self.block_submission_timeout = Some(timeout);
++        self
++    }
++
+     pub fn expected_payout_script(mut self, script: bitcoin::ScriptBuf) -> Self {
+         self.expected_payout_script = Some(script);
+         self
+@@ -249,6 +283,7 @@ impl StratumServerBuilder {
+             require_job_admission,
+             job_admission_timeout: self.job_admission_timeout.unwrap_or(Duration::from_secs(2)),
+             job_admission_max_concurrency: self.job_admission_max_concurrency.unwrap_or(8),
++            block_submission_timeout: self.block_submission_timeout.unwrap_or_default(),
+             expected_payout_script: self.expected_payout_script,
+             generation_gate: self
+                 .generation_gate
+@@ -399,6 +434,10 @@ impl StratumServer {
+                                         chain_store_handle: self.chain_store_handle.clone(),
+                                         mode: self.mode,
+                                         #[cfg(not(test))]
++                                        block_submission_timeout: self
++                                            .block_submission_timeout
++                                            .duration(),
++                                        #[cfg(not(test))]
+                                         job_admission: job_admission.clone(),
+                                         #[cfg(not(test))]
+                                         generation_gate: self.generation_gate.clone(),
+@@ -516,12 +555,25 @@ pub(crate) struct StratumContext {
+     pub chain_store_handle: ChainStoreHandle,
+     pub mode: PoolMode,
+     #[cfg(not(test))]
++    pub block_submission_timeout: Duration,
++    #[cfg(not(test))]
+     pub job_admission: Option<Arc<BitcoinCoreJobAdmission>>,
+     #[cfg(not(test))]
+     pub generation_gate: JobGenerationGate,
+ }
+ 
+ impl StratumContext {
++    pub(crate) fn block_submission_timeout(&self) -> Duration {
++        #[cfg(not(test))]
++        {
++            self.block_submission_timeout
++        }
++        #[cfg(test)]
++        {
++            Duration::from_secs(2)
++        }
++    }
++
+     fn job_admission(&self) -> Option<&Arc<BitcoinCoreJobAdmission>> {
+         #[cfg(not(test))]
+         {
+@@ -948,6 +1000,21 @@ mod stratum_server_tests {
+         assert!(!requires_job_admission(bitcoin::Network::Regtest, false));
+     }
+ 
++    #[test]
++    fn block_submission_timeout_bounds_are_enforced_at_the_builder_boundary() {
++        // Arrange
++        let zero = Duration::ZERO;
++        let excessive = Duration::from_millis(60_001);
++
++        // Act
++        let zero_result = BlockSubmissionTimeout::try_from(zero);
++        let excessive_result = BlockSubmissionTimeout::try_from(excessive);
++
++        // Assert
++        assert!(zero_result.is_err());
++        assert!(excessive_result.is_err());
++    }
++
+     #[tokio::test]
+     async fn test_create_and_start_server() {
+         let (_shutdown_tx, shutdown_rx) = oneshot::channel();
+diff --git a/p2poolv2_node/src/main.rs b/p2poolv2_node/src/main.rs
+index c443742..912668f 100644
+--- a/p2poolv2_node/src/main.rs
++++ b/p2poolv2_node/src/main.rs
+@@ -28,7 +28,7 @@ use p2poolv2_lib::store::Store;
+ use p2poolv2_lib::store::writer::{StoreHandle, StoreWriter, write_channel};
+ use p2poolv2_lib::stratum::client_connections::start_connections_handler;
+ use p2poolv2_lib::stratum::emission::Emission;
+-use p2poolv2_lib::stratum::server::StratumServerBuilder;
++use p2poolv2_lib::stratum::server::{BlockSubmissionTimeout, StratumServerBuilder};
+ use p2poolv2_lib::stratum::work::gbt::start_gbt;
+ use p2poolv2_lib::stratum::work::notify::start_notify;
+ use p2poolv2_lib::stratum::work::tracker::start_tracker_actor;
+@@ -276,6 +276,12 @@ async fn main() -> ExitCode {
+                 stratum_config.job_admission_timeout_ms,
+             ))
+             .job_admission_max_concurrency(stratum_config.job_admission_max_concurrency)
++            .block_submission_timeout(
++                BlockSubmissionTimeout::try_from(std::time::Duration::from_millis(
++                    stratum_config.block_submission_timeout_ms,
++                ))
++                .expect("parsed Stratum config validates the block submission timeout"),
++            )
+             .expected_payout_script(expected_payout_script)
+             .generation_gate(generation_gate)
+             .build()
+

@@ -46,6 +46,8 @@ documented in
 [`docs/protocol/bwg-0.1-hydra-solo-integration.md`](docs/protocol/bwg-0.1-hydra-solo-integration.md).
 The mandatory mainnet Reward Policy and BIP 23 pre-work gate is specified and exercised in
 [`docs/protocol/bwg-0.1-mainnet-job-admission.md`](docs/protocol/bwg-0.1-mainnet-job-admission.md).
+The network-block fast path and composed outage/reorg evidence are documented in
+[`docs/protocol/bwg-0.1-independent-block-submission.md`](docs/protocol/bwg-0.1-independent-block-submission.md).
 
 ## Principles
 

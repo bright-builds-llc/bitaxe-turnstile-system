@@ -54,6 +54,11 @@
   JSON-null BIP 23 proposal receipt; bounded concurrency, a serialized generation gate, exact-job
   rollback, old-tip invalidation, metadata-only evidence, and secret-safe cleanup prevent stale,
   invalid, or unavailable validation from leaking work to a Worker.
+- [Ticket 19](./issues/19-independent-block-submission.md) made network-qualified block submission
+  independent of BWG availability: a type-bounded direct Bitcoin Core path precedes accounting;
+  explicit accepted, duplicate, rejected, inconclusive, unavailable, and reorg behavior remains
+  separate from an issued Gate Pass; and composed Authority, SSE, Relying Service, and PostgreSQL
+  outages preserve Core acceptance while exposing the residual risk of uncredited observer loss.
 
 ## Persistence boundary split
 

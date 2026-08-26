@@ -6,7 +6,9 @@ async fn mismatched_consent_session_fails_closed_and_releases_extranonce()
 -> Result<(), Box<dyn Error>> {
     // Arrange
     let IntegrationFixture {
-        _database,
+        database: _database,
+        authority_task,
+        reference_task,
         hydra_address,
         outbox,
         sessions,
@@ -65,5 +67,17 @@ async fn mismatched_consent_session_fails_closed_and_releases_extranonce()
     sessions
         .release_unbound_connection(&replacement_connection_id)
         .await?;
+    authority_task.abort();
+    assert!(
+        authority_task
+            .await
+            .is_err_and(|error| error.is_cancelled())
+    );
+    reference_task.abort();
+    assert!(
+        reference_task
+            .await
+            .is_err_and(|error| error.is_cancelled())
+    );
     Ok(())
 }

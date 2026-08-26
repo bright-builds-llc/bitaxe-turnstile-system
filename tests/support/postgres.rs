@@ -1,4 +1,6 @@
-use std::error::Error;
+use std::{error::Error, time::Duration};
+
+use sqlx::postgres::PgPoolOptions;
 
 use testcontainers::{
     ContainerAsync, GenericImage, ImageExt as _, core::IntoContainerPort as _, core::WaitFor,
@@ -6,7 +8,9 @@ use testcontainers::{
 };
 
 pub struct PostgresTestDatabase {
-    _container: ContainerAsync<GenericImage>,
+    // Each integration-test binary compiles this shared helper independently.
+    #[allow(dead_code)]
+    container: ContainerAsync<GenericImage>,
     database_url: String,
 }
 
@@ -26,12 +30,30 @@ impl PostgresTestDatabase {
         let port = container.get_host_port_ipv4(5432).await?;
 
         Ok(Self {
-            _container: container,
+            container,
             database_url: format!("postgres://bwg_test:bwg_test_password@{host}:{port}/bwg_test"),
         })
     }
 
     pub fn database_url(&self) -> &str {
         &self.database_url
+    }
+
+    #[allow(dead_code)]
+    pub async fn pause(&self) -> Result<(), Box<dyn Error>> {
+        self.container.pause().await?;
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub async fn resume(&self) -> Result<(), Box<dyn Error>> {
+        self.container.unpause().await?;
+        let readiness_pool = PgPoolOptions::new()
+            .max_connections(1)
+            .acquire_timeout(Duration::from_secs(20))
+            .connect(&self.database_url)
+            .await?;
+        readiness_pool.close().await;
+        Ok(())
     }
 }

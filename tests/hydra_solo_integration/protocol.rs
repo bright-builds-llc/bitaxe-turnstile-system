@@ -22,6 +22,24 @@ pub(super) async fn regtest_block_count() -> Result<u64, Box<dyn Error>> {
         .ok_or_else(|| "Bitcoin Core block count must be an integer".into())
 }
 
+pub(super) async fn regtest_best_block_hash() -> Result<String, Box<dyn Error>> {
+    let response = bitcoin_rpc("getbestblockhash", serde_json::json!([])).await?;
+    response["result"]
+        .as_str()
+        .map(str::to_owned)
+        .ok_or_else(|| "Bitcoin Core best block hash must be a string".into())
+}
+
+pub(super) async fn invalidate_regtest_block(block_hash: &str) -> Result<(), Box<dyn Error>> {
+    bitcoin_rpc("invalidateblock", serde_json::json!([block_hash])).await?;
+    Ok(())
+}
+
+pub(super) async fn reconsider_regtest_block(block_hash: &str) -> Result<(), Box<dyn Error>> {
+    bitcoin_rpc("reconsiderblock", serde_json::json!([block_hash])).await?;
+    Ok(())
+}
+
 pub(super) async fn wait_for_block_height(expected: u64) -> Result<(), Box<dyn Error>> {
     timeout(Duration::from_secs(20), async {
         loop {

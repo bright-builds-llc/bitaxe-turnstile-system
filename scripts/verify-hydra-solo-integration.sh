@@ -97,6 +97,20 @@ cleanup() {
       fi
     fi
   done
+  block_submission_count=0
+  maximum_submission_latency_milliseconds=0
+  for block_evidence_path in "$integration_root"/block-submission-*.txt; do
+    if [[ -f "$block_evidence_path" ]]; then
+      block_submission_count=$((block_submission_count + 1))
+      submission_latency=$(awk -F= '$1 == "submission_latency_milliseconds" { print $2 }' "$block_evidence_path")
+      if [[ ! "$submission_latency" =~ ^[0-9]+$ ]]; then
+        printf 'Invalid block submission latency evidence\n' >&2
+        command_exit=1
+      elif ((submission_latency > maximum_submission_latency_milliseconds)); then
+        maximum_submission_latency_milliseconds=$submission_latency
+      fi
+    fi
+  done
   logs_are_safe=true
   prohibited_values=(
     "${rpc_password:-}"
@@ -104,7 +118,7 @@ cleanup() {
     "${mining_address:-}"
     "hydra-integration-secret-P9vK2mQ7xR4tY8uN3cF6wL1zA"
   )
-  for log_path in "$integration_root"/*.log; do
+  for log_path in "$integration_root"/*.log "$integration_root"/block-submission-*.txt; do
     if [[ -f "$log_path" ]]; then
       for prohibited_value in "${prohibited_values[@]}"; do
         if [[ -n "$prohibited_value" ]] && grep -Fq -- "$prohibited_value" "$log_path"; then
@@ -117,7 +131,7 @@ cleanup() {
     fi
   done
   if [[ "$logs_are_safe" == true ]]; then
-    for log_path in "$integration_root"/*.log; do
+    for log_path in "$integration_root"/*.log "$integration_root"/block-submission-*.txt; do
       if [[ -f "$log_path" ]] && ! cp "$log_path" "$evidence_dir/"; then
         printf 'Failed to preserve integration log %s\n' "$log_path" >&2
         command_exit=1
@@ -144,7 +158,11 @@ cleanup() {
     printf 'service_fee_basis_points=0\n'
     printf 'bip23_success_result=json_null\n'
     printf 'job_admission_patch_sha256=%s\n' "${p2pool_admission_patch_digest:-unknown}"
+    printf 'block_submission_patch_sha256=%s\n' "${p2pool_block_submission_patch_digest:-unknown}"
     printf 'job_admission_acceptances=%s\n' "$admission_count"
+    printf 'block_submission_count=%s\n' "$block_submission_count"
+    printf 'maximum_submission_latency_milliseconds=%s\n' "$maximum_submission_latency_milliseconds"
+    printf 'reorg_exercises=%s\n' "$block_submission_count"
     printf 'completed_at_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   } >"$evidence_dir/summary.txt"
   printf 'Hydra integration evidence: %s\n' "$evidence_dir"
@@ -217,6 +235,7 @@ run_integration() {
   BWG_BITCOIN_RPC_USER="$rpc_user" \
   BWG_BITCOIN_RPC_PASSWORD="$rpc_password" \
   BWG_BITCOIN_MINING_ADDRESS="$mining_address" \
+  BWG_BLOCK_SUBMISSION_EVIDENCE_PATH="$integration_root/block-submission-$integration_run.txt" \
     cargo test --manifest-path "$repo_root/Cargo.toml" --all-features \
       --test hydra_solo_integration -- --ignored --nocapture --test-threads=1 \
       2>&1 | tee "$integration_root/integration-$integration_run.log"
@@ -243,8 +262,12 @@ run_upstream_admission_tests() {
   {
     run_exact_upstream_test p2poolv2_config \
       tests::job_admission_bounds_fail_closed
+    run_exact_upstream_test bitcoindrpc tests::test_submit_block
+    run_exact_upstream_test bitcoindrpc \
+      tests::submit_block_classifies_every_non_success_result
     for test_name in \
       stratum::server::stratum_server_tests::mainnet_cannot_disable_job_admission \
+      stratum::server::stratum_server_tests::block_submission_timeout_bounds_are_enforced_at_the_builder_boundary \
       stratum::work::job_admission::tests::deepest_constructor_rejects_out_of_profile_bounds \
       stratum::work::prepared_notify::tests::job_admission_tests::admission_rejects_a_reward_policy_payout_mismatch \
       stratum::work::prepared_notify::tests::job_admission_tests::admission_rejects_a_previous_block_mismatch \
@@ -270,6 +293,15 @@ run_upstream_admission_tests() {
       stratum::work::notify::tests::test_build_notify_and_extract_outputs_integration; do
       run_exact_upstream_test p2poolv2_lib "$test_name"
     done
+    for test_name in \
+      stratum::message_handlers::submit::block_submission_tests::submission_outcomes_are_explicit_and_do_not_retry_through_gate_services \
+      stratum::message_handlers::submit::block_submission_tests::unavailable_bitcoin_core_has_an_explicit_non_gate_outcome \
+      stratum::message_handlers::submit::block_submission_tests::hanging_bitcoin_core_is_bounded_by_the_submission_deadline \
+      stratum::message_handlers::submit::handle_submit_tests::test_handle_submit_with_stale_job_returns_error \
+      stratum::message_handlers::submit::handle_submit_tests::test_handle_submit_duplicate_share_is_rejected \
+      stratum::message_handlers::submit::handle_submit_tests::test_p2poolv2_mode_rejects_share_not_meeting_pool_difficulty; do
+      run_exact_upstream_test p2poolv2_lib "$test_name"
+    done
   } 2>&1 | tee "$integration_root/upstream-admission-tests.log"
 }
 
@@ -293,11 +325,14 @@ p2pool_patch=$(jq -er '.p2poolv2.regtestPatch' "$provenance_path")
 p2pool_patch_digest=$(jq -er '.p2poolv2.regtestPatchSha256' "$provenance_path")
 p2pool_admission_patch=$(jq -er '.p2poolv2.jobAdmissionPatch' "$provenance_path")
 p2pool_admission_patch_digest=$(jq -er '.p2poolv2.jobAdmissionPatchSha256' "$provenance_path")
+p2pool_block_submission_patch=$(jq -er '.p2poolv2.blockSubmissionPatch' "$provenance_path")
+p2pool_block_submission_patch_digest=$(jq -er '.p2poolv2.blockSubmissionPatchSha256' "$provenance_path")
 bitcoin_version=$(jq -er '.bitcoinCore.version' "$provenance_path")
 bitcoin_source_url=$(jq -er '.bitcoinCore.sourceUrl' "$provenance_path")
 bitcoin_source_digest=$(jq -er '.bitcoinCore.sha256' "$provenance_path")
 patch_path="$repo_root/integration/hydra-solo/$p2pool_patch"
 admission_patch_path="$repo_root/integration/hydra-solo/$p2pool_admission_patch"
+block_submission_patch_path="$repo_root/integration/hydra-solo/$p2pool_block_submission_patch"
 actual_patch_digest=$(shasum -a 256 "$patch_path" | awk '{print $1}')
 if [[ "$actual_patch_digest" != "$p2pool_patch_digest" ]]; then
   printf 'Checksum mismatch for %s\n' "$patch_path" >&2
@@ -306,6 +341,11 @@ fi
 actual_admission_patch_digest=$(shasum -a 256 "$admission_patch_path" | awk '{print $1}')
 if [[ "$actual_admission_patch_digest" != "$p2pool_admission_patch_digest" ]]; then
   printf 'Checksum mismatch for %s\n' "$admission_patch_path" >&2
+  exit 1
+fi
+actual_block_submission_patch_digest=$(shasum -a 256 "$block_submission_patch_path" | awk '{print $1}')
+if [[ "$actual_block_submission_patch_digest" != "$p2pool_block_submission_patch_digest" ]]; then
+  printf 'Checksum mismatch for %s\n' "$block_submission_patch_path" >&2
   exit 1
 fi
 
@@ -340,6 +380,7 @@ tar -xzf "$source_archive" -C "$integration_root/source"
 source_dir=$(find "$integration_root/source" -mindepth 1 -maxdepth 1 -type d | head -1)
 git -C "$source_dir" apply "$patch_path"
 git -C "$source_dir" apply "$admission_patch_path"
+git -C "$source_dir" apply "$block_submission_patch_path"
 hydra_target_dir="$repo_root/target/hydra-v$p2pool_version"
 CARGO_TARGET_DIR="$hydra_target_dir" \
   cargo build --manifest-path "$source_dir/Cargo.toml" -p p2poolv2_node --bin p2poolv2

@@ -52,5 +52,7 @@ Challenge, Protected Action, Gate Pass, or gate-accounting concept.
 Every released job now passes the mandatory-mainnet Reward Policy and BIP 23 gate described in
 [`bwg-0.1-mainnet-job-admission.md`](bwg-0.1-mainnet-job-admission.md). Network-target block
 submission remains on Hydra's existing fast path before share accounting. The integration closes
-the Pool Adapter outbox before submitting a valid regtest block and proves Bitcoin Core advances
-even though the proxy subsequently fails its local persistence step.
+Gate Authority/SSE, leaves the Relying Service absent, and stops PostgreSQL before submitting a
+valid regtest block; Bitcoin Core still advances before the stalled observer is boundedly aborted.
+The expanded outage, result-category, timing, reorg, and residual-risk contract is specified in
+[`bwg-0.1-independent-block-submission.md`](bwg-0.1-independent-block-submission.md).
