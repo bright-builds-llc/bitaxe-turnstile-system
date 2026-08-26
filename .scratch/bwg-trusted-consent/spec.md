@@ -8,7 +8,8 @@ Ticket 14 requires consequential work to be confirmed independently of an embedd
 Service. Client-side popup and JWS checks alone cannot enforce this: the production Gate Authority
 must verify a server-challenged attested WebAuthn ceremony, issue a disclosure-bound receipt, and
 make that receipt mandatory at the authoritative lease-start boundary. Material Pool Offer changes
-also need the replacement-offer path owned by Ticket 20 before they can be classified in production.
+also need the pending-reconfirmation seam owned by `bwg-multi-worker-failover` Ticket 03 before they
+can be classified in production.
 
 ## Solution
 
@@ -17,8 +18,8 @@ WebAuthn registration ceremony tied to one Work Challenge and exact disclosure/P
 verifies UP, UV, origin, RP ID, credential signature, and operator-trusted non-self attestation,
 then records a terminal verified result. A separate receipt slice signs that result and requires the
 receipt at lease admission. The browser slice consumes only the signed receipt and cannot relax the
-server rule. Ticket 20 later derives the same signed requirement from real prior/current material
-term classification.
+server rule. The failover child effort derives the same signed requirement from real prior/current
+material-term classification, then consumes it in one composed parent-closure proof.
 
 ## Implementation Decisions
 
@@ -54,7 +55,8 @@ term classification.
 
 - Personal identity, account login, authenticator ownership, uniqueness, or proof of humanity.
 - Remote deletion or non-discoverability guarantees for platform credentials.
-- Material-term replacement/failover orchestration before BWG Core Ticket 20 exists.
+- Material-term replacement/failover orchestration before `bwg-multi-worker-failover` Ticket 03 is
+  resolved.
 
 ## Parent
 

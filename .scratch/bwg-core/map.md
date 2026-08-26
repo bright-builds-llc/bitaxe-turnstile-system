@@ -60,6 +60,28 @@
   separate from an issued Gate Pass; and composed Authority, SSE, Relying Service, and PostgreSQL
   outages preserve Core acceptance while exposing the residual risk of uncredited observer loss.
 
+## Multi-worker failover boundary split
+
+Ticket 20 originally required both a production replacement-offer path and fresh Trusted Consent
+for material replacements. At the same time, `bwg-trusted-consent` Ticket 04 was blocked by the
+whole of Ticket 20. That made each ticket depend on the other's completion rather than on a concrete
+interface.
+
+The unresolved work now uses the
+[`bwg-multi-worker-failover`](../bwg-multi-worker-failover/map.md) child effort without renumbering
+the BWG Core roadmap:
+
+1. aggregate exact work across concurrent and successive sessions;
+2. isolate failed leases and admit unlinkable replacement Workers;
+3. establish the production equivalent-offer/pending-reconfirmation seam;
+4. let [`bwg-trusted-consent` Ticket 04](../bwg-trusted-consent/issues/04-material-change-bridge.md)
+   bind material terms to fresh signed confirmation; and
+5. compose failover, reconfirmation, threshold issuance, terminal lease shutdown, and closure of
+   parent Tickets 14 and 20.
+
+The parent tickets are integration records, not prerequisites of their own child slices. This keeps
+the implementation frontier acyclic and independently resolvable.
+
 ## Persistence boundary split
 
 The former Tickets 06 and 07 created a dependency cycle: durable issuance and Redemption were acceptance criteria for Ticket 06, while their PostgreSQL foundation was assigned to Ticket 07 and blocked by Ticket 06. The unresolved sequence was split on 2026-08-23 so work can proceed one bounded persistence context at a time:

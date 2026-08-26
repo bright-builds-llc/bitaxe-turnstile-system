@@ -13,11 +13,13 @@ Core roadmap.
   attestation.
 - A signed Trusted Consent Receipt is distinct from a Gate Pass and is consumed only by lease
   admission.
-- Production material-term wiring remains on BWG Core Ticket 20's replacement-offer path.
+- Production material-term wiring consumes the explicit pending-reconfirmation seam from
+  [`bwg-multi-worker-failover` Ticket 03](../bwg-multi-worker-failover/issues/03-equivalent-offer-failover.md).
 
 ## Delivery order
 
 1. [x] [Authority attested WebAuthn ceremony](./issues/01-authority-webauthn-ceremony.md)
 2. [x] [Signed receipt and lease enforcement](./issues/02-receipt-lease-enforcement.md)
 3. [x] [Browser hardening and end-to-end evidence](./issues/03-browser-hardening-evidence.md)
-4. [Material-change bridge](./issues/04-material-change-bridge.md)
+4. [Material-change bridge](./issues/04-material-change-bridge.md), after
+   `bwg-multi-worker-failover` Ticket 03
