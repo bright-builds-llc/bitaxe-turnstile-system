@@ -1,0 +1,218 @@
+diff --git a/p2poolv2_lib/src/stratum/work/prepared_notify.rs b/p2poolv2_lib/src/stratum/work/prepared_notify.rs
+index a8d5591..1802d9e 100644
+--- a/p2poolv2_lib/src/stratum/work/prepared_notify.rs
++++ b/p2poolv2_lib/src/stratum/work/prepared_notify.rs
+@@ -403,11 +403,34 @@ fn build_per_miner_coinbase2(
+ /// overwrites placeholders in the pre-built JSON, and inserts the job into the tracker.
+ /// When miner_address is None (solo mode), a commitment hash is still
+ /// computed from the prefix alone.
+-pub(crate) fn build_notify_from_prepared(
++pub(crate) struct UnadmittedJobVariant {
++    notify_json: String,
++    canonical_block: bitcoin::Block,
++    block_template: Arc<BlockTemplate>,
++    coinbase1: String,
++    coinbase2: String,
++    share_commitment: Option<ShareCommitment>,
++    nsecs: u64,
++    merkle_branches: Vec<bitcoin::TxMerkleNode>,
++    job_id: super::tracker::JobId,
++}
++
++impl UnadmittedJobVariant {
++    pub(crate) fn canonical_block(&self) -> &bitcoin::Block {
++        &self.canonical_block
++    }
++
++    pub(crate) fn coinbase_outputs(&self) -> &[bitcoin::TxOut] {
++        &self.canonical_block.txdata[0].output
++    }
++}
++
++pub(crate) fn build_unadmitted_job_variant(
+     prepared: &PreparedNotifyParams,
+     miner_address: Option<&Address>,
+     tracker_handle: &JobTracker,
+-) -> Result<String, WorkError> {
++    assigned_extranonce1: &str,
++) -> Result<UnadmittedJobVariant, WorkError> {
+     let commitment_hash_hex = get_commitment_hex(&prepared.commitment_prefix, miner_address)?;
+     let nsecs = get_timestamp_bytes(&SystemTimeProvider);
+ 
+@@ -444,18 +467,89 @@ pub(crate) fn build_notify_from_prepared(
+         coinbase_value: prepared.template.coinbasevalue,
+     });
+ 
+-    // Insert job into tracker
+-    tracker_handle.insert_job(
+-        Arc::clone(&prepared.template),
+-        prepared.coinbase1.clone(),
++    let canonical_extranonce2 = "0000000000000000";
++    let coinbase_hex = format!(
++        "{}{}{}{}",
++        prepared.coinbase1, assigned_extranonce1, canonical_extranonce2, coinbase2
++    );
++    let coinbase_bytes = hex::decode(&coinbase_hex).map_err(|error| WorkError {
++        message: format!("Failed to decode canonical coinbase: {error}"),
++    })?;
++    let coinbase: bitcoin::Transaction =
++        bitcoin::consensus::deserialize(&coinbase_bytes).map_err(|error| WorkError {
++            message: format!("Failed to parse canonical coinbase: {error}"),
++        })?;
++    let merkle_root = super::gbt::compute_merkle_root_from_branches(
++        coinbase.compute_txid(),
++        &prepared.merkle_branches,
++    );
++    let previous_block_hash = prepared
++        .template
++        .previousblockhash
++        .parse::<bitcoin::BlockHash>()
++        .map_err(|error| WorkError {
++            message: format!("Failed to parse previous block hash: {error}"),
++        })?;
++    let bits =
++        bitcoin::CompactTarget::from_unprefixed_hex(&prepared.template.bits).map_err(|error| {
++            WorkError {
++                message: format!("Failed to parse compact target: {error}"),
++            }
++        })?;
++    let header = bitcoin::block::Header {
++        version: bitcoin::block::Version::from_consensus(prepared.template.version),
++        prev_blockhash: previous_block_hash,
++        merkle_root,
++        time: prepared.template.curtime,
++        bits,
++        nonce: 0,
++    };
++    let mut transactions = Vec::with_capacity(prepared.template.transactions.len() + 1);
++    transactions.push(coinbase);
++    transactions.extend(prepared.template.decode_transactions());
++
++    Ok(UnadmittedJobVariant {
++        notify_json,
++        canonical_block: bitcoin::Block {
++            header,
++            txdata: transactions,
++        },
++        block_template: Arc::clone(&prepared.template),
++        coinbase1: prepared.coinbase1.clone(),
+         coinbase2,
+         share_commitment,
+         nsecs,
+-        prepared.merkle_branches.clone(),
++        merkle_branches: prepared.merkle_branches.clone(),
+         job_id,
++    })
++}
++
++pub(crate) fn publish_admitted_job_variant(
++    variant: UnadmittedJobVariant,
++    tracker_handle: &JobTracker,
++) -> String {
++    tracker_handle.insert_job(
++        variant.block_template,
++        variant.coinbase1,
++        variant.coinbase2,
++        variant.share_commitment,
++        variant.nsecs,
++        variant.merkle_branches,
++        variant.job_id,
+     );
+ 
+-    Ok(notify_json)
++    variant.notify_json
++}
++
++pub(crate) fn build_notify_from_prepared(
++    prepared: &PreparedNotifyParams,
++    miner_address: Option<&Address>,
++    tracker_handle: &JobTracker,
++) -> Result<String, WorkError> {
++    let variant =
++        build_unadmitted_job_variant(prepared, miner_address, tracker_handle, "00000000")?;
++
++    Ok(publish_admitted_job_variant(variant, tracker_handle))
+ }
+ 
+ #[cfg(test)]
+@@ -497,6 +591,80 @@ mod tests {
+             .time(1700000000u32)
+     }
+ 
++    #[tokio::test]
++    async fn prototype_exact_candidate_and_outputs_are_admitted_before_job_release() {
++        let template = Arc::new(test_template());
++        let expected_output = bitcoin::TxOut {
++            value: bitcoin::Amount::from_sat(template.coinbasevalue),
++            script_pubkey: test_address().script_pubkey(),
++        };
++        let prepared = test_notify_params_builder(Arc::clone(&template), false)
++            .build()
++            .expect("prepared builder should succeed");
++        let tracker = start_tracker_actor();
++        let variant =
++            build_unadmitted_job_variant(&prepared, Some(&test_address()), &tracker, "01020304")
++                .expect("exact job variant should be constructible");
++        let job_id = variant.job_id;
++        let candidate_hash = variant.canonical_block().block_hash();
++        assert_eq!(variant.coinbase_outputs()[0], expected_output);
++        assert!(variant.coinbase_outputs().len() >= 2);
++        assert!(tracker.get_job(job_id).is_none());
++
++        let (admit_tx, admit_rx) = tokio::sync::oneshot::channel::<()>();
++        let tracker_for_task = Arc::clone(&tracker);
++        let admission = tokio::spawn(async move {
++            admit_rx.await.expect("prototype admission should resolve");
++            assert_eq!(variant.canonical_block().block_hash(), candidate_hash);
++            assert_eq!(variant.coinbase_outputs()[0], expected_output);
++            publish_admitted_job_variant(variant, &tracker_for_task)
++        });
++
++        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
++        assert!(tracker.get_job(job_id).is_none());
++        admit_tx.send(()).expect("admission receiver should exist");
++        let notify_json = admission.await.expect("admission task should finish");
++
++        assert!(tracker.get_job(job_id).is_some());
++        assert!(notify_json.contains("mining.notify"));
++    }
++
++    #[tokio::test]
++    async fn prototype_late_success_cannot_publish_a_stale_job_variant() {
++        use std::sync::atomic::{AtomicU64, Ordering};
++
++        let prepared = test_notify_params_builder(Arc::new(test_template()), false)
++            .build()
++            .expect("prepared builder should succeed");
++        let tracker = start_tracker_actor();
++        let first =
++            build_unadmitted_job_variant(&prepared, Some(&test_address()), &tracker, "01020304")
++                .expect("first variant should build");
++        let first_job_id = first.job_id;
++        let latest_generation = Arc::new(AtomicU64::new(1));
++        let latest_for_task = Arc::clone(&latest_generation);
++        let tracker_for_task = Arc::clone(&tracker);
++        let (admit_tx, admit_rx) = tokio::sync::oneshot::channel::<()>();
++        let admission = tokio::spawn(async move {
++            admit_rx.await.expect("first admission should resolve");
++            if latest_for_task.load(Ordering::SeqCst) == 1 {
++                publish_admitted_job_variant(first, &tracker_for_task);
++            }
++        });
++
++        latest_generation.store(2, Ordering::SeqCst);
++        admit_tx.send(()).expect("admission receiver should exist");
++        admission.await.expect("admission task should finish");
++        assert!(tracker.get_job(first_job_id).is_none());
++
++        let second =
++            build_unadmitted_job_variant(&prepared, Some(&test_address()), &tracker, "05060708")
++                .expect("second variant should build");
++        let second_job_id = second.job_id;
++        publish_admitted_job_variant(second, &tracker);
++        assert!(tracker.get_job(second_job_id).is_some());
++    }
++
+     #[test]
+     fn test_prepare_notify_params_produces_valid_json() {
+         let template = Arc::new(test_template());
