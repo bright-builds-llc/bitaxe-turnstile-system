@@ -36,6 +36,9 @@ The framework-independent browser SDK is exported as the package subpath `bwg-co
 The SolidJS custom element is exported as `bwg-core/component` for plain HTML, inline, modal, and
 full-page integrations; see
 [`docs/protocol/bwg-0.1-web-component.md`](docs/protocol/bwg-0.1-web-component.md).
+Elevated work and Authority-signed changed terms use the attested WebAuthn trusted-origin receipt
+profile described in
+[`docs/protocol/bwg-0.1-trusted-consent.md`](docs/protocol/bwg-0.1-trusted-consent.md).
 
 The Rust Stratum V1 Pool Adapter module forwards standard Worker traffic, durably records accepted
 events before Worker acknowledgement, and retries Gate Authority delivery from its context-local

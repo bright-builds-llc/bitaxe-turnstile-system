@@ -16,5 +16,6 @@ mod reference_persistence;
 pub mod reference_service;
 pub mod service_auth;
 pub mod stratum_v1;
+pub mod trusted_consent;
 pub mod web_url;
 pub mod work;

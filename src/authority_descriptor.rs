@@ -57,6 +57,9 @@ impl AuthorityPublicConfig {
                 challenge_creation: format!("{base_url}/v0/challenges"),
                 challenge_progress: format!("{base_url}/v0/challenges/{{challenge_id}}/events"),
                 gate_pass: format!("{base_url}/v0/challenges/{{challenge_id}}/gate-pass"),
+                trusted_consent: format!(
+                    "{base_url}/v0/challenges/{{challenge_id}}/trusted-consent"
+                ),
                 authority_descriptor: format!(
                     "{base_url}/.well-known/pow-gate-configuration"
                 ),
@@ -85,6 +88,7 @@ impl AuthorityPublicConfig {
                 bounded_overrides: true,
                 verified_progress_streaming: true,
                 approved_pool_offers: true,
+                attested_trusted_consent: true,
             },
             critical_capabilities: Vec::new(),
             limits: AuthorityLimits {
@@ -195,6 +199,7 @@ impl AuthorityDescriptorFields {
                 self.endpoints.challenge_creation.as_str(),
                 self.endpoints.challenge_progress.as_str(),
                 self.endpoints.gate_pass.as_str(),
+                self.endpoints.trusted_consent.as_str(),
                 self.endpoints.authority_descriptor.as_str(),
                 self.endpoints.jwks.as_str(),
                 self.source.repository.as_str(),
@@ -226,6 +231,7 @@ impl AuthorityDescriptorFields {
             "bounded_overrides",
             "verified_progress_streaming",
             "approved_pool_offers",
+            "attested_trusted_consent",
         ];
         if self
             .critical_capabilities
@@ -249,6 +255,7 @@ struct AuthorityEndpoints {
     challenge_creation: String,
     challenge_progress: String,
     gate_pass: String,
+    trusted_consent: String,
     authority_descriptor: String,
     jwks: String,
 }
@@ -283,6 +290,7 @@ struct AuthorityCapabilities {
     bounded_overrides: bool,
     verified_progress_streaming: bool,
     approved_pool_offers: bool,
+    attested_trusted_consent: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

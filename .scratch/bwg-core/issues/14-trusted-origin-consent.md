@@ -2,9 +2,13 @@
 
 **What to build:** Elevated Work Requirements and materially changed Pool Offer terms require confirmation on a trusted Authority origin that an embedding website cannot silently suppress or replace.
 
-**Blocked by:** 13: Protect account creation with an accessible Web Component.
+**Blocked by:** 13: Protect account creation with an accessible Web Component; child effort
+`bwg-trusted-consent`; 20: Aggregate Workers and fail over equivalent Pool Offers (material-change
+closure only).
 
-**Status:** ready-for-agent
+**Status:** claimed
+
+**Child effort:** [`bwg-trusted-consent`](../../bwg-trusted-consent/map.md)
 
 - [ ] Light and Standard local work can remain in the conforming component under client ceilings.
 - [ ] Elevated work requires a trusted-origin confirmation surface before any lease starts.

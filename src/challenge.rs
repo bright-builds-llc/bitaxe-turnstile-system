@@ -15,6 +15,7 @@ const MAX_CHALLENGE_ID_LENGTH: usize = 128;
 const MAX_CLAIMANT_KEY_LENGTH: usize = 4096;
 const LIGHT_EXPECTED_HASHES_VALUE: u64 = 1_u64 << 42;
 const STANDARD_EXPECTED_HASHES_VALUE: u64 = 1_u64 << 44;
+const ELEVATED_EXPECTED_HASHES_VALUE: u64 = 1_u64 << 46;
 const STANDARD_OVERRIDE_MINIMUM: u64 = 1_u64 << 43;
 const STANDARD_OVERRIDE_MAXIMUM: u64 = 1_u64 << 45;
 
@@ -41,6 +42,7 @@ impl ProtectedActionType {
 pub enum ActionPolicy {
     AccountCreationLightV1,
     AccountCreationStandardV1,
+    AccountCreationElevatedV1,
 }
 
 #[derive(Clone, Copy)]
@@ -52,7 +54,7 @@ struct ActionPolicySpec {
     challenge_ttl_seconds: u64,
 }
 
-const ACTION_POLICY_SPECS: [ActionPolicySpec; 2] = [
+const ACTION_POLICY_SPECS: [ActionPolicySpec; 3] = [
     ActionPolicySpec {
         policy: ActionPolicy::AccountCreationLightV1,
         id: ActionPolicy::ACCOUNT_CREATION_LIGHT_V1,
@@ -69,6 +71,14 @@ const ACTION_POLICY_SPECS: [ActionPolicySpec; 2] = [
         maybe_override_bounds: Some((STANDARD_OVERRIDE_MINIMUM, STANDARD_OVERRIDE_MAXIMUM)),
         challenge_ttl_seconds: WORK_CHALLENGE_TTL_SECONDS,
     },
+    ActionPolicySpec {
+        policy: ActionPolicy::AccountCreationElevatedV1,
+        id: ActionPolicy::ACCOUNT_CREATION_ELEVATED_V1,
+        default_expected_hashes: NonZeroU64::new(ELEVATED_EXPECTED_HASHES_VALUE)
+            .expect("the Elevated preset is non-zero"),
+        maybe_override_bounds: None,
+        challenge_ttl_seconds: WORK_CHALLENGE_TTL_SECONDS,
+    },
 ];
 
 impl ActionPolicy {
@@ -76,10 +86,13 @@ impl ActionPolicy {
     pub const ACCOUNT_CREATION_LIGHT_V1: &'static str = "account-creation.light.v1";
     /// Stable identifier for the immutable Standard policy revision.
     pub const ACCOUNT_CREATION_STANDARD_V1: &'static str = "account-creation.standard.v1";
+    /// Stable identifier for the immutable Elevated policy revision.
+    pub const ACCOUNT_CREATION_ELEVATED_V1: &'static str = "account-creation.elevated.v1";
     /// Every Action Policy revision published by this implementation.
-    pub const ALL: [Self; 2] = [
+    pub const ALL: [Self; 3] = [
         Self::AccountCreationLightV1,
         Self::AccountCreationStandardV1,
+        Self::AccountCreationElevatedV1,
     ];
 
     /// Parses the stable identifier of a supported policy revision.
@@ -99,10 +112,15 @@ impl ActionPolicy {
     /// Returns the stable Protected Action Type governed by this policy revision.
     pub fn protected_action_type(self) -> ProtectedActionType {
         match self {
-            Self::AccountCreationLightV1 | Self::AccountCreationStandardV1 => {
-                ProtectedActionType::AccountCreation
-            }
+            Self::AccountCreationLightV1
+            | Self::AccountCreationStandardV1
+            | Self::AccountCreationElevatedV1 => ProtectedActionType::AccountCreation,
         }
+    }
+
+    /// Whether this policy requires Authority-origin WebAuthn confirmation before work starts.
+    pub fn requires_trusted_confirmation(self) -> bool {
+        matches!(self, Self::AccountCreationElevatedV1)
     }
 
     fn work_requirement(
@@ -164,6 +182,7 @@ impl ActionPolicy {
         match self {
             Self::AccountCreationLightV1 => &ACTION_POLICY_SPECS[0],
             Self::AccountCreationStandardV1 => &ACTION_POLICY_SPECS[1],
+            Self::AccountCreationElevatedV1 => &ACTION_POLICY_SPECS[2],
         }
     }
 }

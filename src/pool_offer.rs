@@ -321,6 +321,11 @@ impl SignedPoolOfferSet {
         &self.offers
     }
 
+    /// Exact compact Authority signature authenticating the visible offer set.
+    pub fn signature(&self) -> &str {
+        &self.signature
+    }
+
     pub(crate) fn validate_shape(&self) -> Result<(), PoolOfferError> {
         validate_offers(&self.offers)?;
         if self.signature.split('.').count() != 3 {
@@ -337,6 +342,8 @@ struct PoolOfferSetClaims {
     challenge_id: String,
     action_policy: String,
     offers: Vec<PoolOffer>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    trusted_confirmation_required: bool,
     bwg_version: String,
 }
 
@@ -348,6 +355,7 @@ pub struct VerifiedPoolOfferSet {
     challenge_id: String,
     action_policy: String,
     offers: Vec<PoolOffer>,
+    trusted_confirmation_required: bool,
 }
 
 impl VerifiedPoolOfferSet {
@@ -374,6 +382,11 @@ impl VerifiedPoolOfferSet {
     /// Exact authenticated offer list.
     pub fn offers(&self) -> &[PoolOffer] {
         &self.offers
+    }
+
+    /// Whether the authenticated terms require Authority-origin confirmation before work starts.
+    pub fn trusted_confirmation_required(&self) -> bool {
+        self.trusted_confirmation_required
     }
 }
 
@@ -407,6 +420,7 @@ pub fn verify_pool_offer_set(
         challenge_id: claims.challenge_id,
         action_policy: claims.action_policy,
         offers: claims.offers,
+        trusted_confirmation_required: claims.trusted_confirmation_required,
     })
 }
 
@@ -424,11 +438,16 @@ pub(crate) fn signed_default_pool_offers(
         challenge_id: challenge_id.to_owned(),
         action_policy: action_policy.id().to_owned(),
         offers: offers.clone(),
+        trusted_confirmation_required: action_policy.requires_trusted_confirmation(),
         bwg_version: PROTOCOL_VERSION.to_owned(),
     };
     validate_claims(&claims)?;
     let signature = signer.sign_authority_payload(POOL_OFFER_SET_TYPE, &claims)?;
     Ok(SignedPoolOfferSet { offers, signature })
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 fn default_pool_offer(

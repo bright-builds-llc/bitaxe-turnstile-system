@@ -379,6 +379,11 @@ async fn authority_descriptor_publishes_complete_public_contract()
         true
     );
     assert_eq!(descriptor["capabilities"]["approved_pool_offers"], true);
+    assert_eq!(
+        descriptor["endpoints"]["trusted_consent"],
+        "https://authority.example/v0/challenges/{challenge_id}/trusted-consent"
+    );
+    assert_eq!(descriptor["capabilities"]["attested_trusted_consent"], true);
     assert_eq!(descriptor["limits"]["max_action_reference_bytes"], 256);
     assert_eq!(
         descriptor["source"]["repository"],
@@ -388,7 +393,7 @@ async fn authority_descriptor_publishes_complete_public_contract()
     assert!(
         descriptor["policies"]
             .as_array()
-            .is_some_and(|policies| policies.len() == 2)
+            .is_some_and(|policies| policies.len() == 3)
     );
     assert!(descriptor["privacy"]["url"].as_str().is_some());
     assert!(descriptor["operator_policy_url"].as_str().is_some());

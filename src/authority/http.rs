@@ -27,6 +27,7 @@ use crate::{
     },
     lifecycle::{ChallengeLifecycle, PauseReason},
     progress::ProgressError,
+    trusted_consent::{TrustedConsentBeginRequest, TrustedConsentCeremonyId, TrustedConsentError},
 };
 
 #[derive(Clone)]
@@ -88,7 +89,50 @@ pub fn router(application: AuthorityApplication) -> Router {
             "/v0/challenges/{challenge_id}/cancel",
             post(cancel_challenge),
         )
+        .route(
+            "/v0/challenges/{challenge_id}/trusted-consent",
+            post(begin_trusted_consent),
+        )
+        .route(
+            "/v0/challenges/{challenge_id}/trusted-consent/{ceremony_id}",
+            post(finish_trusted_consent),
+        )
         .with_state(AuthorityState { application })
+}
+
+async fn begin_trusted_consent(
+    State(state): State<AuthorityState>,
+    Path(challenge_id): Path<String>,
+    Json(request): Json<TrustedConsentBeginRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let challenge_id = ChallengeId::try_from(challenge_id)?;
+    Ok(Json(
+        state
+            .application
+            .begin_trusted_consent(&challenge_id, request, current_unix_seconds()?)
+            .await?,
+    ))
+}
+
+async fn finish_trusted_consent(
+    State(state): State<AuthorityState>,
+    Path((challenge_id, ceremony_id)): Path<(String, String)>,
+    Json(credential): Json<serde_json::Value>,
+) -> Result<impl IntoResponse, ApiError> {
+    let challenge_id = ChallengeId::try_from(challenge_id)?;
+    let ceremony_id =
+        TrustedConsentCeremonyId::try_from(ceremony_id).map_err(AuthorityApplicationError::from)?;
+    Ok(Json(
+        state
+            .application
+            .finish_trusted_consent(
+                &challenge_id,
+                &ceremony_id,
+                credential,
+                current_unix_seconds()?,
+            )
+            .await?,
+    ))
 }
 
 async fn challenge_lifecycle(
@@ -321,6 +365,38 @@ impl IntoResponse for ApiError {
             }
             Self::InvalidApplication(AuthorityApplicationError::IssuanceRetired) => {
                 (StatusCode::GONE, "issuance_retired")
+            }
+            Self::InvalidApplication(AuthorityApplicationError::TrustedConsent(
+                TrustedConsentError::UnknownCeremony,
+            )) => (StatusCode::NOT_FOUND, "unknown_trusted_consent_ceremony"),
+            Self::InvalidApplication(AuthorityApplicationError::TrustedConsent(
+                TrustedConsentError::CeremonyExpired,
+            )) => (StatusCode::GONE, "trusted_consent_expired"),
+            Self::InvalidApplication(AuthorityApplicationError::TrustedConsent(
+                TrustedConsentError::CeremonyFailed,
+            )) => (StatusCode::GONE, "trusted_consent_failed"),
+            Self::InvalidApplication(AuthorityApplicationError::TrustedConsent(
+                TrustedConsentError::CeremonyAlreadyTerminal
+                | TrustedConsentError::CeremonyInProgress
+                | TrustedConsentError::LostVerificationLease,
+            )) => (StatusCode::CONFLICT, "trusted_consent_already_terminal"),
+            Self::InvalidApplication(AuthorityApplicationError::TrustedConsent(
+                TrustedConsentError::WebauthnUnavailable
+                | TrustedConsentError::InvalidWebauthnConfig
+                | TrustedConsentError::MissingAttestationTrust
+                | TrustedConsentError::InvalidAttestationTrust,
+            )) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "trusted_consent_unavailable",
+            ),
+            Self::InvalidApplication(AuthorityApplicationError::TrustedConsent(
+                TrustedConsentError::InvalidWebauthnState,
+            )) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "trusted_consent_state_invalid",
+            ),
+            Self::InvalidApplication(AuthorityApplicationError::TrustedConsent(_)) => {
+                (StatusCode::BAD_REQUEST, "invalid_trusted_consent")
             }
             Self::InvalidApplication(AuthorityApplicationError::PoolOffer(
                 crate::pool_offer::PoolOfferError::SigningUnavailable,

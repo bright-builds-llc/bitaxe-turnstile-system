@@ -10,6 +10,10 @@ use crate::{
     },
     pool_offer::PoolSelectionCommitment,
     progress::{AcceptedWorkAcknowledgement, AcceptedWorkEvent, ProgressError, WorkSessionId},
+    trusted_consent::{
+        TrustedConsentBinding, TrustedConsentCeremony, TrustedConsentCeremonyId,
+        TrustedConsentOperationOwner,
+    },
     work::{CreditedWork, VerifiedProgress, WorkError},
 };
 
@@ -43,6 +47,59 @@ pub(crate) enum PersistedIssuance {
     Pending,
     Issued { gate_pass: String },
     Retired,
+    Failed,
+}
+
+pub(crate) enum TrustedConsentCeremonyRecord {
+    Starting {
+        ceremony: TrustedConsentCeremony,
+    },
+    Pending {
+        ceremony: TrustedConsentCeremony,
+        creation_options: serde_json::Value,
+        registration_state: serde_json::Value,
+    },
+    Verifying {
+        ceremony: TrustedConsentCeremony,
+        creation_options: serde_json::Value,
+        registration_state: serde_json::Value,
+    },
+    Verified {
+        ceremony: TrustedConsentCeremony,
+    },
+    Failed {
+        ceremony: TrustedConsentCeremony,
+    },
+}
+
+impl TrustedConsentCeremonyRecord {
+    pub(crate) fn ceremony(&self) -> &TrustedConsentCeremony {
+        match self {
+            Self::Starting { ceremony }
+            | Self::Pending { ceremony, .. }
+            | Self::Verifying { ceremony, .. }
+            | Self::Verified { ceremony }
+            | Self::Failed { ceremony } => ceremony,
+        }
+    }
+}
+
+pub(crate) struct ReserveTrustedConsentCeremony<'a> {
+    pub ceremony: &'a TrustedConsentCeremony,
+    pub operation_owner: TrustedConsentOperationOwner,
+    pub lease_expires_at_unix_seconds: u64,
+}
+
+pub(crate) enum TrustedConsentReservation {
+    Claimed,
+    Existing(Box<TrustedConsentCeremonyRecord>),
+    InProgress,
+}
+
+pub(crate) enum TrustedConsentVerificationClaim {
+    Claimed(TrustedConsentCeremonyRecord),
+    InProgress,
+    Verified(TrustedConsentCeremonyRecord),
     Failed,
 }
 
@@ -188,6 +245,63 @@ pub(crate) trait AuthorityRepository: Send + Sync {
         expires_at: u64,
         now: u64,
     ) -> Result<(), AuthorityPersistenceError>;
+
+    async fn maybe_trusted_consent_by_binding(
+        &self,
+        binding: &TrustedConsentBinding,
+    ) -> Result<Option<TrustedConsentCeremonyRecord>, AuthorityPersistenceError>;
+
+    async fn reserve_trusted_consent_ceremony(
+        &self,
+        input: ReserveTrustedConsentCeremony<'_>,
+    ) -> Result<TrustedConsentReservation, AuthorityPersistenceError>;
+
+    async fn initialize_trusted_consent_ceremony(
+        &self,
+        ceremony_id: &TrustedConsentCeremonyId,
+        operation_owner: TrustedConsentOperationOwner,
+        creation_options: &serde_json::Value,
+        registration_state: &serde_json::Value,
+        initialized_at_unix_seconds: u64,
+    ) -> Result<TrustedConsentCeremonyRecord, AuthorityPersistenceError>;
+
+    async fn abandon_trusted_consent_reservation(
+        &self,
+        ceremony_id: &TrustedConsentCeremonyId,
+        operation_owner: TrustedConsentOperationOwner,
+    ) -> Result<(), AuthorityPersistenceError>;
+
+    async fn trusted_consent_ceremony(
+        &self,
+        ceremony_id: &TrustedConsentCeremonyId,
+    ) -> Result<TrustedConsentCeremonyRecord, AuthorityPersistenceError>;
+
+    async fn claim_trusted_consent_verification(
+        &self,
+        ceremony_id: &TrustedConsentCeremonyId,
+        operation_owner: TrustedConsentOperationOwner,
+        now_unix_seconds: u64,
+        lease_expires_at_unix_seconds: u64,
+    ) -> Result<TrustedConsentVerificationClaim, AuthorityPersistenceError>;
+
+    async fn complete_trusted_consent_ceremony(
+        &self,
+        ceremony_id: &TrustedConsentCeremonyId,
+        operation_owner: TrustedConsentOperationOwner,
+        verified_at_unix_seconds: u64,
+    ) -> Result<TrustedConsentCeremonyRecord, AuthorityPersistenceError>;
+
+    async fn fail_trusted_consent_ceremony(
+        &self,
+        ceremony_id: &TrustedConsentCeremonyId,
+        operation_owner: TrustedConsentOperationOwner,
+        failed_at_unix_seconds: u64,
+    ) -> Result<TrustedConsentCeremonyRecord, AuthorityPersistenceError>;
+
+    async fn retire_expired_trusted_consent_ceremonies(
+        &self,
+        now_unix_seconds: u64,
+    ) -> Result<u64, AuthorityPersistenceError>;
 }
 
 #[derive(Debug, Error)]
@@ -220,6 +334,12 @@ pub(crate) enum AuthorityPersistenceError {
     LostSigningLease,
     #[error("Claimant Issuance Proof identity was already consumed")]
     ReplayedIssuanceProof,
+    #[error("Trusted Consent ceremony was not found")]
+    UnknownTrustedConsentCeremony,
+    #[error("Trusted Consent verification lease was lost")]
+    LostTrustedConsentVerificationLease,
+    #[error("Work Challenge is no longer awaiting Trusted Consent")]
+    TrustedConsentChallengeUnavailable,
     #[error("persisted Authority data is invalid")]
     InvalidPersistedData,
     #[error("Gate Authority database operation failed")]

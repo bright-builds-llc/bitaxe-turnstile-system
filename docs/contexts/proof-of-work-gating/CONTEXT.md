@@ -36,6 +36,19 @@ _Avoid_: Required share count, network difficulty
 The Claimant's informed, user-initiated approval of a disclosed Work Requirement, participating Workers, estimated cost, and Reward Policy within client-controlled limits.
 _Avoid_: Page load, blanket site permission, hidden mining
 
+**Trusted Consent Receipt**:
+A short-lived Gate Authority signature proving that an exact consequential Work Consent disclosure
+completed an Authority-origin WebAuthn ceremony with user presence, user verification, and trusted
+non-self authenticator attestation; it authorizes only the matching lease start and is not a Gate
+Pass.
+_Avoid_: WebAuthn assertion, login session, identity proof, embedded consent receipt
+
+**Trusted Origin Confirmation**:
+The independently rendered Gate Authority or Worker Management ceremony required for Elevated work
+or materially changed economic/privacy terms, whose signed result cannot be disabled or
+counterfeited by the embedding Relying Service.
+_Avoid_: Popup alone, iframe styling, ordinary Work Consent
+
 **Gate Policy**:
 The Relying Service's bounded rules for deriving a Work Requirement from the Protected Action and abuse risk, independent of the Claimant's Worker speed.
 _Avoid_: Estimated duration, pool variable difficulty, self-reported hashrate

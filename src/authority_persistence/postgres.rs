@@ -1,11 +1,12 @@
-use std::str::FromStr as _;
-
 use async_trait::async_trait;
-use sqlx::{PgPool, Row as _, postgres::PgPoolOptions};
+use sqlx::Row as _;
 
 mod accounting;
+mod connection;
 mod lifecycle;
 mod pool_selection;
+mod trusted_consent;
+pub(crate) use connection::PostgresAuthorityRepository;
 
 use accounting::{
     AcceptedEventRecordInput, challenge_for_session, insert_accepted_event, insert_issuance_intent,
@@ -14,7 +15,8 @@ use accounting::{
 
 use super::{
     AuthorityPersistenceError, AuthorityRepository, ClaimedIssuance, PersistedAcceptance,
-    PersistedIssuance, PersistedProgress,
+    PersistedIssuance, PersistedProgress, ReserveTrustedConsentCeremony,
+    TrustedConsentCeremonyRecord, TrustedConsentReservation, TrustedConsentVerificationClaim,
 };
 use crate::{
     challenge::{ChallengeId, WorkChallengeDescriptor},
@@ -23,35 +25,11 @@ use crate::{
         AcceptedWorkAcknowledgement, AcceptedWorkEvent, PersistedAcknowledgementInput,
         WorkSessionId,
     },
+    trusted_consent::{
+        TrustedConsentBinding, TrustedConsentCeremonyId, TrustedConsentOperationOwner,
+    },
     work::{CreditedWork, VerifiedProgress},
 };
-
-static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations/gate_authority");
-
-pub(crate) struct PostgresAuthorityRepository {
-    pool: PgPool,
-}
-
-impl PostgresAuthorityRepository {
-    pub(crate) async fn connect(database_url: &str) -> Result<Self, AuthorityPersistenceError> {
-        let bootstrap_pool = PgPoolOptions::new()
-            .max_connections(1)
-            .connect(database_url)
-            .await?;
-        sqlx::query("CREATE SCHEMA IF NOT EXISTS gate_authority")
-            .execute(&bootstrap_pool)
-            .await?;
-        bootstrap_pool.close().await;
-        let connect_options = sqlx::postgres::PgConnectOptions::from_str(database_url)?
-            .options([("search_path", "gate_authority,public")]);
-        let pool = PgPoolOptions::new()
-            .max_connections(10)
-            .connect_with(connect_options)
-            .await?;
-        MIGRATOR.run(&pool).await?;
-        Ok(Self { pool })
-    }
-}
 
 #[async_trait]
 impl AuthorityRepository for PostgresAuthorityRepository {
@@ -497,69 +475,30 @@ impl AuthorityRepository for PostgresAuthorityRepository {
         issued_at: u64,
         expires_at: u64,
     ) -> Result<(), AuthorityPersistenceError> {
-        let mut transaction = self.pool.begin().await?;
-        let result = sqlx::query(include_str!("postgres/queries/complete_issuance.sql"))
-            .bind(challenge_id.as_str())
-            .bind(worker_id)
-            .bind(authority_kid)
-            .bind(gate_pass)
-            .bind(unix_seconds_to_i64(issued_at)?)
-            .bind(unix_seconds_to_i64(expires_at)?)
-            .execute(&mut *transaction)
-            .await?;
-        if result.rows_affected() != 1 {
-            return Err(AuthorityPersistenceError::LostSigningLease);
-        }
-        sqlx::query(include_str!("postgres/queries/mark_challenge_issued.sql"))
-            .bind(challenge_id.as_str())
-            .bind(unix_seconds_to_i64(issued_at)?)
-            .execute(&mut *transaction)
-            .await?;
-        sqlx::query(include_str!("postgres/queries/mark_outbox_completed.sql"))
-            .bind(challenge_id.as_str())
-            .execute(&mut *transaction)
-            .await?;
-        transaction.commit().await?;
-        Ok(())
+        accounting::complete_issuance(
+            &self.pool,
+            worker_id,
+            challenge_id,
+            authority_kid,
+            gate_pass,
+            issued_at,
+            expires_at,
+        )
+        .await
     }
 
     async fn issuance(
         &self,
         challenge_id: &ChallengeId,
     ) -> Result<PersistedIssuance, AuthorityPersistenceError> {
-        let maybe_row = sqlx::query_as::<_, (Option<String>, Option<String>, Option<i64>)>(
-            include_str!("postgres/queries/select_issuance.sql"),
-        )
-        .bind(challenge_id.as_str())
-        .fetch_optional(&self.pool)
-        .await?;
-        let Some((maybe_status, maybe_gate_pass, maybe_retired_at)) = maybe_row else {
-            return Err(AuthorityPersistenceError::UnknownChallenge);
-        };
-        match (maybe_status.as_deref(), maybe_gate_pass, maybe_retired_at) {
-            (None | Some("pending" | "signing"), None, None) => Ok(PersistedIssuance::Pending),
-            (Some("issued"), Some(gate_pass), None) => Ok(PersistedIssuance::Issued { gate_pass }),
-            (Some("issued"), None, Some(_)) => Ok(PersistedIssuance::Retired),
-            (Some("failed"), None, None) => Ok(PersistedIssuance::Failed),
-            _ => Err(AuthorityPersistenceError::InvalidPersistedData),
-        }
+        accounting::issuance(&self.pool, challenge_id).await
     }
 
     async fn challenge(
         &self,
         challenge_id: &ChallengeId,
     ) -> Result<WorkChallengeDescriptor, AuthorityPersistenceError> {
-        let maybe_descriptor = sqlx::query_scalar::<_, serde_json::Value>(
-            "SELECT descriptor FROM gate_authority.work_challenges WHERE challenge_id = $1",
-        )
-        .bind(challenge_id.as_str())
-        .fetch_optional(&self.pool)
-        .await?;
-        let Some(descriptor) = maybe_descriptor else {
-            return Err(AuthorityPersistenceError::UnknownChallenge);
-        };
-        serde_json::from_value(descriptor)
-            .map_err(|_| AuthorityPersistenceError::InvalidPersistedData)
+        accounting::challenge(&self.pool, challenge_id).await
     }
 
     async fn consume_issuance_proof(
@@ -569,33 +508,110 @@ impl AuthorityRepository for PostgresAuthorityRepository {
         expires_at: u64,
         now: u64,
     ) -> Result<(), AuthorityPersistenceError> {
-        let mut transaction = self.pool.begin().await?;
-        sqlx::query(
-            "DELETE FROM gate_authority.claimant_issuance_proofs WHERE expires_at_unix_seconds < $1",
+        accounting::consume_issuance_proof(&self.pool, challenge_id, proof_id, expires_at, now)
+            .await
+    }
+
+    async fn maybe_trusted_consent_by_binding(
+        &self,
+        binding: &TrustedConsentBinding,
+    ) -> Result<Option<TrustedConsentCeremonyRecord>, AuthorityPersistenceError> {
+        trusted_consent::maybe_by_binding(&self.pool, binding).await
+    }
+
+    async fn reserve_trusted_consent_ceremony(
+        &self,
+        input: ReserveTrustedConsentCeremony<'_>,
+    ) -> Result<TrustedConsentReservation, AuthorityPersistenceError> {
+        trusted_consent::reserve(&self.pool, input).await
+    }
+
+    async fn initialize_trusted_consent_ceremony(
+        &self,
+        ceremony_id: &TrustedConsentCeremonyId,
+        operation_owner: TrustedConsentOperationOwner,
+        creation_options: &serde_json::Value,
+        registration_state: &serde_json::Value,
+        initialized_at_unix_seconds: u64,
+    ) -> Result<TrustedConsentCeremonyRecord, AuthorityPersistenceError> {
+        trusted_consent::initialize(
+            &self.pool,
+            ceremony_id,
+            operation_owner,
+            creation_options,
+            registration_state,
+            initialized_at_unix_seconds,
         )
-        .bind(unix_seconds_to_i64(now)?)
-        .execute(&mut *transaction)
-        .await?;
-        let result = sqlx::query(include_str!("postgres/queries/insert_claimant_proof.sql"))
-            .bind(proof_id)
-            .bind(challenge_id.as_str())
-            .bind(unix_seconds_to_i64(expires_at)?)
-            .execute(&mut *transaction)
-            .await;
-        match result {
-            Ok(_) => {
-                transaction.commit().await?;
-                Ok(())
-            }
-            Err(error)
-                if error
-                    .as_database_error()
-                    .is_some_and(|error| error.is_unique_violation()) =>
-            {
-                Err(AuthorityPersistenceError::ReplayedIssuanceProof)
-            }
-            Err(error) => Err(error.into()),
-        }
+        .await
+    }
+
+    async fn abandon_trusted_consent_reservation(
+        &self,
+        ceremony_id: &TrustedConsentCeremonyId,
+        operation_owner: TrustedConsentOperationOwner,
+    ) -> Result<(), AuthorityPersistenceError> {
+        trusted_consent::abandon(&self.pool, ceremony_id, operation_owner).await
+    }
+
+    async fn trusted_consent_ceremony(
+        &self,
+        ceremony_id: &TrustedConsentCeremonyId,
+    ) -> Result<TrustedConsentCeremonyRecord, AuthorityPersistenceError> {
+        trusted_consent::by_id(&self.pool, ceremony_id).await
+    }
+
+    async fn claim_trusted_consent_verification(
+        &self,
+        ceremony_id: &TrustedConsentCeremonyId,
+        operation_owner: TrustedConsentOperationOwner,
+        now_unix_seconds: u64,
+        lease_expires_at_unix_seconds: u64,
+    ) -> Result<TrustedConsentVerificationClaim, AuthorityPersistenceError> {
+        trusted_consent::claim_verification(
+            &self.pool,
+            ceremony_id,
+            operation_owner,
+            now_unix_seconds,
+            lease_expires_at_unix_seconds,
+        )
+        .await
+    }
+
+    async fn complete_trusted_consent_ceremony(
+        &self,
+        ceremony_id: &TrustedConsentCeremonyId,
+        operation_owner: TrustedConsentOperationOwner,
+        verified_at_unix_seconds: u64,
+    ) -> Result<TrustedConsentCeremonyRecord, AuthorityPersistenceError> {
+        trusted_consent::complete(
+            &self.pool,
+            ceremony_id,
+            operation_owner,
+            verified_at_unix_seconds,
+        )
+        .await
+    }
+
+    async fn fail_trusted_consent_ceremony(
+        &self,
+        ceremony_id: &TrustedConsentCeremonyId,
+        operation_owner: TrustedConsentOperationOwner,
+        failed_at_unix_seconds: u64,
+    ) -> Result<TrustedConsentCeremonyRecord, AuthorityPersistenceError> {
+        trusted_consent::fail(
+            &self.pool,
+            ceremony_id,
+            operation_owner,
+            failed_at_unix_seconds,
+        )
+        .await
+    }
+
+    async fn retire_expired_trusted_consent_ceremonies(
+        &self,
+        now_unix_seconds: u64,
+    ) -> Result<u64, AuthorityPersistenceError> {
+        trusted_consent::retire_expired(&self.pool, now_unix_seconds).await
     }
 }
 

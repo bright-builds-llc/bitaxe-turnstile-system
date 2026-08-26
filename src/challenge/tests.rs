@@ -41,6 +41,7 @@ fn policy_revisions_map_explicitly_to_one_protected_action_type() {
     let policies = [
         ActionPolicy::AccountCreationLightV1,
         ActionPolicy::AccountCreationStandardV1,
+        ActionPolicy::AccountCreationElevatedV1,
     ];
 
     // Act
@@ -52,12 +53,35 @@ fn policy_revisions_map_explicitly_to_one_protected_action_type() {
         [
             ProtectedActionType::AccountCreation,
             ProtectedActionType::AccountCreation,
+            ProtectedActionType::AccountCreation,
         ]
     );
     assert_eq!(
         ProtectedActionType::AccountCreation.id(),
         "account_creation"
     );
+}
+
+#[test]
+fn elevated_policy_owns_trusted_confirmation_and_default_work()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Arrange
+    let mut command = valid_command()?;
+    command.action_policy = ActionPolicy::AccountCreationElevatedV1;
+
+    // Act
+    let descriptor = issue_challenge(command, "challenge_123abc".to_owned(), 1_000)?;
+    let serialized = serde_json::to_value(descriptor)?;
+
+    // Assert
+    assert_eq!(serialized["action_policy"], "account-creation.elevated.v1");
+    assert_eq!(
+        serialized["work_requirement"]["expected_hashes"],
+        "70368744177664"
+    );
+    assert!(ActionPolicy::AccountCreationElevatedV1.requires_trusted_confirmation());
+    assert!(!ActionPolicy::AccountCreationStandardV1.requires_trusted_confirmation());
+    Ok(())
 }
 
 #[test]

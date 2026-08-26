@@ -190,7 +190,7 @@ The reference deployment is a modular Rust Gate Authority backed by PostgreSQL, 
 - The browser generates a fresh, non-extractable, pairwise proof-of-possession key for each challenge context and retains it through the bounded public Outcome Lookup window before deleting it.
 - Work Consent is user-initiated and records the disclosed Work Requirement, selected Workers, Pool Offer, Reward Policy, Payout Destination, estimates, cancellation behavior, and applicable safety limits.
 - Work never starts on page load. Client work ceilings are mandatory.
-- Light and Standard local work may be confirmed in the conforming Web Component. Elevated work and materially changed Pool Offer terms require a trusted-origin confirmation surface.
+- Light and Standard local work may be confirmed in the conforming Web Component. Elevated work and materially changed Pool Offer terms require an independently rendered Authority-origin WebAuthn ceremony with user presence, user verification, trusted non-self attestation, and an exact disclosure-bound Authority-signed receipt forwarded to lease start.
 - The Relying Service receives only the Action Reference and Gate Pass, not Account Identity, Device Identity, Worker identity, or Payout Destination.
 - The Pool Adapter receives only the Work Session mapping and payout data necessary to route work and construct rewards.
 - Payout Destinations are per-challenge and ephemeral by default. Local or account persistence is opt-in and outside Core accountless operation.

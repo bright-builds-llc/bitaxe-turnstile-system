@@ -4,6 +4,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use ring::digest;
 use serde::Serialize;
 use thiserror::Error;
 use tokio::sync::broadcast;
@@ -12,7 +14,8 @@ use crate::{
     authority::Config,
     authority_persistence::{
         AuthorityPersistenceError, AuthorityRepository, PersistedIssuance,
-        PostgresAuthorityRepository,
+        PostgresAuthorityRepository, ReserveTrustedConsentCeremony, TrustedConsentCeremonyRecord,
+        TrustedConsentReservation, TrustedConsentVerificationClaim,
     },
     challenge::{ChallengeId, WorkChallengeDescriptor},
     crypto_profile::{
@@ -20,18 +23,27 @@ use crate::{
         P256PublicJwk, P256PublicJwkWire, p256_jwk_thumbprint, verify_issuance_proof,
     },
     lifecycle::{
-        ChallengeLifecycle, GATE_PASS_TTL_SECONDS, LifecycleError, PauseReason, WorkLease,
-        WorkerClock,
+        ChallengeLifecycle, ChallengeLifecycleState, GATE_PASS_TTL_SECONDS, LifecycleError,
+        PauseReason, WorkLease, WorkerClock,
     },
+    pool_offer::verify_pool_offer_set,
     progress::{
         AcceptedWorkAcknowledgement, AcceptedWorkEvent, ProgressError, ProgressUpdate,
         WorkSessionId,
+    },
+    trusted_consent::{
+        TrustedConsentBeginRequest, TrustedConsentBeginResponse, TrustedConsentBinding,
+        TrustedConsentBindingInput, TrustedConsentCeremony, TrustedConsentCeremonyId,
+        TrustedConsentError, TrustedConsentFinishResponse, TrustedConsentOperationOwner,
+        TrustedConsentReason, TrustedConsentWebauthnVerifier, UnavailableTrustedConsentVerifier,
     },
 };
 
 mod lifecycle_events;
 mod pool_adapter;
+mod trusted_consent;
 pub use pool_adapter::SimulatedPoolAdapter;
+use trusted_consent::authority_origin;
 
 const PROGRESS_CHANNEL_CAPACITY: usize = 32;
 const SIGNING_LEASE_SECONDS: u64 = 30;
@@ -46,6 +58,7 @@ pub struct AuthorityApplication {
     progress_channels: Arc<Mutex<HashMap<ChallengeId, broadcast::Sender<ProgressUpdate>>>>,
     lifecycle_channels: Arc<Mutex<HashMap<ChallengeId, broadcast::Sender<ChallengeLifecycle>>>>,
     lifecycle_expiry_deadlines: Arc<Mutex<HashMap<ChallengeId, u64>>>,
+    trusted_consent_verifier: Arc<dyn TrustedConsentWebauthnVerifier>,
 }
 
 impl AuthorityApplication {
@@ -54,6 +67,27 @@ impl AuthorityApplication {
         config: Config,
         database_url: &str,
     ) -> Result<Self, AuthorityApplicationError> {
+        Self::connect_postgres_with_trusted_consent_verifier(
+            config,
+            database_url,
+            Arc::new(UnavailableTrustedConsentVerifier),
+        )
+        .await
+    }
+
+    /// Connects the Authority with an explicit server-side Trusted Consent verifier.
+    ///
+    /// The verifier origin must exactly match the public Authority issuer origin.
+    pub async fn connect_postgres_with_trusted_consent_verifier(
+        config: Config,
+        database_url: &str,
+        trusted_consent_verifier: Arc<dyn TrustedConsentWebauthnVerifier>,
+    ) -> Result<Self, AuthorityApplicationError> {
+        if let Some(rp_origin) = trusted_consent_verifier.maybe_rp_origin()
+            && authority_origin(config.issuer())? != rp_origin
+        {
+            return Err(TrustedConsentError::InvalidWebauthnConfig.into());
+        }
         let repository = PostgresAuthorityRepository::connect(database_url).await?;
         Ok(Self {
             config,
@@ -61,6 +95,7 @@ impl AuthorityApplication {
             progress_channels: Arc::new(Mutex::new(HashMap::new())),
             lifecycle_channels: Arc::new(Mutex::new(HashMap::new())),
             lifecycle_expiry_deadlines: Arc::new(Mutex::new(HashMap::new())),
+            trusted_consent_verifier,
         })
     }
 
@@ -477,6 +512,8 @@ pub enum AuthorityApplicationError {
     PoolOffer(#[from] crate::pool_offer::PoolOfferError),
     #[error(transparent)]
     Lifecycle(#[from] LifecycleError),
+    #[error(transparent)]
+    TrustedConsent(#[from] TrustedConsentError),
 }
 
 impl From<AuthorityPersistenceError> for AuthorityApplicationError {
@@ -497,6 +534,15 @@ impl From<AuthorityPersistenceError> for AuthorityApplicationError {
             AuthorityPersistenceError::PoolSelectionMismatch => Self::PoolSelectionMismatch,
             AuthorityPersistenceError::ConflictingEventReplay => Self::ConflictingEventReplay,
             AuthorityPersistenceError::ReplayedIssuanceProof => Self::ReplayedIssuanceProof,
+            AuthorityPersistenceError::UnknownTrustedConsentCeremony => {
+                Self::TrustedConsent(TrustedConsentError::UnknownCeremony)
+            }
+            AuthorityPersistenceError::LostTrustedConsentVerificationLease => {
+                Self::TrustedConsent(TrustedConsentError::LostVerificationLease)
+            }
+            AuthorityPersistenceError::TrustedConsentChallengeUnavailable => {
+                Self::TrustedConsent(TrustedConsentError::CeremonyFailed)
+            }
             AuthorityPersistenceError::InvalidProgress(error) => Self::Progress(error),
             AuthorityPersistenceError::InvalidLifecycle(error) => Self::Lifecycle(error),
             error => Self::Persistence(Box::new(error)),

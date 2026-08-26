@@ -1,5 +1,6 @@
-use std::{env, error::Error};
+use std::{env, error::Error, sync::Arc};
 
+use bwg_core::trusted_consent::{AttestedWebauthnVerifier, TrustedAttestationAnchorInput};
 use bwg_core::{
     authority::{
         self, AuthorityPublicConfig, DeploymentEnvironment, IssuanceProcessingOutcome,
@@ -8,8 +9,17 @@ use bwg_core::{
     challenge::ActionPolicy,
     crypto_profile::AuthorityJwkWire,
 };
+use serde::Deserialize;
 use tokio::net::TcpListener;
 use uuid::Uuid;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TrustedAttestationAnchorWire {
+    ca_pem: String,
+    aaguid: Uuid,
+    description: String,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -26,6 +36,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .split(',')
         .map(ActionPolicy::parse)
         .collect::<Result<Vec<_>, _>>()?;
+    let trusted_consent_enabled =
+        allowed_policies.contains(&ActionPolicy::AccountCreationElevatedV1);
     let credential = ServiceCredential::new(
         service_client_id,
         &service_secret,
@@ -48,11 +60,32 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let signing_seed = env::var("BWG_AUTHORITY_SIGNING_SEED")?;
     let config = authority::Config::new(environment, vec![credential], public_config)?
         .with_signing_key_seed(signing_kid, &signing_seed)?;
-    let application = authority::AuthorityApplication::connect_postgres(
-        config,
-        &env::var("BWG_AUTHORITY_DATABASE_URL")?,
-    )
-    .await?;
+    let database_url = env::var("BWG_AUTHORITY_DATABASE_URL")?;
+    let application = if trusted_consent_enabled {
+        let anchors = serde_json::from_str::<Vec<TrustedAttestationAnchorWire>>(&env::var(
+            "BWG_WEBAUTHN_TRUSTED_ATTESTATION_JSON",
+        )?)?
+        .into_iter()
+        .map(|anchor| TrustedAttestationAnchorInput {
+            ca_pem: anchor.ca_pem,
+            aaguid: anchor.aaguid,
+            description: anchor.description,
+        })
+        .collect();
+        let verifier = AttestedWebauthnVerifier::new(
+            &env::var("BWG_WEBAUTHN_RP_ID")?,
+            &env::var("BWG_WEBAUTHN_RP_ORIGIN")?,
+            anchors,
+        )?;
+        authority::AuthorityApplication::connect_postgres_with_trusted_consent_verifier(
+            config,
+            &database_url,
+            Arc::new(verifier),
+        )
+        .await?
+    } else {
+        authority::AuthorityApplication::connect_postgres(config, &database_url).await?
+    };
     let issuance_application = application.clone();
     let issuance_worker_id =
         IssuanceWorkerId::try_from(format!("worker_{}", Uuid::new_v4().simple()))?;

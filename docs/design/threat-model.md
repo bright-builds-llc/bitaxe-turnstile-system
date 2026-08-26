@@ -14,7 +14,7 @@
 | --- | --- | --- |
 | Replayed or stolen Gate Pass | Short expiry, audience and action binding, DPoP, atomic consumption | A compromised trusted Authority can still mint passes |
 | Fake or duplicate work | Challenge-scoped sessions, assigned targets, accepted-response evidence, durable event IDs and share fingerprints | A malicious trusted Pool Adapter can falsely attest work |
-| Cryptojacking by a website | Work Consent, client ceilings, no page-load mining, trusted-origin confirmation for consequential work, expiring leases | A malicious page can still misrepresent Light or Standard custom UI around the conforming component |
+| Cryptojacking by a website | Work Consent, client ceilings, no page-load mining, Authority-origin attested WebAuthn confirmation and signed receipts for consequential work, expiring leases | A malicious page can still misrepresent Light or Standard custom UI around the conforming component; WebAuthn does not prove personal identity |
 | Worker left on challenge pool | Monotonic Work Lease, loss-of-continuity stop, Mining Baseline snapshot and restoration | Firmware compromise can bypass its own controls |
 | Mainnet reward loss | Independent Reward Policy checks, exact BIP 23 proposal acceptance, immediate block submission, pinned pool engine | A latent consensus, construction, or operational bug can still lose a rare block reward |
 | Cross-site tracking | Fresh pairwise Claimant keys, opaque Action References, context minimization, ephemeral payout defaults | Reused Bitcoin addresses and network metadata remain correlatable by observers |

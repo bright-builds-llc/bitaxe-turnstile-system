@@ -117,6 +117,30 @@ fn pool_offer_set_rejects_duplicate_identity() -> Result<(), PoolOfferError> {
 }
 
 #[test]
+fn elevated_signed_offer_requires_trusted_confirmation() -> Result<(), PoolOfferError> {
+    // Arrange
+    let signed = test_signed_default_pool_offers(ActionPolicy::AccountCreationElevatedV1);
+    let keys = crate::crypto_profile::AuthorityKeySet::try_from(
+        crate::crypto_profile::test_support::authority_key_wires()
+            .expect("embedded Authority keys should be valid JSON"),
+    )
+    .expect("embedded Authority keys should match the profile");
+
+    // Act
+    let verified = verify_pool_offer_set(
+        &signed,
+        "https://authority.example",
+        "challenge_123abc",
+        ActionPolicy::AccountCreationElevatedV1,
+        keys.keys(),
+    )?;
+
+    // Assert
+    assert!(verified.trusted_confirmation_required());
+    Ok(())
+}
+
+#[test]
 fn signed_claims_reject_wrong_issuer_challenge_policy_and_version() -> Result<(), PoolOfferError> {
     // Arrange
     let valid = PoolOfferSetClaims {
@@ -124,6 +148,7 @@ fn signed_claims_reject_wrong_issuer_challenge_policy_and_version() -> Result<()
         challenge_id: "challenge_claims_01".to_owned(),
         action_policy: ActionPolicy::ACCOUNT_CREATION_LIGHT_V1.to_owned(),
         offers: vec![offer()?],
+        trusted_confirmation_required: false,
         bwg_version: PROTOCOL_VERSION.to_owned(),
     };
     let mut issuer = valid.clone();

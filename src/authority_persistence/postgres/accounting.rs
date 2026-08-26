@@ -3,8 +3,8 @@ use uuid::Uuid;
 
 use super::unix_seconds_to_i64;
 use crate::{
-    authority_persistence::{AuthorityPersistenceError, PersistedAcceptance},
-    challenge::ChallengeId,
+    authority_persistence::{AuthorityPersistenceError, PersistedAcceptance, PersistedIssuance},
+    challenge::{ChallengeId, WorkChallengeDescriptor},
     crypto_profile::{GATE_PASS_JWS_ALGORITHM, GatePassClaimsSeed},
     lifecycle::{
         LeaseObservation, LeaseObservationInput, SessionLifecycleCommand, SessionLifecycleState,
@@ -32,6 +32,116 @@ pub(super) async fn challenge_for_session(
         return Err(AuthorityPersistenceError::UnknownWorkSession);
     };
     Ok(challenge_id)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn complete_issuance(
+    pool: &sqlx::PgPool,
+    worker_id: &str,
+    challenge_id: &ChallengeId,
+    authority_kid: &str,
+    gate_pass: &str,
+    issued_at: u64,
+    expires_at: u64,
+) -> Result<(), AuthorityPersistenceError> {
+    let mut transaction = pool.begin().await?;
+    let result = sqlx::query(include_str!("queries/complete_issuance.sql"))
+        .bind(challenge_id.as_str())
+        .bind(worker_id)
+        .bind(authority_kid)
+        .bind(gate_pass)
+        .bind(unix_seconds_to_i64(issued_at)?)
+        .bind(unix_seconds_to_i64(expires_at)?)
+        .execute(&mut *transaction)
+        .await?;
+    if result.rows_affected() != 1 {
+        return Err(AuthorityPersistenceError::LostSigningLease);
+    }
+    sqlx::query(include_str!("queries/mark_challenge_issued.sql"))
+        .bind(challenge_id.as_str())
+        .bind(unix_seconds_to_i64(issued_at)?)
+        .execute(&mut *transaction)
+        .await?;
+    sqlx::query(include_str!("queries/mark_outbox_completed.sql"))
+        .bind(challenge_id.as_str())
+        .execute(&mut *transaction)
+        .await?;
+    transaction.commit().await?;
+    Ok(())
+}
+
+pub(super) async fn issuance(
+    pool: &sqlx::PgPool,
+    challenge_id: &ChallengeId,
+) -> Result<PersistedIssuance, AuthorityPersistenceError> {
+    let maybe_row = sqlx::query_as::<_, (Option<String>, Option<String>, Option<i64>)>(
+        include_str!("queries/select_issuance.sql"),
+    )
+    .bind(challenge_id.as_str())
+    .fetch_optional(pool)
+    .await?;
+    let Some((maybe_status, maybe_gate_pass, maybe_retired_at)) = maybe_row else {
+        return Err(AuthorityPersistenceError::UnknownChallenge);
+    };
+    match (maybe_status.as_deref(), maybe_gate_pass, maybe_retired_at) {
+        (None | Some("pending" | "signing"), None, None) => Ok(PersistedIssuance::Pending),
+        (Some("issued"), Some(gate_pass), None) => Ok(PersistedIssuance::Issued { gate_pass }),
+        (Some("issued"), None, Some(_)) => Ok(PersistedIssuance::Retired),
+        (Some("failed"), None, None) => Ok(PersistedIssuance::Failed),
+        _ => Err(AuthorityPersistenceError::InvalidPersistedData),
+    }
+}
+
+pub(super) async fn challenge(
+    pool: &sqlx::PgPool,
+    challenge_id: &ChallengeId,
+) -> Result<WorkChallengeDescriptor, AuthorityPersistenceError> {
+    let maybe_descriptor = sqlx::query_scalar::<_, serde_json::Value>(
+        "SELECT descriptor FROM gate_authority.work_challenges WHERE challenge_id = $1",
+    )
+    .bind(challenge_id.as_str())
+    .fetch_optional(pool)
+    .await?;
+    let Some(descriptor) = maybe_descriptor else {
+        return Err(AuthorityPersistenceError::UnknownChallenge);
+    };
+    serde_json::from_value(descriptor).map_err(|_| AuthorityPersistenceError::InvalidPersistedData)
+}
+
+pub(super) async fn consume_issuance_proof(
+    pool: &sqlx::PgPool,
+    challenge_id: &ChallengeId,
+    proof_id: &str,
+    expires_at: u64,
+    now: u64,
+) -> Result<(), AuthorityPersistenceError> {
+    let mut transaction = pool.begin().await?;
+    sqlx::query(
+        "DELETE FROM gate_authority.claimant_issuance_proofs WHERE expires_at_unix_seconds < $1",
+    )
+    .bind(unix_seconds_to_i64(now)?)
+    .execute(&mut *transaction)
+    .await?;
+    let result = sqlx::query(include_str!("queries/insert_claimant_proof.sql"))
+        .bind(proof_id)
+        .bind(challenge_id.as_str())
+        .bind(unix_seconds_to_i64(expires_at)?)
+        .execute(&mut *transaction)
+        .await;
+    match result {
+        Ok(_) => {
+            transaction.commit().await?;
+            Ok(())
+        }
+        Err(error)
+            if error
+                .as_database_error()
+                .is_some_and(|error| error.is_unique_violation()) =>
+        {
+            Err(AuthorityPersistenceError::ReplayedIssuanceProof)
+        }
+        Err(error) => Err(error.into()),
+    }
 }
 
 pub(super) async fn observe_session_lease(

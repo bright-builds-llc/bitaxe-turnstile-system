@@ -1,0 +1,7 @@
+SPDX-FileCopyrightText: William Brown, Michael Farrell, and James Hodgkinson
+SPDX-License-Identifier: MPL-2.0
+
+Source: webauthn-rs-core 0.5.5, src/core.rs,
+test_registration_packed_attestaion_fails_with_bad_cred_protect.
+Crates.io checksum: 296d2d501feb715d80b8e186fb88bab1073bca17f460303a1013d17b673bea6a.
+Modifications: extracted the RegisterPublicKeyCredential JSON and changed whitespace only.
