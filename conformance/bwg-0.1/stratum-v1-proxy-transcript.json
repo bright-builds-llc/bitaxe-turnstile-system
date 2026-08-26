@@ -1,0 +1,15 @@
+{
+  "schema_version": "bwg-stratum-v1-proxy-transcript-v1",
+  "session_id": "session_stratum_transcript_01",
+  "username": "bwg-session-01",
+  "secret": "stratum-session-secret-01",
+  "subscribe": "{\"id\":1,\"method\":\"mining.subscribe\",\"params\":[]}",
+  "subscribed": "{\"id\":1,\"result\":[[[\"mining.notify\",\"subscription-01\"]],\"01020304\",4],\"error\":null}",
+  "authorize": "{\"id\":2,\"method\":\"mining.authorize\",\"params\":[\"bwg-session-01\",\"stratum-session-secret-01\"]}",
+  "authorized": "{\"id\":2,\"result\":true,\"error\":null}",
+  "difficulty": "{\"id\":null,\"method\":\"mining.set_difficulty\",\"params\":[1]}",
+  "notify": "{\"id\":null,\"method\":\"mining.notify\",\"params\":[\"job-01\",\"0000000000000000000000000000000000000000000000000000000000000000\",\"01000000\",\"00\",[],\"20000000\",\"1d00ffff\",\"5f5e1000\",true]}",
+  "submit": "{\"id\":3,\"method\":\"mining.submit\",\"params\":[\"bwg-session-01\",\"job-01\",\"00000001\",\"5f5e1000\",\"abcdef01\"]}",
+  "accepted": "{\"id\":3,\"result\":true,\"error\":null}",
+  "assigned_target_hex": "00000000ffff0000000000000000000000000000000000000000000000000000"
+}

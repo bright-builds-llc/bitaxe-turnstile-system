@@ -37,6 +37,11 @@ The SolidJS custom element is exported as `bwg-core/component` for plain HTML, i
 full-page integrations; see
 [`docs/protocol/bwg-0.1-web-component.md`](docs/protocol/bwg-0.1-web-component.md).
 
+The Rust Stratum V1 Pool Adapter module forwards standard Worker traffic, durably records accepted
+events before Worker acknowledgement, and retries Gate Authority delivery from its context-local
+PostgreSQL outbox; see
+[`docs/protocol/bwg-0.1-stratum-v1-proxy.md`](docs/protocol/bwg-0.1-stratum-v1-proxy.md).
+
 ## Principles
 
 - Every qualifying hash searches a valid Bitcoin block candidate.

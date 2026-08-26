@@ -10,6 +10,7 @@ use crate::{
     },
     pool_offer::{PoolSelection, PoolSelectionCommitment, verify_pool_offer_set},
     progress::{AcceptedWorkAcknowledgement, AcceptedWorkEvent, WorkSessionId},
+    stratum_v1::StratumLeaseContext,
 };
 
 /// Simulated Pool Adapter interface for the future authenticated gRPC transport.
@@ -233,6 +234,24 @@ impl SimulatedPoolAdapter {
         clock: WorkerClock,
     ) -> Result<AcceptedWorkAcknowledgement, AuthorityApplicationError> {
         self.application.accept_work(event, lease, &clock).await
+    }
+
+    /// Applies one Pool Adapter event using its exact durably captured lease context.
+    pub async fn report_stratum(
+        &self,
+        event: AcceptedWorkEvent,
+        context: &StratumLeaseContext,
+    ) -> Result<AcceptedWorkAcknowledgement, AuthorityApplicationError> {
+        let lease = WorkLease::persisted(
+            context.lease_id().to_owned(),
+            context.renew_at_monotonic_milliseconds(),
+            context.expires_at_monotonic_milliseconds(),
+        );
+        let clock = WorkerClock::new(
+            context.continuity_id(),
+            context.last_monotonic_milliseconds(),
+        )?;
+        self.application.accept_work(event, &lease, &clock).await
     }
 }
 

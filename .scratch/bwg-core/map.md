@@ -32,6 +32,12 @@
   inline, modal, and full-page Shadow DOM presentations adapt the headless lifecycle, disclose exact
   signed economics before consent, expose accessible progress/control/fallback states, and complete
   a plain-HTML simulated account-creation journey with visible build and source provenance.
+- [Ticket 15](./issues/15-stratum-v1-proxy.md) added the transparent Rust Stratum V1 Pool Adapter:
+  generation-bound verifier-only admission and durable connection-scoped extranonces preserve
+  standard Worker traffic; job-bound exact targets and reconstructed Bitcoin headers produce stable
+  Accepted Work Events; submit-time lease observations, persistence-before-acknowledgement,
+  upstream-first ordering, at-least-once Authority delivery, and bounded operational retirement
+  preserve accounting and block-candidate safety across failure and restart.
 
 ## Persistence boundary split
 

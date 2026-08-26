@@ -180,6 +180,11 @@ impl AcceptedWorkEvent {
         self.received_at.unix_seconds()
     }
 
+    /// Returns the exact assigned target effective for this accepted result.
+    pub fn assigned_target_be_bytes(&self) -> [u8; 32] {
+        self.assigned_target.to_be_bytes()
+    }
+
     pub(crate) fn event_id(&self) -> &AcceptedWorkEventId {
         &self.event_id
     }
@@ -192,11 +197,13 @@ impl AcceptedWorkEvent {
         self.received_at
     }
 
-    pub(crate) fn share_fingerprint(&self) -> &ShareFingerprint {
+    /// Returns the stable global identity of the accepted Bitcoin share.
+    pub fn share_fingerprint(&self) -> &ShareFingerprint {
         &self.share_fingerprint
     }
 
-    pub(crate) fn network_target_outcome(&self) -> NetworkTargetOutcome {
+    /// Returns whether the submitted result also met the advertised Bitcoin network target.
+    pub fn network_target_outcome(&self) -> NetworkTargetOutcome {
         self.network_target_outcome
     }
 
