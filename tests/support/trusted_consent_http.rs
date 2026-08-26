@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::error::Error;
 
 use bwg_core::authority::CLIENT_ID_HEADER;

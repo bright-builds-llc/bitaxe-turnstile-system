@@ -25,6 +25,7 @@ period may be longer but never shorter than its applicable Retention Floor.
 | --- | --- | --- | --- |
 | Gate Authority | Claimant issuance proof replay identity | Proof freshness plus skew | Delete immediately after the floor |
 | Gate Authority | Signed Gate Pass bytes | Signed expiry; BWG/0.1 verifier skew is zero | Delete immediately after the floor |
+| Gate Authority | Signed Trusted Consent Receipt bytes | Signed challenge expiry; BWG/0.1 verifier skew is zero | Delete immediately after the floor |
 | Gate Authority | Challenge, consented Pool Selection commitment, Work Session, share fingerprint, and Accepted Work Event | Stable acknowledgement and reconstruction remain safe | Pseudonymize at day 30; delete tombstone at day 90 |
 | Gate Authority | Gate Pass Issuance Intent and outbox metadata | Issuance is terminal and signed artifacts cannot validate | Pseudonymize at day 30; delete tombstone at day 90 |
 | Relying Service | DPoP and Claimant outcome proof replay identity | Proof freshness plus skew | Delete immediately after the floor |
@@ -88,6 +89,9 @@ respectively.
   recreates or misreports the pass. BWG/0.1 rejects a Gate Pass when `now >= exp`, so its maximum
   verifier-skew allowance is explicitly zero and the signed expiry is the first safe retirement
   instant.
+- The compact Trusted Consent Receipt JWS is likewise planned and cleared at its signed challenge
+  expiry. The terminal verified ceremony and one-session admission metadata remain, but finish
+  retry cannot recreate expired bytes.
 - At terminal day 30, one transaction locks and revalidates the challenge, inserts a context-keyed
   HMAC-SHA-256 tombstone, and deletes its Claimant proof rows, Accepted Work Events, share
   fingerprints, Work Sessions, outbox, issuance intent, and challenge. A missing key or changed

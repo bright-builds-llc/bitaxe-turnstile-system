@@ -1,7 +1,8 @@
 use sqlx::{PgPool, Postgres, Row as _, Transaction};
 
+use super::trusted_consent_lease::{self, LockedLeaseContext};
 use crate::{
-    authority_persistence::AuthorityPersistenceError,
+    authority_persistence::{AuthorityPersistenceError, StartWorkLeaseInput},
     challenge::ChallengeId,
     lifecycle::{
         ChallengeLifecycle, ChallengeLifecycleCommand, ChallengeLifecycleState, LeaseObservation,
@@ -92,33 +93,44 @@ pub(super) async fn cancel_challenge(
     Ok(lifecycle)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) async fn start_work_lease(
     pool: &PgPool,
-    session_id: &WorkSessionId,
-    clock: &WorkerClock,
-    lease_id: &str,
-    renew_at_monotonic_milliseconds: u64,
-    expires_at_monotonic_milliseconds: u64,
-    now: u64,
+    input: StartWorkLeaseInput<'_>,
 ) -> Result<WorkLease, AuthorityPersistenceError> {
+    let StartWorkLeaseInput {
+        session_id,
+        maybe_trusted_consent,
+        clock,
+        lease_id,
+        renew_at_monotonic_milliseconds,
+        expires_at_monotonic_milliseconds,
+        now_unix_seconds: now,
+    } = input;
     let mut transaction = pool.begin().await?;
     let challenge_id = challenge_id_for_session(&mut transaction, session_id).await?;
     terminalize_expired(&mut transaction, &challenge_id, now).await?;
-    let (challenge_state, session_state, selection_consented) =
-        lock_challenge_and_session(&mut transaction, session_id).await?;
-    if !selection_consented {
+    let locked = lock_challenge_and_session(&mut transaction, session_id).await?;
+    if !locked.selection_consented {
         transaction.commit().await?;
         return Err(AuthorityPersistenceError::PoolSelectionRequired);
     }
     let target_challenge =
-        apply_challenge_command(challenge_state, ChallengeLifecycleCommand::StartWork);
-    let target_session = apply_session_command(session_state, SessionLifecycleCommand::StartLease);
+        apply_challenge_command(locked.challenge_state, ChallengeLifecycleCommand::StartWork);
+    let target_session =
+        apply_session_command(locked.session_state, SessionLifecycleCommand::StartLease);
     let (Ok(target_challenge), Ok(_)) = (target_challenge, target_session) else {
         transaction.commit().await?;
         return Err(AuthorityPersistenceError::ForbiddenLifecycleTransition);
     };
-    if target_challenge != challenge_state {
+    trusted_consent_lease::admit(
+        &mut transaction,
+        session_id,
+        &locked,
+        maybe_trusted_consent,
+        now,
+    )
+    .await?;
+    if target_challenge != locked.challenge_state {
         sqlx::query(
             "UPDATE gate_authority.work_challenges
              SET lifecycle_state = 'active', lifecycle_changed_at_unix_seconds = $2
@@ -166,14 +178,29 @@ pub(super) async fn renew_work_lease(
     let challenge_id = challenge_id_for_session(&mut transaction, session_id).await?;
     terminalize_expired(&mut transaction, &challenge_id, now).await?;
     let row = sqlx::query(
-        "SELECT lifecycle_state, lease_id::text AS lease_id, continuity_id,
-                last_monotonic_milliseconds, expires_at_monotonic_milliseconds
-         FROM gate_authority.work_sessions WHERE session_id = $1 FOR UPDATE",
+        "SELECT session.lifecycle_state, session.lease_id::text AS lease_id,
+                session.continuity_id, session.last_monotonic_milliseconds,
+                session.expires_at_monotonic_milliseconds,
+                challenge.trusted_confirmation_required,
+                ceremony.receipt_expires_at_unix_seconds
+         FROM gate_authority.work_sessions AS session
+         JOIN gate_authority.work_challenges AS challenge
+           ON challenge.challenge_id = session.challenge_id
+         LEFT JOIN gate_authority.trusted_consent_ceremonies AS ceremony
+           ON ceremony.ceremony_id = session.trusted_consent_ceremony_id
+         WHERE session.session_id = $1 FOR UPDATE OF session, challenge",
     )
     .bind(session_id.as_str())
     .fetch_one(&mut *transaction)
     .await?;
     let state = SessionLifecycleState::parse(row.try_get("lifecycle_state")?)?;
+    let trusted_confirmation_required: bool = row.try_get("trusted_confirmation_required")?;
+    let maybe_receipt_expiry: Option<i64> = row.try_get("receipt_expires_at_unix_seconds")?;
+    let now = to_i64(now)?;
+    if trusted_confirmation_required && maybe_receipt_expiry.is_none_or(|expiry| expiry <= now) {
+        transaction.commit().await?;
+        return Err(AuthorityPersistenceError::TrustedConsentRequired);
+    }
     if let Err(error) = apply_session_command(state, SessionLifecycleCommand::ObserveLease) {
         transaction.commit().await?;
         return Err(transition_error(error));
@@ -451,10 +478,12 @@ async fn challenge_id_for_session(
 async fn lock_challenge_and_session(
     transaction: &mut Transaction<'_, Postgres>,
     session_id: &WorkSessionId,
-) -> Result<(ChallengeLifecycleState, SessionLifecycleState, bool), AuthorityPersistenceError> {
+) -> Result<LockedLeaseContext, AuthorityPersistenceError> {
     let maybe_row = sqlx::query(
-        "SELECT challenge.lifecycle_state AS challenge_state,
+        "SELECT challenge.challenge_id, challenge.lifecycle_state AS challenge_state,
+                challenge.trusted_confirmation_required,
                 session.lifecycle_state AS session_state,
+                session.trusted_consent_ceremony_id,
                 selection.status = 'consented' AS selection_consented
          FROM gate_authority.work_sessions AS session
          JOIN gate_authority.work_challenges AS challenge
@@ -472,12 +501,16 @@ async fn lock_challenge_and_session(
     let Some(row) = maybe_row else {
         return Err(AuthorityPersistenceError::UnknownWorkSession);
     };
-    Ok((
-        ChallengeLifecycleState::parse(row.try_get("challenge_state")?)?,
-        SessionLifecycleState::parse(row.try_get("session_state")?)?,
-        row.try_get::<Option<bool>, _>("selection_consented")?
+    Ok(LockedLeaseContext {
+        challenge_id: row.try_get("challenge_id")?,
+        challenge_state: ChallengeLifecycleState::parse(row.try_get("challenge_state")?)?,
+        session_state: SessionLifecycleState::parse(row.try_get("session_state")?)?,
+        selection_consented: row
+            .try_get::<Option<bool>, _>("selection_consented")?
             .unwrap_or(false),
-    ))
+        trusted_confirmation_required: row.try_get("trusted_confirmation_required")?,
+        maybe_trusted_consent_ceremony_id: row.try_get("trusted_consent_ceremony_id")?,
+    })
 }
 
 async fn lock_session_state(

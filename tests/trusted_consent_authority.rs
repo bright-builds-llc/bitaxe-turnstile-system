@@ -4,16 +4,13 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use bwg_core::{
-    authority::{
-        self, AuthorityApplication, AuthorityPublicConfig, CLIENT_ID_HEADER, Config,
-        DeploymentEnvironment, ServiceCredential,
-    },
+    authority::{self, AuthorityApplication, AuthorityApplicationError},
     challenge::ActionPolicy,
+    lifecycle::WorkerClock,
+    progress::WorkSessionId,
 };
-use ring::digest;
-use serde_json::{Value, json};
+use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -23,22 +20,23 @@ mod authority_key_support;
 mod postgres_support;
 #[path = "support/running_server.rs"]
 mod running_server_support;
+#[path = "support/trusted_consent_authority.rs"]
+mod trusted_consent_authority_support;
 #[path = "support/trusted_consent_http.rs"]
 mod trusted_consent_http_support;
 #[path = "support/trusted_consent_verifier.rs"]
 mod trusted_consent_verifier_support;
-use authority_key_support::{CLAIMANT_PUBLIC_JWK, authority_keys};
 use postgres_support::PostgresTestDatabase;
 use running_server_support::RunningServer;
+use trusted_consent_authority_support::{
+    CLIENT_ID, SERVICE_SECRET, authority_config, authority_config_without_signer, issue_challenge,
+    issue_elevated_challenge, offer_digest,
+};
 use trusted_consent_http_support::{
     begin_ceremony, begin_ceremony_response, cancel_challenge, finish_ceremony,
     finish_ceremony_response,
 };
 use trusted_consent_verifier_support::{ControlledBeginVerifier, ControlledVerifier, FakeVerifier};
-
-const CLIENT_ID: &str = "trusted-consent-service";
-const SERVICE_SECRET: &str = "trusted-consent-secret-P9vK2mQ7xR4tY8uN3cF6wL1zA5dH0sJ";
-const SIGNING_SEED: &str = "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn trusted_ceremony_survives_restart_and_finishes_once() -> Result<(), Box<dyn Error>> {
@@ -56,11 +54,7 @@ async fn trusted_ceremony_survives_restart_and_finishes_once() -> Result<(), Box
     let challenge_id = challenge["challenge_id"]
         .as_str()
         .ok_or("challenge identifier is missing")?;
-    let offer_signature = challenge["pool_offers"]["signature"]
-        .as_str()
-        .ok_or("Pool Offer signature is missing")?;
-    let offer_digest =
-        URL_SAFE_NO_PAD.encode(digest::digest(&digest::SHA256, offer_signature.as_bytes()));
+    let offer_digest = offer_digest(&challenge)?;
 
     // Act
     let first_begin = begin_ceremony(&first_server.base_url, challenge_id, &offer_digest).await?;
@@ -103,7 +97,7 @@ async fn trusted_ceremony_survives_restart_and_finishes_once() -> Result<(), Box
     restarted_server.stop();
     let after_finish_restart =
         AuthorityApplication::connect_postgres_with_trusted_consent_verifier(
-            authority_config()?,
+            authority_config_without_signer()?,
             database.database_url(),
             verifier.clone(),
         )
@@ -125,6 +119,14 @@ async fn trusted_ceremony_survives_restart_and_finishes_once() -> Result<(), Box
     assert_ne!(disclosure_digest, "A".repeat(43));
     assert_eq!(first_finish, repeated_finish);
     assert_eq!(first_finish["status"], "verified");
+    assert_eq!(
+        first_finish["trusted_consent_receipt"]
+            .as_str()
+            .ok_or("trusted receipt is missing")?
+            .split('.')
+            .count(),
+        3
+    );
     assert_eq!(retained, ("verified".to_owned(), None, None));
     assert_eq!(
         statuses,
@@ -283,6 +285,126 @@ async fn expired_aborted_begin_reservation_recovers_without_an_orphan() -> Resul
     );
     assert_eq!(verifier.begin_calls.load(Ordering::SeqCst), 2);
     assert_eq!(states, (1, 0, 1));
+    Ok(())
+}
+
+#[tokio::test]
+async fn elevated_lease_admission_consumes_one_receipt_and_survives_restart()
+-> Result<(), Box<dyn Error>> {
+    // Arrange
+    let database = PostgresTestDatabase::start().await?;
+    let verifier = Arc::new(FakeVerifier::default());
+    let application = AuthorityApplication::connect_postgres_with_trusted_consent_verifier(
+        authority_config()?,
+        database.database_url(),
+        verifier.clone(),
+    )
+    .await?;
+    let adapter = application.simulated_pool_adapter();
+    let server = RunningServer::spawn(authority::router(application)).await?;
+    let challenge = issue_elevated_challenge(&server.base_url).await?;
+    let challenge_id = challenge["challenge_id"].as_str().ok_or("challenge ID")?;
+    let challenge_id = bwg_core::challenge::ChallengeId::try_from(challenge_id.to_owned())?;
+    let ceremony = begin_ceremony(
+        &server.base_url,
+        challenge_id.as_str(),
+        &offer_digest(&challenge)?,
+    )
+    .await?;
+    let finished = finish_ceremony(
+        &server.base_url,
+        challenge_id.as_str(),
+        ceremony["ceremony_id"].as_str().ok_or("ceremony ID")?,
+    )
+    .await?;
+    let receipt = finished["trusted_consent_receipt"]
+        .as_str()
+        .ok_or("trusted receipt")?;
+    adapter
+        .consent_default_pool_offer_for_simulation(&challenge_id)
+        .await?;
+    let first_session = WorkSessionId::try_from("session_trusted_receipt_01".to_owned())?;
+    let second_session = WorkSessionId::try_from("session_trusted_receipt_02".to_owned())?;
+    let third_session = WorkSessionId::try_from("session_trusted_receipt_03".to_owned())?;
+    adapter
+        .register_session(&challenge_id, first_session.clone())
+        .await?;
+    adapter
+        .register_session(&challenge_id, second_session.clone())
+        .await?;
+    adapter
+        .register_session(&challenge_id, third_session.clone())
+        .await?;
+
+    // Act
+    let missing = adapter
+        .start_lease(&second_session, WorkerClock::new("boot_receipt_02", 1_000)?)
+        .await;
+    let forged = adapter
+        .start_lease_with_trusted_consent(
+            &second_session,
+            WorkerClock::new("boot_receipt_02", 1_000)?,
+            "forged.receipt.bytes",
+        )
+        .await;
+    adapter.fail_session(&first_session).await?;
+    let forbidden = adapter
+        .start_lease_with_trusted_consent(
+            &first_session,
+            WorkerClock::new("boot_receipt_01", 1_000)?,
+            receipt,
+        )
+        .await;
+    let second_attempt = adapter.start_lease_with_trusted_consent(
+        &second_session,
+        WorkerClock::new("boot_receipt_02", 1_000)?,
+        receipt,
+    );
+    let third_attempt = adapter.start_lease_with_trusted_consent(
+        &third_session,
+        WorkerClock::new("boot_receipt_03", 1_000)?,
+        receipt,
+    );
+    let (second_attempt, third_attempt) = tokio::join!(second_attempt, third_attempt);
+    let (lease, admitted_session, continuity_id, replay) = match (second_attempt, third_attempt) {
+        (Ok(lease), Err(replay)) => (lease, &second_session, "boot_receipt_02", replay),
+        (Err(replay), Ok(lease)) => (lease, &third_session, "boot_receipt_03", replay),
+        unexpected => return Err(format!("unexpected concurrent admission: {unexpected:?}").into()),
+    };
+    server.stop();
+    let restarted = AuthorityApplication::connect_postgres_with_trusted_consent_verifier(
+        authority_config()?,
+        database.database_url(),
+        verifier,
+    )
+    .await?
+    .simulated_pool_adapter();
+    let renewed = restarted
+        .renew_lease(
+            admitted_session,
+            lease.lease_id(),
+            WorkerClock::new(continuity_id, 1_100)?,
+        )
+        .await?;
+
+    // Assert
+    assert!(matches!(
+        missing,
+        Err(AuthorityApplicationError::TrustedConsentRequired)
+    ));
+    assert!(matches!(
+        forged,
+        Err(AuthorityApplicationError::InvalidTrustedConsentReceipt)
+    ));
+    assert!(matches!(
+        forbidden,
+        Err(AuthorityApplicationError::ForbiddenLifecycleTransition)
+    ));
+    assert!(matches!(
+        replay,
+        AuthorityApplicationError::TrustedConsentReceiptReplayed
+    ));
+    assert_eq!(renewed.lease_id(), lease.lease_id());
     Ok(())
 }
 
@@ -501,67 +623,4 @@ async fn begin_rejects_non_required_and_mismatched_bindings_before_webauthn()
     assert_eq!(wrong_origin.status(), reqwest::StatusCode::BAD_REQUEST);
     assert_eq!(verifier.begin_calls.load(Ordering::SeqCst), 0);
     Ok(())
-}
-
-async fn issue_elevated_challenge(authority_url: &str) -> Result<Value, Box<dyn Error>> {
-    issue_challenge(
-        authority_url,
-        ActionPolicy::ACCOUNT_CREATION_ELEVATED_V1,
-        "action_trusted_consent_01",
-    )
-    .await
-}
-
-async fn issue_challenge(
-    authority_url: &str,
-    action_policy: &str,
-    action_reference: &str,
-) -> Result<Value, Box<dyn Error>> {
-    Ok(reqwest::Client::new()
-        .post(format!("{authority_url}/v0/challenges"))
-        .header(CLIENT_ID_HEADER, CLIENT_ID)
-        .bearer_auth(SERVICE_SECRET)
-        .json(&json!({
-            "action_policy": action_policy,
-            "action_reference": action_reference,
-            "claimant_key": CLAIMANT_PUBLIC_JWK
-        }))
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?)
-}
-
-fn offer_digest(challenge: &Value) -> Result<String, Box<dyn Error>> {
-    let signature = challenge["pool_offers"]["signature"]
-        .as_str()
-        .ok_or("Pool Offer signature is missing")?;
-    Ok(URL_SAFE_NO_PAD.encode(digest::digest(&digest::SHA256, signature.as_bytes())))
-}
-
-fn authority_config() -> Result<Config, Box<dyn Error>> {
-    let credential = ServiceCredential::new(
-        CLIENT_ID,
-        SERVICE_SECRET,
-        DeploymentEnvironment::Development,
-        "https://relying.example".to_owned(),
-        vec!["https://app.relying.example".to_owned()],
-        vec![
-            ActionPolicy::AccountCreationStandardV1,
-            ActionPolicy::AccountCreationElevatedV1,
-        ],
-    )?;
-    let public = AuthorityPublicConfig::new(
-        "https://authority.example",
-        "https://authority.example",
-        authority_keys()?,
-        "https://authority.example/policies/operator",
-        "https://authority.example/privacy",
-        "https://authority.example/terms",
-    )?;
-    Ok(
-        Config::new(DeploymentEnvironment::Development, vec![credential], public)?
-            .with_signing_key_seed("authority-a".to_owned(), SIGNING_SEED)?,
-    )
 }

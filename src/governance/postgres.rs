@@ -485,6 +485,7 @@ fn parse_record_class(value: &str) -> Result<GovernedRecordClass, GovernanceErro
     match value {
         "claimant_issuance_proof_replay" => Ok(GovernedRecordClass::ClaimantIssuanceProofReplay),
         "signed_gate_pass" => Ok(GovernedRecordClass::SignedGatePass),
+        "trusted_consent_receipt" => Ok(GovernedRecordClass::TrustedConsentReceipt),
         "authority_operational" => Ok(GovernedRecordClass::AuthorityOperational),
         "dpop_proof_replay" => Ok(GovernedRecordClass::DpopProofReplay),
         "claimant_outcome_proof_replay" => Ok(GovernedRecordClass::ClaimantOutcomeProofReplay),
@@ -532,6 +533,7 @@ const fn record_class_allowed_in_context(
         (
             GovernedRecordClass::ClaimantIssuanceProofReplay
                 | GovernedRecordClass::SignedGatePass
+                | GovernedRecordClass::TrustedConsentReceipt
                 | GovernedRecordClass::AuthorityOperational,
             GovernanceContext::GateAuthority
         ) | (

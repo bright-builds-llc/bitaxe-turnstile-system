@@ -1,8 +1,11 @@
 use uuid::Uuid;
 
-use super::{AuthorityApplication, AuthorityApplicationError, current_unix_seconds};
+use super::{
+    AuthorityApplication, AuthorityApplicationError, current_unix_seconds,
+    trusted_consent::binding_for_challenge,
+};
 use crate::{
-    authority_persistence::AuthorityPersistenceError,
+    authority_persistence::{AuthorityPersistenceError, StartWorkLeaseInput},
     challenge::ChallengeId,
     lifecycle::{
         LifecycleError, SessionLifecycle, WORK_LEASE_MAX_DURATION_SECONDS,
@@ -11,6 +14,7 @@ use crate::{
     pool_offer::{PoolSelection, PoolSelectionCommitment, verify_pool_offer_set},
     progress::{AcceptedWorkAcknowledgement, AcceptedWorkEvent, WorkSessionId},
     stratum_v1::{StratumLeaseContext, StratumUpstreamAuthorization},
+    trusted_consent::{TrustedConsentLeaseAdmission, verify_trusted_consent_receipt},
 };
 
 /// Simulated Pool Adapter interface for the future authenticated gRPC transport.
@@ -136,6 +140,60 @@ impl SimulatedPoolAdapter {
         session_id: &WorkSessionId,
         clock: WorkerClock,
     ) -> Result<WorkLease, AuthorityApplicationError> {
+        self.start_lease_internal(session_id, clock, None).await
+    }
+
+    /// Starts one bounded consequential lease with an Authority-signed Trusted Consent Receipt.
+    pub async fn start_lease_with_trusted_consent(
+        &self,
+        session_id: &WorkSessionId,
+        clock: WorkerClock,
+        compact_receipt: &str,
+    ) -> Result<WorkLease, AuthorityApplicationError> {
+        let now = current_unix_seconds()?;
+        let retained = self
+            .application
+            .repository
+            .session_pool_selection(session_id)
+            .await?;
+        let descriptor = self
+            .application
+            .repository
+            .challenge(&retained.challenge_id)
+            .await?;
+        let signed_offers = descriptor
+            .maybe_pool_offers()
+            .ok_or(AuthorityApplicationError::InvalidTrustedConsentReceipt)?;
+        let verified_offers = verify_pool_offer_set(
+            signed_offers,
+            self.application.config.issuer(),
+            descriptor.challenge_id(),
+            descriptor.action_policy(),
+            self.application.config.verification_keys(),
+        )?;
+        if !verified_offers.trusted_confirmation_required() {
+            return Err(AuthorityApplicationError::InvalidTrustedConsentReceipt);
+        }
+        let binding = binding_for_challenge(&descriptor, self.application.config.issuer())?;
+        let verified_receipt = verify_trusted_consent_receipt(
+            compact_receipt,
+            self.application.config.issuer(),
+            &binding,
+            self.application.config.verification_keys(),
+            now,
+        )
+        .map_err(|_| AuthorityApplicationError::InvalidTrustedConsentReceipt)?;
+        let admission = TrustedConsentLeaseAdmission::new(compact_receipt, verified_receipt);
+        self.start_lease_internal(session_id, clock, Some(&admission))
+            .await
+    }
+
+    async fn start_lease_internal(
+        &self,
+        session_id: &WorkSessionId,
+        clock: WorkerClock,
+        maybe_trusted_consent: Option<&TrustedConsentLeaseAdmission<'_>>,
+    ) -> Result<WorkLease, AuthorityApplicationError> {
         let renew_at =
             monotonic_deadline(clock.monotonic_milliseconds(), WORK_LEASE_RENEWAL_SECONDS)?;
         let expires_at = monotonic_deadline(
@@ -146,14 +204,15 @@ impl SimulatedPoolAdapter {
         let lease = self
             .application
             .repository
-            .start_work_lease(
+            .start_work_lease(StartWorkLeaseInput {
                 session_id,
-                &clock,
-                &lease_id,
-                renew_at,
-                expires_at,
-                current_unix_seconds()?,
-            )
+                maybe_trusted_consent,
+                clock: &clock,
+                lease_id: &lease_id,
+                renew_at_monotonic_milliseconds: renew_at,
+                expires_at_monotonic_milliseconds: expires_at,
+                now_unix_seconds: current_unix_seconds()?,
+            })
             .await?;
         self.application
             .notify_lifecycle_for_session(session_id)

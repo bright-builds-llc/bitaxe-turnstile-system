@@ -176,6 +176,14 @@ async fn delete_protocol_material(
                 .execute(&mut **transaction)
                 .await?
         }
+        GovernedRecordClass::TrustedConsentReceipt => {
+            sqlx::query(include_str!("../queries/clear_trusted_consent_receipt.sql"))
+                .bind(&item.record_key)
+                .bind(to_i64(item.retention_floor_unix_seconds)?)
+                .bind(to_i64(as_of_unix_seconds)?)
+                .execute(&mut **transaction)
+                .await?
+        }
         record_class => {
             let query = replay_delete_query(record_class)?;
             let expected_expiry = item

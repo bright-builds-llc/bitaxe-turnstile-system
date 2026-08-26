@@ -269,6 +269,54 @@ pub(super) async fn fail(
     record(&row)
 }
 
+pub(super) async fn persist_receipt(
+    pool: &PgPool,
+    ceremony_id: &TrustedConsentCeremonyId,
+    compact_receipt: &str,
+    issued_at_unix_seconds: u64,
+    expires_at_unix_seconds: u64,
+) -> Result<String, AuthorityPersistenceError> {
+    let maybe_persisted_receipt = sqlx::query_scalar::<_, String>(
+        "UPDATE gate_authority.trusted_consent_ceremonies
+         SET trusted_consent_receipt = COALESCE(trusted_consent_receipt, $2),
+             receipt_issued_at_unix_seconds = COALESCE(receipt_issued_at_unix_seconds, $3),
+             receipt_expires_at_unix_seconds = COALESCE(receipt_expires_at_unix_seconds, $4)
+         WHERE ceremony_id = $1 AND status = 'verified'
+           AND (trusted_consent_receipt IS NULL
+                OR (trusted_consent_receipt = $2
+                    AND receipt_issued_at_unix_seconds = $3
+                    AND receipt_expires_at_unix_seconds = $4))
+         RETURNING trusted_consent_receipt",
+    )
+    .bind(ceremony_id.as_str())
+    .bind(compact_receipt)
+    .bind(to_i64(issued_at_unix_seconds)?)
+    .bind(to_i64(expires_at_unix_seconds)?)
+    .fetch_optional(pool)
+    .await?;
+    if let Some(receipt) = maybe_persisted_receipt {
+        return Ok(receipt);
+    }
+    maybe_receipt(pool, ceremony_id)
+        .await?
+        .ok_or(AuthorityPersistenceError::InvalidPersistedData)
+}
+
+pub(super) async fn maybe_receipt(
+    pool: &PgPool,
+    ceremony_id: &TrustedConsentCeremonyId,
+) -> Result<Option<String>, AuthorityPersistenceError> {
+    Ok(sqlx::query_scalar::<_, String>(
+        "SELECT trusted_consent_receipt
+         FROM gate_authority.trusted_consent_ceremonies
+         WHERE ceremony_id = $1 AND status = 'verified'
+           AND trusted_consent_receipt IS NOT NULL",
+    )
+    .bind(ceremony_id.as_str())
+    .fetch_optional(pool)
+    .await?)
+}
+
 pub(super) async fn retire_expired(
     pool: &PgPool,
     now_unix_seconds: u64,

@@ -382,6 +382,7 @@ impl IntoResponse for ApiError {
             )) => (StatusCode::CONFLICT, "trusted_consent_already_terminal"),
             Self::InvalidApplication(AuthorityApplicationError::TrustedConsent(
                 TrustedConsentError::WebauthnUnavailable
+                | TrustedConsentError::ReceiptUnavailable
                 | TrustedConsentError::InvalidWebauthnConfig
                 | TrustedConsentError::MissingAttestationTrust
                 | TrustedConsentError::InvalidAttestationTrust,

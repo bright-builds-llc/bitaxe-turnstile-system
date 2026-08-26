@@ -36,6 +36,7 @@ use crate::{
         TrustedConsentBindingInput, TrustedConsentCeremony, TrustedConsentCeremonyId,
         TrustedConsentError, TrustedConsentFinishResponse, TrustedConsentOperationOwner,
         TrustedConsentReason, TrustedConsentWebauthnVerifier, UnavailableTrustedConsentVerifier,
+        sign_trusted_consent_receipt,
     },
 };
 
@@ -476,6 +477,12 @@ pub enum AuthorityApplicationError {
     InvalidPoolSelection,
     #[error("Pool-facing authorization does not match the retained Work Consent")]
     InvalidUpstreamAuthorization,
+    #[error("Trusted Consent is required before consequential work begins")]
+    TrustedConsentRequired,
+    #[error("Trusted Consent Receipt is invalid for this Work Session")]
+    InvalidTrustedConsentReceipt,
+    #[error("Trusted Consent Receipt was already admitted to another Work Session")]
+    TrustedConsentReceiptReplayed,
     #[error("Accepted Work Event conflicts with its canonical delivery")]
     ConflictingEventReplay,
     #[error("issuance worker identity is invalid")]
@@ -534,6 +541,13 @@ impl From<AuthorityPersistenceError> for AuthorityApplicationError {
             AuthorityPersistenceError::PoolSelectionMismatch => Self::PoolSelectionMismatch,
             AuthorityPersistenceError::ConflictingEventReplay => Self::ConflictingEventReplay,
             AuthorityPersistenceError::ReplayedIssuanceProof => Self::ReplayedIssuanceProof,
+            AuthorityPersistenceError::TrustedConsentRequired => Self::TrustedConsentRequired,
+            AuthorityPersistenceError::InvalidTrustedConsentReceipt => {
+                Self::InvalidTrustedConsentReceipt
+            }
+            AuthorityPersistenceError::TrustedConsentReceiptReplayed => {
+                Self::TrustedConsentReceiptReplayed
+            }
             AuthorityPersistenceError::UnknownTrustedConsentCeremony => {
                 Self::TrustedConsent(TrustedConsentError::UnknownCeremony)
             }

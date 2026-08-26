@@ -6,6 +6,7 @@ mod connection;
 mod lifecycle;
 mod pool_selection;
 mod trusted_consent;
+mod trusted_consent_lease;
 pub(crate) use connection::PostgresAuthorityRepository;
 
 use accounting::{
@@ -15,7 +16,7 @@ use accounting::{
 
 use super::{
     AuthorityPersistenceError, AuthorityRepository, ClaimedIssuance, PersistedAcceptance,
-    PersistedIssuance, PersistedProgress, ReserveTrustedConsentCeremony,
+    PersistedIssuance, PersistedProgress, ReserveTrustedConsentCeremony, StartWorkLeaseInput,
     TrustedConsentCeremonyRecord, TrustedConsentReservation, TrustedConsentVerificationClaim,
 };
 use crate::{
@@ -38,32 +39,7 @@ impl AuthorityRepository for PostgresAuthorityRepository {
         descriptor: &WorkChallengeDescriptor,
         claims_seed: &GatePassClaimsSeed,
     ) -> Result<(), AuthorityPersistenceError> {
-        let descriptor_json = serde_json::to_value(descriptor)
-            .map_err(|_| AuthorityPersistenceError::InvalidPersistedData)?;
-        let claims_seed = serde_json::to_value(claims_seed)
-            .map_err(|_| AuthorityPersistenceError::InvalidPersistedData)?;
-        let expires_at = i64::try_from(descriptor.expires_at_unix_seconds())
-            .map_err(|_| AuthorityPersistenceError::InvalidPersistedData)?;
-        let result = sqlx::query(include_str!("postgres/queries/insert_challenge.sql"))
-            .bind(descriptor.challenge_id())
-            .bind(descriptor_json)
-            .bind(descriptor.required_work().to_decimal_string())
-            .bind(expires_at)
-            .bind(claims_seed)
-            .execute(&self.pool)
-            .await;
-
-        match result {
-            Ok(_) => Ok(()),
-            Err(error)
-                if error
-                    .as_database_error()
-                    .is_some_and(|error| error.is_unique_violation()) =>
-            {
-                Err(AuthorityPersistenceError::DuplicateChallenge)
-            }
-            Err(error) => Err(error.into()),
-        }
+        accounting::insert_challenge(&self.pool, descriptor, claims_seed).await
     }
 
     async fn progress(
@@ -160,23 +136,9 @@ impl AuthorityRepository for PostgresAuthorityRepository {
 
     async fn start_work_lease(
         &self,
-        session_id: &WorkSessionId,
-        clock: &crate::lifecycle::WorkerClock,
-        lease_id: &str,
-        renew_at_monotonic_milliseconds: u64,
-        expires_at_monotonic_milliseconds: u64,
-        now: u64,
+        input: StartWorkLeaseInput<'_>,
     ) -> Result<crate::lifecycle::WorkLease, AuthorityPersistenceError> {
-        lifecycle::start_work_lease(
-            &self.pool,
-            session_id,
-            clock,
-            lease_id,
-            renew_at_monotonic_milliseconds,
-            expires_at_monotonic_milliseconds,
-            now,
-        )
-        .await
+        lifecycle::start_work_lease(&self.pool, input).await
     }
 
     async fn renew_work_lease(
@@ -605,6 +567,30 @@ impl AuthorityRepository for PostgresAuthorityRepository {
             failed_at_unix_seconds,
         )
         .await
+    }
+
+    async fn persist_trusted_consent_receipt(
+        &self,
+        ceremony_id: &TrustedConsentCeremonyId,
+        compact_receipt: &str,
+        issued_at_unix_seconds: u64,
+        expires_at_unix_seconds: u64,
+    ) -> Result<String, AuthorityPersistenceError> {
+        trusted_consent::persist_receipt(
+            &self.pool,
+            ceremony_id,
+            compact_receipt,
+            issued_at_unix_seconds,
+            expires_at_unix_seconds,
+        )
+        .await
+    }
+
+    async fn maybe_trusted_consent_receipt(
+        &self,
+        ceremony_id: &TrustedConsentCeremonyId,
+    ) -> Result<Option<String>, AuthorityPersistenceError> {
+        trusted_consent::maybe_receipt(&self.pool, ceremony_id).await
     }
 
     async fn retire_expired_trusted_consent_ceremonies(

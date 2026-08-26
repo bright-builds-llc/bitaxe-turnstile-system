@@ -13,6 +13,11 @@ const MAXIMUM_IDENTIFIER_LENGTH: usize = 128;
 const SHA256_BASE64URL_LENGTH: usize = 43;
 const WEBAUTHN_TIMEOUT: Duration = Duration::from_secs(120);
 
+mod receipt;
+pub(crate) use receipt::{
+    TrustedConsentLeaseAdmission, sign_trusted_consent_receipt, verify_trusted_consent_receipt,
+};
+
 #[cfg(test)]
 mod tests;
 
@@ -250,6 +255,10 @@ impl TrustedConsentCeremony {
     pub(crate) fn expires_at_unix_seconds(&self) -> u64 {
         self.expires_at_unix_seconds
     }
+
+    pub(crate) fn verified_at_unix_seconds(&self) -> Option<u64> {
+        self.maybe_verified_at_unix_seconds
+    }
 }
 
 /// Output of starting one registration ceremony.
@@ -341,6 +350,7 @@ pub(crate) struct TrustedConsentBeginResponse {
 pub(crate) struct TrustedConsentFinishResponse {
     pub(crate) ceremony_id: String,
     pub(crate) status: TrustedConsentCeremonyStatus,
+    pub(crate) trusted_consent_receipt: String,
 }
 
 /// Operator-configured trust for one approved authenticator model.
@@ -527,4 +537,10 @@ pub enum TrustedConsentError {
     /// Cryptographic, ceremony, UV, or attestation checks rejected the response.
     #[error("WebAuthn attestation was rejected")]
     WebauthnRejected,
+    /// A verified ceremony cannot currently mint its deterministic receipt.
+    #[error("Trusted Consent receipt is unavailable")]
+    ReceiptUnavailable,
+    /// A Trusted Consent receipt is malformed, stale, forged, or mismatched.
+    #[error("Trusted Consent receipt is invalid")]
+    InvalidReceipt,
 }

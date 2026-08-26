@@ -12,7 +12,7 @@ use crate::{
     progress::{AcceptedWorkAcknowledgement, AcceptedWorkEvent, ProgressError, WorkSessionId},
     trusted_consent::{
         TrustedConsentBinding, TrustedConsentCeremony, TrustedConsentCeremonyId,
-        TrustedConsentOperationOwner,
+        TrustedConsentLeaseAdmission, TrustedConsentOperationOwner,
     },
     work::{CreditedWork, VerifiedProgress, WorkError},
 };
@@ -48,6 +48,16 @@ pub(crate) enum PersistedIssuance {
     Issued { gate_pass: String },
     Retired,
     Failed,
+}
+
+pub(crate) struct StartWorkLeaseInput<'a> {
+    pub session_id: &'a WorkSessionId,
+    pub maybe_trusted_consent: Option<&'a TrustedConsentLeaseAdmission<'a>>,
+    pub clock: &'a WorkerClock,
+    pub lease_id: &'a str,
+    pub renew_at_monotonic_milliseconds: u64,
+    pub expires_at_monotonic_milliseconds: u64,
+    pub now_unix_seconds: u64,
 }
 
 pub(crate) enum TrustedConsentCeremonyRecord {
@@ -164,12 +174,7 @@ pub(crate) trait AuthorityRepository: Send + Sync {
 
     async fn start_work_lease(
         &self,
-        session_id: &WorkSessionId,
-        clock: &WorkerClock,
-        lease_id: &str,
-        renew_at_monotonic_milliseconds: u64,
-        expires_at_monotonic_milliseconds: u64,
-        now: u64,
+        input: StartWorkLeaseInput<'_>,
     ) -> Result<WorkLease, AuthorityPersistenceError>;
 
     async fn renew_work_lease(
@@ -298,6 +303,19 @@ pub(crate) trait AuthorityRepository: Send + Sync {
         failed_at_unix_seconds: u64,
     ) -> Result<TrustedConsentCeremonyRecord, AuthorityPersistenceError>;
 
+    async fn persist_trusted_consent_receipt(
+        &self,
+        ceremony_id: &TrustedConsentCeremonyId,
+        compact_receipt: &str,
+        issued_at_unix_seconds: u64,
+        expires_at_unix_seconds: u64,
+    ) -> Result<String, AuthorityPersistenceError>;
+
+    async fn maybe_trusted_consent_receipt(
+        &self,
+        ceremony_id: &TrustedConsentCeremonyId,
+    ) -> Result<Option<String>, AuthorityPersistenceError>;
+
     async fn retire_expired_trusted_consent_ceremonies(
         &self,
         now_unix_seconds: u64,
@@ -338,6 +356,12 @@ pub(crate) enum AuthorityPersistenceError {
     UnknownTrustedConsentCeremony,
     #[error("Trusted Consent verification lease was lost")]
     LostTrustedConsentVerificationLease,
+    #[error("Trusted Consent receipt is required before work begins")]
+    TrustedConsentRequired,
+    #[error("Trusted Consent receipt does not authorize this lease")]
+    InvalidTrustedConsentReceipt,
+    #[error("Trusted Consent receipt was already admitted to another Work Session")]
+    TrustedConsentReceiptReplayed,
     #[error("Work Challenge is no longer awaiting Trusted Consent")]
     TrustedConsentChallengeUnavailable,
     #[error("persisted Authority data is invalid")]

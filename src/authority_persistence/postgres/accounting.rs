@@ -34,6 +34,39 @@ pub(super) async fn challenge_for_session(
     Ok(challenge_id)
 }
 
+pub(super) async fn insert_challenge(
+    pool: &sqlx::PgPool,
+    descriptor: &WorkChallengeDescriptor,
+    claims_seed: &GatePassClaimsSeed,
+) -> Result<(), AuthorityPersistenceError> {
+    let descriptor_json = serde_json::to_value(descriptor)
+        .map_err(|_| AuthorityPersistenceError::InvalidPersistedData)?;
+    let claims_seed = serde_json::to_value(claims_seed)
+        .map_err(|_| AuthorityPersistenceError::InvalidPersistedData)?;
+    let expires_at = i64::try_from(descriptor.expires_at_unix_seconds())
+        .map_err(|_| AuthorityPersistenceError::InvalidPersistedData)?;
+    let result = sqlx::query(include_str!("queries/insert_challenge.sql"))
+        .bind(descriptor.challenge_id())
+        .bind(descriptor_json)
+        .bind(descriptor.required_work().to_decimal_string())
+        .bind(expires_at)
+        .bind(claims_seed)
+        .bind(descriptor.action_policy().requires_trusted_confirmation())
+        .execute(pool)
+        .await;
+    match result {
+        Ok(_) => Ok(()),
+        Err(error)
+            if error
+                .as_database_error()
+                .is_some_and(|error| error.is_unique_violation()) =>
+        {
+            Err(AuthorityPersistenceError::DuplicateChallenge)
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn complete_issuance(
     pool: &sqlx::PgPool,

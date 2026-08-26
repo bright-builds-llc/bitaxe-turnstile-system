@@ -42,6 +42,18 @@ FROM (
 
     UNION ALL
 
+    SELECT ceremony.ceremony_id AS record_key,
+           ceremony.receipt_expires_at_unix_seconds AS retention_floor_unix_seconds,
+           'trusted_consent_receipt' AS record_class,
+           'identifying' AS retention_state
+    FROM trusted_consent_ceremonies AS ceremony
+    CROSS JOIN policy
+    WHERE ceremony.status = 'verified'
+      AND ceremony.trusted_consent_receipt IS NOT NULL
+      AND ceremony.receipt_expires_at_unix_seconds <= policy.as_of_unix_seconds
+
+    UNION ALL
+
     SELECT challenge.challenge_id AS record_key,
            CASE
                WHEN challenge.terminal_at_unix_seconds + policy.tombstone_retention_seconds

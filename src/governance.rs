@@ -46,6 +46,7 @@ impl GovernanceContext {
 pub enum GovernedRecordClass {
     ClaimantIssuanceProofReplay,
     SignedGatePass,
+    TrustedConsentReceipt,
     AuthorityOperational,
     DpopProofReplay,
     ClaimantOutcomeProofReplay,
@@ -61,6 +62,7 @@ impl GovernedRecordClass {
             self,
             Self::ClaimantIssuanceProofReplay
                 | Self::SignedGatePass
+                | Self::TrustedConsentReceipt
                 | Self::DpopProofReplay
                 | Self::ClaimantOutcomeProofReplay
                 | Self::GovernanceAudit
@@ -72,6 +74,7 @@ impl GovernedRecordClass {
         match self {
             Self::ClaimantIssuanceProofReplay => "claimant_issuance_proof_replay",
             Self::SignedGatePass => "signed_gate_pass",
+            Self::TrustedConsentReceipt => "trusted_consent_receipt",
             Self::AuthorityOperational => "authority_operational",
             Self::DpopProofReplay => "dpop_proof_replay",
             Self::ClaimantOutcomeProofReplay => "claimant_outcome_proof_replay",

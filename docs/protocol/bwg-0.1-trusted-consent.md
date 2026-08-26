@@ -2,11 +2,11 @@
 
 ## Delivery status
 
-The Authority-side one-use attested WebAuthn begin/finish ceremony is implemented by child Ticket
-01. The signed receipt and authoritative lease-start rule below are owned by child Ticket 02; popup
-hardening and real receipt browser evidence are Ticket 03; production material-change classification
-is Ticket 04 on BWG Core Ticket 20's replacement-offer path. Until those tickets resolve, parent
-Ticket 14 remains claimed and deployments must not advertise complete Trusted Consent conformance.
+The Authority-side one-use attested WebAuthn ceremony and signed receipt/lease enforcement are
+implemented by child Tickets 01 and 02. Popup hardening and real receipt browser evidence are Ticket
+03; production material-change classification is Ticket 04 on BWG Core Ticket 20's replacement-offer
+path. Until those tickets resolve, parent Ticket 14 remains claimed and deployments must not
+advertise complete Trusted Consent conformance.
 
 Light and Standard local work remains eligible for embedded Work Consent under claimant and client
 ceilings. Elevated Action Policies set `trusted_confirmation_required` in the Authority-signed Pool
@@ -39,9 +39,9 @@ policy leaves the ceremony verifier unavailable. Pending registration state rema
 PostgreSQL, is leased for one concurrent finish, and is erased with creation options immediately
 after terminal verification. Public responses retain only ceremony identity, deadline, and status.
 
-Ticket 02 will make successful verification return an Ed25519 compact JWS with type
-`bwg-trusted-consent+jws`. Its claims bind the Authority issuer, Work Challenge, exact disclosure
-and signed-offer digests, confirmation reason, trusted origin, `BWG/0.1`, issue/expiry times, and
+Successful verification returns a deterministic Ed25519 compact JWS with type
+`bwg-trusted-consent+jws`. Its claims bind the Authority issuer, Work Challenge, exact disclosure and
+signed-offer digests, confirmation reason, trusted origin, `BWG/0.1`, issue/expiry times, and
 metadata-only WebAuthn facts:
 
 ```json
@@ -52,10 +52,12 @@ metadata-only WebAuthn facts:
 }
 ```
 
-The receipt is stored with Work Consent and passed to lease start. It is not a Gate Pass, login,
-identity assertion, or reusable permission. Missing receipts, popup failure/closure/cancellation,
-origin/source/state mismatch, signature failure, stale time, missing UP/UV, and untrusted/self
-attestation all fail before work starts.
+The exact receipt is durably recovered on finish retry and passed to lease start. Transactional
+admission binds one ceremony to at most one Work Session; a failed admission rolls back that binding,
+and renewal uses the retained admission without accepting another bearer receipt. Missing, forged,
+stale, mismatched, or cross-session replayed receipts fail before work starts. Compact receipt bytes
+are cleared in bounded batches at signed expiry while terminal metadata remains. The receipt is not
+a Gate Pass, login, identity assertion, or reusable permission.
 
 The conformance profile combines unit vectors for signed receipt binding and negative cases with a
 real Chromium virtual-authenticator path for WebAuthn challenge/origin and UP/UV behavior. Production

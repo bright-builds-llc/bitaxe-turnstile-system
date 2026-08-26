@@ -33,36 +33,14 @@ impl AuthorityApplication {
         if !verified_offers.trusted_confirmation_required() {
             return Err(TrustedConsentError::ConfirmationNotRequired.into());
         }
-        let expected_reason = if challenge.action_policy().requires_trusted_confirmation() {
-            TrustedConsentReason::ElevatedWork
-        } else {
-            TrustedConsentReason::MaterialPoolTerms
-        };
-        if TrustedConsentReason::parse(&request.reason)? != expected_reason {
-            return Err(TrustedConsentError::BindingMismatch.into());
-        }
-        let expected_offer_digest = URL_SAFE_NO_PAD.encode(digest::digest(
-            &digest::SHA256,
-            signed_offers.signature().as_bytes(),
-        ));
-        if request.pool_offer_set_signature_sha256 != expected_offer_digest {
-            return Err(TrustedConsentError::BindingMismatch.into());
-        }
-        let authority_origin = authority_origin(self.config.issuer())?;
-        if request.authority_origin != authority_origin
+        let binding = binding_for_challenge(&challenge, self.config.issuer())?;
+        if request.reason != binding.reason().as_str()
+            || request.pool_offer_set_signature_sha256 != binding.pool_offer_set_signature_sha256()
+            || request.authority_origin != binding.authority_origin()
             || now >= challenge.expires_at_unix_seconds()
         {
             return Err(TrustedConsentError::BindingMismatch.into());
         }
-        let disclosure_digest_sha256 = authoritative_disclosure_digest(&challenge)?;
-        let binding = TrustedConsentBinding::try_from(TrustedConsentBindingInput {
-            challenge_id: challenge.challenge_id().to_owned(),
-            disclosure_digest_sha256,
-            pool_offer_set_signature_sha256: request.pool_offer_set_signature_sha256,
-            reason: request.reason,
-            authority_origin,
-            challenge_expires_at_unix_seconds: challenge.expires_at_unix_seconds(),
-        })?;
         if let Some(existing) = self
             .repository
             .maybe_trusted_consent_by_binding(&binding)
@@ -161,7 +139,7 @@ impl AuthorityApplication {
             TrustedConsentCeremonyRecord::Pending { ceremony, .. }
             | TrustedConsentCeremonyRecord::Verifying { ceremony, .. } => ceremony,
             TrustedConsentCeremonyRecord::Verified { ceremony } => {
-                return Ok(finish_response(&ceremony));
+                return self.finish_response(&ceremony, now).await;
             }
             TrustedConsentCeremonyRecord::Failed { .. } => {
                 return Err(TrustedConsentError::CeremonyFailed.into());
@@ -197,7 +175,9 @@ impl AuthorityApplication {
                 return Err(TrustedConsentError::InvalidWebauthnState.into());
             }
             TrustedConsentVerificationClaim::Verified(verified) => {
-                return Ok(finish_response(verified.ceremony()));
+                return self
+                    .finish_response(verified.ceremony(), current_unix_seconds()?)
+                    .await;
             }
             TrustedConsentVerificationClaim::InProgress => {
                 return Err(TrustedConsentError::CeremonyInProgress.into());
@@ -270,7 +250,55 @@ impl AuthorityApplication {
             .repository
             .complete_trusted_consent_ceremony(ceremony_id, verification_owner, completed_at)
             .await?;
-        Ok(finish_response(completed.ceremony()))
+        self.finish_response(completed.ceremony(), completed_at)
+            .await
+    }
+
+    async fn finish_response(
+        &self,
+        ceremony: &TrustedConsentCeremony,
+        now_unix_seconds: u64,
+    ) -> Result<TrustedConsentFinishResponse, AuthorityApplicationError> {
+        if now_unix_seconds >= ceremony.binding().challenge_expires_at_unix_seconds() {
+            return Err(TrustedConsentError::CeremonyExpired.into());
+        }
+        if let Some(compact_receipt) = self
+            .repository
+            .maybe_trusted_consent_receipt(ceremony.ceremony_id())
+            .await?
+        {
+            return Ok(receipt_response(ceremony, compact_receipt));
+        }
+        let signer = self
+            .config
+            .maybe_signer()
+            .ok_or(TrustedConsentError::ReceiptUnavailable)?;
+        let compact_receipt =
+            sign_trusted_consent_receipt(&signer, self.config.issuer(), ceremony)?;
+        let issued_at = ceremony
+            .verified_at_unix_seconds()
+            .ok_or(TrustedConsentError::ReceiptUnavailable)?;
+        let compact_receipt = self
+            .repository
+            .persist_trusted_consent_receipt(
+                ceremony.ceremony_id(),
+                &compact_receipt,
+                issued_at,
+                ceremony.binding().challenge_expires_at_unix_seconds(),
+            )
+            .await?;
+        Ok(receipt_response(ceremony, compact_receipt))
+    }
+}
+
+fn receipt_response(
+    ceremony: &TrustedConsentCeremony,
+    compact_receipt: String,
+) -> TrustedConsentFinishResponse {
+    TrustedConsentFinishResponse {
+        ceremony_id: ceremony.ceremony_id().as_str().to_owned(),
+        status: ceremony.status(),
+        trusted_consent_receipt: compact_receipt,
     }
 }
 
@@ -321,12 +349,39 @@ fn begin_response(
     })
 }
 
-fn authoritative_disclosure_digest(
+pub(super) fn authoritative_disclosure_digest(
     challenge: &crate::challenge::WorkChallengeDescriptor,
 ) -> Result<String, AuthorityApplicationError> {
     let bytes =
         serde_json::to_vec(challenge).map_err(|_| TrustedConsentError::InvalidWebauthnState)?;
     Ok(URL_SAFE_NO_PAD.encode(digest::digest(&digest::SHA256, &bytes)))
+}
+
+pub(super) fn binding_for_challenge(
+    challenge: &crate::challenge::WorkChallengeDescriptor,
+    issuer: &str,
+) -> Result<TrustedConsentBinding, AuthorityApplicationError> {
+    let signed_offers = challenge
+        .maybe_pool_offers()
+        .ok_or(TrustedConsentError::ConfirmationNotRequired)?;
+    let reason = if challenge.action_policy().requires_trusted_confirmation() {
+        TrustedConsentReason::ElevatedWork
+    } else {
+        TrustedConsentReason::MaterialPoolTerms
+    };
+    Ok(TrustedConsentBinding::try_from(
+        TrustedConsentBindingInput {
+            challenge_id: challenge.challenge_id().to_owned(),
+            disclosure_digest_sha256: authoritative_disclosure_digest(challenge)?,
+            pool_offer_set_signature_sha256: URL_SAFE_NO_PAD.encode(digest::digest(
+                &digest::SHA256,
+                signed_offers.signature().as_bytes(),
+            )),
+            reason: reason.as_str().to_owned(),
+            authority_origin: authority_origin(issuer)?,
+            challenge_expires_at_unix_seconds: challenge.expires_at_unix_seconds(),
+        },
+    )?)
 }
 
 fn ensure_challenge_is_awaiting_consent(
@@ -336,11 +391,4 @@ fn ensure_challenge_is_awaiting_consent(
         return Err(TrustedConsentError::CeremonyFailed);
     }
     Ok(())
-}
-
-fn finish_response(ceremony: &TrustedConsentCeremony) -> TrustedConsentFinishResponse {
-    TrustedConsentFinishResponse {
-        ceremony_id: ceremony.ceremony_id().as_str().to_owned(),
-        status: ceremony.status(),
-    }
 }
