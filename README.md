@@ -44,6 +44,8 @@ PostgreSQL outbox; see
 The pinned out-of-process Hydra/Bitcoin Core acceptance profile and reproducible runner are
 documented in
 [`docs/protocol/bwg-0.1-hydra-solo-integration.md`](docs/protocol/bwg-0.1-hydra-solo-integration.md).
+The mandatory mainnet Reward Policy and BIP 23 pre-work gate is specified and exercised in
+[`docs/protocol/bwg-0.1-mainnet-job-admission.md`](docs/protocol/bwg-0.1-mainnet-job-admission.md).
 
 ## Principles
 

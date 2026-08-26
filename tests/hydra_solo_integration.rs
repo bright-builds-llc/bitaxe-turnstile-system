@@ -36,6 +36,8 @@ use tokio::{
 #[path = "support/postgres.rs"]
 mod postgres_support;
 use postgres_support::PostgresTestDatabase;
+#[path = "support/stratum_hash.rs"]
+mod stratum_hash_support;
 
 #[path = "support/authority_keys.rs"]
 mod authority_key_support;
@@ -129,7 +131,7 @@ async fn standard_worker_crosses_proxy_and_pinned_hydra_with_direct_payout()
         "{coinbase1}{first_extranonce}{extranonce2}{coinbase2}"
     ))?;
     let coinbase = deserialize::<Transaction>(&coinbase_bytes)?;
-    let vardiff = exercise_vardiff(
+    exercise_vardiff(
         &mut worker_lines,
         &mut worker_write,
         &mut proxy_task,
@@ -178,26 +180,10 @@ async fn standard_worker_crosses_proxy_and_pinned_hydra_with_direct_payout()
             >= 4
     );
     mine_regtest_block().await?;
-    let replacement = next_matching(&mut worker_lines, |value| {
-        value["method"] == "mining.notify" && value["params"][8] == true
-    })
-    .await?;
-    assert_ne!(replacement["params"][0], vardiff.adjusted_job_id);
-    write_line(
-        &mut worker_write,
-        &format!(
-            r#"{{"id":8,"method":"mining.submit","params":["{}","{}","{extranonce2}","{}","{}"]}}"#,
-            credentials.username(),
-            vardiff.adjusted_job_id,
-            vardiff.adjusted_ntime,
-            vardiff.adjusted_nonce
-        ),
-    )
-    .await?;
     wait_for_close(&mut worker_lines).await?;
     drop(worker_lines);
     drop(worker_write);
-    assert!(matches!(proxy_task.await?, Err(StratumV1Error::UnknownJob)));
+    assert!(proxy_task.await?.is_ok());
 
     submit_network_block_after_reconnect(
         outbox,
@@ -302,12 +288,6 @@ async fn submit_network_block_after_reconnect(
     wait_for_block_height(block_count_before + 1).await
 }
 
-struct VardiffEvidence {
-    adjusted_job_id: String,
-    adjusted_ntime: String,
-    adjusted_nonce: String,
-}
-
 struct VardiffInput<'a> {
     username: &'a str,
     params: &'a [Value],
@@ -321,7 +301,7 @@ async fn exercise_vardiff(
     worker_write: &mut OwnedWriteHalf,
     proxy_task: &mut tokio::task::JoinHandle<Result<(), StratumV1Error>>,
     input: VardiffInput<'_>,
-) -> Result<VardiffEvidence, Box<dyn Error>> {
+) -> Result<(), Box<dyn Error>> {
     let VardiffInput {
         username,
         params,
@@ -422,11 +402,7 @@ async fn exercise_vardiff(
     assert!(rejected_duplicate["error"].is_array());
     assert_eq!(initial_difficulty, serde_json::json!(0.0000000001));
     assert_ne!(adjusted_difficulty["params"][0], initial_difficulty);
-    Ok(VardiffEvidence {
-        adjusted_job_id,
-        adjusted_ntime,
-        adjusted_nonce,
-    })
+    Ok(())
 }
 
 struct IntegrationFixture {

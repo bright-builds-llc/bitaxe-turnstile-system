@@ -1,0 +1,2196 @@
+diff --git a/bitcoindrpc/src/lib.rs b/bitcoindrpc/src/lib.rs
+index 5da81bd..cdb2880 100644
+--- a/bitcoindrpc/src/lib.rs
++++ b/bitcoindrpc/src/lib.rs
+@@ -232,13 +232,13 @@ impl BitcoindRpcClient {
+         let params = match network {
+             bitcoin::Network::Signet => {
+                 vec![serde_json::json!({
+-                    "capabilities": ["coinbasetxn", "coinbase/append", "workid"],
++                    "capabilities": ["coinbasetxn", "coinbase/append", "workid", "proposal"],
+                     "rules": ["segwit", "signet"],
+                 })]
+             }
+             _ => {
+                 vec![serde_json::json!({
+-                    "capabilities": ["coinbasetxn", "coinbase/append", "workid"],
++                    "capabilities": ["coinbasetxn", "coinbase/append", "workid", "proposal"],
+                     "rules": ["segwit"],
+                 })]
+             }
+diff --git a/p2poolv2_config/src/lib.rs b/p2poolv2_config/src/lib.rs
+index 8263d9d..ebd7120 100644
+--- a/p2poolv2_config/src/lib.rs
++++ b/p2poolv2_config/src/lib.rs
+@@ -129,6 +129,15 @@ pub struct StratumConfig<State = Raw> {
+     /// connections. Set to false when bootstrapping a new network.
+     #[serde(default = "default_wait_for_chain_sync")]
+     pub wait_for_chain_sync: bool,
++    /// Require exact Reward Policy and BIP 23 proposal admission before notifying miners.
++    #[serde(default)]
++    pub require_job_admission: bool,
++    /// Maximum duration of one proposal admission attempt.
++    #[serde(default = "default_job_admission_timeout_ms")]
++    pub job_admission_timeout_ms: u64,
++    /// Maximum concurrent Bitcoin Core proposal requests.
++    #[serde(default = "default_job_admission_max_concurrency")]
++    pub job_admission_max_concurrency: usize,
+     /// Pool operating mode. Defaults to P2Poolv2 when not specified.
+     #[serde(default)]
+     pub mode: PoolMode,
+@@ -137,6 +146,8 @@ pub struct StratumConfig<State = Raw> {
+     #[serde(skip)]
+     pub bootstrap_address_parsed: Option<Address<NetworkChecked>>,
+     #[serde(skip)]
++    pub solo_address_parsed: Option<Address<NetworkChecked>>,
++    #[serde(skip)]
+     pub donation_address_parsed: Option<Address<NetworkChecked>>,
+     #[serde(skip)]
+     pub fee_address_parsed: Option<Address<NetworkChecked>>,
+@@ -149,6 +160,16 @@ pub struct StratumConfig<State = Raw> {
+ impl StratumConfig<Raw> {
+     /// Parse and validate addresses, converting from Raw to Parsed state
+     pub fn parse(self) -> Result<StratumConfig<Parsed>, ConfigError> {
++        if self.job_admission_timeout_ms == 0 || self.job_admission_timeout_ms > 60_000 {
++            return Err(ConfigError {
++                message: "job_admission_timeout_ms must be between 1 and 60000".to_string(),
++            });
++        }
++        if self.job_admission_max_concurrency == 0 || self.job_admission_max_concurrency > 1_024 {
++            return Err(ConfigError {
++                message: "job_admission_max_concurrency must be between 1 and 1024".to_string(),
++            });
++        }
+         if self.pool_signature.clone().unwrap_or("".to_string()).len() > MAX_POOL_SIGNATURE_LENGTH {
+             return Err(ConfigError {
+                 message: format!("Pool signature length is limited to {MAX_POOL_SIGNATURE_LENGTH}"),
+@@ -169,6 +190,11 @@ impl StratumConfig<Raw> {
+         }
+ 
+         let bootstrap_address_parsed = parse_address(&self.bootstrap_address, self.network)?;
++        let solo_address_parsed = self
++            .solo_address
++            .as_ref()
++            .map(|address| parse_address(address, self.network))
++            .transpose()?;
+ 
+         let donation_address_parsed = self
+             .donation_address
+@@ -202,8 +228,12 @@ impl StratumConfig<Raw> {
+             pool_signature: self.pool_signature,
+             max_connections: self.max_connections,
+             wait_for_chain_sync: self.wait_for_chain_sync,
++            require_job_admission: self.require_job_admission,
++            job_admission_timeout_ms: self.job_admission_timeout_ms,
++            job_admission_max_concurrency: self.job_admission_max_concurrency,
+             mode: self.mode,
+             bootstrap_address_parsed: Some(bootstrap_address_parsed),
++            solo_address_parsed,
+             donation_address_parsed,
+             fee_address_parsed,
+             _state: PhantomData,
+@@ -219,6 +249,13 @@ impl StratumConfig<Parsed> {
+             .expect("bootstrap_address_parsed should always be Some in Parsed state")
+     }
+ 
++    /// Payout destination required by the solo direct-payout admission profile.
++    pub fn payout_address(&self) -> &Address<NetworkChecked> {
++        self.solo_address_parsed
++            .as_ref()
++            .unwrap_or_else(|| self.bootstrap_address())
++    }
++
+     /// Get the parsed and validated donation address, if any
+     pub fn donation_address(&self) -> Option<&Address<NetworkChecked>> {
+         self.donation_address_parsed.as_ref()
+@@ -255,8 +292,12 @@ impl StratumConfig<Raw> {
+             pool_signature: None,
+             max_connections: None,
+             wait_for_chain_sync: true,
++            require_job_admission: false,
++            job_admission_timeout_ms: default_job_admission_timeout_ms(),
++            job_admission_max_concurrency: default_job_admission_max_concurrency(),
+             mode: PoolMode::default(),
+             bootstrap_address_parsed: None,
++            solo_address_parsed: None,
+             donation_address_parsed: None,
+             fee_address_parsed: None,
+             _state: PhantomData,
+@@ -341,6 +382,14 @@ fn default_wait_for_chain_sync() -> bool {
+     true
+ }
+ 
++fn default_job_admission_timeout_ms() -> u64 {
++    2_000
++}
++
++fn default_job_admission_max_concurrency() -> usize {
++    8
++}
++
+ fn default_background_task_frequency_hours() -> u64 {
+     1
+ }
+@@ -596,6 +645,17 @@ mod tests {
+     use temp_env::with_var;
+     use tokio_test::assert_err;
+ 
++    #[test]
++    fn job_admission_bounds_fail_closed() {
++        let mut zero_timeout = StratumConfig::new_for_test_default();
++        zero_timeout.job_admission_timeout_ms = 0;
++        let mut zero_concurrency = StratumConfig::new_for_test_default();
++        zero_concurrency.job_admission_max_concurrency = 0;
++
++        assert!(zero_timeout.parse().is_err());
++        assert!(zero_concurrency.parse().is_err());
++    }
++
+     #[test]
+     fn test_config_builder() {
+         let config = Config::load("../config.sample.toml").unwrap();
+diff --git a/p2poolv2_lib/src/node/emission_worker.rs b/p2poolv2_lib/src/node/emission_worker.rs
+index 974eceb..1ef1d3d 100644
+--- a/p2poolv2_lib/src/node/emission_worker.rs
++++ b/p2poolv2_lib/src/node/emission_worker.rs
+@@ -129,6 +129,7 @@ mod tests {
+             coinbaseaux: HashMap::with_capacity(0),
+             coinbasevalue: 5000000000,
+             longpollid: String::new(),
++            workid: None,
+             target: "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+             mintime: 0,
+             mutable: vec![],
+diff --git a/p2poolv2_lib/src/shares/handle_stratum_share.rs b/p2poolv2_lib/src/shares/handle_stratum_share.rs
+index 1ca5f4a..5dad68c 100644
+--- a/p2poolv2_lib/src/shares/handle_stratum_share.rs
++++ b/p2poolv2_lib/src/shares/handle_stratum_share.rs
+@@ -146,6 +146,7 @@ mod tests {
+             coinbaseaux: HashMap::new(),
+             coinbasevalue: 5000000000,
+             longpollid: "".to_string(),
++            workid: None,
+             target: "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+             mintime: 0,
+             mutable: vec![],
+diff --git a/p2poolv2_lib/src/shares/validation/bitcoin_block_validation.rs b/p2poolv2_lib/src/shares/validation/bitcoin_block_validation.rs
+index ab5b400..002c040 100644
+--- a/p2poolv2_lib/src/shares/validation/bitcoin_block_validation.rs
++++ b/p2poolv2_lib/src/shares/validation/bitcoin_block_validation.rs
+@@ -15,36 +15,18 @@
+ // P2Poolv2. If not, see <https://www.gnu.org/licenses/>.
+ 
+ use super::ValidationError;
+-use bitcoin::consensus::encode::serialize;
++use crate::stratum::work::job_admission::propose_block;
+ use bitcoindrpc::BitcoindRpcClient;
+-use serde_json::json;
+ 
+-/// Validate the bitcoin block.
+-/// Expect the block to exist in the chain, if it does not, return an error and the client should retry.
++/// Validate a fresh block candidate through BIP 23 proposal mode.
+ #[allow(dead_code)]
+ pub async fn validate_bitcoin_block(
+     block: &bitcoin::Block,
+     bitcoindrpc_client: &BitcoindRpcClient,
+-) -> Result<bool, ValidationError> {
+-    // Serialize block to hex string for RPC call
+-    let block_hex = hex::encode(serialize(block));
+-
+-    // Create parameters for getblocktemplate call in proposal mode
+-    let params = vec![json!({
+-        "mode": "proposal",
+-        "data": block_hex
+-    })];
+-
+-    // Call getblocktemplate RPC method
+-    let result: Result<serde_json::Value, _> =
+-        bitcoindrpc_client.request("getblocktemplate", params).await;
+-
+-    match result {
+-        Ok(response) => Ok(response == "duplicate"),
+-        Err(e) => Err(ValidationError::new(format!(
+-            "Bitcoin block validation failed: {e}"
+-        ))),
+-    }
++) -> Result<(), ValidationError> {
++    propose_block(bitcoindrpc_client, block, None)
++        .await
++        .map_err(|error| ValidationError::new(format!("Bitcoin block validation failed: {error}")))
+ }
+ 
+ #[cfg(test)]
+@@ -87,7 +69,7 @@ mod tests {
+                 }],
+             })))
+             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+-                "result": "duplicate",
++                "result": null,
+                 "error": null,
+                 "id": 0
+             })))
+@@ -106,7 +88,6 @@ mod tests {
+             BitcoindRpcClient::new(&config.url, &config.username, &config.password).unwrap();
+         let result = validate_bitcoin_block(&block, &client).await;
+         assert!(result.is_ok());
+-        assert!(result.unwrap());
+     }
+ 
+     #[tokio::test]
+@@ -156,8 +137,7 @@ mod tests {
+         let client =
+             BitcoindRpcClient::new(&config.url, &config.username, &config.password).unwrap();
+         let result = validate_bitcoin_block(&block, &client).await;
+-        assert!(result.is_ok());
+-        assert!(!result.unwrap());
++        assert!(result.is_err());
+     }
+ 
+     #[tokio::test]
+diff --git a/p2poolv2_lib/src/stratum/message_handlers/authorize_response.rs b/p2poolv2_lib/src/stratum/message_handlers/authorize_response.rs
+index be1f640..88922d7 100644
+--- a/p2poolv2_lib/src/stratum/message_handlers/authorize_response.rs
++++ b/p2poolv2_lib/src/stratum/message_handlers/authorize_response.rs
+@@ -255,7 +255,7 @@ mod tests {
+             "Expected method to be 'mining.set_difficulty'"
+         );
+         assert_eq!(
+-            difficulty_notification.params[0], 1000,
++            difficulty_notification.params[0], 0.0000001,
+             "Expected difficulty notification to match pool minimum difficulty"
+         );
+     }
+@@ -547,7 +547,7 @@ mod tests {
+ 
+         if let Message::SetDifficulty(notification) = &messages[1] {
+             assert_eq!(
+-                notification.params[0], 500,
++                notification.params[0], 0.00000005,
+                 "SetDifficulty notification should use password difficulty"
+             );
+         } else {
+@@ -604,7 +604,7 @@ mod tests {
+ 
+         if let Message::SetDifficulty(notification) = &messages[1] {
+             assert_eq!(
+-                notification.params[0], 100,
++                notification.params[0], 0.00000001,
+                 "SetDifficulty notification should use clamped difficulty"
+             );
+         } else {
+diff --git a/p2poolv2_lib/src/stratum/message_handlers/submit.rs b/p2poolv2_lib/src/stratum/message_handlers/submit.rs
+index 525e589..b9007b8 100644
+--- a/p2poolv2_lib/src/stratum/message_handlers/submit.rs
++++ b/p2poolv2_lib/src/stratum/message_handlers/submit.rs
+@@ -658,7 +658,7 @@ mod handle_submit_tests {
+                 Message::SetDifficulty(SetDifficultyNotification { method: _, params }),
+             ] => {
+                 assert_eq!(result, &Some(json!(true)));
+-                assert_eq!(params[0], 12345);
++                assert_eq!(params[0], 0.0000012345);
+             }
+             _ => panic!("Expected SetDifficultyNotification message"),
+         }
+diff --git a/p2poolv2_lib/src/stratum/message_handlers/subscribe.rs b/p2poolv2_lib/src/stratum/message_handlers/subscribe.rs
+index 1431401..5322877 100644
+--- a/p2poolv2_lib/src/stratum/message_handlers/subscribe.rs
++++ b/p2poolv2_lib/src/stratum/message_handlers/subscribe.rs
+@@ -125,7 +125,7 @@ mod tests {
+             "Expected method to be 'mining.set_difficulty'"
+         );
+         assert_eq!(
+-            difficulty_notification.params[0], 1000,
++            difficulty_notification.params[0], 0.0000001,
+             "Expected difficulty notification to match pool minimum difficulty"
+         );
+     }
+diff --git a/p2poolv2_lib/src/stratum/message_handlers/suggest_difficulty.rs b/p2poolv2_lib/src/stratum/message_handlers/suggest_difficulty.rs
+index 45a1e4b..1d16ea5 100644
+--- a/p2poolv2_lib/src/stratum/message_handlers/suggest_difficulty.rs
++++ b/p2poolv2_lib/src/stratum/message_handlers/suggest_difficulty.rs
+@@ -71,7 +71,7 @@ mod tests {
+         let messages = result.unwrap();
+         assert_eq!(messages.len(), 1);
+         if let Message::SetDifficulty(notification) = &messages[0] {
+-            assert_eq!(notification.params[0], 1000);
++            assert_eq!(notification.params[0], 0.0000001);
+         } else {
+             panic!("Expected SetDifficulty message");
+         }
+@@ -93,7 +93,7 @@ mod tests {
+         let messages = result.unwrap();
+         assert_eq!(messages.len(), 1);
+         if let Message::SetDifficulty(notification) = &messages[0] {
+-            assert_eq!(notification.params[0], 100);
++            assert_eq!(notification.params[0], 0.00000001);
+         } else {
+             panic!("Expected SetDifficulty message");
+         }
+diff --git a/p2poolv2_lib/src/stratum/messages.rs b/p2poolv2_lib/src/stratum/messages.rs
+index bb87d96..72f4cc6 100644
+--- a/p2poolv2_lib/src/stratum/messages.rs
++++ b/p2poolv2_lib/src/stratum/messages.rs
+@@ -629,7 +629,7 @@ mod tests {
+         let serialized_message = serde_json::to_string(&message).unwrap();
+         assert_eq!(
+             serialized_message,
+-            r#"{"method":"mining.set_difficulty","params":[1000]}"#
++            r#"{"method":"mining.set_difficulty","params":[1e-7]}"#
+         );
+     }
+ 
+diff --git a/p2poolv2_lib/src/stratum/server.rs b/p2poolv2_lib/src/stratum/server.rs
+index f33cc02..4fb04f3 100644
+--- a/p2poolv2_lib/src/stratum/server.rs
++++ b/p2poolv2_lib/src/stratum/server.rs
+@@ -30,19 +30,26 @@ use crate::stratum::message_handlers::handle_message;
+ use crate::stratum::messages::{Request, Response};
+ use crate::stratum::session::Session;
+ use crate::stratum::session_timeout::{self, check_session_timeouts};
+-use crate::stratum::work::notify::NotifySender;
+-use crate::stratum::work::prepared_notify::{PreparedNotifyParams, build_notify_from_prepared};
++use crate::stratum::work::job_admission::{AdmissionError, BitcoinCoreJobAdmission};
++use crate::stratum::work::notify::{JobGenerationGate, NotifySender};
++use crate::stratum::work::prepared_notify::{
++    PreparedNotifyParams, build_notify_from_prepared, build_unadmitted_job_variant,
++    publish_admitted_job_variant,
++};
+ use crate::stratum::work::tracker::JobTracker;
+ use crate::utils::time_provider::{SystemTimeProvider, TimeProvider};
+ use bitcoindrpc::{BitcoinRpcConfig, BitcoindRpcClient};
+ use std::net::SocketAddr;
+ use std::sync::Arc;
+-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
++use std::time::{Duration, Instant};
++use tokio::io::{AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+ use tokio::net::{TcpListener, TcpStream};
+ use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot, watch};
+ use tokio_stream::StreamExt;
+ use tokio_util::codec::{FramedRead, LinesCodec};
+-use tracing::{debug, error, info};
++use tracing::{debug, error, info, warn};
++
++const JOB_RELEASE_TIMEOUT: Duration = Duration::from_millis(250);
+ 
+ // A struct to represent a Stratum server configuration
+ // This struct contains the port and address of the Stratum server
+@@ -59,6 +66,11 @@ pub struct StratumServer {
+     pub max_connections: Option<u32>,
+     pub wait_for_chain_sync: bool,
+     pub mode: PoolMode,
++    require_job_admission: bool,
++    job_admission_timeout: Duration,
++    job_admission_max_concurrency: usize,
++    expected_payout_script: Option<bitcoin::ScriptBuf>,
++    generation_gate: JobGenerationGate,
+     shutdown_rx: oneshot::Receiver<()>,
+     connections_handle: ClientConnectionsHandle,
+     emissions_tx: EmissionSender,
+@@ -85,6 +97,11 @@ pub struct StratumServerBuilder {
+     zmqpubhashblock: Option<String>,
+     chain_store_handle: Option<ChainStoreHandle>,
+     mode: Option<PoolMode>,
++    require_job_admission: Option<bool>,
++    job_admission_timeout: Option<Duration>,
++    job_admission_max_concurrency: Option<usize>,
++    expected_payout_script: Option<bitcoin::ScriptBuf>,
++    generation_gate: Option<JobGenerationGate>,
+ }
+ 
+ impl StratumServerBuilder {
+@@ -173,7 +190,38 @@ impl StratumServerBuilder {
+         self
+     }
+ 
++    pub fn require_job_admission(mut self, required: bool) -> Self {
++        self.require_job_admission = Some(required);
++        self
++    }
++
++    pub fn job_admission_timeout(mut self, timeout: Duration) -> Self {
++        self.job_admission_timeout = Some(timeout);
++        self
++    }
++
++    pub fn job_admission_max_concurrency(mut self, maximum: usize) -> Self {
++        self.job_admission_max_concurrency = Some(maximum);
++        self
++    }
++
++    pub fn expected_payout_script(mut self, script: bitcoin::ScriptBuf) -> Self {
++        self.expected_payout_script = Some(script);
++        self
++    }
++
++    pub fn generation_gate(mut self, gate: JobGenerationGate) -> Self {
++        self.generation_gate = Some(gate);
++        self
++    }
++
+     pub async fn build(self) -> Result<StratumServer, Box<dyn std::error::Error + Send + Sync>> {
++        let network = self.network.ok_or("network is required")?;
++        let require_job_admission =
++            requires_job_admission(network, self.require_job_admission.unwrap_or(false));
++        if require_job_admission && self.expected_payout_script.is_none() {
++            return Err("expected_payout_script is required for job admission".into());
++        }
+         Ok(StratumServer {
+             hostname: self.hostname.ok_or("hostname is required")?,
+             port: self.port.ok_or("port is required")?,
+@@ -188,7 +236,7 @@ impl StratumServerBuilder {
+                 .ok_or("maximum_difficulty is required")?,
+             ignore_difficulty: self.ignore_difficulty.unwrap_or(false),
+             validate_addresses: self.validate_addresses.unwrap_or(true),
+-            network: self.network.ok_or("network is required")?,
++            network,
+             version_mask: self.version_mask.ok_or("version_mask is required")?,
+             shutdown_rx: self.shutdown_rx.ok_or("shutdown_rx is required")?,
+             connections_handle: self
+@@ -198,6 +246,13 @@ impl StratumServerBuilder {
+             max_connections: self.max_connections.unwrap_or(None),
+             wait_for_chain_sync: self.wait_for_chain_sync.unwrap_or(true),
+             mode: self.mode.unwrap_or_default(),
++            require_job_admission,
++            job_admission_timeout: self.job_admission_timeout.unwrap_or(Duration::from_secs(2)),
++            job_admission_max_concurrency: self.job_admission_max_concurrency.unwrap_or(8),
++            expected_payout_script: self.expected_payout_script,
++            generation_gate: self
++                .generation_gate
++                .unwrap_or_else(|| Arc::new(tokio::sync::Mutex::new(()))),
+             chain_store_handle: self
+                 .chain_store_handle
+                 .ok_or("chain store handle is required")?,
+@@ -205,6 +260,10 @@ impl StratumServerBuilder {
+     }
+ }
+ 
++fn requires_job_admission(network: bitcoin::Network, configured: bool) -> bool {
++    configured || network == bitcoin::Network::Bitcoin
++}
++
+ /// Wait for the share chain to become current before accepting miners.
+ ///
+ /// Returns true when the chain is current, false if shutdown was
+@@ -264,6 +323,25 @@ impl StratumServer {
+                 format!("Failed to create BitcoindRpcClient: {}", e),
+             ))
+         })?;
++        #[cfg(not(test))]
++        let job_admission = if self.require_job_admission {
++            let expected_payout_script = self.expected_payout_script.clone().ok_or_else(
++                || -> Box<dyn std::error::Error + Send> {
++                    Box::new(std::io::Error::other("expected payout script is missing"))
++                },
++            )?;
++            Some(Arc::new(
++                BitcoinCoreJobAdmission::new(
++                    bitcoindrpc_client.clone(),
++                    expected_payout_script,
++                    self.job_admission_timeout,
++                    self.job_admission_max_concurrency,
++                )
++                .map_err(|error| -> Box<dyn std::error::Error + Send> { Box::new(error) })?,
++            ))
++        } else {
++            None
++        };
+ 
+         if !wait_for_chain_sync(
+             &self.chain_store_handle,
+@@ -320,6 +398,10 @@ impl StratumServer {
+                                         metrics: metrics.clone(),
+                                         chain_store_handle: self.chain_store_handle.clone(),
+                                         mode: self.mode,
++                                        #[cfg(not(test))]
++                                        job_admission: job_admission.clone(),
++                                        #[cfg(not(test))]
++                                        generation_gate: self.generation_gate.clone(),
+                                     };
+                                     accept_connection(
+                                         stream,
+@@ -433,6 +515,152 @@ pub(crate) struct StratumContext {
+     pub metrics: metrics::MetricsHandle,
+     pub chain_store_handle: ChainStoreHandle,
+     pub mode: PoolMode,
++    #[cfg(not(test))]
++    pub job_admission: Option<Arc<BitcoinCoreJobAdmission>>,
++    #[cfg(not(test))]
++    pub generation_gate: JobGenerationGate,
++}
++
++impl StratumContext {
++    fn job_admission(&self) -> Option<&Arc<BitcoinCoreJobAdmission>> {
++        #[cfg(not(test))]
++        {
++            self.job_admission.as_ref()
++        }
++        #[cfg(test)]
++        {
++            None
++        }
++    }
++
++    fn generation_gate(&self) -> JobGenerationGate {
++        #[cfg(not(test))]
++        {
++            Arc::clone(&self.generation_gate)
++        }
++        #[cfg(test)]
++        {
++            Arc::new(tokio::sync::Mutex::new(()))
++        }
++    }
++}
++
++async fn build_admitted_notify<W>(
++    prepared: Arc<PreparedNotifyParams>,
++    commitment_address: Option<&bitcoin::Address>,
++    assigned_extranonce1: &str,
++    context: &StratumContext,
++    template_rx: &watch::Receiver<Option<Arc<PreparedNotifyParams>>>,
++    writer: &mut W,
++) -> Result<(), AdmissionError>
++where
++    W: AsyncWrite + Unpin,
++{
++    let Some(admission) = context.job_admission() else {
++        let notify_json =
++            build_notify_from_prepared(&prepared, commitment_address, &context.tracker_handle)
++                .map_err(|_| AdmissionError::MissingTemplateData)?;
++        writer
++            .write_all(format!("{notify_json}\n").as_bytes())
++            .await
++            .map_err(|_| AdmissionError::ReleaseFailed)?;
++        return Ok(());
++    };
++    let started = Instant::now();
++    let variant = build_unadmitted_job_variant(
++        &prepared,
++        commitment_address,
++        &context.tracker_handle,
++        assigned_extranonce1,
++    )
++    .map_err(|_| AdmissionError::MissingTemplateData);
++    let variant = match variant {
++        Ok(variant) => variant,
++        Err(error) => {
++            warn!(
++                category = error.category(),
++                latency_milliseconds = started.elapsed().as_millis(),
++                "Job admission failed"
++            );
++            return Err(error);
++        }
++    };
++    let job_id = variant.job_id();
++    let receipt = match admission.admit(&variant).await {
++        Ok(receipt) => receipt,
++        Err(error) => {
++            warn!(
++                category = error.category(),
++                job_id = job_id.0,
++                latency_milliseconds = started.elapsed().as_millis(),
++                "Job admission failed"
++            );
++            return Err(error);
++        }
++    };
++    let generation_gate = context.generation_gate();
++    if let Err(error) = publish_if_current(
++        &prepared,
++        template_rx,
++        variant,
++        &context.tracker_handle,
++        &generation_gate,
++        writer,
++    )
++    .await
++    {
++        warn!(
++            category = error.category(),
++            job_id = job_id.0,
++            latency_milliseconds = started.elapsed().as_millis(),
++            "Job admission failed"
++        );
++        return Err(error);
++    }
++    info!(
++        category = "accepted",
++        job_id = job_id.0,
++        candidate_digest = receipt.candidate_digest(),
++        latency_milliseconds = started.elapsed().as_millis(),
++        proposal_latency_milliseconds = receipt.latency_milliseconds(),
++        "Job admission completed"
++    );
++    Ok(())
++}
++
++pub(crate) async fn publish_if_current<W>(
++    admitted: &Arc<PreparedNotifyParams>,
++    template_rx: &watch::Receiver<Option<Arc<PreparedNotifyParams>>>,
++    variant: crate::stratum::work::prepared_notify::UnadmittedJobVariant,
++    tracker: &JobTracker,
++    generation_gate: &JobGenerationGate,
++    writer: &mut W,
++) -> Result<(), AdmissionError>
++where
++    W: AsyncWrite + Unpin,
++{
++    let _generation_guard = generation_gate.lock().await;
++    let is_current = {
++        let current = template_rx.borrow();
++        current
++            .as_ref()
++            .is_some_and(|current| Arc::ptr_eq(current, admitted))
++    };
++    if is_current {
++        let job_id = variant.job_id();
++        let notify_json = publish_admitted_job_variant(variant, tracker);
++        let release = tokio::time::timeout(
++            JOB_RELEASE_TIMEOUT,
++            writer.write_all(format!("{notify_json}\n").as_bytes()),
++        )
++        .await;
++        if matches!(release, Ok(Ok(()))) {
++            return Ok(());
++        }
++        tracker.remove_job(job_id);
++        return Err(AdmissionError::ReleaseFailed);
++    }
++    Err(AdmissionError::StaleGeneration)
+ }
+ 
+ /// Handles a single connection to the Stratum server.  This function
+@@ -478,6 +706,7 @@ where
+     // In Hydrapool mode pass None as commitment address as we don't
+     // need it.
+     let is_hydrapool = ctx.mode == PoolMode::Hydrapool;
++    let mut maybe_last_admitted_tip: Option<String> = None;
+ 
+     // Process each line as it arrives
+     loop {
+@@ -492,20 +721,27 @@ where
+                 } else {
+                     session.parsed_address.as_ref()
+                 };
+-                match build_notify_from_prepared(&prepared, commitment_address, &ctx.tracker_handle)
++                match build_admitted_notify(
++                    prepared.clone(),
++                    commitment_address,
++                    &session.enonce1_hex,
++                    &ctx,
++                    &template_rx,
++                    &mut writer,
++                )
++                .await
+                 {
+-                    Ok(notify_json) => {
++                    Ok(()) => {
++                        maybe_last_admitted_tip = Some(prepared.previous_block_hash().to_owned());
+                         debug!("Sending first notify after authorize");
+-                        if let Err(e) = writer
+-                            .write_all(format!("{notify_json}\n").as_bytes())
+-                            .await
+-                        {
+-                            error!("Failed to write first notify to {addr}: {e}");
+-                            break;
+-                        }
+                     }
+                     Err(e) => {
+-                        error!("Failed to build first notify for {addr}: {e}");
++                        if ctx.job_admission().is_none() {
++                            error!(category = e.category(), "First job construction failed");
++                        }
++                        if e == AdmissionError::ReleaseFailed {
++                            break;
++                        }
+                     }
+                 }
+             }
+@@ -536,21 +772,46 @@ where
+                 if session.username.is_none() {
+                     // Not yet authorized, skip building notify
+                 } else if let Some(prepared) = prepared_template {
++                    if ctx.job_admission().is_some()
++                        && maybe_last_admitted_tip.as_deref().is_some_and(|tip| {
++                            tip != prepared.previous_block_hash()
++                        })
++                    {
++                        let removed = ctx
++                            .tracker_handle
++                            .invalidate_other_tips(prepared.previous_block_hash());
++                        warn!(
++                            category = "new_tip_reconnect",
++                            invalidated_jobs = removed,
++                            "New Bitcoin tip invalidated prior jobs; reconnect required"
++                        );
++                        break;
++                    }
+                     let commitment_address = if is_hydrapool {
+                         None
+                     } else {
+                         session.parsed_address.as_ref()
+                     };
+-                    match build_notify_from_prepared(&prepared, commitment_address, &ctx.tracker_handle) {
+-                        Ok(notify_json) => {
++                    match build_admitted_notify(
++                        prepared.clone(),
++                        commitment_address,
++                        &session.enonce1_hex,
++                        &ctx,
++                        &template_rx,
++                        &mut writer,
++                    ).await {
++                        Ok(()) => {
++                            maybe_last_admitted_tip =
++                                Some(prepared.previous_block_hash().to_owned());
+                             debug!("Send notify in reponse to new template");
+-                            if let Err(e) = writer.write_all(format!("{notify_json}\n").as_bytes()).await {
+-                                error!("Failed to write notify to {addr}: {e}");
+-                                break;
+-                            }
+                         }
+                         Err(e) => {
+-                            error!("Failed to build notify for {addr}: {e}");
++                            if ctx.job_admission().is_none() {
++                                error!(category = e.category(), "Job construction failed");
++                            }
++                            if e == AdmissionError::ReleaseFailed {
++                                break;
++                            }
+                         }
+                     }
+                 }
+@@ -680,6 +941,13 @@ mod stratum_server_tests {
+     use std::sync::Arc;
+     use tokio::sync::mpsc;
+ 
++    #[test]
++    fn mainnet_cannot_disable_job_admission() {
++        assert!(requires_job_admission(bitcoin::Network::Bitcoin, false));
++        assert!(requires_job_admission(bitcoin::Network::Regtest, true));
++        assert!(!requires_job_admission(bitcoin::Network::Regtest, false));
++    }
++
+     #[tokio::test]
+     async fn test_create_and_start_server() {
+         let (_shutdown_tx, shutdown_rx) = oneshot::channel();
+@@ -873,8 +1141,8 @@ mod stratum_server_tests {
+         );
+         assert_eq!(
+             set_difficulty_json.get("params").unwrap(),
+-            &serde_json::json!([10000]),
+-            "Set difficulty response should have params [10000]"
++            &serde_json::json!([0.000001]),
++            "Set difficulty response should have scaled test params"
+         );
+ 
+         assert!(response.ends_with("\n"),);
+diff --git a/p2poolv2_lib/src/stratum/work/block_template.rs b/p2poolv2_lib/src/stratum/work/block_template.rs
+index 0368cb8..dd31f72 100644
+--- a/p2poolv2_lib/src/stratum/work/block_template.rs
++++ b/p2poolv2_lib/src/stratum/work/block_template.rs
+@@ -44,6 +44,8 @@ pub struct BlockTemplate<T = TemplateTransaction> {
+     pub coinbaseaux: HashMap<String, String>,
+     pub coinbasevalue: u64,
+     pub longpollid: String,
++    #[serde(default)]
++    pub workid: Option<String>,
+     pub target: String,
+     pub mintime: u32,
+     pub mutable: Vec<String>,
+diff --git a/p2poolv2_lib/src/stratum/work/coinbase.rs b/p2poolv2_lib/src/stratum/work/coinbase.rs
+index 75b49f3..c008489 100644
+--- a/p2poolv2_lib/src/stratum/work/coinbase.rs
++++ b/p2poolv2_lib/src/stratum/work/coinbase.rs
+@@ -21,7 +21,7 @@ use crate::stratum::work::error::WorkError;
+ use crate::utils::time_provider::TimeProvider;
+ use bitcoin::absolute::LockTime;
+ use bitcoin::blockdata::script::Builder;
+-use bitcoin::consensus::{deserialize, serialize};
++use bitcoin::consensus::{deserialize_partial, serialize};
+ use bitcoin::hashes::{self, Hash, sha256d};
+ use bitcoin::network::Network;
+ use bitcoin::script::{Instruction, PushBytesBuf};
+@@ -152,6 +152,11 @@ pub(crate) fn build_bitcoin_coinbase_transaction(
+ 
+     let mut outputs = build_outputs(output_data);
+     append_default_witness_commitment(&mut outputs, default_witness_commitment);
++    let witness = if default_witness_commitment.is_some() {
++        bitcoin::Witness::from_slice(&[[0_u8; 32]])
++    } else {
++        bitcoin::Witness::new()
++    };
+     let lock_time = LockTime::from_height(height as u32 - 1).map_err(|_| WorkError {
+         message: "Error getting locktime from height".into(),
+     })?;
+@@ -166,7 +171,7 @@ pub(crate) fn build_bitcoin_coinbase_transaction(
+             },
+             script_sig: coinbase_script,
+             sequence: BIP54_COINBASE_SEQUENCE,
+-            witness: Vec::<Vec<u8>>::new().into(),
++            witness,
+         }],
+         output: outputs,
+     };
+@@ -252,12 +257,18 @@ pub fn extract_outputs_from_coinbase2(
+         });
+     }
+ 
+-    let output_data_end_index = coinbase2_bytes.len() - LOCKTIME_LENGTH;
+-    let output_data = &coinbase2_bytes[output_data_start_index..output_data_end_index];
+-
+-    deserialize::<Vec<TxOut>>(output_data).map_err(|_| WorkError {
++    let (outputs, _consumed) = deserialize_partial::<Vec<TxOut>>(
++        &coinbase2_bytes[output_data_start_index..],
++    )
++    .map_err(|_| WorkError {
+         message: "Bad outputs in coinbase2".into(),
+-    })
++    })?;
++    if outputs.is_empty() {
++        return Err(WorkError {
++            message: "Bad outputs in coinbase2".into(),
++        });
++    }
++    Ok(outputs)
+ }
+ 
+ /// Extracts the commitment hash from the coinbase scriptSig.
+@@ -529,7 +540,8 @@ mod tests {
+         );
+         assert_eq!(input.previous_output.vout, u32::MAX);
+         assert_eq!(input.sequence, BIP54_COINBASE_SEQUENCE);
+-        assert_eq!(input.witness.len(), 0); // No witness data in this test
++        assert_eq!(input.witness.len(), 1);
++        assert_eq!(input.witness.iter().next(), Some([0_u8; 32].as_slice()));
+         assert_eq!(coinbase.output.len(), 3);
+         let output1 = &coinbase.output[0];
+         let output2 = &coinbase.output[1];
+@@ -639,7 +651,8 @@ mod tests {
+         );
+         assert_eq!(input.previous_output.vout, u32::MAX);
+         assert_eq!(input.sequence, BIP54_COINBASE_SEQUENCE);
+-        assert_eq!(input.witness.len(), 0); // No witness data in this test
++        assert_eq!(input.witness.len(), 1);
++        assert_eq!(input.witness.iter().next(), Some([0_u8; 32].as_slice()));
+         assert_eq!(coinbase.output.len(), 3);
+         let output1 = &coinbase.output[0];
+         let output2 = &coinbase.output[1];
+diff --git a/p2poolv2_lib/src/stratum/work/job_admission.rs b/p2poolv2_lib/src/stratum/work/job_admission.rs
+new file mode 100644
+index 0000000..9ec852c
+--- /dev/null
++++ b/p2poolv2_lib/src/stratum/work/job_admission.rs
+@@ -0,0 +1,286 @@
++// Copyright (C) 2024-2026 P2Poolv2 Developers (see AUTHORS)
++//
++// This file is part of P2Poolv2.
++
++use std::{sync::Arc, time::Duration};
++
++use bitcoin::{ScriptBuf, Target, consensus::encode::serialize};
++use bitcoindrpc::BitcoindRpcClient;
++use serde_json::{Map, Value, json};
++use sha2::{Digest as _, Sha256};
++use thiserror::Error;
++use tokio::{sync::Semaphore, time::Instant};
++
++use super::prepared_notify::UnadmittedJobVariant;
++
++const WORKER_MUTATION_PROFILE: &str = "extranonce2,header_time,negotiated_version_bits,nonce";
++
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub(crate) struct AdmissionReceipt {
++    candidate_digest: String,
++    latency_milliseconds: u128,
++}
++
++impl AdmissionReceipt {
++    pub(crate) fn candidate_digest(&self) -> &str {
++        &self.candidate_digest
++    }
++
++    pub(crate) fn latency_milliseconds(&self) -> u128 {
++        self.latency_milliseconds
++    }
++}
++
++#[derive(Debug, Error, Clone, PartialEq, Eq)]
++pub(crate) enum AdmissionError {
++    #[error("job candidate is missing or contains invalid template data")]
++    MissingTemplateData,
++    #[error("job candidate previous block does not match its template")]
++    PreviousBlockMismatch,
++    #[error("job candidate target does not match its template")]
++    TargetMismatch,
++    #[error("job candidate transaction set does not match its template")]
++    TransactionMismatch,
++    #[error("job candidate commitment validation failed")]
++    CommitmentMismatch,
++    #[error("job candidate does not match the configured reward policy")]
++    RewardPolicyMismatch,
++    #[error("Bitcoin Core proposal validation was unavailable")]
++    ProposalUnavailable,
++    #[error("Bitcoin Core returned a non-success proposal result")]
++    ProposalRejected,
++    #[error("job admission exceeded its configured deadline")]
++    Timeout,
++    #[error("job admission was superseded by a newer template")]
++    StaleGeneration,
++    #[error("admitted job could not be released")]
++    ReleaseFailed,
++}
++
++impl AdmissionError {
++    pub(crate) fn category(&self) -> &'static str {
++        match self {
++            Self::MissingTemplateData => "missing_template_data",
++            Self::PreviousBlockMismatch => "previous_block_mismatch",
++            Self::TargetMismatch => "target_mismatch",
++            Self::TransactionMismatch => "transaction_mismatch",
++            Self::CommitmentMismatch => "commitment_mismatch",
++            Self::RewardPolicyMismatch => "reward_policy_mismatch",
++            Self::ProposalUnavailable => "proposal_unavailable",
++            Self::ProposalRejected => "proposal_rejected",
++            Self::Timeout => "timeout",
++            Self::StaleGeneration => "stale_generation",
++            Self::ReleaseFailed => "release_failed",
++        }
++    }
++}
++
++#[derive(Clone)]
++pub(crate) struct BitcoinCoreJobAdmission {
++    client: BitcoindRpcClient,
++    expected_payout_script: ScriptBuf,
++    deadline: Duration,
++    proposal_slots: Arc<Semaphore>,
++}
++
++impl BitcoinCoreJobAdmission {
++    pub(crate) fn new(
++        client: BitcoindRpcClient,
++        expected_payout_script: ScriptBuf,
++        deadline: Duration,
++        maximum_concurrency: usize,
++    ) -> Result<Self, AdmissionError> {
++        if deadline.is_zero()
++            || deadline > Duration::from_secs(60)
++            || maximum_concurrency == 0
++            || maximum_concurrency > 1_024
++        {
++            return Err(AdmissionError::MissingTemplateData);
++        }
++        Ok(Self {
++            client,
++            expected_payout_script,
++            deadline,
++            proposal_slots: Arc::new(Semaphore::new(maximum_concurrency)),
++        })
++    }
++
++    pub(crate) async fn admit(
++        &self,
++        candidate: &UnadmittedJobVariant,
++    ) -> Result<AdmissionReceipt, AdmissionError> {
++        validate_candidate(candidate, &self.expected_payout_script)?;
++        let candidate_digest = candidate_digest(candidate)?;
++        let started = Instant::now();
++        let proposal = async {
++            let _permit = self
++                .proposal_slots
++                .acquire()
++                .await
++                .map_err(|_| AdmissionError::ProposalUnavailable)?;
++            propose_candidate(&self.client, candidate).await
++        };
++        tokio::time::timeout(self.deadline, proposal)
++            .await
++            .map_err(|_| AdmissionError::Timeout)??;
++        Ok(AdmissionReceipt {
++            candidate_digest,
++            latency_milliseconds: started.elapsed().as_millis(),
++        })
++    }
++
++    #[cfg(test)]
++    pub(crate) fn available_proposal_slots(&self) -> usize {
++        self.proposal_slots.available_permits()
++    }
++}
++
++pub(crate) fn validate_candidate(
++    candidate: &UnadmittedJobVariant,
++    expected_payout_script: &ScriptBuf,
++) -> Result<(), AdmissionError> {
++    let block = candidate.canonical_block();
++    let template = candidate.block_template();
++    let expected_previous = template
++        .previousblockhash
++        .parse::<bitcoin::BlockHash>()
++        .map_err(|_| AdmissionError::MissingTemplateData)?;
++    if block.header.prev_blockhash != expected_previous {
++        return Err(AdmissionError::PreviousBlockMismatch);
++    }
++    let expected_target = hex::decode(&template.target)
++        .ok()
++        .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())
++        .ok_or(AdmissionError::MissingTemplateData)?;
++    if Target::from_compact(block.header.bits).to_be_bytes() != expected_target {
++        return Err(AdmissionError::TargetMismatch);
++    }
++    if block.txdata.len() != template.transactions.len() + 1 {
++        return Err(AdmissionError::TransactionMismatch);
++    }
++    for (transaction, expected) in block.txdata[1..].iter().zip(&template.transactions) {
++        if transaction.compute_txid().to_string() != expected.txid
++            || transaction.compute_wtxid().to_string() != expected.hash
++        {
++            return Err(AdmissionError::TransactionMismatch);
++        }
++    }
++    if !block.check_merkle_root() || !block.check_witness_commitment() {
++        return Err(AdmissionError::CommitmentMismatch);
++    }
++    let coinbase = block
++        .txdata
++        .first()
++        .ok_or(AdmissionError::MissingTemplateData)?;
++    let expected_witness_commitment = template
++        .default_witness_commitment
++        .as_deref()
++        .ok_or(AdmissionError::MissingTemplateData)?;
++    if coinbase
++        .output
++        .last()
++        .map(|output| output.script_pubkey.to_hex_string())
++        .as_deref()
++        != Some(expected_witness_commitment)
++    {
++        return Err(AdmissionError::CommitmentMismatch);
++    }
++    if coinbase.output.len() != 2
++        || coinbase.output[0].script_pubkey != *expected_payout_script
++        || coinbase.output[0].value.to_sat() != template.coinbasevalue
++        || coinbase.output[1].value.to_sat() != 0
++        || !coinbase.output[1].script_pubkey.is_op_return()
++    {
++        return Err(AdmissionError::RewardPolicyMismatch);
++    }
++    validate_work_id(template.workid.as_deref())
++}
++
++async fn propose_candidate(
++    client: &BitcoindRpcClient,
++    candidate: &UnadmittedJobVariant,
++) -> Result<(), AdmissionError> {
++    propose_block(
++        client,
++        candidate.canonical_block(),
++        candidate.block_template().workid.as_deref(),
++    )
++    .await
++}
++
++pub(crate) async fn propose_block(
++    client: &BitcoindRpcClient,
++    block: &bitcoin::Block,
++    maybe_work_id: Option<&str>,
++) -> Result<(), AdmissionError> {
++    let mut proposal = Map::new();
++    proposal.insert("mode".to_string(), json!("proposal"));
++    proposal.insert("data".to_string(), json!(hex::encode(serialize(block))));
++    if let Some(work_id) = maybe_work_id {
++        proposal.insert("workid".to_string(), json!(work_id));
++    }
++    let response = client
++        .request::<Value>("getblocktemplate", vec![Value::Object(proposal)])
++        .await
++        .map_err(|_| AdmissionError::ProposalUnavailable)?;
++    if response.is_null() {
++        return Ok(());
++    }
++    Err(AdmissionError::ProposalRejected)
++}
++
++fn validate_work_id(maybe_work_id: Option<&str>) -> Result<(), AdmissionError> {
++    if maybe_work_id.is_some_and(|work_id| {
++        work_id.is_empty()
++            || work_id.len() > 128
++            || !work_id.bytes().all(|byte| byte.is_ascii_graphic())
++    }) {
++        return Err(AdmissionError::MissingTemplateData);
++    }
++    Ok(())
++}
++
++fn candidate_digest(candidate: &UnadmittedJobVariant) -> Result<String, AdmissionError> {
++    let mut digest = Sha256::new();
++    digest.update(b"P2Poolv2 job admission candidate v1\0");
++    digest.update(serialize(candidate.canonical_block()));
++    digest.update([0]);
++    digest.update(WORKER_MUTATION_PROFILE.as_bytes());
++    digest.update([0]);
++    if let Some(work_id) = candidate.block_template().workid.as_ref() {
++        digest.update(work_id.as_bytes());
++    }
++    Ok(hex::encode(digest.finalize()))
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn deepest_constructor_rejects_out_of_profile_bounds() {
++        // Arrange
++        let client = BitcoindRpcClient::new("http://127.0.0.1:1", "user", "secret")
++            .expect("test client should build");
++
++        // Act
++        let excessive_timeout = BitcoinCoreJobAdmission::new(
++            client.clone(),
++            ScriptBuf::new(),
++            Duration::from_secs(61),
++            1,
++        );
++        let excessive_concurrency =
++            BitcoinCoreJobAdmission::new(client, ScriptBuf::new(), Duration::from_secs(1), 1_025);
++
++        // Assert
++        assert!(matches!(
++            excessive_timeout,
++            Err(AdmissionError::MissingTemplateData)
++        ));
++        assert!(matches!(
++            excessive_concurrency,
++            Err(AdmissionError::MissingTemplateData)
++        ));
++    }
++}
+diff --git a/p2poolv2_lib/src/stratum/work/mod.rs b/p2poolv2_lib/src/stratum/work/mod.rs
+index 941fbd3..1947f72 100644
+--- a/p2poolv2_lib/src/stratum/work/mod.rs
++++ b/p2poolv2_lib/src/stratum/work/mod.rs
+@@ -19,6 +19,7 @@ pub mod coinbase;
+ pub mod difficulty;
+ pub(crate) mod error;
+ pub mod gbt;
++pub(crate) mod job_admission;
+ pub mod notify;
+ pub mod prepared_notify;
+ pub mod tracker;
+diff --git a/p2poolv2_lib/src/stratum/work/notify.rs b/p2poolv2_lib/src/stratum/work/notify.rs
+index 32ef935..3ed3799 100644
+--- a/p2poolv2_lib/src/stratum/work/notify.rs
++++ b/p2poolv2_lib/src/stratum/work/notify.rs
+@@ -138,17 +138,20 @@ pub enum NotifyCmd {
+ /// Sender half of the notify command channel.
+ pub type NotifySender = mpsc::Sender<NotifyCmd>;
+ pub type NotifyReceiver = mpsc::Receiver<NotifyCmd>;
++pub type JobGenerationGate = Arc<tokio::sync::Mutex<()>>;
+ 
+ /// Build a PreparedNotifyParams and publish it via the watch channel.
+ ///
+ /// Returns Ok(()) on success, or Err if all receivers have been dropped.
+-fn publish_prepared_notify(
++async fn publish_prepared_notify(
+     template: &Arc<BlockTemplate>,
+     clean_jobs: bool,
+     context: &mut NotifyContext,
+     template_tx: &watch::Sender<Option<Arc<PreparedNotifyParams>>>,
++    generation_gate: &JobGenerationGate,
+ ) -> Result<(), WorkError> {
+     let prepared = build_prepared_notify(template, clean_jobs, context)?;
++    let _generation_guard = generation_gate.lock().await;
+     template_tx
+         .send(Some(Arc::new(prepared)))
+         .map_err(|_| WorkError {
+@@ -169,6 +172,7 @@ pub async fn start_notify(
+     config: &StratumConfig<crate::config::Parsed>,
+     payout: Box<dyn PayoutDistribution + Send>,
+     pool_difficulty: pool_difficulty::PoolDifficulty,
++    generation_gate: JobGenerationGate,
+ ) {
+     let pool_signature = match config.pool_signature {
+         Some(ref sig) => sig.as_bytes().to_vec(),
+@@ -198,7 +202,10 @@ pub async fn start_notify(
+                     clean_jobs,
+                     &mut notify_context,
+                     &template_tx,
+-                ) {
++                    &generation_gate,
++                )
++                .await
++                {
+                     error!("Failed to publish notify: {error}");
+                     continue;
+                 }
+@@ -206,8 +213,14 @@ pub async fn start_notify(
+             NotifyCmd::NewNotify => {
+                 if let Some(ref template) = latest_template {
+                     debug!("NewNotify: sending notify with latest template");
+-                    if let Err(error) =
+-                        publish_prepared_notify(template, true, &mut notify_context, &template_tx)
++                    if let Err(error) = publish_prepared_notify(
++                        template,
++                        true,
++                        &mut notify_context,
++                        &template_tx,
++                        &generation_gate,
++                    )
++                    .await
+                     {
+                         error!("Failed to publish new notify: {error}");
+                         continue;
+@@ -225,7 +238,7 @@ mod tests {
+     use super::*;
+     use crate::accounting::payout::payout_distribution::MockPayoutDistribution;
+     use crate::stratum::messages::Notify;
+-    use crate::stratum::work::block_template::{BlockTemplate, TemplateTransaction};
++    use crate::stratum::work::block_template::BlockTemplate;
+     use crate::stratum::work::coinbase::extract_outputs_from_coinbase2;
+     use crate::stratum::work::prepared_notify::{
+         PreparedNotifyParamsBuilder, build_notify_from_prepared,
+@@ -343,6 +356,7 @@ mod tests {
+                 &stratum_config,
+                 Box::new(mock_payout),
+                 pool_difficulty,
++                Arc::new(tokio::sync::Mutex::new(())),
+             )
+             .await;
+         });
+@@ -483,22 +497,14 @@ mod tests {
+                 .to_string(),
+             bits: "1d00ffff".to_string(),
+             curtime: 1234567890,
+-            transactions: vec![TemplateTransaction {
+-                data: "".to_string(),
+-                txid: "0000000000000000000000000000000000000000000000000000000000000001"
+-                    .to_string(),
+-                hash: "".to_string(),
+-                depends: vec![],
+-                fee: 0,
+-                sigops: 0,
+-                weight: 0,
+-            }],
++            transactions: vec![],
+             coinbasevalue: 100000,
+             coinbaseaux: HashMap::new(),
+             rules: vec![],
+             vbavailable: HashMap::new(),
+             vbrequired: 0,
+             longpollid: "".to_string(),
++            workid: None,
+             target: "".to_string(),
+             mintime: 0,
+             mutable: vec![],
+diff --git a/p2poolv2_lib/src/stratum/work/prepared_notify.rs b/p2poolv2_lib/src/stratum/work/prepared_notify.rs
+index a8d5591..a5e42c0 100644
+--- a/p2poolv2_lib/src/stratum/work/prepared_notify.rs
++++ b/p2poolv2_lib/src/stratum/work/prepared_notify.rs
+@@ -79,6 +79,12 @@ pub struct PreparedNotifyParams {
+     merkle_branches: Vec<bitcoin::TxMerkleNode>,
+ }
+ 
++impl PreparedNotifyParams {
++    pub(crate) fn previous_block_hash(&self) -> &str {
++        &self.template.previousblockhash
++    }
++}
++
+ /// Serialize the merkle branches array as a JSON array string.
+ fn serialize_merkle_branches_json(branches: &[String]) -> String {
+     let mut result = String::with_capacity(branches.len() * 68);
+@@ -403,11 +409,42 @@ fn build_per_miner_coinbase2(
+ /// overwrites placeholders in the pre-built JSON, and inserts the job into the tracker.
+ /// When miner_address is None (solo mode), a commitment hash is still
+ /// computed from the prefix alone.
+-pub(crate) fn build_notify_from_prepared(
++pub(crate) struct UnadmittedJobVariant {
++    notify_json: String,
++    canonical_block: bitcoin::Block,
++    block_template: Arc<BlockTemplate>,
++    coinbase1: String,
++    coinbase2: String,
++    share_commitment: Option<ShareCommitment>,
++    nsecs: u64,
++    merkle_branches: Vec<bitcoin::TxMerkleNode>,
++    job_id: super::tracker::JobId,
++}
++
++impl UnadmittedJobVariant {
++    pub(crate) fn canonical_block(&self) -> &bitcoin::Block {
++        &self.canonical_block
++    }
++
++    pub(crate) fn coinbase_outputs(&self) -> &[bitcoin::TxOut] {
++        &self.canonical_block.txdata[0].output
++    }
++
++    pub(crate) fn block_template(&self) -> &BlockTemplate {
++        &self.block_template
++    }
++
++    pub(crate) fn job_id(&self) -> super::tracker::JobId {
++        self.job_id
++    }
++}
++
++pub(crate) fn build_unadmitted_job_variant(
+     prepared: &PreparedNotifyParams,
+     miner_address: Option<&Address>,
+     tracker_handle: &JobTracker,
+-) -> Result<String, WorkError> {
++    assigned_extranonce1: &str,
++) -> Result<UnadmittedJobVariant, WorkError> {
+     let commitment_hash_hex = get_commitment_hex(&prepared.commitment_prefix, miner_address)?;
+     let nsecs = get_timestamp_bytes(&SystemTimeProvider);
+ 
+@@ -444,18 +481,89 @@ pub(crate) fn build_notify_from_prepared(
+         coinbase_value: prepared.template.coinbasevalue,
+     });
+ 
+-    // Insert job into tracker
+-    tracker_handle.insert_job(
+-        Arc::clone(&prepared.template),
+-        prepared.coinbase1.clone(),
++    let canonical_extranonce2 = "0000000000000000";
++    let coinbase_hex = format!(
++        "{}{}{}{}",
++        prepared.coinbase1, assigned_extranonce1, canonical_extranonce2, coinbase2
++    );
++    let coinbase_bytes = hex::decode(&coinbase_hex).map_err(|error| WorkError {
++        message: format!("Failed to decode canonical coinbase: {error}"),
++    })?;
++    let coinbase: bitcoin::Transaction =
++        bitcoin::consensus::deserialize(&coinbase_bytes).map_err(|error| WorkError {
++            message: format!("Failed to parse canonical coinbase: {error}"),
++        })?;
++    let merkle_root = super::gbt::compute_merkle_root_from_branches(
++        coinbase.compute_txid(),
++        &prepared.merkle_branches,
++    );
++    let previous_block_hash = prepared
++        .template
++        .previousblockhash
++        .parse::<bitcoin::BlockHash>()
++        .map_err(|error| WorkError {
++            message: format!("Failed to parse previous block hash: {error}"),
++        })?;
++    let bits =
++        bitcoin::CompactTarget::from_unprefixed_hex(&prepared.template.bits).map_err(|error| {
++            WorkError {
++                message: format!("Failed to parse compact target: {error}"),
++            }
++        })?;
++    let header = bitcoin::block::Header {
++        version: bitcoin::block::Version::from_consensus(prepared.template.version),
++        prev_blockhash: previous_block_hash,
++        merkle_root,
++        time: prepared.template.curtime,
++        bits,
++        nonce: 0,
++    };
++    let mut transactions = Vec::with_capacity(prepared.template.transactions.len() + 1);
++    transactions.push(coinbase);
++    transactions.extend(prepared.template.decode_transactions());
++
++    Ok(UnadmittedJobVariant {
++        notify_json,
++        canonical_block: bitcoin::Block {
++            header,
++            txdata: transactions,
++        },
++        block_template: Arc::clone(&prepared.template),
++        coinbase1: prepared.coinbase1.clone(),
+         coinbase2,
+         share_commitment,
+         nsecs,
+-        prepared.merkle_branches.clone(),
++        merkle_branches: prepared.merkle_branches.clone(),
+         job_id,
++    })
++}
++
++pub(crate) fn publish_admitted_job_variant(
++    variant: UnadmittedJobVariant,
++    tracker_handle: &JobTracker,
++) -> String {
++    tracker_handle.insert_job(
++        variant.block_template,
++        variant.coinbase1,
++        variant.coinbase2,
++        variant.share_commitment,
++        variant.nsecs,
++        variant.merkle_branches,
++        variant.job_id,
+     );
+ 
+-    Ok(notify_json)
++    variant.notify_json
++}
++
++pub(crate) fn build_notify_from_prepared(
++    prepared: &PreparedNotifyParams,
++    miner_address: Option<&Address>,
++    tracker_handle: &JobTracker,
++) -> Result<String, WorkError> {
++    let variant =
++        build_unadmitted_job_variant(prepared, miner_address, tracker_handle, "00000000")?;
++
++    Ok(publish_admitted_job_variant(variant, tracker_handle))
+ }
+ 
+ #[cfg(test)]
+@@ -465,6 +573,9 @@ mod tests {
+     use crate::stratum::work::tracker::{JobId, start_tracker_actor};
+     use bitcoin::{CompressedPublicKey, Network};
+ 
++    #[path = "job_admission_tests.rs"]
++    mod job_admission_tests;
++
+     fn test_template() -> BlockTemplate {
+         let data = include_str!(
+             "../../../../p2poolv2_tests/test_data/gbt/regtest/ckpool/one-txn/gbt.json"
+diff --git a/p2poolv2_lib/src/stratum/work/prepared_notify/tests/job_admission_tests.rs b/p2poolv2_lib/src/stratum/work/prepared_notify/tests/job_admission_tests.rs
+new file mode 100644
+index 0000000..f228a0d
+--- /dev/null
++++ b/p2poolv2_lib/src/stratum/work/prepared_notify/tests/job_admission_tests.rs
+@@ -0,0 +1,589 @@
++use super::*;
++use crate::stratum::work::job_admission::{AdmissionError, BitcoinCoreJobAdmission};
++use bitcoindrpc::BitcoindRpcClient;
++use wiremock::{
++    Mock, MockServer, ResponseTemplate,
++    matchers::{body_json, method},
++};
++
++fn test_variant(tracker: &JobTracker) -> UnadmittedJobVariant {
++    let prepared = test_notify_params_builder(Arc::new(test_template()), false)
++        .build()
++        .expect("prepared builder should succeed");
++    build_unadmitted_job_variant(&prepared, Some(&test_address()), tracker, "01020304")
++        .expect("exact job variant should be constructible")
++}
++
++#[tokio::test]
++async fn admission_rejects_a_reward_policy_payout_mismatch() {
++    // Arrange
++    let tracker = start_tracker_actor();
++    let variant = test_variant(&tracker);
++    let wrong_script = Address::p2wpkh(
++        &"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
++            .parse::<CompressedPublicKey>()
++            .expect("test key should parse"),
++        Network::Signet,
++    )
++    .script_pubkey();
++
++    // Act
++    let result = crate::stratum::work::job_admission::validate_candidate(&variant, &wrong_script);
++
++    // Assert
++    assert_eq!(
++        result,
++        Err(crate::stratum::work::job_admission::AdmissionError::RewardPolicyMismatch)
++    );
++    assert!(tracker.get_job(variant.job_id()).is_none());
++}
++
++#[tokio::test]
++async fn admission_rejects_a_previous_block_mismatch() {
++    // Arrange
++    let tracker = start_tracker_actor();
++    let mut variant = test_variant(&tracker);
++    variant.canonical_block.header.prev_blockhash = bitcoin::BlockHash::all_zeros();
++
++    // Act
++    let result = crate::stratum::work::job_admission::validate_candidate(
++        &variant,
++        &test_address().script_pubkey(),
++    );
++
++    // Assert
++    assert_eq!(
++        result,
++        Err(crate::stratum::work::job_admission::AdmissionError::PreviousBlockMismatch)
++    );
++    assert!(tracker.get_job(variant.job_id()).is_none());
++}
++
++#[tokio::test]
++async fn admission_rejects_a_target_mismatch() {
++    // Arrange
++    let tracker = start_tracker_actor();
++    let mut variant = test_variant(&tracker);
++    variant.canonical_block.header.bits = CompactTarget::from_consensus(0x1d00ffff);
++
++    // Act
++    let result = crate::stratum::work::job_admission::validate_candidate(
++        &variant,
++        &test_address().script_pubkey(),
++    );
++
++    // Assert
++    assert_eq!(
++        result,
++        Err(crate::stratum::work::job_admission::AdmissionError::TargetMismatch)
++    );
++    assert!(tracker.get_job(variant.job_id()).is_none());
++}
++
++#[tokio::test]
++async fn admission_rejects_a_transaction_mismatch() {
++    // Arrange
++    let tracker = start_tracker_actor();
++    let mut variant = test_variant(&tracker);
++    variant.canonical_block.txdata.pop();
++
++    // Act
++    let result = crate::stratum::work::job_admission::validate_candidate(
++        &variant,
++        &test_address().script_pubkey(),
++    );
++
++    // Assert
++    assert_eq!(
++        result,
++        Err(crate::stratum::work::job_admission::AdmissionError::TransactionMismatch)
++    );
++    assert!(tracker.get_job(variant.job_id()).is_none());
++}
++
++#[tokio::test]
++async fn admission_rejects_a_commitment_mismatch() {
++    // Arrange
++    let tracker = start_tracker_actor();
++    let mut variant = test_variant(&tracker);
++    variant.canonical_block.header.merkle_root = bitcoin::TxMerkleNode::all_zeros();
++
++    // Act
++    let result = crate::stratum::work::job_admission::validate_candidate(
++        &variant,
++        &test_address().script_pubkey(),
++    );
++
++    // Assert
++    assert_eq!(
++        result,
++        Err(crate::stratum::work::job_admission::AdmissionError::CommitmentMismatch)
++    );
++    assert!(tracker.get_job(variant.job_id()).is_none());
++}
++
++#[tokio::test]
++async fn admission_rejects_a_coherently_changed_template_witness_commitment() {
++    // Arrange
++    let tracker = start_tracker_actor();
++    let mut variant = test_variant(&tracker);
++    let changed_reserved_value = [1_u8; 32];
++    variant.canonical_block.txdata[0].input[0].witness =
++        bitcoin::Witness::from_slice(&[changed_reserved_value]);
++    let witness_root = variant
++        .canonical_block
++        .witness_root()
++        .expect("test block should have a witness root");
++    let changed_commitment =
++        bitcoin::Block::compute_witness_commitment(&witness_root, &changed_reserved_value);
++    let mut commitment_script =
++        hex::decode("6a24aa21a9ed0000000000000000000000000000000000000000000000000000000000000000")
++            .expect("commitment script template should decode");
++    commitment_script[6..38].copy_from_slice(changed_commitment.as_byte_array());
++    variant.canonical_block.txdata[0].output[1].script_pubkey =
++        bitcoin::ScriptBuf::from_bytes(commitment_script);
++    variant.canonical_block.header.merkle_root = variant
++        .canonical_block
++        .compute_merkle_root()
++        .expect("test block should have a merkle root");
++    assert!(variant.canonical_block.check_merkle_root());
++    assert!(variant.canonical_block.check_witness_commitment());
++
++    // Act
++    let result = crate::stratum::work::job_admission::validate_candidate(
++        &variant,
++        &test_address().script_pubkey(),
++    );
++
++    // Assert
++    assert_eq!(result, Err(AdmissionError::CommitmentMismatch));
++    assert!(tracker.get_job(variant.job_id()).is_none());
++}
++
++#[tokio::test]
++async fn admission_rejects_an_invalid_optional_work_id() {
++    // Arrange
++    let tracker = start_tracker_actor();
++    let mut variant = test_variant(&tracker);
++    Arc::make_mut(&mut variant.block_template).workid = Some(String::new());
++
++    // Act
++    let result = crate::stratum::work::job_admission::validate_candidate(
++        &variant,
++        &test_address().script_pubkey(),
++    );
++
++    // Assert
++    assert_eq!(
++        result,
++        Err(crate::stratum::work::job_admission::AdmissionError::MissingTemplateData)
++    );
++    assert!(tracker.get_job(variant.job_id()).is_none());
++}
++
++#[tokio::test]
++async fn bip23_null_accepts_the_exact_candidate_and_echoes_work_id() {
++    // Arrange
++    let tracker = start_tracker_actor();
++    let mut variant = test_variant(&tracker);
++    Arc::make_mut(&mut variant.block_template).workid = Some("work-123".to_string());
++    let server = MockServer::start().await;
++    let block_hex = hex::encode(bitcoin::consensus::serialize(variant.canonical_block()));
++    Mock::given(method("POST"))
++        .and(body_json(serde_json::json!({
++            "id": 0,
++            "method": "getblocktemplate",
++            "params": [{
++                "mode": "proposal",
++                "data": block_hex,
++                "workid": "work-123"
++            }]
++        })))
++        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
++            "result": null,
++            "error": null,
++            "id": 0
++        })))
++        .mount(&server)
++        .await;
++    let admission = BitcoinCoreJobAdmission::new(
++        BitcoindRpcClient::new(&server.uri(), "testuser", "testpass")
++            .expect("mock RPC client should build"),
++        test_address().script_pubkey(),
++        std::time::Duration::from_secs(1),
++        1,
++    )
++    .expect("admission config should be valid");
++
++    // Act
++    let receipt = admission
++        .admit(&variant)
++        .await
++        .expect("BIP 23 null should admit the candidate");
++
++    // Assert
++    assert_eq!(receipt.candidate_digest().len(), 64);
++    assert!(tracker.get_job(variant.job_id()).is_none());
++    publish_admitted_job_variant(variant, &tracker);
++    assert!(tracker.get_job(tracker.get_latest_job_id()).is_some());
++}
++
++#[tokio::test]
++async fn every_non_null_bip23_result_rejects_the_candidate() {
++    // Arrange, Act, and Assert each response class independently.
++    for result in [
++        serde_json::json!("duplicate"),
++        serde_json::json!("bad-cb-amount"),
++        serde_json::json!({"reject-reason": "inconclusive"}),
++    ] {
++        let tracker = start_tracker_actor();
++        let variant = test_variant(&tracker);
++        let server = MockServer::start().await;
++        Mock::given(method("POST"))
++            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
++                "result": result,
++                "error": null,
++                "id": 0
++            })))
++            .mount(&server)
++            .await;
++        let admission = BitcoinCoreJobAdmission::new(
++            BitcoindRpcClient::new(&server.uri(), "testuser", "testpass")
++                .expect("mock RPC client should build"),
++            test_address().script_pubkey(),
++            std::time::Duration::from_secs(1),
++            1,
++        )
++        .expect("admission config should be valid");
++
++        let admission_result = admission.admit(&variant).await;
++
++        assert_eq!(admission_result, Err(AdmissionError::ProposalRejected));
++        assert!(tracker.get_job(variant.job_id()).is_none());
++    }
++}
++
++#[tokio::test]
++async fn proposal_timeout_and_unavailability_fail_closed() {
++    // Arrange
++    let tracker = start_tracker_actor();
++    let variant = test_variant(&tracker);
++    let server = MockServer::start().await;
++    Mock::given(method("POST"))
++        .respond_with(
++            ResponseTemplate::new(200)
++                .set_delay(std::time::Duration::from_millis(100))
++                .set_body_json(serde_json::json!({
++                    "result": null,
++                    "error": null,
++                    "id": 0
++                })),
++        )
++        .mount(&server)
++        .await;
++    let timeout_admission = BitcoinCoreJobAdmission::new(
++        BitcoindRpcClient::new(&server.uri(), "testuser", "testpass")
++            .expect("mock RPC client should build"),
++        test_address().script_pubkey(),
++        std::time::Duration::from_millis(10),
++        1,
++    )
++    .expect("admission config should be valid");
++    let unavailable_admission = BitcoinCoreJobAdmission::new(
++        BitcoindRpcClient::new("http://127.0.0.1:1", "testuser", "testpass")
++            .expect("unavailable RPC client should build"),
++        test_address().script_pubkey(),
++        std::time::Duration::from_secs(1),
++        1,
++    )
++    .expect("admission config should be valid");
++
++    // Act
++    let timeout_result = timeout_admission.admit(&variant).await;
++    let unavailable_result = unavailable_admission.admit(&variant).await;
++
++    // Assert
++    assert_eq!(timeout_result, Err(AdmissionError::Timeout));
++    assert_eq!(unavailable_result, Err(AdmissionError::ProposalUnavailable));
++    assert!(tracker.get_job(variant.job_id()).is_none());
++}
++
++#[tokio::test]
++async fn proposal_concurrency_is_bounded_before_bitcoin_core() {
++    // Arrange
++    let tracker = start_tracker_actor();
++    let first = test_variant(&tracker);
++    let second = test_variant(&tracker);
++    let server = MockServer::start().await;
++    Mock::given(method("POST"))
++        .respond_with(
++            ResponseTemplate::new(200)
++                .set_delay(std::time::Duration::from_millis(100))
++                .set_body_json(serde_json::json!({
++                    "result": null,
++                    "error": null,
++                    "id": 0
++                })),
++        )
++        .mount(&server)
++        .await;
++    let admission = BitcoinCoreJobAdmission::new(
++        BitcoindRpcClient::new(&server.uri(), "testuser", "testpass")
++            .expect("mock RPC client should build"),
++        test_address().script_pubkey(),
++        std::time::Duration::from_secs(1),
++        1,
++    )
++    .expect("admission config should be valid");
++    // Act
++    let first_admission = admission.clone();
++    let first_task = tokio::spawn(async move { first_admission.admit(&first).await });
++    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
++    assert_eq!(admission.available_proposal_slots(), 0);
++    let second_admission = admission.clone();
++    let second_task = tokio::spawn(async move { second_admission.admit(&second).await });
++    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
++
++    let requests_while_first_is_active = server
++        .received_requests()
++        .await
++        .expect("mock server should retain requests")
++        .len();
++    let (first_result, second_result) = tokio::join!(first_task, second_task);
++
++    // Assert
++    assert_eq!(requests_while_first_is_active, 1);
++    assert!(first_result.expect("first task should join").is_ok());
++    assert!(second_result.expect("second task should join").is_ok());
++    assert_eq!(
++        server
++            .received_requests()
++            .await
++            .expect("mock server should retain requests")
++            .len(),
++        2
++    );
++}
++
++#[tokio::test]
++async fn prototype_exact_candidate_and_outputs_are_admitted_before_job_release() {
++    // Arrange
++    let template = Arc::new(test_template());
++    let expected_output = bitcoin::TxOut {
++        value: bitcoin::Amount::from_sat(template.coinbasevalue),
++        script_pubkey: test_address().script_pubkey(),
++    };
++    let prepared = test_notify_params_builder(Arc::clone(&template), false)
++        .build()
++        .expect("prepared builder should succeed");
++    let tracker = start_tracker_actor();
++    let variant =
++        build_unadmitted_job_variant(&prepared, Some(&test_address()), &tracker, "01020304")
++            .expect("exact job variant should be constructible");
++    let job_id = variant.job_id;
++    let candidate_hash = variant.canonical_block().block_hash();
++    assert_eq!(variant.coinbase_outputs()[0], expected_output);
++    assert!(variant.coinbase_outputs().len() >= 2);
++    assert!(variant.canonical_block().check_merkle_root());
++    assert!(variant.canonical_block().check_witness_commitment());
++    crate::stratum::work::job_admission::validate_candidate(
++        &variant,
++        &expected_output.script_pubkey,
++    )
++    .expect("the exact candidate should match its template and Reward Policy");
++    assert!(tracker.get_job(job_id).is_none());
++
++    // Act
++    let (admit_tx, admit_rx) = tokio::sync::oneshot::channel::<()>();
++    let tracker_for_task = Arc::clone(&tracker);
++    let admission = tokio::spawn(async move {
++        admit_rx.await.expect("prototype admission should resolve");
++        assert_eq!(variant.canonical_block().block_hash(), candidate_hash);
++        assert_eq!(variant.coinbase_outputs()[0], expected_output);
++        publish_admitted_job_variant(variant, &tracker_for_task)
++    });
++
++    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
++    assert!(tracker.get_job(job_id).is_none());
++    admit_tx.send(()).expect("admission receiver should exist");
++    let notify_json = admission.await.expect("admission task should finish");
++
++    // Assert
++    assert!(tracker.get_job(job_id).is_some());
++    assert!(notify_json.contains("mining.notify"));
++}
++
++#[tokio::test]
++async fn generation_gate_serializes_template_update_with_tracker_and_socket_release() {
++    use tokio::io::AsyncReadExt as _;
++
++    // Arrange
++    let prepared = Arc::new(
++        test_notify_params_builder(Arc::new(test_template()), false)
++            .build()
++            .expect("prepared builder should succeed"),
++    );
++    let replacement = Arc::new(
++        test_notify_params_builder(Arc::new(test_template()), false)
++            .build()
++            .expect("replacement builder should succeed"),
++    );
++    let (template_tx, template_rx) = tokio::sync::watch::channel(Some(Arc::clone(&prepared)));
++    let generation_gate = Arc::new(tokio::sync::Mutex::new(()));
++    let tracker = start_tracker_actor();
++    let variant =
++        build_unadmitted_job_variant(&prepared, Some(&test_address()), &tracker, "01020304")
++            .expect("variant should build");
++    let job_id = variant.job_id();
++    let (mut writer, mut reader) = tokio::io::duplex(1);
++    let admitted_for_task = Arc::clone(&prepared);
++    let tracker_for_task = Arc::clone(&tracker);
++    let gate_for_publish = Arc::clone(&generation_gate);
++    let current_template_rx = template_rx.clone();
++
++    // Act
++    let publish_task = tokio::spawn(async move {
++        crate::stratum::server::publish_if_current(
++            &admitted_for_task,
++            &template_rx,
++            variant,
++            &tracker_for_task,
++            &gate_for_publish,
++            &mut writer,
++        )
++        .await
++    });
++    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
++    assert!(generation_gate.try_lock().is_err());
++    let gate_for_update = Arc::clone(&generation_gate);
++    let update_task = tokio::spawn(async move {
++        let _guard = gate_for_update.lock().await;
++        template_tx
++            .send(Some(Arc::clone(&replacement)))
++            .expect("template receiver should remain open");
++        replacement
++    });
++    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
++    {
++        let current_before_release = current_template_rx.borrow();
++        assert!(
++            current_before_release
++                .as_ref()
++                .is_some_and(|current| Arc::ptr_eq(current, &prepared))
++        );
++    }
++    let mut released_bytes = Vec::new();
++    reader
++        .read_to_end(&mut released_bytes)
++        .await
++        .expect("released notify should be readable");
++    let publish_result = publish_task.await.expect("publish task should join");
++    let replacement = update_task.await.expect("update task should join");
++
++    // Assert
++    assert_eq!(publish_result, Ok(()));
++    assert!(tracker.get_job(job_id).is_some());
++    assert!(
++        String::from_utf8(released_bytes)
++            .expect("notify should be UTF-8")
++            .contains("mining.notify")
++    );
++    let current = current_template_rx.borrow();
++    assert!(
++        current
++            .as_ref()
++            .is_some_and(|current| Arc::ptr_eq(current, &replacement))
++    );
++    assert!(!Arc::ptr_eq(&prepared, &replacement));
++}
++
++#[tokio::test]
++async fn superseded_candidate_cannot_publish_or_release_notify_bytes() {
++    // Arrange
++    let admitted = Arc::new(
++        test_notify_params_builder(Arc::new(test_template()), false)
++            .build()
++            .expect("admitted builder should succeed"),
++    );
++    let replacement = Arc::new(
++        test_notify_params_builder(Arc::new(test_template()), false)
++            .build()
++            .expect("replacement builder should succeed"),
++    );
++    let (_template_tx, template_rx) = tokio::sync::watch::channel(Some(replacement));
++    let tracker = start_tracker_actor();
++    let variant =
++        build_unadmitted_job_variant(&admitted, Some(&test_address()), &tracker, "01020304")
++            .expect("variant should build");
++    let job_id = variant.job_id();
++    let generation_gate = Arc::new(tokio::sync::Mutex::new(()));
++    let mut writer = Vec::new();
++
++    // Act
++    let result = crate::stratum::server::publish_if_current(
++        &admitted,
++        &template_rx,
++        variant,
++        &tracker,
++        &generation_gate,
++        &mut writer,
++    )
++    .await;
++
++    // Assert
++    assert_eq!(result, Err(AdmissionError::StaleGeneration));
++    assert!(tracker.get_job(job_id).is_none());
++    assert!(writer.is_empty());
++}
++
++#[tokio::test]
++async fn blocked_partial_release_times_out_rolls_back_and_unblocks_templates() {
++    // Arrange
++    let admitted = Arc::new(
++        test_notify_params_builder(Arc::new(test_template()), false)
++            .build()
++            .expect("admitted builder should succeed"),
++    );
++    let replacement = Arc::new(
++        test_notify_params_builder(Arc::new(test_template()), false)
++            .build()
++            .expect("replacement builder should succeed"),
++    );
++    let (template_tx, template_rx) = tokio::sync::watch::channel(Some(Arc::clone(&admitted)));
++    let tracker = start_tracker_actor();
++    let variant =
++        build_unadmitted_job_variant(&admitted, Some(&test_address()), &tracker, "01020304")
++            .expect("variant should build");
++    let job_id = variant.job_id();
++    let generation_gate = Arc::new(tokio::sync::Mutex::new(()));
++    let (mut blocked_writer, _unread_peer) = tokio::io::duplex(1);
++    let started = std::time::Instant::now();
++
++    // Act
++    let result = crate::stratum::server::publish_if_current(
++        &admitted,
++        &template_rx,
++        variant,
++        &tracker,
++        &generation_gate,
++        &mut blocked_writer,
++    )
++    .await;
++    let elapsed = started.elapsed();
++    let update_result = {
++        let _guard = generation_gate.lock().await;
++        template_tx.send(Some(Arc::clone(&replacement)))
++    };
++
++    // Assert
++    assert_eq!(result, Err(AdmissionError::ReleaseFailed));
++    assert!(elapsed < std::time::Duration::from_secs(1));
++    assert!(tracker.get_job(job_id).is_none());
++    assert!(update_result.is_ok());
++    assert!(
++        template_rx
++            .borrow()
++            .as_ref()
++            .is_some_and(|current| Arc::ptr_eq(current, &replacement))
++    );
++}
+diff --git a/p2poolv2_lib/src/stratum/work/tracker/mod.rs b/p2poolv2_lib/src/stratum/work/tracker/mod.rs
+index af64750..dde3fe4 100644
+--- a/p2poolv2_lib/src/stratum/work/tracker/mod.rs
++++ b/p2poolv2_lib/src/stratum/work/tracker/mod.rs
+@@ -132,6 +132,12 @@ impl JobTracker {
+         self.job_details.get(&job_id).map(|r| r.clone())
+     }
+ 
++    /// Remove one exact job and its duplicate-share state.
++    pub fn remove_job(&self, job_id: JobId) -> bool {
++        self.job_shares.remove(&job_id);
++        self.job_details.remove(&job_id).is_some()
++    }
++
+     /// Remove job details that are older than the specified duration in seconds
+     /// Returns the number of jobs that were removed
+     pub fn cleanup_old_jobs(&self, max_age_secs: u64) -> usize {
+@@ -154,6 +160,19 @@ impl JobTracker {
+         before_count - self.job_details.len()
+     }
+ 
++    /// Remove every job that does not build on the supplied current Bitcoin tip.
++    pub fn invalidate_other_tips(&self, current_previous_block_hash: &str) -> usize {
++        let before_count = self.job_details.len();
++        self.job_details.retain(|job_id, details| {
++            let keep = details.blocktemplate.previousblockhash == current_previous_block_hash;
++            if !keep {
++                self.job_shares.remove(job_id);
++            }
++            keep
++        });
++        before_count - self.job_details.len()
++    }
++
+     /// Add a share to shares tracker for duplicate detection.
+     /// Returns true if share is newly inserted, false if job not found or share already exists.
+     pub fn add_share(&self, job_id: JobId, blockhash: BlockHash) -> bool {
+@@ -201,6 +220,7 @@ pub fn start_tracker_actor() -> Arc<JobTracker> {
+ mod tests {
+     use super::*;
+     use crate::test_utils::{TEST_COINBASE_NSECS, create_test_commitment};
++    use bitcoin::hashes::Hash as _;
+ 
+     #[test]
+     fn test_job_id_generation() {
+@@ -363,6 +383,43 @@ mod tests {
+         assert!(result.is_none());
+     }
+ 
++    #[test]
++    fn new_tip_invalidation_removes_old_jobs_and_their_share_state() {
++        let template_str = include_str!(
++            "../../../../../p2poolv2_tests/test_data/gbt/signet/gbt-no-transactions.json"
++        );
++        let old_template: BlockTemplate = serde_json::from_str(template_str).unwrap();
++        let mut current_template = old_template.clone();
++        current_template.previousblockhash =
++            "0000000000000000000000000000000000000000000000000000000000000001".to_string();
++        let tracker = JobTracker::new();
++        tracker.insert_job(
++            Arc::new(old_template),
++            "old_cb1".to_string(),
++            "old_cb2".to_string(),
++            None,
++            TEST_COINBASE_NSECS,
++            vec![],
++            JobId(10),
++        );
++        tracker.insert_job(
++            Arc::new(current_template.clone()),
++            "current_cb1".to_string(),
++            "current_cb2".to_string(),
++            None,
++            TEST_COINBASE_NSECS,
++            vec![],
++            JobId(11),
++        );
++
++        let removed = tracker.invalidate_other_tips(&current_template.previousblockhash);
++
++        assert_eq!(removed, 1);
++        assert!(tracker.get_job(JobId(10)).is_none());
++        assert!(!tracker.add_share(JobId(10), BlockHash::all_zeros()));
++        assert!(tracker.get_job(JobId(11)).is_some());
++    }
++
+     #[test]
+     fn test_add_share_rejects_duplicates() {
+         let template_str = include_str!(
+diff --git a/p2poolv2_lib/src/stratum/work/tracker/parse_coinbase.rs b/p2poolv2_lib/src/stratum/work/tracker/parse_coinbase.rs
+index 694f29e..faec60b 100644
+--- a/p2poolv2_lib/src/stratum/work/tracker/parse_coinbase.rs
++++ b/p2poolv2_lib/src/stratum/work/tracker/parse_coinbase.rs
+@@ -94,6 +94,7 @@ mod tests {
+             vbavailable: HashMap::new(),
+             vbrequired: 0,
+             longpollid: "".to_string(),
++            workid: None,
+             target: "".to_string(),
+             mintime: 0,
+             mutable: vec![],
+diff --git a/p2poolv2_node/src/main.rs b/p2poolv2_node/src/main.rs
+index fe89cf8..c443742 100644
+--- a/p2poolv2_node/src/main.rs
++++ b/p2poolv2_node/src/main.rs
+@@ -200,6 +200,8 @@ async fn main() -> ExitCode {
+ 
+     // Watch channel for broadcasting prepared templates to all connection handlers
+     let (template_tx, template_rx) = tokio::sync::watch::channel(None);
++    let generation_gate = std::sync::Arc::new(tokio::sync::Mutex::new(()));
++    let notify_generation_gate = std::sync::Arc::clone(&generation_gate);
+ 
+     let chain_store_handle_for_notify = chain_store_handle.clone();
+ 
+@@ -220,6 +222,7 @@ async fn main() -> ExitCode {
+             &cloned_stratum_config,
+             payout,
+             pool_difficulty_for_notify,
++            notify_generation_gate,
+         )
+         .await;
+         if *exit_receiver_notify.borrow() == ShutdownReason::None {
+@@ -246,6 +249,7 @@ async fn main() -> ExitCode {
+     let notify_tx_for_node = notify_tx.clone();
+     let exit_sender_stratum = exit_sender.clone();
+     let exit_receiver_stratum = exit_sender.subscribe();
++    let expected_payout_script = stratum_config.payout_address().script_pubkey();
+ 
+     tokio::spawn(async move {
+         let mut stratum_server = StratumServerBuilder::default()
+@@ -267,6 +271,13 @@ async fn main() -> ExitCode {
+             .wait_for_chain_sync(stratum_config.wait_for_chain_sync)
+             .chain_store_handle(chain_store_handle_for_stratum)
+             .mode(stratum_config.mode)
++            .require_job_admission(stratum_config.require_job_admission)
++            .job_admission_timeout(std::time::Duration::from_millis(
++                stratum_config.job_admission_timeout_ms,
++            ))
++            .job_admission_max_concurrency(stratum_config.job_admission_max_concurrency)
++            .expected_payout_script(expected_payout_script)
++            .generation_gate(generation_gate)
+             .build()
+             .await
+             .unwrap();
+

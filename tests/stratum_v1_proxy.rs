@@ -30,7 +30,6 @@ use tokio::{
 #[path = "support/postgres.rs"]
 mod postgres_support;
 use postgres_support::PostgresTestDatabase;
-
 #[path = "stratum_v1_proxy/authority_delivery.rs"]
 mod authority_delivery;
 #[path = "stratum_v1_proxy/bounds.rs"]
@@ -39,6 +38,8 @@ mod bounds;
 mod credentials;
 #[path = "stratum_v1_proxy/fixtures.rs"]
 mod fixtures;
+#[path = "support/stratum_hash.rs"]
+mod stratum_hash_support;
 use fixtures::{StratumJobFields, hex_target, test_lease_context, worked_nonce};
 #[path = "stratum_v1_proxy/persistence.rs"]
 mod persistence;

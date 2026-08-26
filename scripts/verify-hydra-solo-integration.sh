@@ -9,6 +9,8 @@ mkdir -p "$evidence_dir"
 bitcoin_pid=""
 hydra_pid=""
 bitcoin_cli=""
+rpc_user=""
+rpc_password=""
 hydra_run=0
 integration_run=0
 
@@ -57,7 +59,7 @@ cleanup() {
   fi
   if [[ -n "$bitcoin_cli" ]] && [[ -x "$bitcoin_cli" ]]; then
     if ! "$bitcoin_cli" -regtest -rpcconnect=127.0.0.1 -rpcport="$rpc_port" \
-      -rpcuser=p2pool -rpcpassword=p2pool stop >/dev/null 2>&1; then
+      -rpcuser="$rpc_user" -rpcpassword="$rpc_password" stop >/dev/null 2>&1; then
       printf 'Bitcoin Core RPC shutdown failed\n' >&2
       command_exit=1
     fi
@@ -87,12 +89,41 @@ cleanup() {
       command_exit=1
     fi
   fi
-  for log_path in "$integration_root"/*.log; do
-    if [[ -f "$log_path" ]] && ! cp "$log_path" "$evidence_dir/"; then
-      printf 'Failed to preserve integration log %s\n' "$log_path" >&2
-      command_exit=1
+  admission_count=0
+  for hydra_log_path in "$integration_root"/hydra-*.log; do
+    if [[ -f "$hydra_log_path" ]]; then
+      if log_admission_count=$(grep -c 'Job admission completed' "$hydra_log_path"); then
+        admission_count=$((admission_count + log_admission_count))
+      fi
     fi
   done
+  logs_are_safe=true
+  prohibited_values=(
+    "${rpc_password:-}"
+    "${payout_address:-}"
+    "${mining_address:-}"
+    "hydra-integration-secret-P9vK2mQ7xR4tY8uN3cF6wL1zA"
+  )
+  for log_path in "$integration_root"/*.log; do
+    if [[ -f "$log_path" ]]; then
+      for prohibited_value in "${prohibited_values[@]}"; do
+        if [[ -n "$prohibited_value" ]] && grep -Fq -- "$prohibited_value" "$log_path"; then
+          printf 'Prohibited data detected; omitting integration logs from evidence\n' >&2
+          logs_are_safe=false
+          command_exit=1
+          break 2
+        fi
+      done
+    fi
+  done
+  if [[ "$logs_are_safe" == true ]]; then
+    for log_path in "$integration_root"/*.log; do
+      if [[ -f "$log_path" ]] && ! cp "$log_path" "$evidence_dir/"; then
+        printf 'Failed to preserve integration log %s\n' "$log_path" >&2
+        command_exit=1
+      fi
+    done
+  fi
   if ! cp "$repo_root/integration/hydra-solo/provenance.json" "$evidence_dir/"; then
     printf 'Failed to preserve integration provenance\n' >&2
     command_exit=1
@@ -107,14 +138,17 @@ cleanup() {
     printf 'p2pool_version=%s\n' "${p2pool_version:-unknown}"
     printf 'p2pool_commit=%s\n' "${p2pool_commit:-unknown}"
     printf 'bitcoin_core_version=%s\n' "${bitcoin_version:-unknown}"
+    printf 'reward_policy=solo_direct_coinbase\n'
+    printf 'selected_destination_basis_points=10000\n'
+    printf 'pool_fee_basis_points=0\n'
+    printf 'service_fee_basis_points=0\n'
+    printf 'bip23_success_result=json_null\n'
+    printf 'job_admission_patch_sha256=%s\n' "${p2pool_admission_patch_digest:-unknown}"
+    printf 'job_admission_acceptances=%s\n' "$admission_count"
     printf 'completed_at_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   } >"$evidence_dir/summary.txt"
   printf 'Hydra integration evidence: %s\n' "$evidence_dir"
-  if [[ "$command_exit" -eq 0 ]]; then
-    rm -rf "$integration_root"
-  else
-    printf 'Hydra integration artifacts retained at %s\n' "$integration_root" >&2
-  fi
+  rm -rf "$integration_root"
   exit "$command_exit"
 }
 trap cleanup EXIT INT TERM
@@ -145,7 +179,7 @@ download_verified() {
 wait_for_rpc() {
   for _attempt in $(seq 1 60); do
     if "$bitcoin_cli" -regtest -rpcconnect=127.0.0.1 -rpcport="$rpc_port" \
-      -rpcuser=p2pool -rpcpassword=p2pool getblockcount >/dev/null 2>&1; then
+      -rpcuser="$rpc_user" -rpcpassword="$rpc_password" getblockcount >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
@@ -168,7 +202,8 @@ wait_for_port() {
 
 start_hydra() {
   hydra_run=$((hydra_run + 1))
-  "$hydra_target_dir/debug/p2poolv2" --config "$config_path" \
+  RUST_LOG="p2poolv2_lib::stratum::server=info" \
+    "$hydra_target_dir/debug/p2poolv2" --config "$config_path" \
     >"$integration_root/hydra-$hydra_run.log" 2>&1 &
   hydra_pid=$!
   wait_for_port "$stratum_port"
@@ -179,15 +214,70 @@ run_integration() {
   BWG_HYDRA_STRATUM_ADDR="127.0.0.1:$stratum_port" \
   BWG_HYDRA_PAYOUT_ADDRESS="$payout_address" \
   BWG_BITCOIN_RPC_URL="http://127.0.0.1:$rpc_port" \
+  BWG_BITCOIN_RPC_USER="$rpc_user" \
+  BWG_BITCOIN_RPC_PASSWORD="$rpc_password" \
   BWG_BITCOIN_MINING_ADDRESS="$mining_address" \
     cargo test --manifest-path "$repo_root/Cargo.toml" --all-features \
       --test hydra_solo_integration -- --ignored --nocapture --test-threads=1 \
       2>&1 | tee "$integration_root/integration-$integration_run.log"
+  if ! grep -q 'Job admission completed' "$integration_root/hydra-$hydra_run.log"; then
+    printf 'Hydra released no BIP 23-admitted job during run %s\n' "$integration_run" >&2
+    return 1
+  fi
+}
+
+run_exact_upstream_test() {
+  package=$1
+  test_name=$2
+  test_output=$(CARGO_TARGET_DIR="$hydra_target_dir" \
+    cargo test --manifest-path "$source_dir/Cargo.toml" -p "$package" \
+      "$test_name" -- --exact 2>&1)
+  printf '%s\n' "$test_output"
+  if ! grep -Fq 'test result: ok. 1 passed;' <<<"$test_output"; then
+    printf 'Required upstream test did not execute exactly once: %s\n' "$test_name" >&2
+    return 1
+  fi
+}
+
+run_upstream_admission_tests() {
+  {
+    run_exact_upstream_test p2poolv2_config \
+      tests::job_admission_bounds_fail_closed
+    for test_name in \
+      stratum::server::stratum_server_tests::mainnet_cannot_disable_job_admission \
+      stratum::work::job_admission::tests::deepest_constructor_rejects_out_of_profile_bounds \
+      stratum::work::prepared_notify::tests::job_admission_tests::admission_rejects_a_reward_policy_payout_mismatch \
+      stratum::work::prepared_notify::tests::job_admission_tests::admission_rejects_a_previous_block_mismatch \
+      stratum::work::prepared_notify::tests::job_admission_tests::admission_rejects_a_target_mismatch \
+      stratum::work::prepared_notify::tests::job_admission_tests::admission_rejects_a_transaction_mismatch \
+      stratum::work::prepared_notify::tests::job_admission_tests::admission_rejects_a_commitment_mismatch \
+      stratum::work::prepared_notify::tests::job_admission_tests::admission_rejects_a_coherently_changed_template_witness_commitment \
+      stratum::work::prepared_notify::tests::job_admission_tests::admission_rejects_an_invalid_optional_work_id \
+      stratum::work::prepared_notify::tests::job_admission_tests::bip23_null_accepts_the_exact_candidate_and_echoes_work_id \
+      stratum::work::prepared_notify::tests::job_admission_tests::every_non_null_bip23_result_rejects_the_candidate \
+      stratum::work::prepared_notify::tests::job_admission_tests::proposal_timeout_and_unavailability_fail_closed \
+      stratum::work::prepared_notify::tests::job_admission_tests::proposal_concurrency_is_bounded_before_bitcoin_core \
+      stratum::work::prepared_notify::tests::job_admission_tests::generation_gate_serializes_template_update_with_tracker_and_socket_release \
+      stratum::work::prepared_notify::tests::job_admission_tests::superseded_candidate_cannot_publish_or_release_notify_bytes \
+      stratum::work::prepared_notify::tests::job_admission_tests::blocked_partial_release_times_out_rolls_back_and_unblocks_templates \
+      stratum::work::tracker::tests::new_tip_invalidation_removes_old_jobs_and_their_share_state \
+      shares::validation::bitcoin_block_validation::tests::test_validate_bitcoin_block_success \
+      shares::validation::bitcoin_block_validation::tests::test_validate_bitcoin_block_reject \
+      shares::validation::bitcoin_block_validation::tests::test_validate_bitcoin_block_http_error \
+      stratum::work::coinbase::tests::test_building_coinbase_with_regtest_ckpool_data \
+      stratum::work::coinbase::tests::test_building_coinbase_with_share_commitment_should_include_the_commitment \
+      stratum::work::coinbase::tests::test_extract_outputs_from_coinbase2_integration \
+      stratum::work::notify::tests::test_build_notify_and_extract_outputs_integration; do
+      run_exact_upstream_test p2poolv2_lib "$test_name"
+    done
+  } 2>&1 | tee "$integration_root/upstream-admission-tests.log"
 }
 
 for required in cargo codesign curl git jq nc python3 shasum tar tee; do
   require_command "$required"
 done
+rpc_user="bwg-integration"
+rpc_password=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
 
 if [[ "$(uname -s)" != "Darwin" ]] || [[ "$(uname -m)" != "arm64" ]]; then
   printf 'This pinned integration runner currently supports macOS arm64 only\n' >&2
@@ -201,13 +291,21 @@ p2pool_source_url=$(jq -er '.p2poolv2.sourceUrl' "$provenance_path")
 p2pool_source_digest=$(jq -er '.p2poolv2.sourceSha256' "$provenance_path")
 p2pool_patch=$(jq -er '.p2poolv2.regtestPatch' "$provenance_path")
 p2pool_patch_digest=$(jq -er '.p2poolv2.regtestPatchSha256' "$provenance_path")
+p2pool_admission_patch=$(jq -er '.p2poolv2.jobAdmissionPatch' "$provenance_path")
+p2pool_admission_patch_digest=$(jq -er '.p2poolv2.jobAdmissionPatchSha256' "$provenance_path")
 bitcoin_version=$(jq -er '.bitcoinCore.version' "$provenance_path")
 bitcoin_source_url=$(jq -er '.bitcoinCore.sourceUrl' "$provenance_path")
 bitcoin_source_digest=$(jq -er '.bitcoinCore.sha256' "$provenance_path")
 patch_path="$repo_root/integration/hydra-solo/$p2pool_patch"
+admission_patch_path="$repo_root/integration/hydra-solo/$p2pool_admission_patch"
 actual_patch_digest=$(shasum -a 256 "$patch_path" | awk '{print $1}')
 if [[ "$actual_patch_digest" != "$p2pool_patch_digest" ]]; then
   printf 'Checksum mismatch for %s\n' "$patch_path" >&2
+  exit 1
+fi
+actual_admission_patch_digest=$(shasum -a 256 "$admission_patch_path" | awk '{print $1}')
+if [[ "$actual_admission_patch_digest" != "$p2pool_admission_patch_digest" ]]; then
+  printf 'Checksum mismatch for %s\n' "$admission_patch_path" >&2
   exit 1
 fi
 
@@ -241,21 +339,23 @@ mkdir "$integration_root/source"
 tar -xzf "$source_archive" -C "$integration_root/source"
 source_dir=$(find "$integration_root/source" -mindepth 1 -maxdepth 1 -type d | head -1)
 git -C "$source_dir" apply "$patch_path"
+git -C "$source_dir" apply "$admission_patch_path"
 hydra_target_dir="$repo_root/target/hydra-v$p2pool_version"
 CARGO_TARGET_DIR="$hydra_target_dir" \
   cargo build --manifest-path "$source_dir/Cargo.toml" -p p2poolv2_node --bin p2poolv2
+run_upstream_admission_tests
 
 mkdir "$integration_root/bitcoin-data"
 "$bitcoin_bin/bitcoind" \
   -datadir="$integration_root/bitcoin-data" \
   -regtest -server=1 -listen=0 -txindex=1 -fallbackfee=0.0002 \
-  -rpcuser=p2pool -rpcpassword=p2pool -rpcbind=127.0.0.1 -rpcallowip=127.0.0.1 \
+  -rpcuser="$rpc_user" -rpcpassword="$rpc_password" -rpcbind=127.0.0.1 -rpcallowip=127.0.0.1 \
   -rpcport="$rpc_port" -zmqpubhashblock="tcp://127.0.0.1:$zmq_port" \
   -printtoconsole >"$integration_root/bitcoind.log" 2>&1 &
 bitcoin_pid=$!
 wait_for_rpc
 
-bitcoin_args=(-regtest -rpcconnect=127.0.0.1 -rpcport="$rpc_port" -rpcuser=p2pool -rpcpassword=p2pool)
+bitcoin_args=(-regtest -rpcconnect=127.0.0.1 -rpcport="$rpc_port" -rpcuser="$rpc_user" -rpcpassword="$rpc_password")
 "$bitcoin_cli" "${bitcoin_args[@]}" createwallet integration >/dev/null
 payout_address="1BoatSLRHtKNngkdXEeobR76b53LETtpyT"
 mining_address=$("$bitcoin_cli" "${bitcoin_args[@]}" -rpcwallet=integration getnewaddress)
@@ -270,6 +370,8 @@ sed \
   -e "s|__PAYOUT_ADDRESS__|$payout_address|g" \
   -e "s|__ZMQ_PORT__|$zmq_port|g" \
   -e "s|__RPC_PORT__|$rpc_port|g" \
+  -e "s|__RPC_USER__|$rpc_user|g" \
+  -e "s|__RPC_PASSWORD__|$rpc_password|g" \
   -e "s|__STATS_PATH__|$integration_root/hydra-stats|g" \
   -e "s|__API_PORT__|$api_port|g" \
   "$repo_root/integration/hydra-solo/config.toml.template" >"$config_path"

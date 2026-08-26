@@ -1,5 +1,6 @@
 use std::error::Error;
 
+use crate::stratum_hash_support::coinbase_txid;
 use bitcoin::hex::FromHex as _;
 use bwg_core::stratum_v1::{StratumLeaseContext, StratumV1Error};
 use ring::digest;
@@ -49,7 +50,7 @@ pub(super) fn worked_nonce(
     } = job;
     let coinbase =
         Vec::<u8>::from_hex(&format!("{coinbase1}{extranonce1}{extranonce2}{coinbase2}"))?;
-    let merkle_root = double_sha256(&coinbase);
+    let merkle_root = coinbase_txid(&coinbase)?;
     let mut header_prefix = Vec::with_capacity(76);
     let mut version_bytes = Vec::<u8>::from_hex(version)?;
     version_bytes.reverse();

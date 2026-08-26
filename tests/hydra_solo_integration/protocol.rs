@@ -1,5 +1,6 @@
 use std::{error::Error, time::Duration};
 
+use crate::stratum_hash_support::coinbase_txid;
 use bitcoin::hex::FromHex as _;
 use ring::digest;
 use serde_json::Value;
@@ -36,9 +37,11 @@ pub(super) async fn wait_for_block_height(expected: u64) -> Result<(), Box<dyn E
 
 async fn bitcoin_rpc(method: &str, params: Value) -> Result<Value, Box<dyn Error>> {
     let rpc_url = std::env::var("BWG_BITCOIN_RPC_URL")?;
+    let rpc_user = std::env::var("BWG_BITCOIN_RPC_USER")?;
+    let rpc_password = std::env::var("BWG_BITCOIN_RPC_PASSWORD")?;
     let response = reqwest::Client::new()
         .post(rpc_url)
-        .basic_auth("p2pool", Some("p2pool"))
+        .basic_auth(rpc_user, Some(rpc_password))
         .json(&serde_json::json!({
             "jsonrpc": "1.0",
             "id": "bwg-hydra-integration",
@@ -97,7 +100,7 @@ pub(super) fn worked_nonce(
         string_at(2)?,
         string_at(3)?
     ))?;
-    let merkle_root = double_sha256(&coinbase);
+    let merkle_root = coinbase_txid(&coinbase)?;
     let mut prefix = Vec::with_capacity(76);
     let mut version = Vec::<u8>::from_hex(string_at(5)?)?;
     version.reverse();

@@ -37,12 +37,15 @@ ignore_difficulty = true
 pool_signature = "BWG-Hydra"
 max_connections = 16
 wait_for_chain_sync = false
+require_job_admission = true
+job_admission_timeout_ms = 2000
+job_admission_max_concurrency = 8
 mode = "hydrapool"
 
 [bitcoinrpc]
 url = "http://127.0.0.1:__RPC_PORT__"
-username = "p2pool"
-password = "p2pool"
+username = "__RPC_USER__"
+password = "__RPC_PASSWORD__"
 
 [logging]
 console = true

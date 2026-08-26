@@ -7,7 +7,9 @@
     "sourceSha256": "f95544a942ba9d91fdef1f096662e8d405cd069cb01db2cb9b34dbfc5f0928e4",
     "license": "AGPL-3.0-or-later",
     "regtestPatch": "p2poolv2-v0.12.0-regtest.patch",
-    "regtestPatchSha256": "3da16af53a78b3c74b0097e7f4e6903cc9b1111fdd4972de5f1ed10cecfc5aa7"
+    "regtestPatchSha256": "3da16af53a78b3c74b0097e7f4e6903cc9b1111fdd4972de5f1ed10cecfc5aa7",
+    "jobAdmissionPatch": "p2poolv2-v0.12.0-job-admission.patch",
+    "jobAdmissionPatchSha256": "3f9c286337ccf16e39e8dd989833dd96f5a7cb94118d83361427a394d1b2b59f"
   },
   "bitcoinCore": {
     "version": "28.1",

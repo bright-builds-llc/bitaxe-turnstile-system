@@ -1,3 +1,4 @@
+use bitcoin::hashes::Hash as _;
 use ring::digest;
 use serde_json::Value;
 
@@ -125,7 +126,7 @@ pub(super) fn submitted_header(
     coinbase.extend(decode_hex(extranonce1)?);
     coinbase.extend(decode_hex(extranonce2)?);
     coinbase.extend(decode_hex(&job.coinbase_suffix)?);
-    let mut merkle_root = double_sha256(&coinbase);
+    let mut merkle_root = coinbase_txid(&coinbase)?;
     for branch in &job.merkle_branches {
         let branch = decode_fixed_hex::<32>(branch)?;
         let mut joined = merkle_root.to_vec();
@@ -140,6 +141,16 @@ pub(super) fn submitted_header(
     header.extend(reverse_fixed(decode_fixed_hex::<4>(&job.network_bits)?));
     header.extend(reverse_fixed(decode_fixed_hex::<4>(nonce)?));
     header.try_into().map_err(|_| StratumV1Error::InvalidFrame)
+}
+
+fn coinbase_txid(coinbase: &[u8]) -> Result<[u8; 32], StratumV1Error> {
+    let has_witness = coinbase.get(4) == Some(&0) && coinbase.get(5).is_some_and(|flag| *flag != 0);
+    if !has_witness {
+        return Ok(double_sha256(coinbase));
+    }
+    let transaction = bitcoin::consensus::deserialize::<bitcoin::Transaction>(coinbase)
+        .map_err(|_| StratumV1Error::InvalidFrame)?;
+    Ok(transaction.compute_txid().to_raw_hash().to_byte_array())
 }
 
 fn stratum_previous_block_bytes(value: &str) -> Result<[u8; 32], StratumV1Error> {
@@ -241,6 +252,28 @@ mod tests {
             header_bytes,
             decode_fixed_hex::<32>(
                 "8e46034f544b4d95996cd3b0c3769bae5834166980e40273669224d3230e8641"
+            )?
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn segwit_serialization_uses_the_independently_published_txid_not_wtxid()
+    -> Result<(), StratumV1Error> {
+        // Arrange: fixed Bitcoin Core GBT transaction vector. Its published txid is
+        // 74d7b9bf9f51dd7447e117b6a835a20b6f7d5d807285d1435da37574563ca525.
+        let serialized = decode_hex(
+            "02000000000101d6c83b002c07d56399a5e0c887ddc7b74071b301a3ffa630c15754c63d8bee750000000000fdffffff02ac78f62901000000160014aecdd0cfae0829ee25e172cc8a94b2aa702869a040420f0000000000160014230a8d012b7cfce1a3118c617d6c50ce9f7482d602473044022037aede936712b0e32aaeba0413833f66929b1bff3726414294b1b140cc93595402204aa43cce61d2c8a9e8131aa335d884212bc2d63f74fea0c13c8ade3640f4b291012103555f1c1815b0a5a5ce7eeac3b7da8923e2c440ed94fc40e9d2685ed45f5335b5bb030000",
+        )?;
+
+        // Act
+        let txid_bytes = coinbase_txid(&serialized)?;
+
+        // Assert: internal merkle bytes are the byte-reversed display txid.
+        assert_eq!(
+            txid_bytes,
+            decode_fixed_hex::<32>(
+                "25a53c567475a35d43d18572805d7d6f0ba235a8b617e14774dd519fbfb9d774"
             )?
         );
         Ok(())

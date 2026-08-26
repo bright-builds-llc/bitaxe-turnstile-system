@@ -49,6 +49,11 @@
   deduplicated progress, byte-level coinbase evidence proves full selected-destination allocation,
   and complete pre/post-restart journeys cover vardiff, rejection, reconnect, stale cleanup, and
   network-block submission ahead of local persistence.
+- [Ticket 18](./issues/18-bip23-mainnet-job-admission.md) made mainnet job release fail closed: the
+  exact per-connection candidate and solo-direct Reward Policy are independently checked before a
+  JSON-null BIP 23 proposal receipt; bounded concurrency, a serialized generation gate, exact-job
+  rollback, old-tip invalidation, metadata-only evidence, and secret-safe cleanup prevent stale,
+  invalid, or unavailable validation from leaking work to a Worker.
 
 ## Persistence boundary split
 

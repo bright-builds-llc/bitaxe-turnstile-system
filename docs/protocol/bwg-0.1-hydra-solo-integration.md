@@ -26,7 +26,8 @@ scripts/verify-hydra-solo-integration.sh
 ```
 
 The macOS-arm64 runner verifies checksums, builds the exact external source with the isolated
-regtest-only patch, launches Bitcoin Core 28.1 and Hydra out of process, and executes the ignored
+regtest patch and production Job Admission patch, launches Bitcoin Core 28.1 and Hydra out of
+process, and executes the ignored
 real-integration test twice across a Hydra restart. The standard Worker traverses the real TCP
 proxy, receives subscribe, difficulty, and notify messages, submits accepted work, and observes no
 BWG extension. The test proves:
@@ -37,7 +38,7 @@ BWG extension. The test proves:
 - an accepted response is durably queued and advances the existing Gate Authority progress path
   exactly once;
 - an exact duplicate is rejected without another event;
-- a new Bitcoin tip publishes a clean job and the proxy fails an old job closed;
+- a new Bitcoin tip invalidates old tracker jobs and closes the connection before reconnect;
 - reconnect receives fresh extranonce space and another valid job; and
 - the same journey succeeds after the external Hydra process restarts over its existing store.
 
@@ -48,7 +49,8 @@ its expensive production share threshold, while the Pool Adapter independently r
 that misses the exact target Hydra assigned on the wire. The patch contains no Claimant, Work
 Challenge, Protected Action, Gate Pass, or gate-accounting concept.
 
-Ticket 18 owns the separately designed BIP 23 mainnet Job Admission patch. Network-target block
+Every released job now passes the mandatory-mainnet Reward Policy and BIP 23 gate described in
+[`bwg-0.1-mainnet-job-admission.md`](bwg-0.1-mainnet-job-admission.md). Network-target block
 submission remains on Hydra's existing fast path before share accounting. The integration closes
 the Pool Adapter outbox before submitting a valid regtest block and proves Bitcoin Core advances
 even though the proxy subsequently fails its local persistence step.
