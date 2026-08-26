@@ -440,8 +440,11 @@ fn default_pool_offer(
         mining_pool: OfferComponentIdentity {
             component_id: "p2poolv2_hydra".to_owned(),
             display_name: "Hydra / P2Pool v2".to_owned(),
-            version: "v0.12".to_owned(),
-            source_url: HttpsUrl::try_from("https://github.com/p2poolv2/p2poolv2".to_owned())?,
+            version: "v0.12.0+8eca024bde6c2de74620dce2f9cc7fb9a544c5c0".to_owned(),
+            source_url: HttpsUrl::try_from(
+                "https://github.com/p2poolv2/p2poolv2/tree/8eca024bde6c2de74620dce2f9cc7fb9a544c5c0"
+                    .to_owned(),
+            )?,
             license: "AGPL-3.0-or-later".to_owned(),
         },
         pool_adapter: OfferComponentIdentity {

@@ -13,7 +13,7 @@ use tokio::{
 
 use super::{
     MAXIMUM_STRATUM_FRAME_BYTES, PostgresAcceptedWorkOutbox, PostgresStratumSessionRegistry,
-    StratumProxyAction, StratumSession, StratumV1Error,
+    StratumProxyAction, StratumSession, StratumUpstreamAuthorization, StratumV1Error,
 };
 
 /// TCP adapter that executes one pure Stratum Session against one upstream connection.
@@ -22,6 +22,7 @@ pub struct StratumTcpProxy {
     outbox: PostgresAcceptedWorkOutbox,
     sessions: PostgresStratumSessionRegistry,
     idle_timeout: Duration,
+    maybe_upstream_authorization: Option<StratumUpstreamAuthorization>,
 }
 
 impl StratumTcpProxy {
@@ -33,6 +34,7 @@ impl StratumTcpProxy {
             outbox,
             sessions,
             idle_timeout: Duration::from_secs(90),
+            maybe_upstream_authorization: None,
         }
     }
 
@@ -48,7 +50,17 @@ impl StratumTcpProxy {
             outbox,
             sessions,
             idle_timeout,
+            maybe_upstream_authorization: None,
         })
+    }
+
+    /// Configures a Mining Pool-facing identity without exposing it to the Worker.
+    pub fn with_upstream_authorization(
+        mut self,
+        authorization: StratumUpstreamAuthorization,
+    ) -> Self {
+        self.maybe_upstream_authorization = Some(authorization);
+        self
     }
 
     pub async fn serve_one(
@@ -105,11 +117,22 @@ impl StratumTcpProxy {
                 .await?;
                 return Ok(());
             };
+            if let Some(authorization) = &self.maybe_upstream_authorization
+                && authenticated.session_id() != authorization.session_id()
+            {
+                return Err(StratumV1Error::UnknownSession);
+            }
             self.sessions
                 .bind_connection(&connection_id, authenticated.session_id())
                 .await?;
-            let mut session =
-                StratumSession::new(authenticated.into_session_config(username, secret, now)?)?;
+            let mut session_config = authenticated.into_session_config(username, secret, now)?;
+            if let Some(authorization) = &self.maybe_upstream_authorization {
+                session_config = session_config.with_upstream_authorization(
+                    authorization.username().to_owned(),
+                    authorization.secret().to_owned(),
+                )?;
+            }
+            let mut session = StratumSession::new(session_config)?;
             let _ = session.worker_frame(&subscribe, now)?;
             let subscribe_actions = session.upstream_frame(&subscribed, now)?;
             let [

@@ -10,7 +10,7 @@ use crate::{
     },
     pool_offer::{PoolSelection, PoolSelectionCommitment, verify_pool_offer_set},
     progress::{AcceptedWorkAcknowledgement, AcceptedWorkEvent, WorkSessionId},
-    stratum_v1::StratumLeaseContext,
+    stratum_v1::{StratumLeaseContext, StratumUpstreamAuthorization},
 };
 
 /// Simulated Pool Adapter interface for the future authenticated gRPC transport.
@@ -29,11 +29,41 @@ impl SimulatedPoolAdapter {
             "pool_offer_hydra_solo_v1".to_owned(),
             "1BoatSLRHtKNngkdXEeobR76b53LETtpyT".to_owned(),
         )?;
-        let proposed = self
-            .propose_pool_selection(challenge_id, &selection)
-            .await?;
+        self.consent_pool_selection_for_simulation(challenge_id, &selection)
+            .await
+    }
+
+    /// Test-harness shortcut that consents to one exact Pool Adapter-owned selection.
+    pub async fn consent_pool_selection_for_simulation(
+        &self,
+        challenge_id: &ChallengeId,
+        selection: &PoolSelection,
+    ) -> Result<PoolSelectionCommitment, AuthorityApplicationError> {
+        let proposed = self.propose_pool_selection(challenge_id, selection).await?;
         self.confirm_pool_selection(challenge_id, proposed.commitment())
             .await
+    }
+
+    /// Resolves one Pool-facing authorization from the Authority-retained session binding.
+    pub async fn upstream_authorization_for_simulation(
+        &self,
+        session_id: &WorkSessionId,
+        selection: &PoolSelection,
+        secret: String,
+    ) -> Result<StratumUpstreamAuthorization, AuthorityApplicationError> {
+        let retained = self
+            .application
+            .repository
+            .session_pool_selection(session_id)
+            .await?;
+        StratumUpstreamAuthorization::from_authority_binding(
+            &retained.challenge_id,
+            session_id.clone(),
+            selection,
+            retained.selection,
+            secret,
+        )
+        .map_err(|_| AuthorityApplicationError::InvalidUpstreamAuthorization)
     }
 
     /// Proposes an approved offer and raw payout choice while persisting only its commitment.

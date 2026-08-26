@@ -37,6 +37,9 @@ mod authority_delivery;
 mod bounds;
 #[path = "stratum_v1_proxy/credentials.rs"]
 mod credentials;
+#[path = "stratum_v1_proxy/fixtures.rs"]
+mod fixtures;
+use fixtures::{StratumJobFields, hex_target, test_lease_context, worked_nonce};
 #[path = "stratum_v1_proxy/persistence.rs"]
 mod persistence;
 #[path = "stratum_v1_proxy/retention.rs"]
@@ -168,7 +171,7 @@ fn accepted_event_keeps_the_target_bound_to_its_job() -> Result<(), Box<dyn Erro
     // Arrange
     let mut session = authorized_session()?;
     session.upstream_frame(
-        r#"{"id":null,"method":"mining.set_difficulty","params":[4]}"#,
+        r#"{"id":null,"method":"mining.set_difficulty","params":[0.000000004]}"#,
         1_000,
     )?;
     session.upstream_frame(
@@ -176,11 +179,24 @@ fn accepted_event_keeps_the_target_bound_to_its_job() -> Result<(), Box<dyn Erro
         1_000,
     )?;
     session.upstream_frame(
-        r#"{"id":null,"method":"mining.set_difficulty","params":[1]}"#,
+        r#"{"id":null,"method":"mining.set_difficulty","params":[0.000000001]}"#,
         1_001,
     )?;
+    let nonce = worked_nonce(
+        "01020304",
+        "00000001",
+        StratumJobFields::new(
+            "0000000000000000000000000000000000000000000000000000000000000000",
+            "01000000",
+            "00",
+            "20000000",
+            "1d00ffff",
+            "5f5e1000",
+        ),
+        hex_target("0ee6a3994d800000000000000000000000000000000000000000000000000000")?,
+    )?;
     session.worker_frame(
-        r#"{"id":9,"method":"mining.submit","params":["bwg-session-stale","job-diff-4","00000001","5f5e1000","abcdef01"]}"#,
+        &format!(r#"{{"id":9,"method":"mining.submit","params":["bwg-session-stale","job-diff-4","00000001","5f5e1000","{nonce}"]}}"#),
         1_001,
     )?;
 
@@ -200,7 +216,7 @@ fn accepted_event_keeps_the_target_bound_to_its_job() -> Result<(), Box<dyn Erro
     };
     assert_eq!(
         event.assigned_target_be_bytes(),
-        hex_target("000000003fffc000000000000000000000000000000000000000000000000000")?
+        hex_target("0ee6a3994d800000000000000000000000000000000000000000000000000000")?
     );
     assert_eq!(lease_context.last_monotonic_milliseconds(), 1_000);
     Ok(())
@@ -422,7 +438,7 @@ fn authorized_session() -> Result<StratumSession, Box<dyn Error>> {
     };
     let _ = session.extranonce_reserved(token)?;
     session.upstream_frame(
-        r#"{"id":null,"method":"mining.set_difficulty","params":[1]}"#,
+        r#"{"id":null,"method":"mining.set_difficulty","params":[0.000000001]}"#,
         1_000,
     )?;
     Ok(session)
@@ -481,16 +497,29 @@ fn prepared_submit_session_with_context(
     };
     let _ = session.extranonce_reserved(token)?;
     session.upstream_frame(
-        r#"{"id":null,"method":"mining.set_difficulty","params":[1]}"#,
+        r#"{"id":null,"method":"mining.set_difficulty","params":[0.000000001]}"#,
         1_000,
     )?;
     session.upstream_frame(
         r#"{"id":null,"method":"mining.notify","params":["job-cross","0000000000000000000000000000000000000000000000000000000000000000","01000000","00",[],"20000000","1d00ffff","5f5e1000",true]}"#,
         1_000,
     )?;
+    let nonce = worked_nonce(
+        extranonce1,
+        "00000001",
+        StratumJobFields::new(
+            "0000000000000000000000000000000000000000000000000000000000000000",
+            "01000000",
+            "00",
+            "20000000",
+            "1d00ffff",
+            "5f5e1000",
+        ),
+        hex_target("3b9a8e6536000000000000000000000000000000000000000000000000000000")?,
+    )?;
     session.worker_frame(
         &format!(
-            r#"{{"id":{request_id},"method":"mining.submit","params":["{username}","job-cross","00000001","5f5e1000","abcdef01"]}}"#
+            r#"{{"id":{request_id},"method":"mining.submit","params":["{username}","job-cross","00000001","5f5e1000","{nonce}"]}}"#
         ),
         1_001,
     )?;
@@ -535,7 +564,7 @@ async fn simulated_upstream(
     write_line(&mut write, r#"{"id":2,"result":true,"error":null}"#).await?;
     write_line(
         &mut write,
-        r#"{"id":null,"method":"mining.set_difficulty","params":[4]}"#,
+        r#"{"id":null,"method":"mining.set_difficulty","params":[0.000000001]}"#,
     )
     .await?;
     write_line(
@@ -595,22 +624,4 @@ impl AcceptedWorkSink for RecordingSink {
         }
         Ok(())
     }
-}
-
-fn hex_target(value: &str) -> Result<[u8; 32], Box<dyn Error>> {
-    let bytes = (0..value.len())
-        .step_by(2)
-        .map(|index| u8::from_str_radix(&value[index..index + 2], 16))
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(bytes.try_into().map_err(|_| "target must be 32 bytes")?)
-}
-
-fn test_lease_context() -> Result<StratumLeaseContext, StratumV1Error> {
-    StratumLeaseContext::new(
-        "00000000-0000-4000-8000-000000000099".to_owned(),
-        "boot_stratum_test".to_owned(),
-        0,
-        20_000,
-        60_000,
-    )
 }

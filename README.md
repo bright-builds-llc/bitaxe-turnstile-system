@@ -41,6 +41,9 @@ The Rust Stratum V1 Pool Adapter module forwards standard Worker traffic, durabl
 events before Worker acknowledgement, and retries Gate Authority delivery from its context-local
 PostgreSQL outbox; see
 [`docs/protocol/bwg-0.1-stratum-v1-proxy.md`](docs/protocol/bwg-0.1-stratum-v1-proxy.md).
+The pinned out-of-process Hydra/Bitcoin Core acceptance profile and reproducible runner are
+documented in
+[`docs/protocol/bwg-0.1-hydra-solo-integration.md`](docs/protocol/bwg-0.1-hydra-solo-integration.md).
 
 ## Principles
 

@@ -55,6 +55,7 @@ impl PoolSelection {
         }
     }
 
+    /// Computes the commitment that binds this local choice to one Work Challenge.
     pub(crate) fn commitment(&self, challenge_id: &str) -> String {
         let mut input = b"BWG/0.1 pool selection commitment\0".to_vec();
         input.extend_from_slice(challenge_id.as_bytes());

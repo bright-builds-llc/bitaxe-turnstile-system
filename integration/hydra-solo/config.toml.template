@@ -1,0 +1,54 @@
+[network]
+listen_address = "/ip4/127.0.0.1/tcp/__P2P_PORT__"
+dial_peers = []
+max_pending_incoming = 10
+max_pending_outgoing = 10
+max_established_incoming = 10
+max_established_outgoing = 10
+max_established_per_peer = 1
+max_workbase_per_second = 10
+max_userworkbase_per_second = 10
+max_miningshare_per_second = 100
+max_inventory_per_second = 100
+max_transaction_per_second = 100
+max_requests_per_second = 100
+dial_timeout_secs = 5
+
+[store]
+path = "__STORE_PATH__"
+background_task_frequency_hours = 24
+pplns_ttl_days = 7
+
+[stratum]
+hostname = "127.0.0.1"
+port = __STRATUM_PORT__
+start_difficulty = 1
+minimum_difficulty = 1
+maximum_difficulty = 4
+solo_address = "__PAYOUT_ADDRESS__"
+bootstrap_address = "__PAYOUT_ADDRESS__"
+zmqpubhashblock = "tcp://127.0.0.1:__ZMQ_PORT__"
+network = "regtest"
+version_mask = "1fffe000"
+difficulty_multiplier = 1.0
+# Test-only: Hydra accepts the scaled CPU-solvable shares; the Pool Adapter still verifies the
+# exact target advertised on the standard Stratum wire before recording accepted work.
+ignore_difficulty = true
+pool_signature = "BWG-Hydra"
+max_connections = 16
+wait_for_chain_sync = false
+mode = "hydrapool"
+
+[bitcoinrpc]
+url = "http://127.0.0.1:__RPC_PORT__"
+username = "p2pool"
+password = "p2pool"
+
+[logging]
+console = true
+level = "info"
+stats_dir = "__STATS_PATH__"
+
+[api]
+hostname = "127.0.0.1"
+port = __API_PORT__

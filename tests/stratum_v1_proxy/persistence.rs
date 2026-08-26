@@ -264,9 +264,22 @@ async fn tcp_proxy_forwards_standard_frames_and_persists_before_accepted_respons
             .await?
             .is_some_and(|line| line.contains("job-tcp-01"))
     );
+    let nonce = worked_nonce(
+        "01020304",
+        "00000001",
+        StratumJobFields::new(
+            "0000000000000000000000000000000000000000000000000000000000000000",
+            "01000000",
+            "00",
+            "20000000",
+            "1d00ffff",
+            "5f5e1000",
+        ),
+        hex_target("3b9a8e6536000000000000000000000000000000000000000000000000000000")?,
+    )?;
     write_line(
         &mut worker_write,
-        &format!(r#"{{"id":3,"method":"mining.submit","params":["{username}","job-tcp-01","00000001","5f5e1000","abcdef01"]}}"#),
+        &format!(r#"{{"id":3,"method":"mining.submit","params":["{username}","job-tcp-01","00000001","5f5e1000","{nonce}"]}}"#),
     )
     .await?;
     let accepted = worker_lines

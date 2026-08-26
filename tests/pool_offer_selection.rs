@@ -82,6 +82,14 @@ async fn challenge_discloses_one_authority_signed_solo_direct_payout_offer()
     assert!(!offer.reward_policy().creates_custodial_balance());
     assert!(offer.payout_requirements().selection_required());
     assert!(offer.payout_requirements().ephemeral_by_default());
+    assert_eq!(
+        offer.mining_pool().version(),
+        "v0.12.0+8eca024bde6c2de74620dce2f9cc7fb9a544c5c0"
+    );
+    assert_eq!(
+        offer.mining_pool().source_url(),
+        "https://github.com/p2poolv2/p2poolv2/tree/8eca024bde6c2de74620dce2f9cc7fb9a544c5c0"
+    );
     assert_eq!(offer.mining_pool().license(), "AGPL-3.0-or-later");
     assert_eq!(offer.pool_adapter().license(), "MIT");
     assert!(offer.privacy_terms_url().starts_with("https://"));
@@ -366,6 +374,67 @@ async fn consented_pool_selection_remains_locked_after_authority_restart()
     ));
     assert!(session.is_ok());
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn pool_facing_authorization_requires_the_authority_retained_session_selection()
+-> Result<(), Box<dyn Error>> {
+    // Arrange
+    let database = PostgresTestDatabase::start().await?;
+    let application =
+        AuthorityApplication::connect_postgres(authority_config()?, database.database_url())
+            .await?;
+    let adapter = application.simulated_pool_adapter();
+    let authority_url = spawn_http(authority::router(application)).await?;
+    let challenge = issue_challenge(&authority_url, "action_pool_authorization_01").await?;
+    let challenge_id = ChallengeId::try_from(
+        challenge["challenge_id"]
+            .as_str()
+            .ok_or("challenge needs an identifier")?
+            .to_owned(),
+    )?;
+    let session_id = WorkSessionId::try_from("session_pool_authorization_01".to_owned())?;
+    let retained_selection = PoolSelection::bitcoin_address(
+        "pool_offer_hydra_solo_v1".to_owned(),
+        "1BoatSLRHtKNngkdXEeobR76b53LETtpyT".to_owned(),
+    )?;
+    adapter
+        .consent_pool_selection_for_simulation(&challenge_id, &retained_selection)
+        .await?;
+    adapter
+        .register_session(&challenge_id, session_id.clone())
+        .await?;
+    let substituted_selection = PoolSelection::bitcoin_address(
+        "pool_offer_hydra_solo_v1".to_owned(),
+        "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy".to_owned(),
+    )?;
+
+    // Act
+    let authorized = adapter
+        .upstream_authorization_for_simulation(&session_id, &retained_selection, "x".to_owned())
+        .await?;
+    let substituted = adapter
+        .upstream_authorization_for_simulation(&session_id, &substituted_selection, "x".to_owned())
+        .await;
+    let unknown_session = adapter
+        .upstream_authorization_for_simulation(
+            &WorkSessionId::try_from("session_pool_authorization_unknown".to_owned())?,
+            &retained_selection,
+            "x".to_owned(),
+        )
+        .await;
+
+    // Assert
+    assert_eq!(authorized.payout_commitment().len(), 64);
+    assert!(matches!(
+        substituted,
+        Err(AuthorityApplicationError::InvalidUpstreamAuthorization)
+    ));
+    assert!(matches!(
+        unknown_session,
+        Err(AuthorityApplicationError::UnknownWorkSession)
+    ));
     Ok(())
 }
 

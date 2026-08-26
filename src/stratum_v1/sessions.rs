@@ -266,11 +266,15 @@ impl AuthenticatedStratumSession {
         if now_unix_seconds >= self.expires_at_unix_seconds {
             return Err(StratumV1Error::ExpiredCredentials);
         }
+        let upstream_username = username.clone();
+        let upstream_secret = secret.clone();
         Ok(StratumSessionConfig {
             session_id: self.session_id,
             lease_context: self.lease_context,
             username,
             secret,
+            upstream_username,
+            upstream_secret,
             issued_at_unix_seconds: self.issued_at_unix_seconds,
             expires_at_unix_seconds: self.expires_at_unix_seconds,
         })

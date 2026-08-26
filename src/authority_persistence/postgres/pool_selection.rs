@@ -2,12 +2,32 @@ use sqlx::{PgPool, Row as _};
 
 use super::unix_seconds_to_i64;
 use crate::{
-    authority_persistence::AuthorityPersistenceError,
+    authority_persistence::{AuthorityPersistenceError, PersistedSessionPoolSelection},
     challenge::ChallengeId,
     lifecycle::{ChallengeLifecycleCommand, ChallengeLifecycleState, apply_challenge_command},
     pool_offer::PoolSelectionCommitment,
     progress::WorkSessionId,
 };
+
+pub(super) async fn session_pool_selection(
+    pool: &PgPool,
+    session_id: &WorkSessionId,
+) -> Result<PersistedSessionPoolSelection, AuthorityPersistenceError> {
+    let maybe_row = sqlx::query(
+        "SELECT challenge_id, pool_offer_id, payout_commitment
+         FROM gate_authority.work_sessions WHERE session_id = $1",
+    )
+    .bind(session_id.as_str())
+    .fetch_optional(pool)
+    .await?;
+    let Some(row) = maybe_row else {
+        return Err(AuthorityPersistenceError::UnknownWorkSession);
+    };
+    Ok(PersistedSessionPoolSelection {
+        challenge_id: ChallengeId::try_from(row.try_get::<String, _>("challenge_id")?)?,
+        selection: persisted_selection(&row)?,
+    })
+}
 
 pub(super) async fn insert_work_session(
     pool: &PgPool,

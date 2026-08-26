@@ -1,0 +1,136 @@
+diff --git a/p2poolv2_config/src/lib.rs b/p2poolv2_config/src/lib.rs
+index 20f2b57..8263d9d 100644
+--- a/p2poolv2_config/src/lib.rs
++++ b/p2poolv2_config/src/lib.rs
+@@ -41,6 +41,9 @@ pub fn parse_address(address: &str, network: Network) -> Result<Address, ConfigE
+         message: format!("Invalid address: {error}"),
+     })?;
+ 
++    if network == Network::Regtest {
++        return Ok(parsed_address.assume_checked());
++    }
+     parsed_address
+         .require_network(network)
+         .map_err(|_| ConfigError {
+diff --git a/p2poolv2_lib/src/shares/genesis/mod.rs b/p2poolv2_lib/src/shares/genesis/mod.rs
+index d6ecfe4..f202e5a 100644
+--- a/p2poolv2_lib/src/shares/genesis/mod.rs
++++ b/p2poolv2_lib/src/shares/genesis/mod.rs
+@@ -45,6 +45,13 @@ const SIGNET_GENESIS_DATA: GenesisData = GenesisData {
+     timestamp: 1776855600,
+ };
+ 
++const REGTEST_GENESIS_DATA: GenesisData = GenesisData {
++    public_key: "02ac493f2130ca56cb5c3a559860cef9a84f90b5a85dfe4ec6e6067eeee17f4d2d",
++    bitcoin_block_hex: include!("regtest.rs"),
++    bitcoin_height: 0,
++    timestamp: 1296688602,
++};
++
+ const TESTNET4_GENESIS_DATA: GenesisData = GenesisData {
+     public_key: "02ac493f2130ca56cb5c3a559860cef9a84f90b5a85dfe4ec6e6067eeee17f4d2d",
+     // for bitcoin blockhash 00000000000000013c0a1f4152b458118ed666282e6235d744bf2a5d66ecf022
+@@ -67,6 +74,7 @@ const MAINNET_GENESIS_DATA: GenesisData = GenesisData {
+ pub fn genesis_data(network: bitcoin::Network) -> Result<GenesisData, Box<dyn Error>> {
+     match network {
+         bitcoin::Network::Signet => Ok(SIGNET_GENESIS_DATA),
++        bitcoin::Network::Regtest => Ok(REGTEST_GENESIS_DATA),
+         bitcoin::Network::Testnet4 => Ok(TESTNET4_GENESIS_DATA),
+         bitcoin::Network::Bitcoin => Ok(MAINNET_GENESIS_DATA),
+         _ => Err("Unsupported network".into()),
+diff --git a/p2poolv2_lib/src/shares/share_block/mod.rs b/p2poolv2_lib/src/shares/share_block/mod.rs
+index b815aab..4166dee 100644
+--- a/p2poolv2_lib/src/shares/share_block/mod.rs
++++ b/p2poolv2_lib/src/shares/share_block/mod.rs
+@@ -332,8 +332,9 @@ impl ShareBlock {
+         assert!(
+             network == bitcoin::Network::Signet
+                 || network == bitcoin::Network::Bitcoin
+-                || network == bitcoin::Network::Testnet4,
+-            "Network Testnet and Regtest not yet supported"
++                || network == bitcoin::Network::Testnet4
++                || network == bitcoin::Network::Regtest,
++            "Network Testnet not yet supported"
+         );
+         let genesis_data = genesis::genesis_data(network).unwrap();
+         ShareBlock::build_genesis(&genesis_data, network)
+diff --git a/p2poolv2_lib/src/stratum/difficulty_adjuster/mod.rs b/p2poolv2_lib/src/stratum/difficulty_adjuster/mod.rs
+index 931fbee..bd13804 100644
+--- a/p2poolv2_lib/src/stratum/difficulty_adjuster/mod.rs
++++ b/p2poolv2_lib/src/stratum/difficulty_adjuster/mod.rs
+@@ -37,10 +37,10 @@ pub const MIN_DRR_THRESHOLD: f64 = 0.15;
+ pub const MAX_DRR_THRESHOLD: f64 = 0.4;
+ 
+ /// The number of shares required before adjusting difficulty
+-pub const MIN_SHARES_BEFORE_ADJUST: u32 = 72;
++pub const MIN_SHARES_BEFORE_ADJUST: u32 = 2;
+ 
+ /// The minimum time in seconds between difficulty adjustments
+-pub const MIN_SECONDS_BEFORE_ADJUST: u64 = 240; // 4 minutes
++pub const MIN_SECONDS_BEFORE_ADJUST: u64 = 0;
+ 
+ /// Time constant for the bias calculation (in seconds)
+ pub const BIAS_TIME_CONSTANT: f64 = 300.0; // 5 minutes
+@@ -268,7 +268,7 @@ impl DifficultyAdjusterTrait for DifficultyAdjuster {
+         // Check if we should adjust difficulty
+         let should_adjust = (self.share_submission_difficulty_counter >= MIN_SHARES_BEFORE_ADJUST
+             || time_since_last_difficulty_change > MIN_SECONDS_BEFORE_ADJUST as f64)
+-            && time_since_first_share > 30.0; // Wait at least 30 seconds since first share
++            && time_since_first_share > 0.0;
+ 
+         debug!(
+             "Share submission counter: {}, should adjust: {}",
+diff --git a/p2poolv2_lib/src/stratum/messages.rs b/p2poolv2_lib/src/stratum/messages.rs
+index 103abed..bb87d96 100644
+--- a/p2poolv2_lib/src/stratum/messages.rs
++++ b/p2poolv2_lib/src/stratum/messages.rs
+@@ -193,7 +193,7 @@ pub struct Notify {
+ pub struct SetDifficultyNotification<'a> {
+     #[serde(borrow)]
+     pub method: Cow<'a, str>,
+-    pub params: Vec<u64>,
++    pub params: Vec<f64>,
+ }
+ 
+ /// NotifyParams represents the parameters for the mining.notify message
+@@ -427,7 +427,7 @@ impl SetDifficultyNotification<'_> {
+     pub fn new(difficulty: u64) -> Self {
+         SetDifficultyNotification {
+             method: Cow::Borrowed("mining.set_difficulty"),
+-            params: vec![difficulty],
++            params: vec![difficulty as f64 / 10_000_000_000.0],
+         }
+     }
+ }
+diff --git a/p2poolv2_lib/src/stratum/validate_username.rs b/p2poolv2_lib/src/stratum/validate_username.rs
+index 3e3b445..b8a7cac 100644
+--- a/p2poolv2_lib/src/stratum/validate_username.rs
++++ b/p2poolv2_lib/src/stratum/validate_username.rs
+@@ -81,11 +81,15 @@ pub fn validate(
+         })?;
+ 
+         // Verify the network, return error on failure
+-        let checked = address.require_network(network).map_err(|_| {
+-            UsernameValidationError::InvalidAddress(format!(
+-                "Expected an address for network {network}",
+-            ))
+-        })?;
++        let checked = if network == bitcoin::Network::Regtest {
++            address.assume_checked()
++        } else {
++            address.require_network(network).map_err(|_| {
++                UsernameValidationError::InvalidAddress(format!(
++                    "Expected an address for network {network}",
++                ))
++            })?
++        };
+         Some(checked)
+     } else {
+         None
+diff --git a/p2poolv2_lib/src/shares/genesis/regtest.rs b/p2poolv2_lib/src/shares/genesis/regtest.rs
+new file mode 100644
+index 0000000..989aae7
+--- /dev/null
++++ b/p2poolv2_lib/src/shares/genesis/regtest.rs
+@@ -0,0 +1 @@
++"0100000000000000000000000000000000000000000000000000000000000000000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4adae5494dffff7f20020000000101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff4d04ffff001d0104455468652054696d65732030332f4a616e2f32303039204368616e63656c6c6f72206f6e206272696e6b206f66207365636f6e64206261696c6f757420666f722062616e6b73ffffffff0100f2052a01000000434104678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5fac00000000"

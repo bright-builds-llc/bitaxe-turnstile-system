@@ -43,6 +43,12 @@
   Admission port between exact per-connection candidate construction and tracker/socket publication;
   fresh BIP 23 JSON-null acceptance is fail-closed, while network-valid block submission remains
   independent of BWG accounting.
+- [Ticket 17](./issues/17-hydra-solo-integration.md) integrated the exact pinned external
+  P2Poolv2/Hydra and Bitcoin Core sources in solo direct-payout mode: Authority-retained consent
+  mints the Pool-facing payout identity, exact target-qualified Stratum work advances durable
+  deduplicated progress, byte-level coinbase evidence proves full selected-destination allocation,
+  and complete pre/post-restart journeys cover vardiff, rejection, reconnect, stale cleanup, and
+  network-block submission ahead of local persistence.
 
 ## Persistence boundary split
 

@@ -44,8 +44,9 @@ export const poolOffer: PoolOfferDisclosure = {
   miningPool: {
     componentId: "p2poolv2_hydra",
     displayName: "Hydra / P2Pool v2",
-    version: "v0.12",
-    sourceUrl: "https://github.com/p2poolv2/p2poolv2",
+    version: "v0.12.0+8eca024bde6c2de74620dce2f9cc7fb9a544c5c0",
+    sourceUrl:
+      "https://github.com/p2poolv2/p2poolv2/tree/8eca024bde6c2de74620dce2f9cc7fb9a544c5c0",
     license: "AGPL-3.0-or-later",
   },
   poolAdapter: {

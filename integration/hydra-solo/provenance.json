@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "bwg-hydra-solo-provenance-v1",
+  "p2poolv2": {
+    "version": "0.12.0",
+    "commit": "8eca024bde6c2de74620dce2f9cc7fb9a544c5c0",
+    "sourceUrl": "https://github.com/p2poolv2/p2poolv2/releases/download/v0.12.0/source.tar.gz",
+    "sourceSha256": "f95544a942ba9d91fdef1f096662e8d405cd069cb01db2cb9b34dbfc5f0928e4",
+    "license": "AGPL-3.0-or-later",
+    "regtestPatch": "p2poolv2-v0.12.0-regtest.patch",
+    "regtestPatchSha256": "3da16af53a78b3c74b0097e7f4e6903cc9b1111fdd4972de5f1ed10cecfc5aa7"
+  },
+  "bitcoinCore": {
+    "version": "28.1",
+    "sourceUrl": "https://bitcoincore.org/bin/bitcoin-core-28.1/bitcoin-28.1-arm64-apple-darwin.tar.gz",
+    "sha256": "abf4d2f7ebda6284e2246bce3591bcf161c114e370c0443ccc049b2728dc7e20",
+    "license": "MIT"
+  }
+}

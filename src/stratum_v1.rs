@@ -22,7 +22,9 @@ pub use delivery::{
 pub use postgres::{ClaimedAcceptedWork, PersistedAcceptedWork, PostgresAcceptedWorkOutbox};
 pub use retention::{PoolAdapterRetentionCounts, PostgresPoolAdapterRetention};
 pub use sessions::{AuthenticatedStratumSession, PostgresStratumSessionRegistry};
-use target::{classify_network_target, submitted_header, target_for_difficulty};
+use target::{
+    classify_network_target, meets_assigned_target, submitted_header, target_for_difficulty,
+};
 pub use tcp::StratumTcpProxy;
 
 pub(crate) const MAXIMUM_STRATUM_FRAME_BYTES: usize = 16 * 1024;
@@ -166,6 +168,7 @@ impl StratumSession {
             return Err(StratumV1Error::FrameTooLarge);
         }
         let message = parse_object(frame)?;
+        let mut upstream_frame = frame.to_owned();
         let maybe_request = match message.get("method").and_then(Value::as_str) {
             Some("mining.subscribe") => Some(OutstandingRequest::Subscribe),
             Some("mining.authorize") => {
@@ -180,6 +183,15 @@ impl StratumSession {
                     return Ok(vec![StratumProxyAction::ForwardWorker(format!(
                         "{{\"id\":{id},\"result\":false,\"error\":null}}"
                     ))]);
+                }
+                if self.config.upstream_username != self.config.username
+                    || self.config.upstream_secret != self.config.secret
+                {
+                    upstream_frame = rewrite_upstream_identity(
+                        &message,
+                        &self.config.upstream_username,
+                        Some(&self.config.upstream_secret),
+                    )?;
                 }
                 Some(OutstandingRequest::Authorize)
             }
@@ -227,6 +239,10 @@ impl StratumSession {
                     .get(4)
                     .and_then(Value::as_str)
                     .ok_or(StratumV1Error::InvalidFrame)?;
+                if self.config.upstream_username != self.config.username {
+                    upstream_frame =
+                        rewrite_upstream_identity(&message, &self.config.upstream_username, None)?;
+                }
                 Some(OutstandingRequest::Submit(Box::new(PendingSubmission {
                     request: frame.to_owned(),
                     job: job.clone(),
@@ -254,7 +270,7 @@ impl StratumSession {
             }
             self.outstanding_requests.insert(id, request);
         }
-        Ok(vec![StratumProxyAction::ForwardUpstream(frame.to_owned())])
+        Ok(vec![StratumProxyAction::ForwardUpstream(upstream_frame)])
     }
 
     pub fn upstream_frame(
@@ -394,6 +410,9 @@ impl StratumSession {
         )?;
         let network_target_outcome =
             classify_network_target(&header, &submission.job.network_bits)?;
+        if !meets_assigned_target(&header, &submission.target) {
+            return Err(StratumV1Error::ShareBelowAssignedTarget);
+        }
         let event_digest = digest_hex(
             b"BWG/0.1 accepted Stratum submission event\0",
             self.config.session_id.as_str(),
@@ -467,6 +486,25 @@ fn message_id(message: &serde_json::Map<String, Value>) -> Result<String, Stratu
     serde_json::to_string(id).map_err(|_| StratumV1Error::InvalidFrame)
 }
 
+fn rewrite_upstream_identity(
+    message: &serde_json::Map<String, Value>,
+    username: &str,
+    maybe_secret: Option<&str>,
+) -> Result<String, StratumV1Error> {
+    let mut rewritten = message.clone();
+    let params = rewritten
+        .get_mut("params")
+        .and_then(Value::as_array_mut)
+        .ok_or(StratumV1Error::InvalidFrame)?;
+    let first = params.first_mut().ok_or(StratumV1Error::InvalidFrame)?;
+    *first = Value::String(username.to_owned());
+    if let Some(secret) = maybe_secret {
+        let second = params.get_mut(1).ok_or(StratumV1Error::InvalidFrame)?;
+        *second = Value::String(secret.to_owned());
+    }
+    serde_json::to_string(&Value::Object(rewritten)).map_err(|_| StratumV1Error::InvalidFrame)
+}
+
 fn digest_hex(domain: &[u8], session_id: &str, request: &str) -> String {
     let mut input = domain.to_vec();
     input.extend_from_slice(session_id.as_bytes());
@@ -521,6 +559,8 @@ pub enum StratumV1Error {
     FrameTooLarge,
     #[error("Stratum Session state exceeds the configured capacity")]
     CapacityExceeded,
+    #[error("upstream accepted a share below the assigned Stratum target")]
+    ShareBelowAssignedTarget,
     #[error("accepted-work outbox replay conflicts with its durable event")]
     ConflictingOutboxReplay,
     #[error("Stratum Session replay conflicts with its durable credentials")]
@@ -555,4 +595,5 @@ pub enum StratumV1Error {
 }
 pub use credentials::{
     StratumCredentialIssuer, StratumLeaseContext, StratumSessionConfig, StratumSessionCredentials,
+    StratumUpstreamAuthorization,
 };

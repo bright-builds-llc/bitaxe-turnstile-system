@@ -2,9 +2,64 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use ring::hmac;
 
 use super::StratumV1Error;
-use crate::progress::WorkSessionId;
+use crate::{
+    challenge::ChallengeId,
+    pool_offer::{PoolSelection, PoolSelectionCommitment},
+    progress::WorkSessionId,
+};
 
 const MAXIMUM_SESSION_CREDENTIAL_SECONDS: u64 = 60;
+
+/// Pool-facing authorization bound to one Work Session and consented payout commitment.
+#[derive(Clone)]
+pub struct StratumUpstreamAuthorization {
+    session_id: WorkSessionId,
+    selection: PoolSelectionCommitment,
+    username: String,
+    secret: String,
+}
+
+impl StratumUpstreamAuthorization {
+    pub(crate) fn from_authority_binding(
+        challenge_id: &ChallengeId,
+        session_id: WorkSessionId,
+        selection: &PoolSelection,
+        retained_selection: PoolSelectionCommitment,
+        secret: String,
+    ) -> Result<Self, StratumV1Error> {
+        validate_upstream_authorization(selection.payout_destination(), &secret)?;
+        if selection.payout_destination_type() != "bitcoin_mainnet_address" {
+            return Err(StratumV1Error::InvalidSessionConfig);
+        }
+        if selection.offer_id() != retained_selection.pool_offer_id()
+            || selection.commitment(challenge_id.as_str()) != retained_selection.commitment()
+        {
+            return Err(StratumV1Error::InvalidSessionConfig);
+        }
+        Ok(Self {
+            session_id,
+            selection: retained_selection,
+            username: selection.payout_destination().to_owned(),
+            secret,
+        })
+    }
+
+    pub fn payout_commitment(&self) -> &str {
+        self.selection.commitment()
+    }
+
+    pub(super) fn session_id(&self) -> &WorkSessionId {
+        &self.session_id
+    }
+
+    pub(super) fn username(&self) -> &str {
+        &self.username
+    }
+
+    pub(super) fn secret(&self) -> &str {
+        &self.secret
+    }
+}
 
 /// Deterministic issuer for opaque response-loss-safe Stratum Session credentials.
 pub struct StratumCredentialIssuer {
@@ -98,11 +153,15 @@ impl StratumSessionCredentials {
     }
 
     pub fn into_session_config(self) -> StratumSessionConfig {
+        let upstream_username = self.username.clone();
+        let upstream_secret = self.secret.clone();
         StratumSessionConfig {
             session_id: self.session_id,
             lease_context: self.lease_context,
             username: self.username,
             secret: self.secret,
+            upstream_username,
+            upstream_secret,
             issued_at_unix_seconds: self.issued_at_unix_seconds,
             expires_at_unix_seconds: self.expires_at_unix_seconds,
         }
@@ -115,6 +174,8 @@ pub struct StratumSessionConfig {
     pub(super) lease_context: StratumLeaseContext,
     pub(super) username: String,
     pub(super) secret: String,
+    pub(super) upstream_username: String,
+    pub(super) upstream_secret: String,
     pub(super) issued_at_unix_seconds: u64,
     pub(super) expires_at_unix_seconds: u64,
 }
@@ -134,6 +195,8 @@ impl StratumSessionConfig {
         }
         Ok(Self {
             session_id,
+            upstream_username: username.clone(),
+            upstream_secret: secret.clone(),
             username,
             secret,
             issued_at_unix_seconds: now_unix_seconds,
@@ -146,6 +209,28 @@ impl StratumSessionConfig {
             lease_context,
         })
     }
+
+    /// Replaces only the Mining Pool-facing authorization identity.
+    pub(super) fn with_upstream_authorization(
+        mut self,
+        username: String,
+        secret: String,
+    ) -> Result<Self, StratumV1Error> {
+        validate_upstream_authorization(&username, &secret)?;
+        self.upstream_username = username;
+        self.upstream_secret = secret;
+        Ok(self)
+    }
+}
+
+pub(super) fn validate_upstream_authorization(
+    username: &str,
+    secret: &str,
+) -> Result<(), StratumV1Error> {
+    if username.is_empty() || username.len() > 256 || secret.is_empty() || secret.len() > 256 {
+        return Err(StratumV1Error::InvalidSessionConfig);
+    }
+    Ok(())
 }
 
 /// Exact Authority-issued lease and Worker continuity values carried with accepted work.

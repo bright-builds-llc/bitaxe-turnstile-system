@@ -28,6 +28,11 @@ pub(crate) struct PersistedAcceptance {
     pub acknowledgement: AcceptedWorkAcknowledgement,
 }
 
+pub(crate) struct PersistedSessionPoolSelection {
+    pub challenge_id: ChallengeId,
+    pub selection: PoolSelectionCommitment,
+}
+
 pub(crate) struct ClaimedIssuance {
     pub challenge_id: ChallengeId,
     pub algorithm: String,
@@ -60,6 +65,11 @@ pub(crate) trait AuthorityRepository: Send + Sync {
         session_id: &WorkSessionId,
         now: u64,
     ) -> Result<(), AuthorityPersistenceError>;
+
+    async fn session_pool_selection(
+        &self,
+        session_id: &WorkSessionId,
+    ) -> Result<PersistedSessionPoolSelection, AuthorityPersistenceError>;
 
     async fn propose_pool_selection(
         &self,

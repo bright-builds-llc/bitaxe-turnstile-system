@@ -13,8 +13,7 @@ fn difficulty_one_target() -> [u8; 32] {
 
 pub(super) fn target_for_difficulty(difficulty: &Value) -> Result<[u8; 32], StratumV1Error> {
     let (numerator, denominator) = decimal_ratio(difficulty)?;
-    let scaled = multiply_target(difficulty_one_target(), denominator)?;
-    divide_target(scaled, numerator)
+    scale_target(difficulty_one_target(), denominator, numerator)
 }
 
 fn decimal_ratio(value: &Value) -> Result<(u64, u64), StratumV1Error> {
@@ -28,7 +27,7 @@ fn decimal_ratio(value: &Value) -> Result<(u64, u64), StratumV1Error> {
             let (mantissa, exponent) = text.split_at(index);
             (mantissa, exponent[1..].parse::<i32>().unwrap_or(i32::MIN))
         });
-    if !(-9..=9).contains(&exponent) {
+    if !(-18..=18).contains(&exponent) {
         return Err(StratumV1Error::UnsupportedDifficulty);
     }
     let (whole, maybe_fraction) = mantissa
@@ -36,7 +35,7 @@ fn decimal_ratio(value: &Value) -> Result<(u64, u64), StratumV1Error> {
         .map_or((mantissa, None), |(whole, fraction)| {
             (whole, Some(fraction))
         });
-    if whole.starts_with('-') || maybe_fraction.is_some_and(|fraction| fraction.len() > 9) {
+    if whole.starts_with('-') || maybe_fraction.is_some_and(|fraction| fraction.len() > 18) {
         return Err(StratumV1Error::UnsupportedDifficulty);
     }
     let fraction = maybe_fraction.unwrap_or("");
@@ -80,33 +79,39 @@ fn greatest_common_divisor(mut left: u64, mut right: u64) -> u64 {
     left
 }
 
-fn multiply_target(target: [u8; 32], multiplier: u64) -> Result<[u8; 32], StratumV1Error> {
-    let mut product = [0_u8; 32];
-    let mut carry = 0_u128;
-    for (index, byte) in target.into_iter().enumerate().rev() {
-        let value = u128::from(byte) * u128::from(multiplier) + carry;
-        product[index] = value as u8;
-        carry = value >> 8;
-    }
-    if carry != 0 {
-        return Err(StratumV1Error::UnsupportedDifficulty);
-    }
-    Ok(product)
-}
-
-fn divide_target(target: [u8; 32], divisor: u64) -> Result<[u8; 32], StratumV1Error> {
+fn scale_target(
+    target: [u8; 32],
+    multiplier: u64,
+    divisor: u64,
+) -> Result<[u8; 32], StratumV1Error> {
     if divisor == 0 {
         return Err(StratumV1Error::UnsupportedDifficulty);
     }
-    let mut quotient = [0_u8; 32];
+    let mut product = [0_u8; 40];
+    let mut carry = 0_u128;
+    for (index, byte) in target.into_iter().enumerate().rev() {
+        let value = u128::from(byte) * u128::from(multiplier) + carry;
+        product[index + 8] = value as u8;
+        carry = value >> 8;
+    }
+    for byte in product[..8].iter_mut().rev() {
+        *byte = carry as u8;
+        carry >>= 8;
+    }
+    let mut quotient = [0_u8; 40];
     let mut remainder = 0_u128;
-    for (index, byte) in target.into_iter().enumerate() {
+    for (index, byte) in product.into_iter().enumerate() {
         let dividend = (remainder << 8) | u128::from(byte);
         quotient[index] = u8::try_from(dividend / u128::from(divisor))
             .map_err(|_| StratumV1Error::UnsupportedDifficulty)?;
         remainder = dividend % u128::from(divisor);
     }
-    Ok(quotient)
+    if quotient[..8].iter().any(|byte| *byte != 0) {
+        return Ok([u8::MAX; 32]);
+    }
+    quotient[8..]
+        .try_into()
+        .map_err(|_| StratumV1Error::UnsupportedDifficulty)
 }
 
 pub(super) fn submitted_header(
@@ -129,14 +134,20 @@ pub(super) fn submitted_header(
     }
     let mut header = Vec::with_capacity(80);
     header.extend(reverse_fixed(decode_fixed_hex::<4>(&job.version)?));
-    header.extend(reverse_fixed(decode_fixed_hex::<32>(
-        &job.previous_block_hash,
-    )?));
-    header.extend(reverse_fixed(merkle_root));
+    header.extend(stratum_previous_block_bytes(&job.previous_block_hash)?);
+    header.extend(merkle_root);
     header.extend(reverse_fixed(decode_fixed_hex::<4>(ntime)?));
     header.extend(reverse_fixed(decode_fixed_hex::<4>(&job.network_bits)?));
     header.extend(reverse_fixed(decode_fixed_hex::<4>(nonce)?));
     header.try_into().map_err(|_| StratumV1Error::InvalidFrame)
+}
+
+fn stratum_previous_block_bytes(value: &str) -> Result<[u8; 32], StratumV1Error> {
+    let mut bytes = decode_fixed_hex::<32>(value)?;
+    for word in bytes.chunks_exact_mut(4) {
+        word.reverse();
+    }
+    Ok(bytes)
 }
 
 pub(super) fn classify_network_target(
@@ -151,6 +162,12 @@ pub(super) fn classify_network_target(
     } else {
         NetworkTargetOutcome::BelowNetworkTarget
     })
+}
+
+pub(super) fn meets_assigned_target(header: &[u8; 80], target: &[u8; 32]) -> bool {
+    let mut hash = double_sha256(header);
+    hash.reverse();
+    hash <= *target
 }
 
 fn compact_target(network_bits: &str) -> Result<[u8; 32], StratumV1Error> {
@@ -204,4 +221,28 @@ fn decode_hex(value: &str) -> Result<Vec<u8>, StratumV1Error> {
 fn reverse_fixed<const SIZE: usize>(mut value: [u8; SIZE]) -> [u8; SIZE] {
     value.reverse();
     value
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hydra_word_swapped_previous_hash_becomes_header_little_endian() -> Result<(), StratumV1Error>
+    {
+        // Arrange
+        let hydra_notify_hash = "4f03468e954d4b54b0d36c99ae9b76c3691634587302e480d324926641860e23";
+
+        // Act
+        let header_bytes = stratum_previous_block_bytes(hydra_notify_hash)?;
+
+        // Assert
+        assert_eq!(
+            header_bytes,
+            decode_fixed_hex::<32>(
+                "8e46034f544b4d95996cd3b0c3769bae5834166980e40273669224d3230e8641"
+            )?
+        );
+        Ok(())
+    }
 }

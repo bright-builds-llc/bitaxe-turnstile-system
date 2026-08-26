@@ -439,6 +439,8 @@ pub enum AuthorityApplicationError {
     UnknownPoolOffer,
     #[error("selected payout is not permitted by this Pool Offer")]
     InvalidPoolSelection,
+    #[error("Pool-facing authorization does not match the retained Work Consent")]
+    InvalidUpstreamAuthorization,
     #[error("Accepted Work Event conflicts with its canonical delivery")]
     ConflictingEventReplay,
     #[error("issuance worker identity is invalid")]

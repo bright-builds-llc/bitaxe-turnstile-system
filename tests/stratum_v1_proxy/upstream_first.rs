@@ -17,7 +17,10 @@ use tokio::{
     time::{Duration, timeout},
 };
 
-use super::{PostgresTestDatabase, authorized_session, test_lease_context, write_line};
+use super::{
+    PostgresTestDatabase, StratumJobFields, authorized_session, hex_target, test_lease_context,
+    worked_nonce, write_line,
+};
 
 #[tokio::test]
 async fn subscription_success_is_hidden_when_extranonce_reservation_fails()
@@ -258,11 +261,24 @@ async fn upstream_receives_submit_before_noncritical_outbox_failure() -> Result<
     let _authorized = worker_lines.next_line().await?;
     let _difficulty = worker_lines.next_line().await?;
     let _notify = worker_lines.next_line().await?;
+    let nonce = worked_nonce(
+        "01020304",
+        "00000001",
+        StratumJobFields::new(
+            "0000000000000000000000000000000000000000000000000000000000000000",
+            "01000000",
+            "00",
+            "20000000",
+            "207fffff",
+            "5f5e1000",
+        ),
+        hex_target("3b9a8e6536000000000000000000000000000000000000000000000000000000")?,
+    )?;
 
     // Act
     write_line(
         &mut worker_write,
-        &format!(r#"{{"id":3,"method":"mining.submit","params":["{username}","job-upstream-first","00000001","5f5e1000","00000003"]}}"#),
+        &format!(r#"{{"id":3,"method":"mining.submit","params":["{username}","job-upstream-first","00000001","5f5e1000","{nonce}"]}}"#),
     )
     .await?;
     timeout(Duration::from_secs(2), submitted_rx).await??;

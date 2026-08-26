@@ -118,6 +118,16 @@ impl AuthorityRepository for PostgresAuthorityRepository {
         pool_selection::insert_work_session(&self.pool, challenge_id, session_id, now).await
     }
 
+    async fn session_pool_selection(
+        &self,
+        session_id: &crate::progress::WorkSessionId,
+    ) -> Result<
+        crate::authority_persistence::PersistedSessionPoolSelection,
+        AuthorityPersistenceError,
+    > {
+        pool_selection::session_pool_selection(&self.pool, session_id).await
+    }
+
     async fn challenge_lifecycle(
         &self,
         challenge_id: &ChallengeId,

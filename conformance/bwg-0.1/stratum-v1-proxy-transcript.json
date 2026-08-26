@@ -7,9 +7,9 @@
   "subscribed": "{\"id\":1,\"result\":[[[\"mining.notify\",\"subscription-01\"]],\"01020304\",4],\"error\":null}",
   "authorize": "{\"id\":2,\"method\":\"mining.authorize\",\"params\":[\"bwg-session-01\",\"stratum-session-secret-01\"]}",
   "authorized": "{\"id\":2,\"result\":true,\"error\":null}",
-  "difficulty": "{\"id\":null,\"method\":\"mining.set_difficulty\",\"params\":[1]}",
+  "difficulty": "{\"id\":null,\"method\":\"mining.set_difficulty\",\"params\":[0.000000001]}",
   "notify": "{\"id\":null,\"method\":\"mining.notify\",\"params\":[\"job-01\",\"0000000000000000000000000000000000000000000000000000000000000000\",\"01000000\",\"00\",[],\"20000000\",\"1d00ffff\",\"5f5e1000\",true]}",
-  "submit": "{\"id\":3,\"method\":\"mining.submit\",\"params\":[\"bwg-session-01\",\"job-01\",\"00000001\",\"5f5e1000\",\"abcdef01\"]}",
+  "submit": "{\"id\":3,\"method\":\"mining.submit\",\"params\":[\"bwg-session-01\",\"job-01\",\"00000001\",\"5f5e1000\",\"00000000\"]}",
   "accepted": "{\"id\":3,\"result\":true,\"error\":null}",
-  "assigned_target_hex": "00000000ffff0000000000000000000000000000000000000000000000000000"
+  "assigned_target_hex": "3b9a8e6536000000000000000000000000000000000000000000000000000000"
 }
