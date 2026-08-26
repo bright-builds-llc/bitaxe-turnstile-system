@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PROTOTYPE — Hydra pre-notify job admission</title>
+  <style>
+    body { font: 15px/1.45 system-ui, sans-serif; margin: 2rem; max-width: 1100px; }
+    h1 { margin-bottom: .25rem; }
+    .warning { border-left: 5px solid #b45309; padding: .75rem 1rem; background: #fffbeb; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; }
+    .panel { border: 1px solid #bbb; padding: 1rem; border-radius: .4rem; }
+    button { margin: .2rem; padding: .45rem .65rem; }
+    button[data-guide] { font-weight: 650; }
+    pre { white-space: pre-wrap; word-break: break-all; background: #111827; color: #e5e7eb; padding: 1rem; min-height: 25rem; }
+    .event { border-bottom: 1px solid #ddd; padding: .4rem 0; }
+    .pass { color: #166534; }
+    .fail { color: #991b1b; }
+    @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>PROTOTYPE — Hydra/P2Pool pre-notify job admission</h1>
+  <p class="warning"><strong>Throwaway logic proof.</strong> Assumption: the backend design question is whether a generic hook can receive one fully serialized candidate plus its computed payout outputs before <code>mining.notify</code>, fail closed, and leave later block submission independent. This is not production Bitcoin validation.</p>
+
+  <p>Primary fixture: P2Poolv2 <code>v0.12.0</code>, commit <code>8eca024bde6c2de74620dce2f9cc7fb9a544c5c0</code>, serialized <code>block_1.txt</code>. The proposed hook shape is <code>admit(candidate, outputs, template_identity) -&gt; admitted evidence | rejection</code>.</p>
+
+  <div class="panel">
+    <h2>Guided walkthroughs</h2>
+    <button data-guide="happy">Happy path</button>
+    <button data-guide="payout">Payout mismatch</button>
+    <button data-guide="reject">Proposal rejection</button>
+    <button data-guide="timeout">Proposal timeout</button>
+    <button data-guide="stale">Stale during validation</button>
+    <button data-guide="rollback">Hook unavailable</button>
+  </div>
+
+  <div class="grid">
+    <section class="panel">
+      <h2>Free play</h2>
+      <button data-action="reset">Reset</button>
+      <button data-action="construct">Construct exact candidate</button>
+      <button data-action="policy-ok">Verify outputs</button>
+      <button data-action="policy-bad">Tamper payout</button>
+      <button data-action="proposal-ok">BIP 23 returns null</button>
+      <button data-action="proposal-reject">BIP 23 rejects</button>
+      <button data-action="proposal-timeout">BIP 23 times out</button>
+      <button data-action="tip">Advance Bitcoin tip</button>
+      <button data-action="disable">Disable hook</button>
+      <button data-action="publish">Attempt mining.notify</button>
+      <button data-action="block">Later submit winning block</button>
+      <h3>Event log</h3>
+      <div id="events"></div>
+    </section>
+    <section>
+      <h2>Full state after every action</h2>
+      <pre id="state"></pre>
+    </section>
+  </div>
+
+  <script>
+    const fixtureBlockHex = "00000020560f606df25a668faffc0163452633a555b39d4bf9875dff63953a860000000004ad3ae2852a15ebb533122b77f32a0229eec55ebe1ae427f3b85762fc346d1838f9b667ae77031e90155ff101010000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff2c017b000438f9b667049c0fc52d0cfdf8b66700000000000000000a636b706f6f6c0a2f7032706f6f6c76322fffffffff0300111024010000001600148f1b6f0d5a0422afad259ec03977bdf2c74a037600e1f50500000000160014a248cf2f99f449511b22bab1a3d001719f84cd090000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf90120000000000000000000000000000000000000000000000000000000000000000000000000";
+    const expectedOutputs = [
+      { valueSats: 4900000000, scriptPubKey: "00148f1b6f0d5a0422afad259ec03977bdf2c74a0376", role: "selected payout" },
+      { valueSats: 100000000, scriptPubKey: "0014a248cf2f99f449511b22bab1a3d001719f84cd09", role: "declared pool output" },
+      { valueSats: 0, scriptPubKey: "6a24aa21a9ed…", role: "witness commitment" }
+    ];
+    let state;
+    let events;
+
+    function initialState() {
+      return {
+        pinnedSource: { tag: "v0.12.0", commit: "8eca024bde6c2de74620dce2f9cc7fb9a544c5c0" },
+        hookEnabled: true,
+        phase: "template_received",
+        templateIdentity: { previousBlockHash: "000000000000…", height: 123, generation: 1 },
+        currentTipGeneration: 1,
+        candidate: null,
+        computedRewardOutputs: null,
+        expectedRewardOutputs: structuredClone(expectedOutputs),
+        rewardPolicyMatches: null,
+        proposal: { status: "not_requested", bitcoinCoreResult: null },
+        admissionEvidence: null,
+        notifyPublished: false,
+        winningBlockSubmitted: false,
+        gateAccountingAvailable: false
+      };
+    }
+
+    async function digest(hex) {
+      const bytes = Uint8Array.from(hex.match(/../g), pair => Number.parseInt(pair, 16));
+      const hash = await crypto.subtle.digest("SHA-256", bytes);
+      return [...new Uint8Array(hash)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+    }
+
+    function log(message, good = false) {
+      events.unshift({ message, good });
+    }
+
+    function render() {
+      document.querySelector("#state").textContent = JSON.stringify(state, null, 2);
+      document.querySelector("#events").innerHTML = events.map(event =>
+        `<div class="event ${event.good ? "pass" : "fail"}">${event.message}</div>`
+      ).join("");
+    }
+
+    async function act(name) {
+      if (name === "reset") {
+        state = initialState();
+        events = [];
+        log("Reset to a fresh template", true);
+      } else if (name === "construct") {
+        state.candidate = { blockHex: fixtureBlockHex, sha256: await digest(fixtureBlockHex), byteLength: fixtureBlockHex.length / 2 };
+        state.computedRewardOutputs = structuredClone(expectedOutputs);
+        state.phase = "candidate_constructed";
+        log("Exact serialized candidate and computed outputs are visible to the hook", true);
+      } else if (name === "policy-ok") {
+        state.rewardPolicyMatches = JSON.stringify(state.computedRewardOutputs) === JSON.stringify(state.expectedRewardOutputs);
+        log(state.rewardPolicyMatches ? "Reward Policy outputs match" : "Reward Policy outputs do not match", state.rewardPolicyMatches);
+      } else if (name === "policy-bad") {
+        if (!state.computedRewardOutputs) return log("Construct the candidate first");
+        state.computedRewardOutputs[0].valueSats -= 1;
+        state.rewardPolicyMatches = false;
+        log("One satoshi was diverted; admission must fail");
+      } else if (name.startsWith("proposal-")) {
+        if (!state.candidate) return log("No exact candidate is available");
+        const outcome = name.slice(9);
+        state.proposal = outcome === "ok"
+          ? { status: "completed", bitcoinCoreResult: null }
+          : outcome === "reject"
+            ? { status: "completed", bitcoinCoreResult: "bad-cb-amount" }
+            : { status: "timeout", bitcoinCoreResult: null };
+        log(outcome === "ok" ? "Fresh BIP 23 proposal returned null" : `Proposal ${outcome}; fail closed`, outcome === "ok");
+      } else if (name === "tip") {
+        state.currentTipGeneration += 1;
+        log("Bitcoin tip advanced while admission used the prior template");
+      } else if (name === "disable") {
+        state.hookEnabled = false;
+        log("Admission hook unavailable; rollback policy is no job release");
+      } else if (name === "publish") {
+        const admitted = state.hookEnabled
+          && state.candidate
+          && state.rewardPolicyMatches === true
+          && state.proposal.status === "completed"
+          && state.proposal.bitcoinCoreResult === null
+          && state.templateIdentity.generation === state.currentTipGeneration;
+        state.notifyPublished = Boolean(admitted);
+        state.admissionEvidence = admitted ? {
+          candidateSha256: state.candidate.sha256,
+          outputCount: state.computedRewardOutputs.length,
+          templateGeneration: state.templateIdentity.generation,
+          proposalResult: null
+        } : null;
+        state.phase = admitted ? "notified" : "rejected";
+        log(admitted ? "mining.notify released with digest-bound evidence" : "mining.notify withheld", admitted);
+      } else if (name === "block") {
+        state.winningBlockSubmitted = state.notifyPublished;
+        log(state.winningBlockSubmitted
+          ? "Winning result submitted on the pool path despite gateAccountingAvailable=false"
+          : "No admitted job exists to produce a winning result", state.winningBlockSubmitted);
+      }
+      render();
+    }
+
+    async function guide(name) {
+      await act("reset");
+      await act("construct");
+      if (name === "payout") await act("policy-bad"); else await act("policy-ok");
+      if (name === "reject") await act("proposal-reject");
+      else if (name === "timeout") await act("proposal-timeout");
+      else await act("proposal-ok");
+      if (name === "stale") await act("tip");
+      if (name === "rollback") await act("disable");
+      await act("publish");
+      if (name === "happy") await act("block");
+    }
+
+    document.querySelectorAll("[data-action]").forEach(button => button.addEventListener("click", () => act(button.dataset.action)));
+    document.querySelectorAll("[data-guide]").forEach(button => button.addEventListener("click", () => guide(button.dataset.guide)));
+    act("reset");
+  </script>
+</body>
+</html>
