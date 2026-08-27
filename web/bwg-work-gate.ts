@@ -19,6 +19,7 @@ import {
   type AlternativeAuthorization,
   type PresentationMode,
 } from "./work-gate-view-model";
+import { closeSessionDuringCleanup, replaceSessionAfterClosingPrevious } from "./work-gate-session";
 
 export type WorkGateSession = {
   client: HeadlessClient;
@@ -28,6 +29,7 @@ export type WorkGateSession = {
 
 export type WorkGateConfiguration = {
   loadSession(): Promise<WorkGateSession>;
+  maybeOnboardBitaxe?: () => Promise<void>;
   alternatives: readonly AlternativeAuthorization[];
   maybeRequestTrustedConsent?: (
     request: TrustedConsentRequest,
@@ -123,6 +125,7 @@ function createWorkGateView(
   const [maybeError, setMaybeError] = createSignal<string>();
   const [unavailable, setUnavailable] = createSignal(false);
   const [confirmingCancel, setConfirmingCancel] = createSignal(false);
+  const [onboardingInProgress, setOnboardingInProgress] = createSignal(false);
   let maybeUnsubscribe: (() => void) | undefined;
   let maybeTrustedConsentAbort: AbortController | undefined;
   let disposed = false;
@@ -133,6 +136,7 @@ function createWorkGateView(
   const confirmCancel = requiredElement<HTMLButtonElement>(root, "[data-action=confirm-cancel]");
   const keepWorking = requiredElement<HTMLButtonElement>(root, "[data-action=keep-working]");
   const cancelDialog = requiredElement<HTMLElement>(root, "[data-panel=cancel-dialog]");
+  const onboardBitaxe = requiredElement<HTMLButtonElement>(root, "[data-action=onboard-bitaxe]");
 
   const run = async (operation: () => Promise<void>) => {
     setMaybeError(undefined);
@@ -206,6 +210,30 @@ function createWorkGateView(
       }
     })();
   });
+  onboardBitaxe.addEventListener("click", () => {
+    if (onboardingInProgress()) return;
+    setOnboardingInProgress(true);
+    void run(async () => {
+      try {
+        const maybeOnboard = configuration.maybeOnboardBitaxe;
+        if (!maybeOnboard) return;
+        const previousSession = maybeSession();
+        await maybeOnboard();
+        const session = await configuration.loadSession();
+        if (disposed) {
+          if (session.client !== previousSession?.client) closeSessionDuringCleanup(session);
+          return;
+        }
+        await replaceSessionAfterClosingPrevious(previousSession, session, () => {
+          maybeUnsubscribe?.();
+          redemptionStarted = false;
+          installSession(session);
+        });
+      } finally {
+        if (!disposed) setOnboardingInProgress(false);
+      }
+    });
+  });
   gate.addEventListener("keydown", (event) => trapModalFocus(event, gate, presentation));
   cancelDialog.addEventListener("keydown", (event) => trapFocus(event, cancelDialog));
 
@@ -219,20 +247,17 @@ function createWorkGateView(
     unavailable: unavailable(),
     confirmingCancel: confirmingCancel(),
     alternatives: configuration.alternatives,
+    onboardingAvailable: configuration.maybeOnboardBitaxe !== undefined,
+    onboardingInProgress: onboardingInProgress(),
     provenance: configuration.provenance,
   }));
 
   void configuration.loadSession().then((session) => {
-    if (disposed) return;
-    setMaybeSession(session);
-    setMaybeDisclosure(session.client.disclosure());
-    setUnavailable(!session.compatibleWorkerAvailable);
-    maybeUnsubscribe = session.client.subscribe((event) => {
-      observeClientEvent(event);
-      if (event.type === "lifecycle" && event.challengeState === "pass_issued") {
-        void redeem(session);
-      }
-    });
+    if (disposed) {
+      closeSessionDuringCleanup(session);
+      return;
+    }
+    installSession(session);
     if (presentation === "modal") {
       requestAnimationFrame(() => focusableElements(gate)[0]?.focus());
     }
@@ -253,6 +278,18 @@ function createWorkGateView(
     }
   }
 
+  function installSession(session: WorkGateSession): void {
+    setMaybeSession(session);
+    setMaybeDisclosure(session.client.disclosure());
+    setUnavailable(!session.compatibleWorkerAvailable);
+    maybeUnsubscribe = session.client.subscribe((event) => {
+      observeClientEvent(event);
+      if (event.type === "lifecycle" && event.challengeState === "pass_issued") {
+        void redeem(session);
+      }
+    });
+  }
+
   async function redeem(session: WorkGateSession): Promise<void> {
     if (redemptionStarted) return;
     redemptionStarted = true;
@@ -266,12 +303,7 @@ function createWorkGateView(
     disposed = true;
     maybeTrustedConsentAbort?.abort();
     maybeUnsubscribe?.();
-    const maybeClose = maybeSession()?.client.close();
-    if (maybeClose) {
-      void maybeClose.catch(() => {
-        console.error("Worker shutdown failed during component cleanup");
-      });
-    }
+    closeSessionDuringCleanup(maybeSession());
   });
   return root;
 }
@@ -286,6 +318,8 @@ type ViewState = {
   unavailable: boolean;
   confirmingCancel: boolean;
   alternatives: readonly AlternativeAuthorization[];
+  onboardingAvailable: boolean;
+  onboardingInProgress: boolean;
   provenance: WorkGateConfiguration["provenance"];
 };
 
@@ -295,6 +329,9 @@ function updateView(root: HTMLElement, state: ViewState): void {
   toggle(root, "[data-panel=loading]", loading);
   toggle(root, "[data-panel=terms]", Boolean(state.maybeDisclosure) && !state.unavailable);
   toggle(root, "[data-panel=fallback]", state.unavailable);
+  toggle(root, "[data-action=onboard-bitaxe]", state.unavailable && state.onboardingAvailable);
+  requiredElement<HTMLButtonElement>(root, "[data-action=onboard-bitaxe]").disabled =
+    state.onboardingInProgress;
   toggle(root, "[data-panel=error]", Boolean(state.maybeError));
   toggle(root, "[data-panel=outcome]", Boolean(state.maybeOutcome));
   toggle(root, "[data-panel=cancel-dialog]", state.confirmingCancel);

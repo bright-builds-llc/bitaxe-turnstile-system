@@ -69,6 +69,10 @@
   Controller/USB contract, strict cross-repository fixtures/schema, a monotonic fail-safe simulator,
   and headless-client composition that restores Mining Baseline state without exposing device
   settings or credentials.
+- [Ticket 22](./issues/22-settings-preserving-bitaxe-onboarding.md) added explicit user-gesture USB
+  entry, strict signed Reference Firmware admission, bounded local encrypted Migration Backup,
+  default NVS preservation, redacted post-reboot evidence, and verified A/B rollback before the gate
+  resumes.
 
 ## Multi-worker failover boundary split
 

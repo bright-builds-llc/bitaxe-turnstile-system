@@ -37,6 +37,10 @@ The versioned local Worker Controller and USB contract, simulator, and cross-rep
 documented in
 [`docs/protocol/bwg-0.1-worker-controller.md`](docs/protocol/bwg-0.1-worker-controller.md).
 
+The accountless settings-preserving Reference Firmware installation and rollback profile is
+documented in
+[`docs/protocol/bwg-0.1-bitaxe-onboarding.md`](docs/protocol/bwg-0.1-bitaxe-onboarding.md).
+
 The SolidJS custom element is exported as `bwg-core/component` for plain HTML, inline, modal, and
 full-page integrations; see
 [`docs/protocol/bwg-0.1-web-component.md`](docs/protocol/bwg-0.1-web-component.md).

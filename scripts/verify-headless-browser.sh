@@ -46,7 +46,7 @@ cd "$repository_root"
 CARGO_PROFILE_DEV_DEBUG=0 cargo run --quiet --example trusted-consent-browser-fixture \
   >"$fixture_log" 2>"$fixture_error_log" &
 fixture_pid=$!
-for _ in {1..600}; do
+for _ in {1..1800}; do
   fixture_url="$(head -n 1 "$fixture_log")"
   if [[ "$fixture_url" =~ ^http://127\.0\.0\.1:[0-9]+$ ]] &&
     curl --fail --silent --output /dev/null "$fixture_url/fixture/config"; then
@@ -97,6 +97,9 @@ fi
 "$playwright_cli" -s="$session_name" goto \
   "http://127.0.0.1:$server_port/conformance/bwg-0.1/work-gate-component-browser.html" \
   >"$browser_output"
+"$playwright_cli" -s="$session_name" run-code \
+  --filename "$repository_root/scripts/wait-browser-conformance.mjs" \
+  >>"$browser_output"
 "$playwright_cli" -s="$session_name" snapshot >>"$browser_output"
 
 if ! grep -q 'status.*passed' "$browser_output"; then

@@ -1,4 +1,5 @@
 import { createHeadlessClient, prepareClaimantIdentity } from "../../dist/headless/headless-client.js";
+import { bitaxeOnboardingFixture } from "./bitaxe-onboarding-browser-fixture.mjs";
 import "../../dist/component/bwg-work-gate.js";
 
 const maybeResult = document.querySelector("#result");
@@ -14,6 +15,8 @@ try {
   const modal = requiredGate("modal");
   const full = requiredGate("full");
   const expired = requiredGate("expired");
+  const main = document.querySelector("main");
+  if (!main) throw new Error("component conformance main is missing");
   const inlineHarness = await sessionHarness(vector, true);
   const modalHarness = await sessionHarness(vector, false);
   const fullHarness = await sessionHarness(vector, true, { cancelFailures: 1 });
@@ -57,7 +60,26 @@ try {
       };
     },
   });
-  modal.configure(sessionConfiguration(modalHarness, false, alternatives, provenance));
+  let modalWorkerAvailable = false;
+  let onboardingRequests = 0;
+  let maybeOnboardingResult;
+  const onboardingFixture = await bitaxeOnboardingFixture();
+  const modalConfiguration = sessionConfiguration(modalHarness, false, alternatives, provenance);
+  modalConfiguration.maybeOnboardBitaxe = async () => {
+    onboardingRequests += 1;
+    const inspection = await onboardingFixture.onboarding.connect();
+    assertEqual(inspection.action, "firmware_required", "bitaxe_firmware_required");
+    maybeOnboardingResult = await onboardingFixture.onboarding.install(
+      onboardingFixture.firmwarePackage,
+    );
+    modalWorkerAvailable = maybeOnboardingResult.status === "ready";
+  };
+  modalConfiguration.loadSession = async () => ({
+    client: modalHarness.client,
+    compatibleWorkerAvailable: modalWorkerAvailable,
+    redeem: async () => ({ message: "Reference account created" }),
+  });
+  modal.configure(modalConfiguration);
   full.configure(sessionConfiguration(fullHarness, true, alternatives, unlinkedProvenance));
   expired.configure(
     sessionConfiguration(expiredHarness, true, alternatives, unavailableProvenance),
@@ -69,8 +91,12 @@ try {
   assertEqual(container(modal).getAttribute("role"), "dialog", "modal_role");
   assertEqual(container(modal).getAttribute("aria-modal"), "true", "modal_aria");
   assertEqual(container(full).getAttribute("role"), "region", "full_page_role");
-  await waitFor(() => shadow(modal).activeElement?.textContent === "Use email verification");
-  assertEqual(shadow(modal).activeElement?.textContent, "Use email verification", "modal_initial_focus");
+  await waitFor(() => shadow(modal).activeElement?.textContent === "Connect Bitaxe over USB");
+  assertEqual(
+    shadow(modal).activeElement?.textContent,
+    "Connect Bitaxe over USB",
+    "modal_initial_focus",
+  );
   assertEqual(challengeCreations, 1, "plain_html_challenge_creation");
   assertText(shadow(inline), "Expected hashes", "prestart_disclosure");
   assertText(shadow(inline), "Hydra / P2Pool v2", "pool_offer_disclosure");
@@ -161,7 +187,37 @@ try {
   if (!lastModalLink) throw new Error("modal focus fixture has no link");
   lastModalLink.focus();
   lastModalLink.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
-  assertEqual(shadow(modal).activeElement, modalLinks[0], "modal_focus_wrap");
+  assertEqual(
+    shadow(modal).activeElement,
+    visibleButton(modal, "Connect Bitaxe over USB"),
+    "modal_focus_wrap",
+  );
+  const onboardingButton = visibleButton(modal, "Connect Bitaxe over USB");
+  onboardingButton.click();
+  assertEqual(onboardingButton.disabled, true, "bitaxe_onboarding_single_flight");
+  onboardingButton.click();
+  await waitFor(() => shadow(modal).querySelector("[data-panel=terms]:not([hidden])"));
+  assertEqual(onboardingRequests, 1, "explicit_bitaxe_onboarding");
+  assertEqual(onboardingFixture.connector.requestCount(), 1, "bitaxe_usb_request_count");
+  assertEqual(onboardingFixture.connector.device().flashCount(), 1, "bitaxe_flash_count");
+  assertEqual(maybeOnboardingResult?.status, "ready", "bitaxe_onboarding_ready");
+  assertEqual(
+    new TextDecoder().decode(onboardingFixture.connector.device().settingsForTest()),
+    new TextDecoder().decode(onboardingFixture.settings),
+    "bitaxe_settings_preserved",
+  );
+  assertEqual(
+    /secret-network|secret-password/.test(JSON.stringify(maybeOnboardingResult)),
+    false,
+    "bitaxe_result_redacted",
+  );
+  await assertIncompatibleFirmwareFailsClosed();
+  await assertOnboardingClosesReplacedSession(
+    vector,
+    alternatives,
+    provenance,
+    main,
+  );
   assertText(shadow(inline), "BWG/0.1", "protocol_provenance");
   assertText(shadow(inline), "0.1.0", "version_provenance");
   assertText(shadow(inline), "59a1540", "commit_provenance");
@@ -192,8 +248,6 @@ try {
 
   const teardownHarness = await sessionHarness(vector, true);
   const teardownGate = document.createElement("bwg-work-gate");
-  const main = document.querySelector("main");
-  if (!main) throw new Error("component conformance main is missing");
   main.append(teardownGate);
   let maybeConfirmationSignal;
   let resolveLateReceipt;
@@ -385,10 +439,14 @@ function container(element) {
 }
 
 function click(element, label) {
+  visibleButton(element, label).click();
+}
+
+function visibleButton(element, label) {
   const button = [...shadow(element).querySelectorAll("button")]
     .find((candidate) => !candidate.hidden && candidate.textContent === label);
   if (!button) throw new Error(`button ${label} is missing`);
-  button.click();
+  return button;
 }
 
 function hasButton(element, label) {
@@ -410,6 +468,117 @@ async function waitFor(predicate) {
     if (performance.now() >= deadline) throw new Error("browser condition timed out");
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
+}
+
+async function assertIncompatibleFirmwareFailsClosed() {
+  const fixture = await bitaxeOnboardingFixture({
+    compatibleBoards: [{ model: "bitaxe-ultra", revisions: ["999"] }],
+  });
+  await fixture.onboarding.connect();
+  let maybeError;
+  try {
+    await fixture.onboarding.install(fixture.firmwarePackage);
+  } catch (error) {
+    maybeError = error;
+  }
+  assertEqual(
+    maybeError instanceof Error && maybeError.message.includes("not safely compatible"),
+    true,
+    "bitaxe_incompatible_rejected",
+  );
+  assertEqual(fixture.connector.device().flashCount(), 0, "bitaxe_incompatible_not_flashed");
+}
+
+async function assertOnboardingClosesReplacedSession(vector, alternatives, provenance, main) {
+  const previous = await sessionHarness(vector, false);
+  const replacement = await sessionHarness(vector, true);
+  let loadCount = 0;
+  let previousCloseCount = 0;
+  const previousClient = new Proxy(previous.client, {
+    get(target, property, receiver) {
+      if (property === "close") {
+        return async () => {
+          previousCloseCount += 1;
+          await target.close();
+        };
+      }
+      const value = Reflect.get(target, property, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const gate = document.createElement("bwg-work-gate");
+  main.append(gate);
+  gate.configure({
+    alternatives,
+    provenance,
+    maybeOnboardBitaxe: async () => {},
+    async loadSession() {
+      loadCount += 1;
+      return {
+        client: loadCount === 1 ? previousClient : replacement.client,
+        compatibleWorkerAvailable: loadCount > 1,
+        redeem: async () => ({ message: "unused" }),
+      };
+    },
+  });
+  await waitFor(() => shadow(gate).querySelector("[data-panel=fallback]:not([hidden])"));
+  click(gate, "Connect Bitaxe over USB");
+  await waitFor(() => shadow(gate).querySelector("[data-panel=terms]:not([hidden])"));
+  assertEqual(previousCloseCount, 1, "bitaxe_replaced_session_closed");
+  gate.remove();
+
+  const failingPrevious = await sessionHarness(vector, false);
+  const rejectedReplacement = await sessionHarness(vector, true);
+  let failingLoadCount = 0;
+  let rejectedReplacementCloseCount = 0;
+  const failingPreviousClient = new Proxy(failingPrevious.client, {
+    get(target, property, receiver) {
+      if (property === "close") {
+        return async () => {
+          throw new Error("simulated previous session close failure");
+        };
+      }
+      const value = Reflect.get(target, property, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const rejectedReplacementClient = new Proxy(rejectedReplacement.client, {
+    get(target, property, receiver) {
+      if (property === "close") {
+        return async () => {
+          rejectedReplacementCloseCount += 1;
+          await target.close();
+        };
+      }
+      const value = Reflect.get(target, property, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const failureGate = document.createElement("bwg-work-gate");
+  main.append(failureGate);
+  failureGate.configure({
+    alternatives,
+    provenance,
+    maybeOnboardBitaxe: async () => {},
+    async loadSession() {
+      failingLoadCount += 1;
+      return {
+        client: failingLoadCount === 1 ? failingPreviousClient : rejectedReplacementClient,
+        compatibleWorkerAvailable: failingLoadCount > 1,
+        redeem: async () => ({ message: "unused" }),
+      };
+    },
+  });
+  await waitFor(() => shadow(failureGate).querySelector("[data-panel=fallback]:not([hidden])"));
+  click(failureGate, "Connect Bitaxe over USB");
+  await waitFor(() => shadow(failureGate).textContent.includes("simulated previous session close failure"));
+  assertEqual(rejectedReplacementCloseCount, 1, "bitaxe_rejected_replacement_closed");
+  assertEqual(
+    Boolean(shadow(failureGate).querySelector("[data-panel=fallback]:not([hidden])")),
+    true,
+    "bitaxe_previous_session_state_preserved",
+  );
+  failureGate.remove();
 }
 
 function contrastRatio(foreground, background) {

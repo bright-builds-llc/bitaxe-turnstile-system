@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "noEmit": false,
+    "outDir": "dist/bitaxe-onboarding"
+  },
+  "include": ["web/bitaxe-onboarding-entry.ts"]
+}
