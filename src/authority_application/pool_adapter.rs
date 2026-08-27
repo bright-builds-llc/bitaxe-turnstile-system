@@ -1,4 +1,6 @@
 use async_trait::async_trait;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use ring::digest;
 use uuid::Uuid;
 
 use super::{
@@ -6,13 +8,18 @@ use super::{
     trusted_consent::binding_for_challenge,
 };
 use crate::{
-    authority_persistence::{AuthorityPersistenceError, StartWorkLeaseInput},
+    authority_persistence::{
+        AuthorityPersistenceError, PersistPoolOfferReplacement, StartWorkLeaseInput,
+    },
     challenge::ChallengeId,
     lifecycle::{
         LifecycleError, SessionLifecycle, SessionReplacement, WORK_LEASE_MAX_DURATION_SECONDS,
         WORK_LEASE_RENEWAL_SECONDS, WorkLease, WorkerClock, WorkerInterruption,
     },
-    pool_offer::{PoolSelection, PoolSelectionCommitment, verify_pool_offer_set},
+    pool_offer::{
+        PoolOffer, PoolOfferReplacementDecision, PoolSelection, PoolSelectionCommitment,
+        SignedPoolOfferSet, classify_pool_offer_change, signed_pool_offers, verify_pool_offer_set,
+    },
     progress::{AcceptedWorkAcknowledgement, AcceptedWorkEvent, WorkSessionId},
     stratum_v1::{
         StratumLeaseContext, StratumUpstreamAuthorization, WorkSessionDisconnectSink,
@@ -161,6 +168,93 @@ impl SimulatedPoolAdapter {
             .repository
             .maybe_session_replacement(session_id)
             .await?)
+    }
+
+    /// Test-harness shortcut that signs an exact candidate set with the configured Authority key.
+    pub async fn sign_pool_offer_set_for_simulation(
+        &self,
+        challenge_id: &ChallengeId,
+        offers: Vec<PoolOffer>,
+        trusted_confirmation_required: bool,
+    ) -> Result<SignedPoolOfferSet, AuthorityApplicationError> {
+        let descriptor = self.application.repository.challenge(challenge_id).await?;
+        let signer = self
+            .application
+            .config
+            .maybe_signer()
+            .ok_or(AuthorityApplicationError::SigningUnavailable)?;
+        Ok(signed_pool_offers(
+            &signer,
+            self.application.config.issuer(),
+            challenge_id.as_str(),
+            descriptor.action_policy(),
+            offers,
+            trusted_confirmation_required,
+        )?)
+    }
+
+    /// Verifies and persists one replacement-offer decision before releasing replacement work.
+    pub async fn replace_pool_offer(
+        &self,
+        replaced_session_id: &WorkSessionId,
+        candidate_session_id: WorkSessionId,
+        signed_candidate: &SignedPoolOfferSet,
+    ) -> Result<PoolOfferReplacementDecision, AuthorityApplicationError> {
+        let retained = self
+            .application
+            .repository
+            .session_pool_selection(replaced_session_id)
+            .await?;
+        let descriptor = self
+            .application
+            .repository
+            .challenge(&retained.challenge_id)
+            .await?;
+        let signed_prior = descriptor
+            .maybe_pool_offers()
+            .ok_or(AuthorityApplicationError::PoolSelectionRequired)?;
+        let prior_set = verify_pool_offer_set(
+            signed_prior,
+            self.application.config.issuer(),
+            descriptor.challenge_id(),
+            descriptor.action_policy(),
+            self.application.config.verification_keys(),
+        )?;
+        let candidate_set = verify_pool_offer_set(
+            signed_candidate,
+            self.application.config.issuer(),
+            descriptor.challenge_id(),
+            descriptor.action_policy(),
+            self.application.config.verification_keys(),
+        )?;
+        let prior_offer = prior_set
+            .offers()
+            .iter()
+            .find(|offer| offer.offer_id() == retained.selection.pool_offer_id())
+            .ok_or(AuthorityApplicationError::UnknownPoolOffer)?;
+        let candidate_offer = candidate_set
+            .offers()
+            .iter()
+            .find(|offer| offer.offer_id() == retained.selection.pool_offer_id())
+            .ok_or(AuthorityApplicationError::UnknownPoolOffer)?;
+        let change = classify_pool_offer_change(prior_offer, candidate_offer)?;
+        let candidate_set_digest = canonical_offer_set_digest(candidate_set.offers())?;
+        let decision = self
+            .application
+            .repository
+            .persist_pool_offer_replacement(PersistPoolOfferReplacement {
+                replaced_session_id,
+                candidate_session_id: &candidate_session_id,
+                challenge_id: &retained.challenge_id,
+                prior_offer,
+                candidate_offer,
+                candidate_signature: signed_candidate.signature(),
+                candidate_set_digest: &candidate_set_digest,
+                change: &change,
+                now: current_unix_seconds()?,
+            })
+            .await?;
+        Ok(decision)
     }
 
     /// Starts one bounded lease after a ready or safely restored session.
@@ -371,6 +465,14 @@ impl SimulatedPoolAdapter {
         )?;
         self.application.accept_work(event, &lease, &clock).await
     }
+}
+
+fn canonical_offer_set_digest(offers: &[PoolOffer]) -> Result<String, AuthorityApplicationError> {
+    let mut canonical = offers.to_vec();
+    canonical.sort_by(|left, right| left.offer_id().cmp(right.offer_id()));
+    let bytes = serde_json::to_vec(&canonical)
+        .map_err(|_| AuthorityApplicationError::InvalidChallengeDescriptor)?;
+    Ok(URL_SAFE_NO_PAD.encode(digest::digest(&digest::SHA256, &bytes)))
 }
 
 #[async_trait]

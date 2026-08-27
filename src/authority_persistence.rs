@@ -9,6 +9,7 @@ use crate::{
         WorkerClock, WorkerInterruption,
     },
     pool_offer::PoolSelectionCommitment,
+    pool_offer::{PoolOffer, PoolOfferChange, PoolOfferReplacementDecision},
     progress::{AcceptedWorkAcknowledgement, AcceptedWorkEvent, ProgressError, WorkSessionId},
     trusted_consent::{
         TrustedConsentBinding, TrustedConsentCeremony, TrustedConsentCeremonyId,
@@ -35,6 +36,18 @@ pub(crate) struct PersistedAcceptance {
 pub(crate) struct PersistedSessionPoolSelection {
     pub challenge_id: ChallengeId,
     pub selection: PoolSelectionCommitment,
+}
+
+pub(crate) struct PersistPoolOfferReplacement<'a> {
+    pub replaced_session_id: &'a WorkSessionId,
+    pub candidate_session_id: &'a WorkSessionId,
+    pub challenge_id: &'a ChallengeId,
+    pub prior_offer: &'a PoolOffer,
+    pub candidate_offer: &'a PoolOffer,
+    pub candidate_signature: &'a str,
+    pub candidate_set_digest: &'a str,
+    pub change: &'a PoolOfferChange,
+    pub now: u64,
 }
 
 pub(crate) struct ClaimedIssuance {
@@ -149,6 +162,11 @@ pub(crate) trait AuthorityRepository: Send + Sync {
         &self,
         session_id: &WorkSessionId,
     ) -> Result<PersistedSessionPoolSelection, AuthorityPersistenceError>;
+
+    async fn persist_pool_offer_replacement(
+        &self,
+        input: PersistPoolOfferReplacement<'_>,
+    ) -> Result<PoolOfferReplacementDecision, AuthorityPersistenceError>;
 
     async fn propose_pool_selection(
         &self,
@@ -360,6 +378,8 @@ pub(crate) enum AuthorityPersistenceError {
     PoolSelectionLocked,
     #[error("Pool Selection commitment does not match the proposed terms")]
     PoolSelectionMismatch,
+    #[error("Pool Offer replacement conflicts with its durable decision")]
+    ConflictingPoolOfferReplacement,
     #[error("Accepted Work Event identity conflicts with its canonical delivery")]
     ConflictingEventReplay,
     #[error("Gate Pass signing lease is no longer owned by this worker")]

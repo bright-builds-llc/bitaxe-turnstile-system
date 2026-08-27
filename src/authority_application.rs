@@ -480,6 +480,8 @@ pub enum AuthorityApplicationError {
     PoolSelectionLocked,
     #[error("Pool Selection commitment does not match the proposed terms")]
     PoolSelectionMismatch,
+    #[error("Pool Offer replacement conflicts with its durable decision")]
+    ConflictingPoolOfferReplacement,
     #[error("selected Pool Offer is not approved for this Work Challenge")]
     UnknownPoolOffer,
     #[error("selected payout is not permitted by this Pool Offer")]
@@ -551,6 +553,9 @@ impl From<AuthorityPersistenceError> for AuthorityApplicationError {
             AuthorityPersistenceError::PoolSelectionRequired => Self::PoolSelectionRequired,
             AuthorityPersistenceError::PoolSelectionLocked => Self::PoolSelectionLocked,
             AuthorityPersistenceError::PoolSelectionMismatch => Self::PoolSelectionMismatch,
+            AuthorityPersistenceError::ConflictingPoolOfferReplacement => {
+                Self::ConflictingPoolOfferReplacement
+            }
             AuthorityPersistenceError::ConflictingEventReplay => Self::ConflictingEventReplay,
             AuthorityPersistenceError::ReplayedIssuanceProof => Self::ReplayedIssuanceProof,
             AuthorityPersistenceError::TrustedConsentRequired => Self::TrustedConsentRequired,

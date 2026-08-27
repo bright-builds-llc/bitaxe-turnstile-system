@@ -16,6 +16,7 @@ const MAXIMUM_ID_LENGTH: usize = 128;
 const MAXIMUM_LABEL_LENGTH: usize = 256;
 
 mod classification;
+mod replacement;
 mod selection;
 #[cfg(test)]
 mod tests;
@@ -23,6 +24,8 @@ mod tests;
 pub use classification::{
     MaterialPoolOfferChange, MaterialPoolOfferChanges, PoolOfferChange, classify_pool_offer_change,
 };
+pub(crate) use replacement::signed_pool_offers;
+pub use replacement::{PoolOfferReplacementDecision, PoolOfferReplacementStatus};
 use selection::PayoutChoice;
 pub use selection::{PoolSelection, PoolSelectionCommitment};
 
@@ -433,17 +436,14 @@ pub(crate) fn signed_default_pool_offers(
     operator_terms_url: &str,
 ) -> Result<SignedPoolOfferSet, PoolOfferError> {
     let offers = vec![default_pool_offer(privacy_terms_url, operator_terms_url)?];
-    let claims = PoolOfferSetClaims {
-        iss: issuer.to_owned(),
-        challenge_id: challenge_id.to_owned(),
-        action_policy: action_policy.id().to_owned(),
-        offers: offers.clone(),
-        trusted_confirmation_required: action_policy.requires_trusted_confirmation(),
-        bwg_version: PROTOCOL_VERSION.to_owned(),
-    };
-    validate_claims(&claims)?;
-    let signature = signer.sign_authority_payload(POOL_OFFER_SET_TYPE, &claims)?;
-    Ok(SignedPoolOfferSet { offers, signature })
+    signed_pool_offers(
+        signer,
+        issuer,
+        challenge_id,
+        action_policy,
+        offers,
+        action_policy.requires_trusted_confirmation(),
+    )
 }
 
 fn is_false(value: &bool) -> bool {

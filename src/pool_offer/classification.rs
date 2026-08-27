@@ -1,7 +1,10 @@
+use serde::{Deserialize, Serialize};
+
 use super::{PoolOffer, PoolOfferError};
 
 /// Consent-relevant term categories used for deterministic failover classification.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum MaterialPoolOfferChange {
     EconomicTerms,
     PayoutTerms,
@@ -11,14 +14,15 @@ pub enum MaterialPoolOfferChange {
 }
 
 /// Whether failover may reuse existing consent or must obtain fresh Work Consent.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum PoolOfferChange {
     Equivalent,
     MateriallyChanged { changes: MaterialPoolOfferChanges },
 }
 
 /// Non-empty consent-relevant change set.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct MaterialPoolOfferChanges(Vec<MaterialPoolOfferChange>);
 
 impl MaterialPoolOfferChanges {

@@ -27,11 +27,15 @@ BWG Core roadmap. Its material-change seam composes with
   idempotent, generation-fenced replacement transition with a derived reason, fresh lease/Stratum/
   extranonce identity, restart-safe progress, terminal admission rejection, and Relying-facing
   identity minimization.
+- [Ticket 03](./issues/03-equivalent-offer-failover.md) added the authenticated replacement-offer
+  seam: the Authority reloads prior consent, verifies the signed candidate, classifies exact terms,
+  durably releases endpoint-only equivalence, and holds every material candidate pending without a
+  Work Session for Trusted Consent Ticket 04.
 
 ## Delivery order
 
 1. [x] [Aggregate exact work across concurrent and successive sessions](./issues/01-multi-session-aggregation.md)
 2. [x] [Replace failed Workers without durable device identity](./issues/02-worker-replacement.md)
-3. [Fail over only between materially equivalent Pool Offers](./issues/03-equivalent-offer-failover.md)
+3. [x] [Fail over only between materially equivalent Pool Offers](./issues/03-equivalent-offer-failover.md)
 4. [`bwg-trusted-consent` material-change bridge](../bwg-trusted-consent/issues/04-material-change-bridge.md)
 5. [Compose failover, reconfirmation, and parent closure](./issues/04-composed-failover-closure.md)

@@ -4,6 +4,7 @@ use sqlx::Row as _;
 mod accounting;
 mod connection;
 mod lifecycle;
+mod offer_replacement;
 mod pool_selection;
 mod trusted_consent;
 mod trusted_consent_lease;
@@ -15,9 +16,10 @@ use accounting::{
 };
 
 use super::{
-    AuthorityPersistenceError, AuthorityRepository, ClaimedIssuance, PersistedAcceptance,
-    PersistedIssuance, PersistedProgress, ReserveTrustedConsentCeremony, StartWorkLeaseInput,
-    TrustedConsentCeremonyRecord, TrustedConsentReservation, TrustedConsentVerificationClaim,
+    AuthorityPersistenceError, AuthorityRepository, ClaimedIssuance, PersistPoolOfferReplacement,
+    PersistedAcceptance, PersistedIssuance, PersistedProgress, PersistedSessionPoolSelection,
+    ReserveTrustedConsentCeremony, StartWorkLeaseInput, TrustedConsentCeremonyRecord,
+    TrustedConsentReservation, TrustedConsentVerificationClaim,
 };
 use crate::{
     challenge::{ChallengeId, WorkChallengeDescriptor},
@@ -90,12 +92,16 @@ impl AuthorityRepository for PostgresAuthorityRepository {
 
     async fn session_pool_selection(
         &self,
-        session_id: &crate::progress::WorkSessionId,
-    ) -> Result<
-        crate::authority_persistence::PersistedSessionPoolSelection,
-        AuthorityPersistenceError,
-    > {
+        session_id: &WorkSessionId,
+    ) -> Result<PersistedSessionPoolSelection, AuthorityPersistenceError> {
         pool_selection::session_pool_selection(&self.pool, session_id).await
+    }
+
+    async fn persist_pool_offer_replacement(
+        &self,
+        input: PersistPoolOfferReplacement<'_>,
+    ) -> Result<crate::pool_offer::PoolOfferReplacementDecision, AuthorityPersistenceError> {
+        offer_replacement::persist(&self.pool, input).await
     }
 
     async fn challenge_lifecycle(

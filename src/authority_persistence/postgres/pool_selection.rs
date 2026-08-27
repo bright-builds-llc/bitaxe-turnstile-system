@@ -1,4 +1,4 @@
-use sqlx::{PgPool, Row as _, postgres::PgRow};
+use sqlx::{PgPool, Postgres, Row as _, Transaction, postgres::PgRow};
 
 use super::unix_seconds_to_i64;
 use crate::{
@@ -97,9 +97,22 @@ pub(super) async fn replace_work_session(
     now: u64,
 ) -> Result<SessionReplacement, AuthorityPersistenceError> {
     let mut transaction = pool.begin().await?;
+    let replacement =
+        replace_work_session_in_transaction(&mut transaction, replaced_session_id, session_id, now)
+            .await?;
+    transaction.commit().await?;
+    Ok(replacement)
+}
+
+pub(super) async fn replace_work_session_in_transaction(
+    transaction: &mut Transaction<'_, Postgres>,
+    replaced_session_id: &WorkSessionId,
+    session_id: &WorkSessionId,
+    now: u64,
+) -> Result<SessionReplacement, AuthorityPersistenceError> {
     let maybe_row = sqlx::query(include_str!("queries/lock_replaced_work_session.sql"))
         .bind(replaced_session_id.as_str())
-        .fetch_optional(&mut *transaction)
+        .fetch_optional(&mut **transaction)
         .await?;
     let Some(row) = maybe_row else {
         return Err(AuthorityPersistenceError::UnknownWorkSession);
@@ -109,14 +122,13 @@ pub(super) async fn replace_work_session(
         "queries/select_work_session_replacement_by_predecessor.sql"
     ))
     .bind(replaced_session_id.as_str())
-    .fetch_optional(&mut *transaction)
+    .fetch_optional(&mut **transaction)
     .await?;
     if let Some(existing) = maybe_existing {
         let replacement = replacement_from_row(&existing)?;
         if replacement.session_id() != session_id {
             return Err(AuthorityPersistenceError::ConflictingWorkSessionReplacement);
         }
-        transaction.commit().await?;
         return Ok(replacement);
     }
     let session_state = SessionLifecycleState::parse(row.try_get("lifecycle_state")?)?;
@@ -138,7 +150,7 @@ pub(super) async fn replace_work_session(
         "queries/next_work_session_replacement_generation.sql"
     ))
     .bind(&challenge_id)
-    .fetch_one(&mut *transaction)
+    .fetch_one(&mut **transaction)
     .await?;
     let result = sqlx::query(include_str!("queries/insert_replacement_work_session.sql"))
         .bind(session_id.as_str())
@@ -148,19 +160,16 @@ pub(super) async fn replace_work_session(
         .bind(replaced_session_id.as_str())
         .bind(next_generation)
         .bind(reason.as_str())
-        .execute(&mut *transaction)
+        .execute(&mut **transaction)
         .await;
     match result {
-        Ok(_) => {
-            transaction.commit().await?;
-            Ok(SessionReplacement::persisted(
-                session_id.clone(),
-                replaced_session_id.clone(),
-                u64::try_from(next_generation)
-                    .map_err(|_| AuthorityPersistenceError::InvalidPersistedData)?,
-                reason,
-            )?)
-        }
+        Ok(_) => Ok(SessionReplacement::persisted(
+            session_id.clone(),
+            replaced_session_id.clone(),
+            u64::try_from(next_generation)
+                .map_err(|_| AuthorityPersistenceError::InvalidPersistedData)?,
+            reason,
+        )?),
         Err(error)
             if error
                 .as_database_error()
