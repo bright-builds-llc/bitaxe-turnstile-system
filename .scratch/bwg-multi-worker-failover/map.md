@@ -18,10 +18,14 @@ BWG Core roadmap. Its material-change seam composes with
   fresh receipt to the changed signed terms.
 - Parent Tickets 14 and 20 close only after the final composed proof; neither parent is a prerequisite
   of its own child implementation.
+- [Ticket 01](./issues/01-multi-session-aggregation.md) confirmed the existing PostgreSQL Authority
+  transaction is already challenge-scoped across concurrent and successive Work Sessions: distinct
+  exact contributions serialize on one progress row, global deduplication remains stable, failed
+  sessions cannot erase work, and threshold races create one recoverable issuance intent.
 
 ## Delivery order
 
-1. [Aggregate exact work across concurrent and successive sessions](./issues/01-multi-session-aggregation.md)
+1. [x] [Aggregate exact work across concurrent and successive sessions](./issues/01-multi-session-aggregation.md)
 2. [Replace failed Workers without durable device identity](./issues/02-worker-replacement.md)
 3. [Fail over only between materially equivalent Pool Offers](./issues/03-equivalent-offer-failover.md)
 4. [`bwg-trusted-consent` material-change bridge](../bwg-trusted-consent/issues/04-material-change-bridge.md)
