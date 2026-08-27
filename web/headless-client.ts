@@ -7,7 +7,6 @@ export {
 export { requestTrustedConsentWithPopup } from "./trusted-consent-popup";
 export { verifyTrustedConsentReceipt } from "./trusted-consent";
 export { verifyPoolOfferSet } from "./headless-pool-offer";
-
 import {
   ConsentRequiredError,
   TrustedConsentRequiredError,
@@ -33,9 +32,22 @@ import {
   sha256Base64Url,
 } from "./headless-values";
 import { verifyTrustedConsentReceipt } from "./trusted-consent";
+import {
+  discoverWorker,
+  renewWorkerController,
+  restoreWorkerController,
+  restorationReason,
+  shutdownWorkerController,
+  startWorkerController,
+  stopWorkerController,
+  validatedWorkerStatus,
+} from "./headless-worker-control";
 
 export async function createHeadlessClient(input: HeadlessClientInput): Promise<HeadlessClient> {
   const snapshot = snapshotInput(input);
+  const maybeWorkerCapabilities = snapshot.maybeWorkerController
+    ? await discoverWorker(snapshot.maybeWorkerController)
+    : undefined;
   const expectedHashes = canonicalSafePositiveBigInt(
     snapshot.challenge.expectedHashes,
     "expected hashes",
@@ -114,6 +126,16 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
     lifecycle = next;
     emit(next);
   };
+  const pauseAfterControllerDisconnect = async () => {
+    if (lifecycle.challengeState !== "active" || lifecycle.controlState !== "running") return;
+    await snapshot.transport.pause();
+    if (lifecycle.challengeState === "active" && lifecycle.controlState === "running") {
+      setLifecycle({ type: "lifecycle", challengeState: "active", controlState: "paused" });
+    }
+  };
+  const unsubscribeWorkerDisconnect = snapshot.maybeWorkerController?.subscribeDisconnect?.(
+    async () => pauseAfterControllerDisconnect(),
+  );
   const unsubscribeAuthority = snapshot.transport.subscribeAuthorityEvents(async (event) => {
     if (event.type === "artifact_expiry") {
       await identityAccess.retainThrough(event.expiresAtUnixSeconds);
@@ -130,6 +152,10 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       return;
     }
     const nextLifecycle = authorityLifecycleTransition(lifecycle, event.state);
+    const maybeRestorationReason = restorationReason(event.state);
+    if (snapshot.maybeWorkerController && maybeRestorationReason) {
+      await restoreWorkerController(snapshot.maybeWorkerController, maybeRestorationReason);
+    }
     if (
       lifecycle.challengeState === "issued" &&
       lifecycle.controlState === "awaiting_consent" &&
@@ -191,7 +217,15 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       if (lifecycle.challengeState !== "issued" || lifecycle.controlState !== "ready") {
         throw new Error("lifecycle transition is forbidden");
       }
-      await snapshot.transport.start(maybeConsentReceipt.maybeTrustedConsentReceipt);
+      const maybeGrant = await snapshot.transport.start(
+        maybeConsentReceipt.maybeTrustedConsentReceipt,
+      );
+      await startWorkerController(
+        snapshot.maybeWorkerController,
+        maybeGrant,
+        snapshot.challenge.challengeId,
+        snapshot.transport,
+      );
       if (lifecycle.challengeState === "issued") {
         setLifecycle({ type: "lifecycle", challengeState: "active", controlState: "running" });
       }
@@ -200,7 +234,7 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       if (lifecycle.challengeState !== "active" || lifecycle.controlState !== "running") {
         throw new Error("lifecycle transition is forbidden");
       }
-      await snapshot.transport.pause();
+      await stopWorkerController(snapshot.maybeWorkerController, "pause", snapshot.transport);
       if (lifecycle.challengeState === "active" && lifecycle.controlState === "running") {
         setLifecycle({ type: "lifecycle", challengeState: "active", controlState: "paused" });
       }
@@ -209,7 +243,13 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       if (lifecycle.challengeState !== "active" || lifecycle.controlState !== "paused") {
         throw new Error("lifecycle transition is forbidden");
       }
-      await snapshot.transport.resume();
+      const maybeGrant = await snapshot.transport.resume();
+      await startWorkerController(
+        snapshot.maybeWorkerController,
+        maybeGrant,
+        snapshot.challenge.challengeId,
+        snapshot.transport,
+      );
       if (lifecycle.challengeState === "active" && lifecycle.controlState === "paused") {
         setLifecycle({ type: "lifecycle", challengeState: "active", controlState: "running" });
       }
@@ -219,11 +259,36 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
         throw new Error("lifecycle transition is forbidden");
       }
       consentGeneration += 1;
-      await snapshot.transport.cancel();
+      await stopWorkerController(snapshot.maybeWorkerController, "cancel", snapshot.transport);
       await identityAccess.clearConsent(snapshot.challenge.challengeId);
       if (lifecycle.challengeState === "issued" || lifecycle.challengeState === "active") {
         setLifecycle({ type: "lifecycle", challengeState: "cancelled", controlState: "cancelled" });
       }
+    },
+    maybeWorkerCapabilities() {
+      return maybeWorkerCapabilities ? structuredClone(maybeWorkerCapabilities) : undefined;
+    },
+    async maybeWorkerStatus() {
+      const maybeController = snapshot.maybeWorkerController;
+      return maybeController
+        ? structuredClone(validatedWorkerStatus(await maybeController.status()))
+        : undefined;
+    },
+    async renewWorkerLease() {
+      if (lifecycle.challengeState !== "active" || lifecycle.controlState !== "running") {
+        throw new Error("lifecycle transition is forbidden");
+      }
+      const maybeController = snapshot.maybeWorkerController;
+      const maybeRenew = snapshot.transport.renewWorkerLease;
+      if (!maybeController || !maybeRenew) {
+        throw new Error("Worker Controller renewal is unavailable");
+      }
+      await renewWorkerController(
+        maybeController,
+        maybeRenew,
+        snapshot.challenge.challengeId,
+        snapshot.transport,
+      );
     },
     subscribe(listener) {
       listeners.add(listener);
@@ -236,9 +301,17 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       }
       emit({ type: "activity_estimate", ...activity });
     },
-    close() {
+    async close() {
       unsubscribeAuthority();
+      unsubscribeWorkerDisconnect?.();
       listeners.clear();
+      if (lifecycle.challengeState === "active" && lifecycle.controlState === "running") {
+        await shutdownWorkerController(
+          snapshot.maybeWorkerController,
+          "tab_closed",
+          snapshot.transport,
+        );
+      }
     },
   };
 }
@@ -263,6 +336,7 @@ function snapshotInput(input: HeadlessClientInput): Omit<HeadlessClientInput, "c
     claimantWorkCeiling: input.claimantWorkCeiling,
     clientSafetyCeiling: input.clientSafetyCeiling,
     transport: input.transport,
+    ...(input.maybeWorkerController ? { maybeWorkerController: input.maybeWorkerController } : {}),
     ...(input.maybeNowUnixSeconds ? { maybeNowUnixSeconds: input.maybeNowUnixSeconds } : {}),
     ...(input.maybeRestoration
       ? { maybeRestoration: structuredClone(input.maybeRestoration) }

@@ -101,6 +101,7 @@ try {
   await waitFor(() => inlineHarness.calls.includes("start"));
   click(inline, "Pause work");
   await waitFor(() => inlineHarness.calls.includes("pause"));
+  await waitFor(() => hasButton(inline, "Resume work"));
   click(inline, "Resume work");
   await waitFor(() => inlineHarness.calls.includes("resume"));
   await inlineHarness.emit({ type: "verified_progress", acceptedHashes: vector.challenge.expectedHashes });
@@ -388,6 +389,11 @@ function click(element, label) {
     .find((candidate) => !candidate.hidden && candidate.textContent === label);
   if (!button) throw new Error(`button ${label} is missing`);
   button.click();
+}
+
+function hasButton(element, label) {
+  return [...shadow(element).querySelectorAll("button")]
+    .some((candidate) => !candidate.hidden && candidate.textContent === label);
 }
 
 function assertText(root, expected, name) {

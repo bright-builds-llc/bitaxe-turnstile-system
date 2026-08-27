@@ -123,7 +123,7 @@ describe("pairwise Claimant key", () => {
     );
     await firstClient.grantConsent();
     await firstClient.start();
-    firstClient.close();
+    await firstClient.close();
 
     // Act
     const restoredIdentity = await restoreClaimantIdentity(identity.keyId(), { maybeClock: clock });
@@ -154,7 +154,7 @@ describe("pairwise Claimant key", () => {
     );
     await firstClient.grantConsent();
     await firstClient.start();
-    firstClient.close();
+    await firstClient.close();
     const restoredIdentity = await restoreClaimantIdentity(identity.keyId(), { maybeClock: clock });
     const restoredHarness = transportHarness();
 

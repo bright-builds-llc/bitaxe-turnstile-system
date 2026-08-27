@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "noEmit": false,
+    "outDir": "dist/worker-controller-simulator"
+  },
+  "include": ["web/worker-controller-simulator-entry.ts"]
+}

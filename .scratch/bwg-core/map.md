@@ -65,6 +65,10 @@
   WebAuthn reconfirmation, equivalent recovery preserves progress, safe Pool Adapter projections
   expose no Worker identity to the Relying Service, and concurrent completion stops every current
   session before one recoverable Gate Pass issuance.
+- [Ticket 21](./issues/21-worker-controller-usb-contract.md) published the versioned local Worker
+  Controller/USB contract, strict cross-repository fixtures/schema, a monotonic fail-safe simulator,
+  and headless-client composition that restores Mining Baseline state without exposing device
+  settings or credentials.
 
 ## Multi-worker failover boundary split
 

@@ -51,6 +51,15 @@ pairs and uses completed, cancelled, and expired terminal states rather than imp
 Events contain no private key, credential, action payload, payout destination, or unrelated
 identity.
 
+Local Worker flows may additionally supply the versioned public `WorkerController` interface from
+`bwg-core/worker-controller`. Authority Start/resume returns an authenticated device grant; the
+headless client forwards it, composes renewal, validates redacted status/restoration responses, and
+rolls back both Worker and Authority on controller failure. `maybeWorkerCapabilities` and
+`maybeWorkerStatus` expose only the strict non-secret contract. USB disconnect pauses Authority
+after device-local restoration, while asynchronous `close()` requests `tab_closed` restoration.
+The complete wire and simulator profile is documented in
+[`bwg-0.1-worker-controller.md`](./bwg-0.1-worker-controller.md).
+
 The independent fixture at `conformance/bwg-0.1/headless-work-consent-vectors.json` includes a real
 Ed25519-signed offer set. `bun run test:browser` loads the emitted ESM in Chromium and exercises
 pre-issuance key binding, IndexedDB restoration, disclosure, explicit consent, controls, progress

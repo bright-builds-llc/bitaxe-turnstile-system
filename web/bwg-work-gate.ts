@@ -266,7 +266,12 @@ function createWorkGateView(
     disposed = true;
     maybeTrustedConsentAbort?.abort();
     maybeUnsubscribe?.();
-    maybeSession()?.client.close();
+    const maybeClose = maybeSession()?.client.close();
+    if (maybeClose) {
+      void maybeClose.catch(() => {
+        console.error("Worker shutdown failed during component cleanup");
+      });
+    }
   });
   return root;
 }

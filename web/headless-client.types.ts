@@ -1,4 +1,11 @@
 import type { PreparedClaimantIdentity } from "./headless-key";
+import type {
+  WorkerController,
+  WorkerControllerCapabilities,
+  WorkerControllerStatus,
+  WorkerLeaseGrant,
+  WorkerLeaseRenewal,
+} from "./worker-controller";
 
 export type WorkChallengeInput = {
   challengeId: string;
@@ -137,10 +144,11 @@ export type AuthorityClientEvent =
   | { type: "artifact_expiry"; expiresAtUnixSeconds: number };
 
 export type HeadlessTransport = {
-  start(maybeTrustedConsentReceipt?: string): Promise<void>;
+  start(maybeTrustedConsentReceipt?: string): Promise<void | WorkerLeaseGrant>;
   pause(): Promise<void>;
-  resume(): Promise<void>;
+  resume(): Promise<void | WorkerLeaseGrant>;
   cancel(): Promise<void>;
+  renewWorkerLease?(): Promise<WorkerLeaseRenewal>;
   subscribeAuthorityEvents(listener: (event: AuthorityClientEvent) => Promise<void>): () => void;
 };
 
@@ -175,6 +183,7 @@ export type HeadlessClientInput = {
   claimantWorkCeiling: string;
   clientSafetyCeiling: string;
   transport: HeadlessTransport;
+  maybeWorkerController?: WorkerController;
   maybeNowUnixSeconds?: () => number;
   maybeRestoration?: {
     challengeState: "issued" | "active" | "satisfied" | "pass_issued";
@@ -252,7 +261,10 @@ export type HeadlessClient = {
   pause(): Promise<void>;
   resume(): Promise<void>;
   cancel(): Promise<void>;
+  maybeWorkerCapabilities(): WorkerControllerCapabilities | undefined;
+  maybeWorkerStatus(): Promise<WorkerControllerStatus | undefined>;
+  renewWorkerLease(): Promise<void>;
   subscribe(listener: (event: HeadlessEvent) => void): () => void;
   reportActivityEstimate(activity: ActivityEstimateInput): void;
-  close(): void;
+  close(): Promise<void>;
 };
