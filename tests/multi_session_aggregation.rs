@@ -10,15 +10,9 @@ use bwg_core::{
         ServiceCredential,
     },
     challenge::{ActionPolicy, ChallengeId},
-    lifecycle::{SessionLifecycleState, WorkLease, WorkerClock},
-    progress::{
-        AcceptedWorkEvent, AcceptedWorkEventId, AcceptedWorkEventInput, NetworkTargetOutcome,
-        ReceiptTime, ShareFingerprint, WorkSessionId,
-    },
-    stratum_v1::{
-        PostgresStratumSessionRegistry, StratumCredentialIssuer, StratumLeaseContext,
-        StratumSessionCredentials,
-    },
+    lifecycle::{SessionLifecycleState, WorkerClock},
+    progress::WorkSessionId,
+    stratum_v1::{PostgresStratumSessionRegistry, StratumCredentialIssuer},
 };
 use serde_json::{Value, json};
 
@@ -28,10 +22,13 @@ mod authority_key_support;
 mod postgres_support;
 #[path = "support/running_server.rs"]
 mod running_server_support;
+#[path = "support/work_session.rs"]
+mod work_session_support;
 
 use authority_key_support::{CLAIMANT_PUBLIC_JWK, authority_keys};
 use postgres_support::PostgresTestDatabase;
 use running_server_support::RunningServer;
+use work_session_support::{accepted_event, stratum_credentials};
 
 const CLIENT_ID: &str = "multi-session-reference-service";
 const SERVICE_SECRET: &str = "multi-session-secret-P9vK2mQ7xR4tY8uN3cF6wL1zA5dH0sJ";
@@ -416,51 +413,6 @@ async fn issue_challenge(
         .as_u64()
         .ok_or("challenge response needs an expiry")?;
     Ok((challenge_id, expires_at))
-}
-
-fn stratum_credentials(
-    issuer: &StratumCredentialIssuer,
-    session_id: WorkSessionId,
-    lease: &WorkLease,
-    continuity_id: &str,
-    now: u64,
-    challenge_expires_at: u64,
-) -> Result<StratumSessionCredentials, Box<dyn Error>> {
-    let lease_context = StratumLeaseContext::new(
-        lease.lease_id().to_owned(),
-        continuity_id.to_owned(),
-        0,
-        lease.renew_at_monotonic_milliseconds(),
-        lease.expires_at_monotonic_milliseconds(),
-    )?;
-    Ok(issuer.issue(
-        session_id,
-        lease_context,
-        now,
-        now.checked_add(60).ok_or("lease expiry overflow")?,
-        challenge_expires_at,
-    )?)
-}
-
-fn accepted_event(
-    event_id: &str,
-    share_fingerprint: &str,
-    session_id: WorkSessionId,
-    target_marker: u8,
-    received_at: u64,
-) -> Result<AcceptedWorkEvent, Box<dyn Error>> {
-    let mut assigned_target = [0xff_u8; 32];
-    assigned_target[..5].fill(0);
-    assigned_target[5] = target_marker;
-    Ok(AcceptedWorkEvent::try_from(AcceptedWorkEventInput {
-        event_id: AcceptedWorkEventId::try_from(event_id.to_owned())?,
-        work_session_id: session_id,
-        assigned_target,
-        received_at: ReceiptTime::try_from(received_at)?,
-        share_fingerprint: ShareFingerprint::try_from(share_fingerprint.to_owned())?,
-        network_target_outcome: NetworkTargetOutcome::BelowNetworkTarget,
-        maybe_worker_report: None,
-    })?)
 }
 
 fn authority_config() -> Result<Config, Box<dyn Error>> {

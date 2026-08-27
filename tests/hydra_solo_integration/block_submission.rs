@@ -3,6 +3,7 @@ use super::*;
 pub(super) struct IndependentSubmissionInput<'a> {
     pub(super) outbox: PostgresAcceptedWorkOutbox,
     pub(super) sessions: PostgresStratumSessionRegistry,
+    pub(super) adapter: SimulatedPoolAdapter,
     pub(super) database: PostgresTestDatabase,
     pub(super) upstream_authorization: StratumUpstreamAuthorization,
     pub(super) hydra_address: SocketAddr,
@@ -19,6 +20,7 @@ pub(super) async fn submit_network_block_after_reconnect(
     let IndependentSubmissionInput {
         outbox,
         sessions,
+        adapter,
         database,
         upstream_authorization,
         hydra_address,
@@ -28,7 +30,7 @@ pub(super) async fn submit_network_block_after_reconnect(
         claimant,
         issued_pass_before,
     } = input;
-    let proxy = StratumTcpProxy::new(outbox.clone(), sessions)
+    let proxy = StratumTcpProxy::new(outbox.clone(), sessions, Arc::new(adapter))
         .with_upstream_authorization(upstream_authorization);
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = listener.local_addr()?;

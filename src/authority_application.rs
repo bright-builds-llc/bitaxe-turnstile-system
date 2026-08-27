@@ -462,6 +462,8 @@ pub enum AuthorityApplicationError {
     DuplicateWorkSession,
     #[error("Work Session is not persisted")]
     UnknownWorkSession,
+    #[error("Work Session predecessor already has a different replacement")]
+    ConflictingWorkSessionReplacement,
     #[error("service credential does not control this Work Challenge")]
     ChallengeControlNotPermitted,
     #[error("requested lifecycle transition is forbidden")]
@@ -537,6 +539,9 @@ impl From<AuthorityPersistenceError> for AuthorityApplicationError {
             AuthorityPersistenceError::UnknownChallenge => Self::UnknownChallenge,
             AuthorityPersistenceError::DuplicateWorkSession => Self::DuplicateWorkSession,
             AuthorityPersistenceError::UnknownWorkSession => Self::UnknownWorkSession,
+            AuthorityPersistenceError::ConflictingWorkSessionReplacement => {
+                Self::ConflictingWorkSessionReplacement
+            }
             AuthorityPersistenceError::ForbiddenLifecycleTransition => {
                 Self::ForbiddenLifecycleTransition
             }

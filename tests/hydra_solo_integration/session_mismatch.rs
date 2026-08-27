@@ -12,6 +12,7 @@ async fn mismatched_consent_session_fails_closed_and_releases_extranonce()
         hydra_address,
         outbox,
         sessions,
+        adapter,
         credentials,
         upstream_authorization,
         now,
@@ -25,7 +26,7 @@ async fn mismatched_consent_session_fails_closed_and_releases_extranonce()
         now + 300,
     )?;
     sessions.register(&mismatched_credentials).await?;
-    let proxy = StratumTcpProxy::new(outbox, sessions.clone())
+    let proxy = StratumTcpProxy::new(outbox, sessions.clone(), Arc::new(adapter))
         .with_upstream_authorization(upstream_authorization);
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let proxy_address = listener.local_addr()?;

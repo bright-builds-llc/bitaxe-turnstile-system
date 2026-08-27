@@ -1,10 +1,13 @@
-use sqlx::{PgPool, Row as _};
+use sqlx::{PgPool, Row as _, postgres::PgRow};
 
 use super::unix_seconds_to_i64;
 use crate::{
     authority_persistence::{AuthorityPersistenceError, PersistedSessionPoolSelection},
     challenge::ChallengeId,
-    lifecycle::{ChallengeLifecycleCommand, ChallengeLifecycleState, apply_challenge_command},
+    lifecycle::{
+        ChallengeLifecycleCommand, ChallengeLifecycleState, SessionLifecycleState,
+        SessionReplacement, SessionStopReason, apply_challenge_command,
+    },
     pool_offer::PoolSelectionCommitment,
     progress::WorkSessionId,
 };
@@ -85,6 +88,125 @@ pub(super) async fn insert_work_session(
         }
         Err(error) => Err(error.into()),
     }
+}
+
+pub(super) async fn replace_work_session(
+    pool: &PgPool,
+    replaced_session_id: &WorkSessionId,
+    session_id: &WorkSessionId,
+    now: u64,
+) -> Result<SessionReplacement, AuthorityPersistenceError> {
+    let mut transaction = pool.begin().await?;
+    let maybe_row = sqlx::query(include_str!("queries/lock_replaced_work_session.sql"))
+        .bind(replaced_session_id.as_str())
+        .fetch_optional(&mut *transaction)
+        .await?;
+    let Some(row) = maybe_row else {
+        return Err(AuthorityPersistenceError::UnknownWorkSession);
+    };
+    let challenge_id = row.try_get::<String, _>("challenge_id")?;
+    let maybe_existing = sqlx::query(include_str!(
+        "queries/select_work_session_replacement_by_predecessor.sql"
+    ))
+    .bind(replaced_session_id.as_str())
+    .fetch_optional(&mut *transaction)
+    .await?;
+    if let Some(existing) = maybe_existing {
+        let replacement = replacement_from_row(&existing)?;
+        if replacement.session_id() != session_id {
+            return Err(AuthorityPersistenceError::ConflictingWorkSessionReplacement);
+        }
+        transaction.commit().await?;
+        return Ok(replacement);
+    }
+    let session_state = SessionLifecycleState::parse(row.try_get("lifecycle_state")?)?;
+    let reason = SessionStopReason::parse(row.try_get("stop_reason")?)?;
+    if !matches!(
+        session_state,
+        SessionLifecycleState::Stopping | SessionLifecycleState::Failed
+    ) || !reason.allows_replacement()
+    {
+        return Err(AuthorityPersistenceError::ForbiddenLifecycleTransition);
+    }
+    let challenge_state = ChallengeLifecycleState::parse(row.try_get("challenge_state")?)?;
+    apply_challenge_command(challenge_state, ChallengeLifecycleCommand::RegisterSession)
+        .map_err(|_| AuthorityPersistenceError::ForbiddenLifecycleTransition)?;
+    if unix_seconds_to_i64(now)? >= row.try_get::<i64, _>("expires_at_unix_seconds")? {
+        return Err(AuthorityPersistenceError::ForbiddenLifecycleTransition);
+    }
+    let next_generation = sqlx::query_scalar::<_, i64>(include_str!(
+        "queries/next_work_session_replacement_generation.sql"
+    ))
+    .bind(&challenge_id)
+    .fetch_one(&mut *transaction)
+    .await?;
+    let result = sqlx::query(include_str!("queries/insert_replacement_work_session.sql"))
+        .bind(session_id.as_str())
+        .bind(&challenge_id)
+        .bind(row.try_get::<String, _>("pool_offer_id")?)
+        .bind(row.try_get::<String, _>("payout_commitment")?)
+        .bind(replaced_session_id.as_str())
+        .bind(next_generation)
+        .bind(reason.as_str())
+        .execute(&mut *transaction)
+        .await;
+    match result {
+        Ok(_) => {
+            transaction.commit().await?;
+            Ok(SessionReplacement::persisted(
+                session_id.clone(),
+                replaced_session_id.clone(),
+                u64::try_from(next_generation)
+                    .map_err(|_| AuthorityPersistenceError::InvalidPersistedData)?,
+                reason,
+            )?)
+        }
+        Err(error)
+            if error
+                .as_database_error()
+                .is_some_and(|error| error.is_unique_violation()) =>
+        {
+            Err(AuthorityPersistenceError::DuplicateWorkSession)
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+pub(super) async fn maybe_session_replacement(
+    pool: &PgPool,
+    session_id: &WorkSessionId,
+) -> Result<Option<SessionReplacement>, AuthorityPersistenceError> {
+    let maybe_row = sqlx::query(include_str!("queries/select_work_session_replacement.sql"))
+        .bind(session_id.as_str())
+        .fetch_optional(pool)
+        .await?;
+    let Some(row) = maybe_row else {
+        return Err(AuthorityPersistenceError::UnknownWorkSession);
+    };
+    let generation = row.try_get::<i64, _>("replacement_generation")?;
+    if generation == 0 {
+        if row
+            .try_get::<Option<String>, _>("replaces_session_id")?
+            .is_none()
+            && row
+                .try_get::<Option<String>, _>("replacement_reason")?
+                .is_none()
+        {
+            return Ok(None);
+        }
+        return Err(AuthorityPersistenceError::InvalidPersistedData);
+    }
+    Ok(Some(replacement_from_row(&row)?))
+}
+
+fn replacement_from_row(row: &PgRow) -> Result<SessionReplacement, AuthorityPersistenceError> {
+    Ok(SessionReplacement::persisted(
+        WorkSessionId::try_from(row.try_get::<String, _>("session_id")?)?,
+        WorkSessionId::try_from(row.try_get::<String, _>("replaces_session_id")?)?,
+        u64::try_from(row.try_get::<i64, _>("replacement_generation")?)
+            .map_err(|_| AuthorityPersistenceError::InvalidPersistedData)?,
+        SessionStopReason::parse(row.try_get("replacement_reason")?)?,
+    )?)
 }
 
 pub(super) async fn propose_pool_selection(

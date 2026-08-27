@@ -10,8 +10,12 @@ pub(super) struct InitialWorker {
 pub(super) async fn run_initial_worker(
     fixture: &IntegrationFixture,
 ) -> Result<InitialWorker, Box<dyn Error>> {
-    let proxy = StratumTcpProxy::new(fixture.outbox.clone(), fixture.sessions.clone())
-        .with_upstream_authorization(fixture.upstream_authorization.clone());
+    let proxy = StratumTcpProxy::new(
+        fixture.outbox.clone(),
+        fixture.sessions.clone(),
+        Arc::new(fixture.adapter.clone()),
+    )
+    .with_upstream_authorization(fixture.upstream_authorization.clone());
     let proxy_listener = TcpListener::bind("127.0.0.1:0").await?;
     let proxy_address = proxy_listener.local_addr()?;
     let hydra_address = fixture.hydra_address;

@@ -5,8 +5,8 @@ use crate::{
     challenge::{ChallengeId, WorkChallengeDescriptor},
     crypto_profile::{GatePassClaimsSeed, GatePassClaimsTemplate},
     lifecycle::{
-        ChallengeLifecycle, PauseReason, SessionLifecycle, WorkLease, WorkerClock,
-        WorkerInterruption,
+        ChallengeLifecycle, PauseReason, SessionLifecycle, SessionReplacement, WorkLease,
+        WorkerClock, WorkerInterruption,
     },
     pool_offer::PoolSelectionCommitment,
     progress::{AcceptedWorkAcknowledgement, AcceptedWorkEvent, ProgressError, WorkSessionId},
@@ -132,6 +132,18 @@ pub(crate) trait AuthorityRepository: Send + Sync {
         session_id: &WorkSessionId,
         now: u64,
     ) -> Result<(), AuthorityPersistenceError>;
+
+    async fn replace_work_session(
+        &self,
+        replaced_session_id: &WorkSessionId,
+        session_id: &WorkSessionId,
+        now: u64,
+    ) -> Result<SessionReplacement, AuthorityPersistenceError>;
+
+    async fn maybe_session_replacement(
+        &self,
+        session_id: &WorkSessionId,
+    ) -> Result<Option<SessionReplacement>, AuthorityPersistenceError>;
 
     async fn session_pool_selection(
         &self,
@@ -332,6 +344,8 @@ pub(crate) enum AuthorityPersistenceError {
     DuplicateWorkSession,
     #[error("Work Session is not persisted")]
     UnknownWorkSession,
+    #[error("Work Session predecessor already has a different replacement")]
+    ConflictingWorkSessionReplacement,
     #[error("requested lifecycle transition is forbidden")]
     ForbiddenLifecycleTransition,
     #[error("Work Lease identity does not match the active lease")]

@@ -1,4 +1,7 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use tokio::{
     io::{
@@ -14,6 +17,7 @@ use tokio::{
 use super::{
     MAXIMUM_STRATUM_FRAME_BYTES, PostgresAcceptedWorkOutbox, PostgresStratumSessionRegistry,
     StratumProxyAction, StratumSession, StratumUpstreamAuthorization, StratumV1Error,
+    WorkSessionDisconnectSink,
 };
 
 /// TCP adapter that executes one pure Stratum Session against one upstream connection.
@@ -23,18 +27,21 @@ pub struct StratumTcpProxy {
     sessions: PostgresStratumSessionRegistry,
     idle_timeout: Duration,
     maybe_upstream_authorization: Option<StratumUpstreamAuthorization>,
+    disconnect_sink: Arc<dyn WorkSessionDisconnectSink>,
 }
 
 impl StratumTcpProxy {
     pub fn new(
         outbox: PostgresAcceptedWorkOutbox,
         sessions: PostgresStratumSessionRegistry,
+        disconnect_sink: Arc<dyn WorkSessionDisconnectSink>,
     ) -> Self {
         Self {
             outbox,
             sessions,
             idle_timeout: Duration::from_secs(90),
             maybe_upstream_authorization: None,
+            disconnect_sink,
         }
     }
 
@@ -42,6 +49,7 @@ impl StratumTcpProxy {
         outbox: PostgresAcceptedWorkOutbox,
         sessions: PostgresStratumSessionRegistry,
         idle_timeout: Duration,
+        disconnect_sink: Arc<dyn WorkSessionDisconnectSink>,
     ) -> Result<Self, StratumV1Error> {
         if idle_timeout.is_zero() || idle_timeout > Duration::from_secs(3_600) {
             return Err(StratumV1Error::InvalidSessionConfig);
@@ -51,6 +59,7 @@ impl StratumTcpProxy {
             sessions,
             idle_timeout,
             maybe_upstream_authorization: None,
+            disconnect_sink,
         })
     }
 
@@ -125,6 +134,7 @@ impl StratumTcpProxy {
             self.sessions
                 .bind_connection(&connection_id, authenticated.session_id())
                 .await?;
+            let established_session_id = authenticated.session_id().clone();
             let mut session_config = authenticated.into_session_config(username, secret, now)?;
             if let Some(authorization) = &self.maybe_upstream_authorization {
                 session_config = session_config.with_upstream_authorization(
@@ -155,15 +165,30 @@ impl StratumTcpProxy {
                 return Err(StratumV1Error::InvalidFrame);
             };
             write_line(&mut upstream_write, authorize).await?;
-            self.run_established(
-                worker_reader,
-                worker_write,
-                upstream_reader,
-                upstream_write,
-                session,
-                connection_id.clone(),
-            )
-            .await
+            let transport_result = self
+                .run_established(
+                    worker_reader,
+                    worker_write,
+                    upstream_reader,
+                    upstream_write,
+                    session,
+                    connection_id.clone(),
+                )
+                .await;
+            let disconnect_result = self
+                .disconnect_sink
+                .disconnected(&established_session_id)
+                .await;
+            match (transport_result, disconnect_result) {
+                (Ok(()), Ok(())) => Ok(()),
+                (Err(error), Ok(())) => Err(error),
+                (Ok(()), Err(_)) => Err(StratumV1Error::DisconnectNotificationUnavailable),
+                (Err(transport), Err(_)) => {
+                    Err(StratumV1Error::TransportAndDisconnectNotification {
+                        transport: Box::new(transport),
+                    })
+                }
+            }
         }
         .await;
         let cleanup_result = self

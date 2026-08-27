@@ -12,6 +12,7 @@ use tokio::{
     time::timeout,
 };
 
+use super::fixtures::disconnect_sink;
 use super::{PostgresTestDatabase, test_lease_context};
 
 #[test]
@@ -67,7 +68,12 @@ async fn idle_tcp_connection_terminates_at_the_configured_deadline() -> Result<(
     let database = PostgresTestDatabase::start().await?;
     let outbox = PostgresAcceptedWorkOutbox::connect(database.database_url()).await?;
     let sessions = PostgresStratumSessionRegistry::connect(database.database_url()).await?;
-    let proxy = StratumTcpProxy::with_idle_timeout(outbox, sessions, Duration::from_millis(20))?;
+    let proxy = StratumTcpProxy::with_idle_timeout(
+        outbox,
+        sessions,
+        Duration::from_millis(20),
+        disconnect_sink(),
+    )?;
     let upstream_listener = TcpListener::bind("127.0.0.1:0").await?;
     let upstream_address = upstream_listener.local_addr()?;
     let upstream_task = tokio::spawn(async move {

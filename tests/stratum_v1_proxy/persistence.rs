@@ -1,3 +1,4 @@
+use super::fixtures::disconnect_sink;
 use super::*;
 
 #[tokio::test]
@@ -224,7 +225,7 @@ async fn tcp_proxy_forwards_standard_frames_and_persists_before_accepted_respons
     let proxy_address = proxy_listener.local_addr()?;
     let session_registry = PostgresStratumSessionRegistry::connect(database.database_url()).await?;
     session_registry.register(&credentials).await?;
-    let proxy = StratumTcpProxy::new(outbox.clone(), session_registry);
+    let proxy = StratumTcpProxy::new(outbox.clone(), session_registry, disconnect_sink());
     let proxy_task =
         tokio::spawn(async move { proxy.serve_one(&proxy_listener, upstream_address).await });
     let worker = TcpStream::connect(proxy_address).await?;

@@ -72,6 +72,22 @@ impl AuthorityRepository for PostgresAuthorityRepository {
         pool_selection::insert_work_session(&self.pool, challenge_id, session_id, now).await
     }
 
+    async fn replace_work_session(
+        &self,
+        replaced_session_id: &WorkSessionId,
+        session_id: &WorkSessionId,
+        now: u64,
+    ) -> Result<crate::lifecycle::SessionReplacement, AuthorityPersistenceError> {
+        pool_selection::replace_work_session(&self.pool, replaced_session_id, session_id, now).await
+    }
+
+    async fn maybe_session_replacement(
+        &self,
+        session_id: &WorkSessionId,
+    ) -> Result<Option<crate::lifecycle::SessionReplacement>, AuthorityPersistenceError> {
+        pool_selection::maybe_session_replacement(&self.pool, session_id).await
+    }
+
     async fn session_pool_selection(
         &self,
         session_id: &crate::progress::WorkSessionId,
@@ -337,7 +353,7 @@ impl AuthorityRepository for PostgresAuthorityRepository {
                      last_monotonic_milliseconds = NULL,
                      renew_at_monotonic_milliseconds = NULL,
                      expires_at_monotonic_milliseconds = NULL, stop_reason = $2
-                 WHERE challenge_id = $1 AND lifecycle_state = 'leased'",
+                 WHERE challenge_id = $1 AND lifecycle_state IN ('ready', 'leased')",
             )
             .bind(&challenge_id)
             .bind(crate::lifecycle::SessionStopReason::ChallengeSatisfied.as_str())

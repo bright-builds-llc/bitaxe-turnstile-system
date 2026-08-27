@@ -22,11 +22,16 @@ BWG Core roadmap. Its material-change seam composes with
   transaction is already challenge-scoped across concurrent and successive Work Sessions: distinct
   exact contributions serialize on one progress row, global deduplication remains stable, failed
   sessions cannot erase work, and threshold races create one recoverable issuance intent.
+- [Ticket 02](./issues/02-worker-replacement.md) made terminal threshold handling stop ready as well
+  as leased late replacements; added established-Stratum disconnect delivery; and persisted one
+  idempotent, generation-fenced replacement transition with a derived reason, fresh lease/Stratum/
+  extranonce identity, restart-safe progress, terminal admission rejection, and Relying-facing
+  identity minimization.
 
 ## Delivery order
 
 1. [x] [Aggregate exact work across concurrent and successive sessions](./issues/01-multi-session-aggregation.md)
-2. [Replace failed Workers without durable device identity](./issues/02-worker-replacement.md)
+2. [x] [Replace failed Workers without durable device identity](./issues/02-worker-replacement.md)
 3. [Fail over only between materially equivalent Pool Offers](./issues/03-equivalent-offer-failover.md)
 4. [`bwg-trusted-consent` material-change bridge](../bwg-trusted-consent/issues/04-material-change-bridge.md)
 5. [Compose failover, reconfirmation, and parent closure](./issues/04-composed-failover-closure.md)

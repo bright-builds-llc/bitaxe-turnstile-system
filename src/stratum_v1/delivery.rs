@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use thiserror::Error;
 
 use super::{PostgresAcceptedWorkOutbox, StratumLeaseContext, StratumV1Error};
-use crate::progress::AcceptedWorkEvent;
+use crate::progress::{AcceptedWorkEvent, WorkSessionId};
 
 /// Gate Authority delivery seam for one durably recorded Accepted Work Event.
 #[async_trait]
@@ -12,6 +12,15 @@ pub trait AcceptedWorkSink: Send + Sync {
         event: AcceptedWorkEvent,
         lease_context: StratumLeaseContext,
     ) -> Result<(), AcceptedWorkSinkError>;
+}
+
+/// Authority-facing seam notified when an authenticated Stratum connection ends.
+#[async_trait]
+pub trait WorkSessionDisconnectSink: Send + Sync {
+    async fn disconnected(
+        &self,
+        session_id: &WorkSessionId,
+    ) -> Result<(), WorkSessionDisconnectSinkError>;
 }
 
 /// Recoverable delivery loop backed by the context-local Pool Adapter outbox.
@@ -77,5 +86,11 @@ pub enum DeliveryOutcome {
 #[derive(Debug, Error)]
 pub enum AcceptedWorkSinkError {
     #[error("Gate Authority delivery is unavailable")]
+    Unavailable,
+}
+
+#[derive(Debug, Error)]
+pub enum WorkSessionDisconnectSinkError {
+    #[error("Gate Authority disconnect notification is unavailable")]
     Unavailable,
 }

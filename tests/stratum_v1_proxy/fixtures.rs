@@ -1,8 +1,15 @@
-use std::error::Error;
+use std::{error::Error, sync::Arc};
 
 use crate::stratum_hash_support::coinbase_txid;
+use async_trait::async_trait;
 use bitcoin::hex::FromHex as _;
-use bwg_core::stratum_v1::{StratumLeaseContext, StratumV1Error};
+use bwg_core::{
+    progress::WorkSessionId,
+    stratum_v1::{
+        StratumLeaseContext, StratumV1Error, WorkSessionDisconnectSink,
+        WorkSessionDisconnectSinkError,
+    },
+};
 use ring::digest;
 
 pub(super) struct StratumJobFields<'a> {
@@ -102,4 +109,20 @@ pub(super) fn test_lease_context() -> Result<StratumLeaseContext, StratumV1Error
         20_000,
         60_000,
     )
+}
+
+pub(super) fn disconnect_sink() -> Arc<dyn WorkSessionDisconnectSink> {
+    Arc::new(IgnoreDisconnect)
+}
+
+struct IgnoreDisconnect;
+
+#[async_trait]
+impl WorkSessionDisconnectSink for IgnoreDisconnect {
+    async fn disconnected(
+        &self,
+        _session_id: &WorkSessionId,
+    ) -> Result<(), WorkSessionDisconnectSinkError> {
+        Ok(())
+    }
 }

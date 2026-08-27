@@ -18,6 +18,7 @@ mod target;
 mod tcp;
 pub use delivery::{
     AcceptedWorkDeliveryWorker, AcceptedWorkSink, AcceptedWorkSinkError, DeliveryOutcome,
+    WorkSessionDisconnectSink, WorkSessionDisconnectSinkError,
 };
 pub use postgres::{ClaimedAcceptedWork, PersistedAcceptedWork, PostgresAcceptedWorkOutbox};
 pub use retention::{PoolAdapterRetentionCounts, PostgresPoolAdapterRetention};
@@ -588,6 +589,10 @@ pub enum StratumV1Error {
         admission: Box<StratumV1Error>,
         cleanup: Box<StratumV1Error>,
     },
+    #[error("authenticated Work Session disconnect could not be delivered to the Gate Authority")]
+    DisconnectNotificationUnavailable,
+    #[error("Stratum transport ended ({transport}) and its disconnect notification also failed")]
+    TransportAndDisconnectNotification { transport: Box<StratumV1Error> },
     #[error("Stratum connection exceeded its idle deadline")]
     IdleTimeout,
     #[error(transparent)]

@@ -1,7 +1,7 @@
 use std::{
     error::Error,
     net::SocketAddr,
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -104,6 +104,7 @@ async fn standard_worker_crosses_proxy_and_pinned_hydra_with_direct_payout()
         hydra_address,
         outbox,
         sessions,
+        adapter,
         credentials,
         upstream_authorization,
         challenge_id,
@@ -113,6 +114,7 @@ async fn standard_worker_crosses_proxy_and_pinned_hydra_with_direct_payout()
     submit_network_block_after_reconnect(IndependentSubmissionInput {
         outbox,
         sessions,
+        adapter,
         database,
         upstream_authorization,
         hydra_address,

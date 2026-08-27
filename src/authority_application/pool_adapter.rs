@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use uuid::Uuid;
 
 use super::{
@@ -8,12 +9,15 @@ use crate::{
     authority_persistence::{AuthorityPersistenceError, StartWorkLeaseInput},
     challenge::ChallengeId,
     lifecycle::{
-        LifecycleError, SessionLifecycle, WORK_LEASE_MAX_DURATION_SECONDS,
+        LifecycleError, SessionLifecycle, SessionReplacement, WORK_LEASE_MAX_DURATION_SECONDS,
         WORK_LEASE_RENEWAL_SECONDS, WorkLease, WorkerClock, WorkerInterruption,
     },
     pool_offer::{PoolSelection, PoolSelectionCommitment, verify_pool_offer_set},
     progress::{AcceptedWorkAcknowledgement, AcceptedWorkEvent, WorkSessionId},
-    stratum_v1::{StratumLeaseContext, StratumUpstreamAuthorization},
+    stratum_v1::{
+        StratumLeaseContext, StratumUpstreamAuthorization, WorkSessionDisconnectSink,
+        WorkSessionDisconnectSinkError,
+    },
     trusted_consent::{TrustedConsentLeaseAdmission, verify_trusted_consent_receipt},
 };
 
@@ -132,6 +136,31 @@ impl SimulatedPoolAdapter {
         self.application
             .insert_work_session(challenge_id, &session_id)
             .await
+    }
+
+    /// Replaces one stopped session with a fresh generation under the same consented challenge.
+    pub async fn replace_session(
+        &self,
+        replaced_session_id: &WorkSessionId,
+        session_id: WorkSessionId,
+    ) -> Result<SessionReplacement, AuthorityApplicationError> {
+        Ok(self
+            .application
+            .repository
+            .replace_work_session(replaced_session_id, &session_id, current_unix_seconds()?)
+            .await?)
+    }
+
+    /// Reads the durable replacement transition for one Work Session, when present.
+    pub async fn maybe_session_replacement(
+        &self,
+        session_id: &WorkSessionId,
+    ) -> Result<Option<SessionReplacement>, AuthorityApplicationError> {
+        Ok(self
+            .application
+            .repository
+            .maybe_session_replacement(session_id)
+            .await?)
     }
 
     /// Starts one bounded lease after a ready or safely restored session.
@@ -341,6 +370,18 @@ impl SimulatedPoolAdapter {
             context.last_monotonic_milliseconds(),
         )?;
         self.application.accept_work(event, &lease, &clock).await
+    }
+}
+
+#[async_trait]
+impl WorkSessionDisconnectSink for SimulatedPoolAdapter {
+    async fn disconnected(
+        &self,
+        session_id: &WorkSessionId,
+    ) -> Result<(), WorkSessionDisconnectSinkError> {
+        self.interrupt(session_id, WorkerInterruption::TransportDisconnected)
+            .await
+            .map_err(|_| WorkSessionDisconnectSinkError::Unavailable)
     }
 }
 

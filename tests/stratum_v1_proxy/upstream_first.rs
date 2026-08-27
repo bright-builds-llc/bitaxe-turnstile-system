@@ -1,13 +1,16 @@
 use std::{
     error::Error,
+    sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use async_trait::async_trait;
 use bwg_core::{
     progress::WorkSessionId,
     stratum_v1::{
         PostgresAcceptedWorkOutbox, PostgresStratumSessionRegistry, StratumCredentialIssuer,
-        StratumProxyAction, StratumTcpProxy, StratumV1Error,
+        StratumProxyAction, StratumTcpProxy, StratumV1Error, WorkSessionDisconnectSink,
+        WorkSessionDisconnectSinkError,
     },
 };
 use tokio::{
@@ -22,6 +25,101 @@ use super::{
     worked_nonce, write_line,
 };
 
+use super::fixtures::disconnect_sink;
+
+#[tokio::test]
+async fn established_worker_disconnect_notifies_its_session_sink() -> Result<(), Box<dyn Error>> {
+    // Arrange
+    let database = PostgresTestDatabase::start().await?;
+    let outbox = PostgresAcceptedWorkOutbox::connect(database.database_url()).await?;
+    let sessions = PostgresStratumSessionRegistry::connect(database.database_url()).await?;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    let session_id = WorkSessionId::try_from("session_disconnect_sink_01".to_owned())?;
+    let credentials = StratumCredentialIssuer::new([33_u8; 32]).issue(
+        session_id.clone(),
+        test_lease_context()?,
+        now,
+        now + 60,
+        now + 300,
+    )?;
+    sessions.register(&credentials).await?;
+    let username = credentials.username().to_owned();
+    let secret = credentials.secret().to_owned();
+    let sink = Arc::new(RecordingDisconnectSink::default());
+    let proxy = StratumTcpProxy::new(outbox, sessions, sink.clone());
+    let upstream_listener = TcpListener::bind("127.0.0.1:0").await?;
+    let upstream_address = upstream_listener.local_addr()?;
+    let upstream_task = tokio::spawn(async move {
+        let (stream, _) = upstream_listener.accept().await?;
+        let (read, mut write) = stream.into_split();
+        let mut lines = BufReader::new(read).lines();
+        let _subscribe = lines.next_line().await?;
+        write_line(
+            &mut write,
+            r#"{"id":1,"result":[[["mining.notify","disconnect-sink"]],"01020304",4],"error":null}"#,
+        )
+        .await?;
+        let _authorize = lines.next_line().await?;
+        write_line(&mut write, r#"{"id":2,"result":true,"error":null}"#).await?;
+        let _closed = lines.next_line().await?;
+        Ok::<(), std::io::Error>(())
+    });
+    let proxy_listener = TcpListener::bind("127.0.0.1:0").await?;
+    let proxy_address = proxy_listener.local_addr()?;
+    let proxy_task =
+        tokio::spawn(async move { proxy.serve_one(&proxy_listener, upstream_address).await });
+    let worker = TcpStream::connect(proxy_address).await?;
+    let (worker_read, mut worker_write) = worker.into_split();
+    let mut worker_lines = BufReader::new(worker_read).lines();
+    write_line(
+        &mut worker_write,
+        r#"{"id":1,"method":"mining.subscribe","params":[]}"#,
+    )
+    .await?;
+    let _subscribed = worker_lines.next_line().await?;
+    write_line(
+        &mut worker_write,
+        &format!(r#"{{"id":2,"method":"mining.authorize","params":["{username}","{secret}"]}}"#,),
+    )
+    .await?;
+    let _authorized = worker_lines.next_line().await?;
+
+    // Act
+    drop(worker_lines);
+    drop(worker_write);
+    let proxy_result = proxy_task.await?;
+    upstream_task.await??;
+
+    // Assert
+    assert!(proxy_result.is_ok());
+    let disconnected_sessions = sink
+        .session_ids
+        .lock()
+        .map_err(|_| "disconnect sink lock was poisoned")?
+        .clone();
+    assert_eq!(disconnected_sessions, [session_id]);
+    Ok(())
+}
+
+#[derive(Default)]
+struct RecordingDisconnectSink {
+    session_ids: Mutex<Vec<WorkSessionId>>,
+}
+
+#[async_trait]
+impl WorkSessionDisconnectSink for RecordingDisconnectSink {
+    async fn disconnected(
+        &self,
+        session_id: &WorkSessionId,
+    ) -> Result<(), WorkSessionDisconnectSinkError> {
+        self.session_ids
+            .lock()
+            .map_err(|_| WorkSessionDisconnectSinkError::Unavailable)?
+            .push(session_id.clone());
+        Ok(())
+    }
+}
+
 #[tokio::test]
 async fn subscription_success_is_hidden_when_extranonce_reservation_fails()
 -> Result<(), Box<dyn Error>> {
@@ -29,7 +127,7 @@ async fn subscription_success_is_hidden_when_extranonce_reservation_fails()
     let database = PostgresTestDatabase::start().await?;
     let outbox = PostgresAcceptedWorkOutbox::connect(database.database_url()).await?;
     let sessions = PostgresStratumSessionRegistry::connect(database.database_url()).await?;
-    let proxy = StratumTcpProxy::new(outbox, sessions.clone());
+    let proxy = StratumTcpProxy::new(outbox, sessions.clone(), disconnect_sink());
     sessions.close().await;
     let upstream_listener = TcpListener::bind("127.0.0.1:0").await?;
     let upstream_address = upstream_listener.local_addr()?;
@@ -75,7 +173,7 @@ async fn disconnect_before_authorize_releases_the_unbound_extranonce() -> Result
     let database = PostgresTestDatabase::start().await?;
     let outbox = PostgresAcceptedWorkOutbox::connect(database.database_url()).await?;
     let sessions = PostgresStratumSessionRegistry::connect(database.database_url()).await?;
-    let proxy = StratumTcpProxy::new(outbox, sessions.clone());
+    let proxy = StratumTcpProxy::new(outbox, sessions.clone(), disconnect_sink());
     let upstream_listener = TcpListener::bind("127.0.0.1:0").await?;
     let upstream_address = upstream_listener.local_addr()?;
     let upstream_task = tokio::spawn(async move {
@@ -126,7 +224,7 @@ async fn cleanup_outage_is_reported_alongside_the_admission_failure() -> Result<
     let database = PostgresTestDatabase::start().await?;
     let outbox = PostgresAcceptedWorkOutbox::connect(database.database_url()).await?;
     let sessions = PostgresStratumSessionRegistry::connect(database.database_url()).await?;
-    let proxy = StratumTcpProxy::new(outbox, sessions.clone());
+    let proxy = StratumTcpProxy::new(outbox, sessions.clone(), disconnect_sink());
     let upstream_listener = TcpListener::bind("127.0.0.1:0").await?;
     let upstream_address = upstream_listener.local_addr()?;
     let upstream_task = tokio::spawn(async move {
@@ -240,7 +338,7 @@ async fn upstream_receives_submit_before_noncritical_outbox_failure() -> Result<
     ));
     let proxy_listener = TcpListener::bind("127.0.0.1:0").await?;
     let proxy_address = proxy_listener.local_addr()?;
-    let proxy = StratumTcpProxy::new(outbox.clone(), sessions);
+    let proxy = StratumTcpProxy::new(outbox.clone(), sessions, disconnect_sink());
     outbox.close().await;
     let proxy_task =
         tokio::spawn(async move { proxy.serve_one(&proxy_listener, upstream_address).await });

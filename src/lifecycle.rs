@@ -178,8 +178,8 @@ mod session;
 pub(crate) use session::{LeaseObservation, LeaseObservationInput, observe_work_lease};
 pub use session::{
     PauseReason, SessionLifecycle, SessionLifecycleCommand, SessionLifecycleState,
-    SessionStopReason, WorkLease, WorkerClock, WorkerInterruption, apply_session_command,
-    session_transition, session_transition_allowed,
+    SessionReplacement, SessionStopReason, WorkLease, WorkerClock, WorkerInterruption,
+    apply_session_command, session_transition, session_transition_allowed,
 };
 /// Redacted claimant-facing view of a Work Challenge lifecycle.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 use super::LifecycleError;
 use crate::{challenge::ChallengeId, progress::WorkSessionId};
 
+#[cfg(test)]
+mod tests;
+
 const MAXIMUM_CONTINUITY_ID_LENGTH: usize = 128;
 
 /// Durable Work Session lifecycle state.
@@ -150,6 +153,7 @@ pub enum SessionStopReason {
     MonotonicReset,
     UncertainTime,
     LeaseExpired,
+    TransportDisconnected,
     SessionFailed,
     MigrationContinuityUnknown,
     MigrationPoolSelectionUnknown,
@@ -169,6 +173,7 @@ impl SessionStopReason {
             Self::MonotonicReset => "monotonic_reset",
             Self::UncertainTime => "uncertain_time",
             Self::LeaseExpired => "lease_expired",
+            Self::TransportDisconnected => "transport_disconnected",
             Self::SessionFailed => "session_failed",
             Self::MigrationContinuityUnknown => "migration_continuity_unknown",
             Self::MigrationPoolSelectionUnknown => "migration_pool_selection_unknown",
@@ -187,11 +192,24 @@ impl SessionStopReason {
             "monotonic_reset" => Ok(Self::MonotonicReset),
             "uncertain_time" => Ok(Self::UncertainTime),
             "lease_expired" => Ok(Self::LeaseExpired),
+            "transport_disconnected" => Ok(Self::TransportDisconnected),
             "session_failed" => Ok(Self::SessionFailed),
             "migration_continuity_unknown" => Ok(Self::MigrationContinuityUnknown),
             "migration_pool_selection_unknown" => Ok(Self::MigrationPoolSelectionUnknown),
             _ => Err(LifecycleError::InvalidPersistedState),
         }
+    }
+
+    pub(crate) fn allows_replacement(self) -> bool {
+        matches!(
+            self,
+            Self::WorkerReboot
+                | Self::MonotonicReset
+                | Self::UncertainTime
+                | Self::LeaseExpired
+                | Self::TransportDisconnected
+                | Self::SessionFailed
+        )
     }
 }
 
@@ -201,6 +219,7 @@ pub enum WorkerInterruption {
     Reboot,
     MonotonicReset,
     UncertainTime,
+    TransportDisconnected,
 }
 
 impl WorkerInterruption {
@@ -214,6 +233,7 @@ impl WorkerInterruption {
             Self::Reboot => SessionStopReason::WorkerReboot,
             Self::MonotonicReset => SessionStopReason::MonotonicReset,
             Self::UncertainTime => SessionStopReason::UncertainTime,
+            Self::TransportDisconnected => SessionStopReason::TransportDisconnected,
         }
     }
 }
@@ -353,6 +373,54 @@ pub enum SessionLifecycle {
         challenge_id: ChallengeId,
         reason: SessionStopReason,
     },
+}
+
+/// Durable operational transition from one stopped Work Session to a fresh replacement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionReplacement {
+    session_id: WorkSessionId,
+    replaced_session_id: WorkSessionId,
+    generation: u64,
+    reason: SessionStopReason,
+}
+
+impl SessionReplacement {
+    pub(crate) fn persisted(
+        session_id: WorkSessionId,
+        replaced_session_id: WorkSessionId,
+        generation: u64,
+        reason: SessionStopReason,
+    ) -> Result<Self, LifecycleError> {
+        if generation == 0 || session_id == replaced_session_id || !reason.allows_replacement() {
+            return Err(LifecycleError::InvalidPersistedState);
+        }
+        Ok(Self {
+            session_id,
+            replaced_session_id,
+            generation,
+            reason,
+        })
+    }
+
+    /// Fresh Work Session created by this transition.
+    pub fn session_id(&self) -> &WorkSessionId {
+        &self.session_id
+    }
+
+    /// Stopped Work Session this transition replaces.
+    pub fn replaced_session_id(&self) -> &WorkSessionId {
+        &self.replaced_session_id
+    }
+
+    /// Monotonic replacement generation within the Work Challenge.
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// Authority-derived reason replacement became eligible.
+    pub fn reason(&self) -> SessionStopReason {
+        self.reason
+    }
 }
 
 impl SessionLifecycle {
