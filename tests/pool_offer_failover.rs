@@ -7,7 +7,10 @@ use bwg_core::{
     },
     challenge::{ActionPolicy, ChallengeId},
     lifecycle::WorkerClock,
-    pool_offer::{MaterialPoolOfferChange, PoolOffer, PoolOfferChange, PoolOfferReplacementStatus},
+    pool_offer::{
+        MaterialPoolOfferChange, PoolFailoverRecoveryCategory, PoolFailoverSessionState, PoolOffer,
+        PoolOfferChange, PoolOfferReplacementStatus,
+    },
     progress::WorkSessionId,
 };
 use serde_json::{Value, json};
@@ -27,6 +30,70 @@ const CLIENT_ID: &str = "pool-failover-reference-service";
 const SERVICE_SECRET: &str = "pool-failover-secret-P9vK2mQ7xR4tY8uN3cF6wL1zA5dH0sJ";
 const AUTHORITY_SIGNING_SEED: &str = "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A";
 type OfferMutation = fn(&mut Value);
+
+#[tokio::test]
+async fn failover_projection_exposes_pending_material_terms() -> Result<(), Box<dyn Error>> {
+    // Arrange
+    let database = PostgresTestDatabase::start().await?;
+    let application =
+        AuthorityApplication::connect_postgres(authority_config()?, database.database_url())
+            .await?;
+    let adapter = application.simulated_pool_adapter();
+    let server = RunningServer::spawn(bwg_core::authority::router(application)).await?;
+    let challenge = issue_challenge(&server.base_url, "action_failover_projection_01").await?;
+    let challenge_id = ChallengeId::try_from(
+        challenge["challenge_id"]
+            .as_str()
+            .ok_or("challenge ID")?
+            .to_owned(),
+    )?;
+    adapter
+        .consent_default_pool_offer_for_simulation(&challenge_id)
+        .await?;
+    let predecessor = WorkSessionId::try_from("session_projection_old_01".to_owned())?;
+    adapter
+        .register_session(&challenge_id, predecessor.clone())
+        .await?;
+    adapter.fail_session(&predecessor).await?;
+    let mut candidate_json = challenge["pool_offers"]["offers"][0].clone();
+    candidate_json["privacy_terms_url"] = json!("https://authority.example/privacy-v2");
+    let candidate = serde_json::from_value::<PoolOffer>(candidate_json)?;
+    let candidate_offer_id = candidate.offer_id().to_owned();
+    let signed = adapter
+        .sign_pool_offer_set_for_simulation(&challenge_id, vec![candidate], false)
+        .await?;
+    let candidate_session = WorkSessionId::try_from("session_projection_new_01".to_owned())?;
+    adapter
+        .replace_pool_offer(&predecessor, candidate_session.clone(), &signed)
+        .await?;
+
+    // Act
+    let pending = adapter.pool_failover_projection(&predecessor).await?;
+
+    // Assert
+    assert_eq!(
+        pending.recovery_category(),
+        PoolFailoverRecoveryCategory::TrustedConfirmationRequired
+    );
+    assert_eq!(
+        pending.candidate_session().state(),
+        PoolFailoverSessionState::PendingConfirmation
+    );
+    assert_eq!(
+        pending
+            .maybe_pending_offer()
+            .ok_or("pending offer")?
+            .offer_id(),
+        candidate_offer_id
+    );
+    assert_eq!(
+        pending.current_offer().privacy_terms_url(),
+        "https://authority.example/privacy"
+    );
+    assert_eq!(pending.challenge_id(), &challenge_id);
+    server.stop();
+    Ok(())
+}
 
 #[tokio::test]
 async fn signed_endpoint_only_candidate_releases_one_equivalent_replacement()

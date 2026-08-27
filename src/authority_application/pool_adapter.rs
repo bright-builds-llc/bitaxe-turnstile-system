@@ -17,9 +17,10 @@ use crate::{
         WORK_LEASE_RENEWAL_SECONDS, WorkLease, WorkerClock, WorkerInterruption,
     },
     pool_offer::{
-        MaterialPoolOfferConfirmation, PoolOffer, PoolOfferReplacementDecision, PoolSelection,
-        PoolSelectionCommitment, SignedPoolOfferSet, classify_pool_offer_change,
-        material_replacement_disclosure_digest, signed_pool_offers, verify_pool_offer_set,
+        MaterialPoolOfferConfirmation, PoolFailoverProjection, PoolOffer,
+        PoolOfferReplacementDecision, PoolSelection, PoolSelectionCommitment, SignedPoolOfferSet,
+        classify_pool_offer_change, material_replacement_disclosure_digest, signed_pool_offers,
+        verify_pool_offer_set,
     },
     progress::{AcceptedWorkAcknowledgement, AcceptedWorkEvent, WorkSessionId},
     stratum_v1::{
@@ -171,6 +172,18 @@ impl SimulatedPoolAdapter {
             .await?)
     }
 
+    /// Reads one restart-safe, metadata-only projection of an authenticated failover decision.
+    pub async fn pool_failover_projection(
+        &self,
+        replaced_session_id: &WorkSessionId,
+    ) -> Result<PoolFailoverProjection, AuthorityApplicationError> {
+        Ok(self
+            .application
+            .repository
+            .pool_failover_projection(replaced_session_id)
+            .await?)
+    }
+
     /// Test-harness shortcut that signs an exact candidate set with the configured Authority key.
     pub async fn sign_pool_offer_set_for_simulation(
         &self,
@@ -229,10 +242,14 @@ impl SimulatedPoolAdapter {
             descriptor.action_policy(),
             self.application.config.verification_keys(),
         )?;
-        let prior_offer = prior_set
+        let maybe_original_offer = prior_set
             .offers()
             .iter()
-            .find(|offer| offer.offer_id() == retained.selection.pool_offer_id())
+            .find(|offer| offer.offer_id() == retained.selection.pool_offer_id());
+        let prior_offer = retained
+            .maybe_replacement_offer
+            .as_ref()
+            .or(maybe_original_offer)
             .ok_or(AuthorityApplicationError::UnknownPoolOffer)?;
         let candidate_offer = candidate_set
             .offers()

@@ -104,6 +104,13 @@ impl AuthorityRepository for PostgresAuthorityRepository {
         offer_replacement::persist(&self.pool, input).await
     }
 
+    async fn pool_failover_projection(
+        &self,
+        replaced_session_id: &WorkSessionId,
+    ) -> Result<crate::pool_offer::PoolFailoverProjection, AuthorityPersistenceError> {
+        offer_replacement::projection(&self.pool, replaced_session_id).await
+    }
+
     async fn pending_material_pool_offer_replacement(
         &self,
         replaced_session_id: &WorkSessionId,

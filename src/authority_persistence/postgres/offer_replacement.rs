@@ -6,17 +6,87 @@ use crate::{
         AuthorityPersistenceError, PendingMaterialPoolOfferReplacement, PersistPoolOfferReplacement,
     },
     pool_offer::{
-        MaterialPoolOfferConfirmation, PoolOffer, PoolOfferChange, PoolOfferReplacementDecision,
-        PoolOfferReplacementStatus, Sha256Base64Url, SignedPoolOfferSet,
+        MaterialPoolOfferConfirmation, PersistedPoolFailoverProjection, PoolFailoverProjection,
+        PoolOffer, PoolOfferChange, PoolOfferReplacementDecision, PoolOfferReplacementStatus,
+        Sha256Base64Url, SignedPoolOfferSet,
     },
     progress::WorkSessionId,
 };
+
+pub(super) async fn projection(
+    pool: &PgPool,
+    replaced_session_id: &WorkSessionId,
+) -> Result<PoolFailoverProjection, AuthorityPersistenceError> {
+    let row = sqlx::query(include_str!("queries/select_pool_failover_projection.sql"))
+        .bind(replaced_session_id.as_str())
+        .fetch_optional(pool)
+        .await?
+        .ok_or(AuthorityPersistenceError::UnknownPoolOfferReplacement)?;
+    projection_from_row(&row)
+}
+
+fn projection_from_row(row: &PgRow) -> Result<PoolFailoverProjection, AuthorityPersistenceError> {
+    let maybe_candidate_state = row
+        .try_get::<Option<String>, _>("candidate_state")?
+        .map(|state| crate::lifecycle::SessionLifecycleState::parse(&state))
+        .transpose()?;
+    let maybe_candidate_stop_reason = row
+        .try_get::<Option<String>, _>("candidate_stop_reason")?
+        .map(|reason| crate::lifecycle::SessionStopReason::parse(&reason))
+        .transpose()?;
+    PoolFailoverProjection::persisted(PersistedPoolFailoverProjection {
+        challenge_id: crate::challenge::ChallengeId::try_from(
+            row.try_get::<String, _>("challenge_id")?,
+        )?,
+        predecessor_session_id: WorkSessionId::try_from(
+            row.try_get::<String, _>("replaced_session_id")?,
+        )?,
+        candidate_session_id: WorkSessionId::try_from(
+            row.try_get::<String, _>("candidate_session_id")?,
+        )?,
+        replacement_status: parse_status(row.try_get("status")?)?,
+        prior_offer: serde_json::from_value(row.try_get("prior_offer")?)
+            .map_err(|_| AuthorityPersistenceError::InvalidPersistedData)?,
+        candidate_offer: serde_json::from_value(row.try_get("candidate_offer")?)
+            .map_err(|_| AuthorityPersistenceError::InvalidPersistedData)?,
+        predecessor_state: crate::lifecycle::SessionLifecycleState::parse(
+            row.try_get("predecessor_state")?,
+        )?,
+        maybe_predecessor_stop_reason: row
+            .try_get::<Option<String>, _>("predecessor_stop_reason")?
+            .map(|reason| crate::lifecycle::SessionStopReason::parse(&reason))
+            .transpose()?,
+        maybe_candidate_state,
+        maybe_candidate_stop_reason,
+    })
+    .map_err(|_| AuthorityPersistenceError::InvalidPersistedData)
+}
 
 pub(super) async fn persist(
     pool: &PgPool,
     input: PersistPoolOfferReplacement<'_>,
 ) -> Result<PoolOfferReplacementDecision, AuthorityPersistenceError> {
     let mut transaction = pool.begin().await?;
+    super::pool_selection::lock_work_session_identity(&mut transaction, input.candidate_session_id)
+        .await?;
+    let predecessor = sqlx::query(include_str!("queries/lock_replaced_work_session.sql"))
+        .bind(input.replaced_session_id.as_str())
+        .fetch_optional(&mut *transaction)
+        .await?
+        .ok_or(AuthorityPersistenceError::UnknownWorkSession)?;
+    if predecessor.try_get::<String, _>("challenge_id")? != input.challenge_id.as_str() {
+        return Err(AuthorityPersistenceError::ConflictingPoolOfferReplacement);
+    }
+    let (replacement_exists, candidate_exists) = sqlx::query_as::<_, (bool, bool)>(include_str!(
+        "queries/select_pool_offer_replacement_conflicts.sql"
+    ))
+    .bind(input.replaced_session_id.as_str())
+    .bind(input.candidate_session_id.as_str())
+    .fetch_one(&mut *transaction)
+    .await?;
+    if candidate_exists && !replacement_exists {
+        return Err(AuthorityPersistenceError::ConflictingWorkSessionReplacement);
+    }
     let status = match input.change {
         PoolOfferChange::Equivalent => PoolOfferReplacementStatus::Equivalent,
         PoolOfferChange::MateriallyChanged { .. } => {

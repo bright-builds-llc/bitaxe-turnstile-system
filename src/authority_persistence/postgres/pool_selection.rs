@@ -8,7 +8,7 @@ use crate::{
         ChallengeLifecycleCommand, ChallengeLifecycleState, SessionLifecycleState,
         SessionReplacement, SessionStopReason, apply_challenge_command,
     },
-    pool_offer::PoolSelectionCommitment,
+    pool_offer::{PoolOffer, PoolSelectionCommitment},
     progress::WorkSessionId,
 };
 
@@ -16,19 +16,29 @@ pub(super) async fn session_pool_selection(
     pool: &PgPool,
     session_id: &WorkSessionId,
 ) -> Result<PersistedSessionPoolSelection, AuthorityPersistenceError> {
-    let maybe_row = sqlx::query(
-        "SELECT challenge_id, pool_offer_id, payout_commitment
-         FROM gate_authority.work_sessions WHERE session_id = $1",
-    )
-    .bind(session_id.as_str())
-    .fetch_optional(pool)
-    .await?;
+    let maybe_row = sqlx::query(include_str!("queries/select_session_pool_selection.sql"))
+        .bind(session_id.as_str())
+        .fetch_optional(pool)
+        .await?;
     let Some(row) = maybe_row else {
         return Err(AuthorityPersistenceError::UnknownWorkSession);
     };
+    let selection = persisted_selection(&row)?;
+    let maybe_replacement_offer = row
+        .try_get::<Option<serde_json::Value>, _>("replacement_offer")?
+        .map(serde_json::from_value::<PoolOffer>)
+        .transpose()
+        .map_err(|_| AuthorityPersistenceError::InvalidPersistedData)?;
+    if maybe_replacement_offer
+        .as_ref()
+        .is_some_and(|offer| offer.offer_id() != selection.pool_offer_id())
+    {
+        return Err(AuthorityPersistenceError::InvalidPersistedData);
+    }
     Ok(PersistedSessionPoolSelection {
         challenge_id: ChallengeId::try_from(row.try_get::<String, _>("challenge_id")?)?,
-        selection: persisted_selection(&row)?,
+        selection,
+        maybe_replacement_offer,
     })
 }
 
@@ -39,6 +49,7 @@ pub(super) async fn insert_work_session(
     now: u64,
 ) -> Result<(), AuthorityPersistenceError> {
     let mut transaction = pool.begin().await?;
+    lock_work_session_identity(&mut transaction, session_id).await?;
     let maybe_row = sqlx::query_as::<_, (String, i64)>(
         "SELECT lifecycle_state, expires_at_unix_seconds
          FROM gate_authority.work_challenges
@@ -75,10 +86,11 @@ pub(super) async fn insert_work_session(
         .execute(&mut *transaction)
         .await;
     match result {
-        Ok(_) => {
+        Ok(result) if result.rows_affected() == 1 => {
             transaction.commit().await?;
             Ok(())
         }
+        Ok(_) => Err(AuthorityPersistenceError::TrustedConsentRequired),
         Err(error)
             if error
                 .as_database_error()
@@ -116,6 +128,7 @@ pub(super) async fn replace_work_session_in_transaction(
     now: u64,
     allow_material_pending: bool,
 ) -> Result<SessionReplacement, AuthorityPersistenceError> {
+    lock_work_session_identity(transaction, session_id).await?;
     let maybe_row = sqlx::query(include_str!("queries/lock_replaced_work_session.sql"))
         .bind(replaced_session_id.as_str())
         .fetch_optional(&mut **transaction)
@@ -131,6 +144,18 @@ pub(super) async fn replace_work_session_in_transaction(
     .fetch_optional(&mut **transaction)
     .await?;
     if maybe_pending_candidate.is_some() && !allow_material_pending {
+        return Err(AuthorityPersistenceError::TrustedConsentRequired);
+    }
+    let maybe_reserved_predecessor = sqlx::query_scalar::<_, String>(include_str!(
+        "queries/select_pending_replacement_predecessor_by_candidate.sql"
+    ))
+    .bind(session_id.as_str())
+    .fetch_optional(&mut **transaction)
+    .await?;
+    if maybe_reserved_predecessor
+        .as_deref()
+        .is_some_and(|reserved| !allow_material_pending || reserved != replaced_session_id.as_str())
+    {
         return Err(AuthorityPersistenceError::TrustedConsentRequired);
     }
     let maybe_existing = sqlx::query(include_str!(
@@ -194,6 +219,17 @@ pub(super) async fn replace_work_session_in_transaction(
         }
         Err(error) => Err(error.into()),
     }
+}
+
+pub(super) async fn lock_work_session_identity(
+    transaction: &mut Transaction<'_, Postgres>,
+    session_id: &WorkSessionId,
+) -> Result<(), AuthorityPersistenceError> {
+    sqlx::query(include_str!("queries/lock_work_session_identity.sql"))
+        .bind(session_id.as_str())
+        .execute(&mut **transaction)
+        .await?;
+    Ok(())
 }
 
 pub(super) async fn maybe_session_replacement(

@@ -38,6 +38,7 @@ pub(crate) struct PersistedAcceptance {
 pub(crate) struct PersistedSessionPoolSelection {
     pub challenge_id: ChallengeId,
     pub selection: PoolSelectionCommitment,
+    pub maybe_replacement_offer: Option<PoolOffer>,
 }
 
 pub(crate) struct PersistPoolOfferReplacement<'a> {
@@ -178,6 +179,11 @@ pub(crate) trait AuthorityRepository: Send + Sync {
         &self,
         input: PersistPoolOfferReplacement<'_>,
     ) -> Result<PoolOfferReplacementDecision, AuthorityPersistenceError>;
+
+    async fn pool_failover_projection(
+        &self,
+        replaced_session_id: &WorkSessionId,
+    ) -> Result<crate::pool_offer::PoolFailoverProjection, AuthorityPersistenceError>;
 
     async fn pending_material_pool_offer_replacement(
         &self,

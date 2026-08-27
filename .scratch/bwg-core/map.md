@@ -59,6 +59,12 @@
   explicit accepted, duplicate, rejected, inconclusive, unavailable, and reorg behavior remains
   separate from an issued Gate Pass; and composed Authority, SSE, Relying Service, and PostgreSQL
   outages preserve Core acceptance while exposing the residual risk of uncredited observer loss.
+- [Ticket 14](./issues/14-trusted-origin-consent.md) and
+  [Ticket 20](./issues/20-multi-worker-pool-failover.md) now close through the Trusted Consent and
+  Multi-Worker Failover child efforts: active material changes require exact Authority-origin
+  WebAuthn reconfirmation, equivalent recovery preserves progress, safe Pool Adapter projections
+  expose no Worker identity to the Relying Service, and concurrent completion stops every current
+  session before one recoverable Gate Pass issuance.
 
 ## Multi-worker failover boundary split
 

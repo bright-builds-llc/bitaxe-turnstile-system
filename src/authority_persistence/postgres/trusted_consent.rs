@@ -36,35 +36,20 @@ pub(super) async fn reserve(
 ) -> Result<TrustedConsentReservation, AuthorityPersistenceError> {
     let ceremony = input.ceremony;
     let binding = ceremony.binding();
-    let maybe_row = sqlx::query(
-        "INSERT INTO gate_authority.trusted_consent_ceremonies
-         (ceremony_id, challenge_id, disclosure_digest_sha256,
-          pool_offer_set_signature_sha256, reason, authority_origin,
-          challenge_expires_at_unix_seconds, status, created_at_unix_seconds,
-          expires_at_unix_seconds, operation_owner,
-          operation_lease_expires_at_unix_seconds)
-         SELECT $1, $2, $3, $4, $5, $6, $7, 'starting', $8, $9, $10::uuid, $11
-         FROM gate_authority.work_challenges AS challenge
-         WHERE challenge.challenge_id = $2
-           AND challenge.lifecycle_state = 'issued'
-           AND challenge.expires_at_unix_seconds > $8
-         ON CONFLICT (challenge_id, pool_offer_set_signature_sha256, reason, authority_origin)
-         DO NOTHING
-         RETURNING *",
-    )
-    .bind(ceremony.ceremony_id().as_str())
-    .bind(binding.challenge_id())
-    .bind(binding.disclosure_digest_sha256())
-    .bind(binding.pool_offer_set_signature_sha256())
-    .bind(binding.reason().as_str())
-    .bind(binding.authority_origin())
-    .bind(to_i64(binding.challenge_expires_at_unix_seconds())?)
-    .bind(to_i64(ceremony.created_at_unix_seconds())?)
-    .bind(to_i64(ceremony.expires_at_unix_seconds())?)
-    .bind(input.operation_owner.as_uuid())
-    .bind(to_i64(input.lease_expires_at_unix_seconds)?)
-    .fetch_optional(pool)
-    .await?;
+    let maybe_row = sqlx::query(include_str!("queries/reserve_trusted_consent_ceremony.sql"))
+        .bind(ceremony.ceremony_id().as_str())
+        .bind(binding.challenge_id())
+        .bind(binding.disclosure_digest_sha256())
+        .bind(binding.pool_offer_set_signature_sha256())
+        .bind(binding.reason().as_str())
+        .bind(binding.authority_origin())
+        .bind(to_i64(binding.challenge_expires_at_unix_seconds())?)
+        .bind(to_i64(ceremony.created_at_unix_seconds())?)
+        .bind(to_i64(ceremony.expires_at_unix_seconds())?)
+        .bind(input.operation_owner.as_uuid())
+        .bind(to_i64(input.lease_expires_at_unix_seconds)?)
+        .fetch_optional(pool)
+        .await?;
     if maybe_row.is_some() {
         return Ok(TrustedConsentReservation::Claimed);
     }
@@ -85,20 +70,9 @@ pub(super) async fn initialize(
     registration_state: &serde_json::Value,
     initialized_at_unix_seconds: u64,
 ) -> Result<TrustedConsentCeremonyRecord, AuthorityPersistenceError> {
-    let maybe_row = sqlx::query(
-        "UPDATE gate_authority.trusted_consent_ceremonies AS ceremony
-         SET status = 'pending', creation_options = $3, registration_state = $4,
-             operation_owner = NULL, operation_lease_expires_at_unix_seconds = NULL
-         FROM gate_authority.work_challenges AS challenge
-         WHERE ceremony.ceremony_id = $1 AND ceremony.status = 'starting'
-           AND ceremony.operation_owner = $2
-           AND ceremony.operation_lease_expires_at_unix_seconds > $5
-           AND ceremony.expires_at_unix_seconds > $5
-           AND challenge.challenge_id = ceremony.challenge_id
-           AND challenge.lifecycle_state = 'issued'
-           AND challenge.expires_at_unix_seconds > $5
-         RETURNING ceremony.*",
-    )
+    let maybe_row = sqlx::query(include_str!(
+        "queries/initialize_trusted_consent_ceremony.sql"
+    ))
     .bind(ceremony_id.as_str())
     .bind(operation_owner.as_uuid())
     .bind(creation_options)
@@ -152,21 +126,9 @@ pub(super) async fn complete(
     operation_owner: TrustedConsentOperationOwner,
     verified_at_unix_seconds: u64,
 ) -> Result<TrustedConsentCeremonyRecord, AuthorityPersistenceError> {
-    let maybe_row = sqlx::query(
-        "UPDATE gate_authority.trusted_consent_ceremonies AS ceremony
-         SET status = 'verified', verified_at_unix_seconds = $3,
-             operation_lease_expires_at_unix_seconds = NULL,
-             operation_owner = NULL, creation_options = NULL, registration_state = NULL
-         FROM gate_authority.work_challenges AS challenge
-         WHERE ceremony.ceremony_id = $1
-           AND ceremony.status = 'verifying'
-           AND ceremony.operation_owner = $2
-           AND ceremony.operation_lease_expires_at_unix_seconds > $3
-           AND challenge.challenge_id = ceremony.challenge_id
-           AND challenge.lifecycle_state = 'issued'
-           AND challenge.expires_at_unix_seconds > $3
-         RETURNING ceremony.*",
-    )
+    let maybe_row = sqlx::query(include_str!(
+        "queries/complete_trusted_consent_ceremony.sql"
+    ))
     .bind(ceremony_id.as_str())
     .bind(operation_owner.as_uuid())
     .bind(to_i64(verified_at_unix_seconds)?)

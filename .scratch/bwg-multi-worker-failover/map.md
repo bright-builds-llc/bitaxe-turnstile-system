@@ -34,6 +34,12 @@ BWG Core roadmap. Its material-change seam composes with
 - [`bwg-trusted-consent` Ticket 04](../bwg-trusted-consent/issues/04-material-change-bridge.md)
   now signs replacement-specific material requirements, recovers the Authority ceremony, and
   releases only the exact receipt-bound replacement session.
+- [Ticket 04](./issues/04-composed-failover-closure.md) added a metadata-only, restart-safe Pool
+  Adapter failover projection; preserved the nearest authenticated offer through successive Worker
+  replacements; reserved pending candidate session identities against registration races; aligned
+  active material ceremonies with the reason-aware lifecycle matrix; and proved one
+  database/Authority/adapter restart journey through equivalent recovery, reconfirmation,
+  concurrent threshold crossing, terminal session shutdown, and single issuance.
 
 ## Delivery order
 
@@ -41,4 +47,4 @@ BWG Core roadmap. Its material-change seam composes with
 2. [x] [Replace failed Workers without durable device identity](./issues/02-worker-replacement.md)
 3. [x] [Fail over only between materially equivalent Pool Offers](./issues/03-equivalent-offer-failover.md)
 4. [x] [`bwg-trusted-consent` material-change bridge](../bwg-trusted-consent/issues/04-material-change-bridge.md)
-5. [Compose failover, reconfirmation, and parent closure](./issues/04-composed-failover-closure.md)
+5. [x] [Compose failover, reconfirmation, and parent closure](./issues/04-composed-failover-closure.md)

@@ -25,11 +25,13 @@ pub use classification::{
     MaterialPoolOfferChange, MaterialPoolOfferChanges, PoolOfferChange, classify_pool_offer_change,
 };
 pub use replacement::{
-    MaterialPoolOfferConfirmation, PoolOfferReplacementDecision, PoolOfferReplacementStatus,
+    MaterialPoolOfferConfirmation, PoolFailoverProjection, PoolFailoverRecoveryCategory,
+    PoolFailoverSessionProjection, PoolFailoverSessionState, PoolOfferReplacementDecision,
+    PoolOfferReplacementStatus,
 };
 pub(crate) use replacement::{
-    Sha256Base64Url, material_replacement_disclosure_digest, signed_default_pool_offers,
-    signed_pool_offers,
+    PersistedPoolFailoverProjection, Sha256Base64Url, material_replacement_disclosure_digest,
+    signed_default_pool_offers, signed_pool_offers,
 };
 use selection::PayoutChoice;
 pub use selection::{PoolSelection, PoolSelectionCommitment};

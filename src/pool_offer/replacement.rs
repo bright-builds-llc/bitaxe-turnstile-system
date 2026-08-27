@@ -2,7 +2,11 @@ use super::{
     ActionPolicy, AuthoritySigningKey, POOL_OFFER_SET_TYPE, PROTOCOL_VERSION, PoolOffer,
     PoolOfferChange, PoolOfferError, PoolOfferSetClaims, SignedPoolOfferSet, validate_claims,
 };
-use crate::progress::WorkSessionId;
+use crate::{
+    challenge::ChallengeId,
+    lifecycle::{SessionLifecycleState, SessionStopReason},
+    progress::WorkSessionId,
+};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use ring::digest;
 use serde::{Deserialize, Serialize};
@@ -49,6 +53,203 @@ impl Sha256Base64Url {
 pub enum PoolOfferReplacementStatus {
     Equivalent,
     PendingReconfirmation,
+}
+
+/// Safe Pool Adapter recovery category for one authenticated offer replacement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PoolFailoverRecoveryCategory {
+    AutomaticEquivalent,
+    TrustedConfirmationRequired,
+    TrustedConfirmationAccepted,
+}
+
+/// Redacted per-session state used by the Pool Adapter failover projection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PoolFailoverSessionState {
+    Ready,
+    Leased,
+    Stopping,
+    Restored,
+    Failed,
+    PendingConfirmation,
+}
+
+impl From<SessionLifecycleState> for PoolFailoverSessionState {
+    fn from(value: SessionLifecycleState) -> Self {
+        match value {
+            SessionLifecycleState::Ready => Self::Ready,
+            SessionLifecycleState::Leased => Self::Leased,
+            SessionLifecycleState::Stopping => Self::Stopping,
+            SessionLifecycleState::Restored => Self::Restored,
+            SessionLifecycleState::Failed => Self::Failed,
+        }
+    }
+}
+
+/// Metadata-only state for one opaque Work Session in a failover transition.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PoolFailoverSessionProjection {
+    session_id: WorkSessionId,
+    state: PoolFailoverSessionState,
+    #[serde(rename = "stop_reason", skip_serializing_if = "Option::is_none")]
+    maybe_stop_reason: Option<String>,
+}
+
+impl PoolFailoverSessionProjection {
+    fn persisted(
+        session_id: WorkSessionId,
+        state: SessionLifecycleState,
+        maybe_stop_reason: Option<SessionStopReason>,
+    ) -> Result<Self, PoolOfferError> {
+        let reason_required = matches!(
+            state,
+            SessionLifecycleState::Stopping
+                | SessionLifecycleState::Restored
+                | SessionLifecycleState::Failed
+        );
+        if reason_required != maybe_stop_reason.is_some() {
+            return Err(PoolOfferError::InvalidPoolOffer);
+        }
+        Ok(Self {
+            session_id,
+            state: state.into(),
+            maybe_stop_reason: maybe_stop_reason.map(|reason| reason.as_str().to_owned()),
+        })
+    }
+
+    fn pending(session_id: WorkSessionId) -> Self {
+        Self {
+            session_id,
+            state: PoolFailoverSessionState::PendingConfirmation,
+            maybe_stop_reason: None,
+        }
+    }
+
+    /// Opaque session-scoped operational identifier; never a Worker or Device identity.
+    pub fn session_id(&self) -> &WorkSessionId {
+        &self.session_id
+    }
+
+    /// Current safe lifecycle category.
+    pub fn state(&self) -> PoolFailoverSessionState {
+        self.state
+    }
+
+    /// Authority-derived stop reason, when this session is no longer active.
+    pub fn maybe_stop_reason(&self) -> Option<&str> {
+        self.maybe_stop_reason.as_deref()
+    }
+}
+
+/// Restart-safe Pool Adapter projection of one authenticated failover decision.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PoolFailoverProjection {
+    challenge_id: ChallengeId,
+    predecessor_session: PoolFailoverSessionProjection,
+    candidate_session: PoolFailoverSessionProjection,
+    current_offer: PoolOffer,
+    #[serde(rename = "pending_offer", skip_serializing_if = "Option::is_none")]
+    maybe_pending_offer: Option<PoolOffer>,
+    recovery_category: PoolFailoverRecoveryCategory,
+}
+
+pub(crate) struct PersistedPoolFailoverProjection {
+    pub challenge_id: ChallengeId,
+    pub predecessor_session_id: WorkSessionId,
+    pub candidate_session_id: WorkSessionId,
+    pub replacement_status: PoolOfferReplacementStatus,
+    pub prior_offer: PoolOffer,
+    pub candidate_offer: PoolOffer,
+    pub predecessor_state: SessionLifecycleState,
+    pub maybe_predecessor_stop_reason: Option<SessionStopReason>,
+    pub maybe_candidate_state: Option<SessionLifecycleState>,
+    pub maybe_candidate_stop_reason: Option<SessionStopReason>,
+}
+
+impl PoolFailoverProjection {
+    pub(crate) fn persisted(
+        input: PersistedPoolFailoverProjection,
+    ) -> Result<Self, PoolOfferError> {
+        let predecessor_session = PoolFailoverSessionProjection::persisted(
+            input.predecessor_session_id,
+            input.predecessor_state,
+            input.maybe_predecessor_stop_reason,
+        )?;
+        let maybe_candidate_session = input
+            .maybe_candidate_state
+            .map(|state| {
+                PoolFailoverSessionProjection::persisted(
+                    input.candidate_session_id.clone(),
+                    state,
+                    input.maybe_candidate_stop_reason,
+                )
+            })
+            .transpose()?;
+        let (candidate_session, current_offer, maybe_pending_offer, recovery_category) =
+            match (input.replacement_status, maybe_candidate_session) {
+                (PoolOfferReplacementStatus::Equivalent, Some(candidate)) => (
+                    candidate,
+                    input.candidate_offer,
+                    None,
+                    PoolFailoverRecoveryCategory::AutomaticEquivalent,
+                ),
+                (PoolOfferReplacementStatus::PendingReconfirmation, None) => (
+                    PoolFailoverSessionProjection::pending(input.candidate_session_id),
+                    input.prior_offer,
+                    Some(input.candidate_offer),
+                    PoolFailoverRecoveryCategory::TrustedConfirmationRequired,
+                ),
+                (PoolOfferReplacementStatus::PendingReconfirmation, Some(candidate)) => (
+                    candidate,
+                    input.candidate_offer,
+                    None,
+                    PoolFailoverRecoveryCategory::TrustedConfirmationAccepted,
+                ),
+                (PoolOfferReplacementStatus::Equivalent, None) => {
+                    return Err(PoolOfferError::InvalidPoolOffer);
+                }
+            };
+        Ok(Self {
+            challenge_id: input.challenge_id,
+            predecessor_session,
+            candidate_session,
+            current_offer,
+            maybe_pending_offer,
+            recovery_category,
+        })
+    }
+
+    /// Challenge whose consent and exact progress own this failover.
+    pub fn challenge_id(&self) -> &ChallengeId {
+        &self.challenge_id
+    }
+
+    /// Stopped session that triggered recovery.
+    pub fn predecessor_session(&self) -> &PoolFailoverSessionProjection {
+        &self.predecessor_session
+    }
+
+    /// Candidate session, including the pre-release pending-confirmation state.
+    pub fn candidate_session(&self) -> &PoolFailoverSessionProjection {
+        &self.candidate_session
+    }
+
+    /// Exact authenticated offer currently authorized for this transition.
+    pub fn current_offer(&self) -> &PoolOffer {
+        &self.current_offer
+    }
+
+    /// Exact authenticated candidate held pending fresh confirmation, when present.
+    pub fn maybe_pending_offer(&self) -> Option<&PoolOffer> {
+        self.maybe_pending_offer.as_ref()
+    }
+
+    /// Stable operator recovery category without Worker or credential identity.
+    pub fn recovery_category(&self) -> PoolFailoverRecoveryCategory {
+        self.recovery_category
+    }
 }
 
 /// Immutable Authority decision comparing consented and candidate Pool Offer terms.

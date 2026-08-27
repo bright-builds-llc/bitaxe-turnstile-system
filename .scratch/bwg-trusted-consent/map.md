@@ -18,6 +18,10 @@ Core roadmap.
 - [Ticket 04](./issues/04-material-change-bridge.md) binds each pending material decision to a
   replacement-specific signed requirement and Authority receipt, then admits only the exact
   generation-fenced session while preserving the no-ceremony equivalent path.
+- [`bwg-multi-worker-failover` Ticket 04](../bwg-multi-worker-failover/issues/04-composed-failover-closure.md)
+  proves that the same material ceremony remains fail closed and recoverable while a Standard
+  challenge is already active, closing BWG Core Ticket 14 without weakening the issued-only
+  Elevated rule.
 
 ## Delivery order
 
