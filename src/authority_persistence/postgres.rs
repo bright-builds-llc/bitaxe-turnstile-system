@@ -104,6 +104,60 @@ impl AuthorityRepository for PostgresAuthorityRepository {
         offer_replacement::persist(&self.pool, input).await
     }
 
+    async fn pending_material_pool_offer_replacement(
+        &self,
+        replaced_session_id: &WorkSessionId,
+    ) -> Result<
+        crate::authority_persistence::PendingMaterialPoolOfferReplacement,
+        AuthorityPersistenceError,
+    > {
+        offer_replacement::pending_material(&self.pool, replaced_session_id).await
+    }
+
+    async fn persist_material_pool_offer_confirmation(
+        &self,
+        confirmation: &crate::pool_offer::MaterialPoolOfferConfirmation,
+    ) -> Result<crate::pool_offer::MaterialPoolOfferConfirmation, AuthorityPersistenceError> {
+        offer_replacement::persist_confirmation(&self.pool, confirmation).await
+    }
+
+    async fn maybe_material_pool_offer_confirmation(
+        &self,
+        replaced_session_id: &WorkSessionId,
+    ) -> Result<Option<crate::pool_offer::MaterialPoolOfferConfirmation>, AuthorityPersistenceError>
+    {
+        offer_replacement::maybe_confirmation(&self.pool, replaced_session_id).await
+    }
+
+    async fn maybe_material_confirmation_by_binding(
+        &self,
+        challenge_id: &ChallengeId,
+        signature_digest_sha256: &crate::pool_offer::Sha256Base64Url,
+    ) -> Result<Option<crate::pool_offer::MaterialPoolOfferConfirmation>, AuthorityPersistenceError>
+    {
+        offer_replacement::maybe_confirmation_by_binding(
+            &self.pool,
+            challenge_id,
+            signature_digest_sha256,
+        )
+        .await
+    }
+
+    async fn release_material_pool_offer_replacement(
+        &self,
+        replaced_session_id: &WorkSessionId,
+        candidate_session_id: &WorkSessionId,
+        now: u64,
+    ) -> Result<crate::lifecycle::SessionReplacement, AuthorityPersistenceError> {
+        offer_replacement::release_material(
+            &self.pool,
+            replaced_session_id,
+            candidate_session_id,
+            now,
+        )
+        .await
+    }
+
     async fn challenge_lifecycle(
         &self,
         challenge_id: &ChallengeId,

@@ -17,6 +17,7 @@ export async function verifyPoolOfferSet(
   authorityKeyId: string;
   offers: readonly PoolOfferDisclosure[];
   trustedConfirmationRequired: boolean;
+  maybeMaterialReplacementDigestSha256?: string;
 }> {
   if (signed.offers.length === 0) throw new Error("Pool Offer set must not be empty");
   if (new Set(signed.offers.map((offer) => offer.offerId)).size !== signed.offers.length) {
@@ -64,6 +65,10 @@ export async function verifyPoolOfferSet(
     throw new Error("signed Pool Offers do not match the Work Challenge");
   }
   const maybeTrustedConfirmationRequired = claims.trusted_confirmation_required;
+  const maybeMaterialReplacementDigestSha256 = maybeMaterialReplacementDigest(
+    claims.material_replacement_digest_sha256,
+    maybeTrustedConfirmationRequired === true,
+  );
   if (
     maybeTrustedConfirmationRequired !== undefined &&
     typeof maybeTrustedConfirmationRequired !== "boolean"
@@ -81,7 +86,25 @@ export async function verifyPoolOfferSet(
     authorityKeyId: header.kid,
     offers: signed.offers,
     trustedConfirmationRequired: maybeTrustedConfirmationRequired === true,
+    ...(maybeMaterialReplacementDigestSha256 === undefined
+      ? {}
+      : { maybeMaterialReplacementDigestSha256 }),
   };
+}
+
+export function maybeMaterialReplacementDigest(
+  value: unknown,
+  trustedConfirmationRequired: boolean,
+): string | undefined {
+  if (value === undefined) return undefined;
+  if (
+    typeof value !== "string" ||
+    !/^[A-Za-z0-9_-]{43}$/u.test(value) ||
+    !trustedConfirmationRequired
+  ) {
+    throw new Error("signed Pool Offer material replacement binding is invalid");
+  }
+  return value;
 }
 
 export async function selectPoolOffer(

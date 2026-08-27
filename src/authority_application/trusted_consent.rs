@@ -14,26 +14,59 @@ impl AuthorityApplication {
             .retire_expired_trusted_consent_ceremonies(now)
             .await?;
         let challenge = self.repository.challenge(challenge_id).await?;
-        ensure_challenge_is_awaiting_consent(
+        let reason = TrustedConsentReason::parse(&request.reason)?;
+        let signature_digest_sha256 = crate::pool_offer::Sha256Base64Url::try_from(
+            request.pool_offer_set_signature_sha256.clone(),
+        )
+        .map_err(|_| TrustedConsentError::BindingMismatch)?;
+        ensure_challenge_accepts_consent(
             self.repository
                 .challenge_lifecycle(challenge_id, now)
                 .await?
                 .state(),
+            &reason,
         )?;
-        let signed_offers = challenge
-            .maybe_pool_offers()
-            .ok_or(TrustedConsentError::ConfirmationNotRequired)?;
-        let verified_offers = verify_pool_offer_set(
-            signed_offers,
-            self.config.issuer(),
-            challenge.challenge_id(),
-            challenge.action_policy(),
-            self.config.verification_keys(),
-        )?;
-        if !verified_offers.trusted_confirmation_required() {
-            return Err(TrustedConsentError::ConfirmationNotRequired.into());
-        }
-        let binding = binding_for_challenge(&challenge, self.config.issuer())?;
+        let binding = match reason {
+            TrustedConsentReason::ElevatedWork => {
+                let signed_offers = challenge
+                    .maybe_pool_offers()
+                    .ok_or(TrustedConsentError::ConfirmationNotRequired)?;
+                let verified = verify_pool_offer_set(
+                    signed_offers,
+                    self.config.issuer(),
+                    challenge.challenge_id(),
+                    challenge.action_policy(),
+                    self.config.verification_keys(),
+                )?;
+                if !verified.trusted_confirmation_required() {
+                    return Err(TrustedConsentError::ConfirmationNotRequired.into());
+                }
+                binding_for_challenge(&challenge, self.config.issuer())?
+            }
+            TrustedConsentReason::MaterialPoolTerms => {
+                let confirmation = self
+                    .repository
+                    .maybe_material_confirmation_by_binding(challenge_id, &signature_digest_sha256)
+                    .await?
+                    .ok_or(TrustedConsentError::BindingMismatch)?;
+                let verified = verify_pool_offer_set(
+                    confirmation.signed_pool_offers(),
+                    self.config.issuer(),
+                    challenge.challenge_id(),
+                    challenge.action_policy(),
+                    self.config.verification_keys(),
+                )?;
+                if !verified.trusted_confirmation_required() {
+                    return Err(TrustedConsentError::ConfirmationNotRequired.into());
+                }
+                if verified.maybe_material_replacement_digest_sha256()
+                    != Some(confirmation.disclosure_digest_sha256())
+                {
+                    return Err(TrustedConsentError::BindingMismatch.into());
+                }
+                binding_for_material_confirmation(&challenge, &confirmation, self.config.issuer())?
+            }
+        };
         if request.reason != binding.reason().as_str()
             || request.pool_offer_set_signature_sha256 != binding.pool_offer_set_signature_sha256()
             || request.authority_origin != binding.authority_origin()
@@ -145,11 +178,12 @@ impl AuthorityApplication {
                 return Err(TrustedConsentError::CeremonyFailed.into());
             }
         };
-        ensure_challenge_is_awaiting_consent(
+        ensure_challenge_accepts_consent(
             self.repository
                 .challenge_lifecycle(challenge_id, now)
                 .await?
                 .state(),
+            ceremony.binding().reason(),
         )?;
         ceremony.clone().verify(now)?;
         let verification_owner = TrustedConsentOperationOwner::random();
@@ -227,17 +261,19 @@ impl AuthorityApplication {
                 .await?;
             return Err(TrustedConsentError::CeremonyFailed.into());
         }
+        let claimed_reason = claimed_ceremony.binding().reason().clone();
         if let Err(error) = claimed_ceremony.verify(completed_at) {
             self.repository
                 .fail_trusted_consent_ceremony(ceremony_id, verification_owner, completed_at)
                 .await?;
             return Err(error.into());
         }
-        if ensure_challenge_is_awaiting_consent(
+        if ensure_challenge_accepts_consent(
             self.repository
                 .challenge_lifecycle(challenge_id, completed_at)
                 .await?
                 .state(),
+            &claimed_reason,
         )
         .is_err()
         {
@@ -384,10 +420,31 @@ pub(super) fn binding_for_challenge(
     )?)
 }
 
-fn ensure_challenge_is_awaiting_consent(
+pub(super) fn binding_for_material_confirmation(
+    challenge: &crate::challenge::WorkChallengeDescriptor,
+    confirmation: &crate::pool_offer::MaterialPoolOfferConfirmation,
+    issuer: &str,
+) -> Result<TrustedConsentBinding, AuthorityApplicationError> {
+    Ok(TrustedConsentBinding::try_from(
+        TrustedConsentBindingInput {
+            challenge_id: challenge.challenge_id().to_owned(),
+            disclosure_digest_sha256: confirmation.disclosure_digest_sha256().to_owned(),
+            pool_offer_set_signature_sha256: confirmation
+                .signature_digest_sha256()
+                .as_str()
+                .to_owned(),
+            reason: TrustedConsentReason::MaterialPoolTerms.as_str().to_owned(),
+            authority_origin: authority_origin(issuer)?,
+            challenge_expires_at_unix_seconds: challenge.expires_at_unix_seconds(),
+        },
+    )?)
+}
+
+fn ensure_challenge_accepts_consent(
     state: ChallengeLifecycleState,
+    reason: &TrustedConsentReason,
 ) -> Result<(), TrustedConsentError> {
-    if state != ChallengeLifecycleState::Issued {
+    if !challenge_accepts_trusted_consent(state, reason) {
         return Err(TrustedConsentError::CeremonyFailed);
     }
     Ok(())

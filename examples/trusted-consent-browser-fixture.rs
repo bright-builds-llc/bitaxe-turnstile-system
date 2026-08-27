@@ -17,6 +17,7 @@ use bwg_core::{
     authority::{self, AuthorityApplication, CLIENT_ID_HEADER},
     challenge::ChallengeId,
     lifecycle::WorkerClock,
+    pool_offer::PoolOffer,
     progress::WorkSessionId,
     trusted_consent::{
         TrustedConsentError, TrustedConsentWebauthnVerifier, VerifiedWebauthn,
@@ -45,16 +46,23 @@ use trusted_consent_authority_support::{CLIENT_ID, SERVICE_SECRET, authority_con
 const AUTHORITY_ORIGIN: &str = "https://authority.example";
 const AUTHORITY_ISSUER: &str = "https://authority.example/issuer";
 const SESSION_ID: &str = "session_browser_trusted_01";
+const MATERIAL_PREDECESSOR_ID: &str = "session_browser_material_old_01";
 
 #[derive(Clone)]
 struct FixtureState {
     adapter: bwg_core::authority::SimulatedPoolAdapter,
     descriptor: Arc<RwLock<Option<Value>>>,
+    material_config: Arc<RwLock<Option<Value>>>,
 }
 
 #[derive(Deserialize)]
 struct StartRequest {
     maybe_trusted_consent_receipt: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct MaterialStartRequest {
+    trusted_consent_receipt: String,
 }
 
 #[tokio::main]
@@ -69,10 +77,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let fixture = FixtureState {
         adapter: application.simulated_pool_adapter(),
         descriptor: Arc::new(RwLock::new(None)),
+        material_config: Arc::new(RwLock::new(None)),
     };
     let fixture_router = Router::new()
         .route("/fixture/config", get(fixture_config))
         .route("/fixture/start-lease", post(start_lease))
+        .route("/fixture/material-config", get(material_config))
+        .route("/fixture/start-material-lease", post(start_material_lease))
         .with_state(fixture.clone());
     let router = authority::router(application).merge(fixture_router);
     let listener = TcpListener::bind("127.0.0.1:0").await?;
@@ -116,10 +127,100 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         .await?;
     *fixture.descriptor.write().await = Some(descriptor);
+    let material_descriptor = reqwest::Client::new()
+        .post(format!("{local_origin}/v0/challenges"))
+        .header(CLIENT_ID_HEADER, CLIENT_ID)
+        .bearer_auth(SERVICE_SECRET)
+        .json(&json!({
+            "action_policy": "account-creation.standard.v1",
+            "action_reference": "action_browser_material_01",
+            "claimant_key": CLAIMANT_PUBLIC_JWK
+        }))
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<Value>()
+        .await?;
+    let material_challenge_id = ChallengeId::try_from(
+        material_descriptor["challenge_id"]
+            .as_str()
+            .ok_or("material challenge ID")?
+            .to_owned(),
+    )?;
+    fixture
+        .adapter
+        .consent_default_pool_offer_for_simulation(&material_challenge_id)
+        .await?;
+    let predecessor = WorkSessionId::try_from(MATERIAL_PREDECESSOR_ID.to_owned())?;
+    fixture
+        .adapter
+        .register_session(&material_challenge_id, predecessor.clone())
+        .await?;
+    fixture.adapter.fail_session(&predecessor).await?;
+    let mut candidate_json = material_descriptor["pool_offers"]["offers"][0].clone();
+    candidate_json["reward_policy"]["selected_destination_basis_points"] = json!(9_900);
+    candidate_json["reward_policy"]["pool_fee_basis_points"] = json!(100);
+    let signed_candidate = fixture
+        .adapter
+        .sign_pool_offer_set_for_simulation(
+            &material_challenge_id,
+            vec![serde_json::from_value::<PoolOffer>(candidate_json)?],
+            false,
+        )
+        .await?;
+    fixture
+        .adapter
+        .replace_pool_offer(
+            &predecessor,
+            WorkSessionId::try_from("session_browser_material_new_01".to_owned())?,
+            &signed_candidate,
+        )
+        .await?;
+    let confirmation = fixture
+        .adapter
+        .prepare_material_pool_offer_confirmation(&predecessor)
+        .await?;
+    *fixture.material_config.write().await = Some(json!({
+        "descriptor": material_descriptor,
+        "signedPoolOffers": confirmation.signed_pool_offers(),
+        "disclosureDigestSha256": confirmation.disclosure_digest_sha256(),
+    }));
     println!("{local_origin}");
     std::future::pending::<()>().await;
     drop(database);
     Ok(())
+}
+
+async fn material_config(State(state): State<FixtureState>) -> Result<Json<Value>, StatusCode> {
+    state
+        .material_config
+        .read()
+        .await
+        .clone()
+        .map(Json)
+        .ok_or(StatusCode::SERVICE_UNAVAILABLE)
+}
+
+async fn start_material_lease(
+    State(state): State<FixtureState>,
+    Json(request): Json<MaterialStartRequest>,
+) -> Response {
+    let predecessor = match WorkSessionId::try_from(MATERIAL_PREDECESSOR_ID.to_owned()) {
+        Ok(value) => value,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let clock = match WorkerClock::new("boot_browser_material_01", 1_000) {
+        Ok(value) => value,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    match state
+        .adapter
+        .start_material_replacement_lease(&predecessor, clock, &request.trusted_consent_receipt)
+        .await
+    {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => (StatusCode::FORBIDDEN, error.to_string()).into_response(),
+    }
 }
 
 async fn fixture_config(State(state): State<FixtureState>) -> Result<Json<Value>, StatusCode> {

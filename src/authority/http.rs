@@ -151,20 +151,40 @@ async fn trusted_consent_surface_script() -> impl IntoResponse {
 async fn trusted_consent_challenge(
     State(state): State<AuthorityState>,
     Path(challenge_id): Path<String>,
+    axum::extract::Query(query): axum::extract::Query<TrustedConsentChallengeQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     let challenge_id = ChallengeId::try_from(challenge_id)?;
     let challenge = state
         .application
         .challenge_descriptor(&challenge_id)
         .await?;
+    let maybe_material_confirmation = match query.maybe_pool_offer_set_signature_sha256 {
+        Some(digest) => {
+            state
+                .application
+                .maybe_material_confirmation_for_surface(&challenge_id, &digest)
+                .await?
+        }
+        None => None,
+    };
     Ok((
         [(axum::http::header::CACHE_CONTROL, "no-store")],
         Json(serde_json::json!({
             "challenge": challenge,
             "issuer": state.application.config.issuer(),
             "jwks": state.application.config.jwks.clone(),
+            "material_confirmation": maybe_material_confirmation.map(|confirmation| serde_json::json!({
+                "signed_pool_offers": confirmation.signed_pool_offers(),
+                "disclosure_digest_sha256": confirmation.disclosure_digest_sha256(),
+            })),
         })),
     ))
+}
+
+#[derive(serde::Deserialize)]
+struct TrustedConsentChallengeQuery {
+    #[serde(default, rename = "pool_offer_set_signature_sha256")]
+    maybe_pool_offer_set_signature_sha256: Option<crate::pool_offer::Sha256Base64Url>,
 }
 
 async fn begin_trusted_consent(

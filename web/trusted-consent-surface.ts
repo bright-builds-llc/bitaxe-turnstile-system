@@ -12,6 +12,10 @@ type LoadedChallenge = {
   challenge: Record<string, unknown>;
   issuer: string;
   jwks: { keys: AuthorityTrustInput["trustedKeys"] };
+  material_confirmation?: {
+    signed_pool_offers: unknown;
+    disclosure_digest_sha256: unknown;
+  };
 };
 
 const query = new URL(location.href).searchParams;
@@ -32,8 +36,11 @@ void run().catch((error: unknown) => {
 
 async function run(): Promise<void> {
   const challengeId = required(query, "challenge_id");
+  const reason = trustedConsentReason(required(query, "reason"));
+  const disclosureDigest = required(query, "disclosure_digest");
+  const poolOfferSetSignatureDigest = required(query, "pool_offer_set_signature_digest");
   const loaded = await fetchJson<LoadedChallenge>(
-    `/v0/challenges/${challengeId}/trusted-consent`,
+    `/v0/challenges/${challengeId}/trusted-consent?pool_offer_set_signature_sha256=${poolOfferSetSignatureDigest}`,
   );
   const challenge = workChallenge(loaded.challenge);
   if (
@@ -42,7 +49,15 @@ async function run(): Promise<void> {
   ) {
     throw new Error("opener origin is not allowed for this Work Challenge");
   }
-  const signedPoolOfferSet = signedOffers(loaded.challenge.pool_offers);
+  const maybeMaterial = loaded.material_confirmation;
+  if (reason === "material_pool_terms" && !maybeMaterial) {
+    throw new Error("material Pool Offer confirmation is unavailable");
+  }
+  const signedPoolOfferSet = signedOffers(
+    reason === "material_pool_terms"
+      ? record(maybeMaterial, "material confirmation").signed_pool_offers
+      : loaded.challenge.pool_offers,
+  );
   const authorityTrust: AuthorityTrustInput = {
     issuer: loaded.issuer,
     trustedKeys: loaded.jwks.keys,
@@ -56,22 +71,23 @@ async function run(): Promise<void> {
     throw new Error("Authority challenge does not require trusted confirmation");
   }
   const request = {
-    reason: trustedConsentReason(required(query, "reason")),
+    reason,
     authorityOrigin: location.origin,
     challengeId,
-    disclosureDigestSha256: required(query, "disclosure_digest"),
-    poolOfferSetSignatureSha256: required(query, "pool_offer_set_signature_digest"),
+    disclosureDigestSha256: disclosureDigest,
+    poolOfferSetSignatureSha256: poolOfferSetSignatureDigest,
     expiresAtUnixSeconds: challenge.expiresAtUnixSeconds,
   };
   if (
     challenge.challengeId !== request.challengeId ||
-    challenge.trustedConsentDisclosureDigestSha256 !== request.disclosureDigestSha256 ||
+    (reason === "material_pool_terms"
+      ? requiredString(maybeMaterial?.disclosure_digest_sha256, "material disclosure digest")
+      : challenge.trustedConsentDisclosureDigestSha256) !== request.disclosureDigestSha256 ||
     request.poolOfferSetSignatureSha256 !== await sha256Base64Url(signedPoolOfferSet.signature) ||
-    request.reason !== (
-      challenge.actionPolicy === "account-creation.elevated.v1"
-        ? "elevated_work"
-        : "material_pool_terms"
-    )
+    (request.reason === "material_pool_terms" &&
+      verifiedOffers.maybeMaterialReplacementDigestSha256 !== request.disclosureDigestSha256) ||
+    (request.reason === "elevated_work" &&
+      challenge.actionPolicy !== "account-creation.elevated.v1")
   ) {
     throw new Error("trusted surface terms do not match the opener request");
   }

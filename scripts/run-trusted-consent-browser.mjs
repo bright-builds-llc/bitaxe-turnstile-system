@@ -24,19 +24,20 @@ async (page) => {
   await page.context().route("https://authority.example/**", async (route) => {
     const requested = route.request().url();
     const pathAndQuery = requested.slice("https://authority.example".length);
+    const pathname = pathAndQuery.split("?", 1)[0];
     const response = await route.fetch({
       url: `${fixtureUpstream}${pathAndQuery}`,
     });
     if (
       route.request().method() === "POST" &&
-      /^\/v0\/challenges\/[^/]+\/trusted-consent$/u.test(pathAndQuery)
+      /^\/v0\/challenges\/[^/]+\/trusted-consent$/u.test(pathname)
     ) {
       beginCalls += 1;
     }
     if (
       maybeWireMutation &&
       route.request().method() === "GET" &&
-      /^\/v0\/challenges\/[^/]+\/trusted-consent$/u.test(pathAndQuery)
+      /^\/v0\/challenges\/[^/]+\/trusted-consent$/u.test(pathname)
     ) {
       const body = await response.json();
       const offer = body.challenge.pool_offers.offers[0];
@@ -89,7 +90,7 @@ async (page) => {
       "&reason=elevated_work" +
       `&challenge_id=${challengeId}` +
       `&disclosure_digest=${"A".repeat(43)}` +
-      `&pool_offer_set_signature_digest=${"B".repeat(43)}`;
+      `&pool_offer_set_signature_digest=${"A".repeat(43)}`;
     await testPage.goto(testUrl);
     await testPage.waitForFunction(
       () => document.querySelector("#status")?.textContent?.includes("invalid"),

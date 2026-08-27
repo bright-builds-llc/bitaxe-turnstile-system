@@ -31,11 +31,14 @@ BWG Core roadmap. Its material-change seam composes with
   seam: the Authority reloads prior consent, verifies the signed candidate, classifies exact terms,
   durably releases endpoint-only equivalence, and holds every material candidate pending without a
   Work Session for Trusted Consent Ticket 04.
+- [`bwg-trusted-consent` Ticket 04](../bwg-trusted-consent/issues/04-material-change-bridge.md)
+  now signs replacement-specific material requirements, recovers the Authority ceremony, and
+  releases only the exact receipt-bound replacement session.
 
 ## Delivery order
 
 1. [x] [Aggregate exact work across concurrent and successive sessions](./issues/01-multi-session-aggregation.md)
 2. [x] [Replace failed Workers without durable device identity](./issues/02-worker-replacement.md)
 3. [x] [Fail over only between materially equivalent Pool Offers](./issues/03-equivalent-offer-failover.md)
-4. [`bwg-trusted-consent` material-change bridge](../bwg-trusted-consent/issues/04-material-change-bridge.md)
+4. [x] [`bwg-trusted-consent` material-change bridge](../bwg-trusted-consent/issues/04-material-change-bridge.md)
 5. [Compose failover, reconfirmation, and parent closure](./issues/04-composed-failover-closure.md)

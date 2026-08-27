@@ -36,7 +36,7 @@ use crate::{
         TrustedConsentBindingInput, TrustedConsentCeremony, TrustedConsentCeremonyId,
         TrustedConsentError, TrustedConsentFinishResponse, TrustedConsentOperationOwner,
         TrustedConsentReason, TrustedConsentWebauthnVerifier, UnavailableTrustedConsentVerifier,
-        sign_trusted_consent_receipt,
+        challenge_accepts_trusted_consent, sign_trusted_consent_receipt,
     },
 };
 
@@ -135,6 +135,18 @@ impl AuthorityApplication {
         challenge_id: &ChallengeId,
     ) -> Result<WorkChallengeDescriptor, AuthorityApplicationError> {
         Ok(self.repository.challenge(challenge_id).await?)
+    }
+
+    pub(crate) async fn maybe_material_confirmation_for_surface(
+        &self,
+        challenge_id: &ChallengeId,
+        signature_digest_sha256: &crate::pool_offer::Sha256Base64Url,
+    ) -> Result<Option<crate::pool_offer::MaterialPoolOfferConfirmation>, AuthorityApplicationError>
+    {
+        Ok(self
+            .repository
+            .maybe_material_confirmation_by_binding(challenge_id, signature_digest_sha256)
+            .await?)
     }
 
     /// Returns the Pool Adapter interface backed by the same Authority transaction module.
@@ -482,6 +494,8 @@ pub enum AuthorityApplicationError {
     PoolSelectionMismatch,
     #[error("Pool Offer replacement conflicts with its durable decision")]
     ConflictingPoolOfferReplacement,
+    #[error("Pool Offer replacement was not found")]
+    UnknownPoolOfferReplacement,
     #[error("selected Pool Offer is not approved for this Work Challenge")]
     UnknownPoolOffer,
     #[error("selected payout is not permitted by this Pool Offer")]
@@ -555,6 +569,9 @@ impl From<AuthorityPersistenceError> for AuthorityApplicationError {
             AuthorityPersistenceError::PoolSelectionMismatch => Self::PoolSelectionMismatch,
             AuthorityPersistenceError::ConflictingPoolOfferReplacement => {
                 Self::ConflictingPoolOfferReplacement
+            }
+            AuthorityPersistenceError::UnknownPoolOfferReplacement => {
+                Self::UnknownPoolOfferReplacement
             }
             AuthorityPersistenceError::ConflictingEventReplay => Self::ConflictingEventReplay,
             AuthorityPersistenceError::ReplayedIssuanceProof => Self::ReplayedIssuanceProof,

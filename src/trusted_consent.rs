@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, time::Duration};
 
+use crate::lifecycle::ChallengeLifecycleState;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
@@ -42,6 +43,19 @@ impl TrustedConsentReason {
             Self::ElevatedWork => "elevated_work",
             Self::MaterialPoolTerms => "material_pool_terms",
         }
+    }
+}
+
+pub(crate) fn challenge_accepts_trusted_consent(
+    state: ChallengeLifecycleState,
+    reason: &TrustedConsentReason,
+) -> bool {
+    match reason {
+        TrustedConsentReason::ElevatedWork => state == ChallengeLifecycleState::Issued,
+        TrustedConsentReason::MaterialPoolTerms => matches!(
+            state,
+            ChallengeLifecycleState::Issued | ChallengeLifecycleState::Active
+        ),
     }
 }
 

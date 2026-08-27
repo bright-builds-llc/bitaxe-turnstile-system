@@ -62,7 +62,15 @@
     "/v0/challenges/{challenge_id}/trusted-consent": {
       "get": {
         "summary": "Reload the Authority challenge and verification keys for trusted rendering",
-        "parameters": [{ "$ref": "#/components/parameters/ChallengeId" }],
+        "parameters": [
+          { "$ref": "#/components/parameters/ChallengeId" },
+          {
+            "name": "pool_offer_set_signature_sha256",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Current immutable challenge and Authority JWKS",
@@ -440,7 +448,23 @@
         "properties": {
           "challenge": { "$ref": "#/components/schemas/WorkChallenge" },
           "issuer": { "type": "string", "format": "uri" },
-          "jwks": { "type": "object" }
+          "jwks": { "type": "object" },
+          "material_confirmation": {
+            "oneOf": [
+              { "type": "null" },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["signed_pool_offers", "disclosure_digest_sha256"],
+                "properties": {
+                  "signed_pool_offers": { "$ref": "#/components/schemas/SignedPoolOfferSet" },
+                  "disclosure_digest_sha256": {
+                    "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$"
+                  }
+                }
+              }
+            ]
+          }
         }
       },
       "TrustedConsentBeginResponse": {

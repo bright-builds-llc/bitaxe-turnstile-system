@@ -149,6 +149,7 @@ fn signed_claims_reject_wrong_issuer_challenge_policy_and_version() -> Result<()
         action_policy: ActionPolicy::ACCOUNT_CREATION_LIGHT_V1.to_owned(),
         offers: vec![offer()?],
         trusted_confirmation_required: false,
+        material_replacement_digest_sha256: None,
         bwg_version: PROTOCOL_VERSION.to_owned(),
     };
     let mut issuer = valid.clone();
@@ -169,6 +170,28 @@ fn signed_claims_reject_wrong_issuer_challenge_policy_and_version() -> Result<()
             .into_iter()
             .all(|result| { matches!(result, Err(PoolOfferError::InvalidPoolOfferClaims)) })
     );
+    Ok(())
+}
+
+#[test]
+fn material_replacement_digest_requires_trusted_confirmation() -> Result<(), PoolOfferError> {
+    // Arrange
+    let claims = PoolOfferSetClaims {
+        iss: "https://authority.example".to_owned(),
+        challenge_id: "challenge_material_claims_01".to_owned(),
+        action_policy: ActionPolicy::ACCOUNT_CREATION_STANDARD_V1.to_owned(),
+        offers: vec![offer()?],
+        trusted_confirmation_required: false,
+        material_replacement_digest_sha256: Some(Sha256Base64Url::try_from("A".repeat(43))?),
+        bwg_version: PROTOCOL_VERSION.to_owned(),
+    };
+    // Act
+    let result = validate_claims(&claims);
+    // Assert
+    assert!(matches!(
+        result,
+        Err(PoolOfferError::InvalidPoolOfferClaims)
+    ));
     Ok(())
 }
 

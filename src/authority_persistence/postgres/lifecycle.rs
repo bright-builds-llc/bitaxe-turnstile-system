@@ -181,7 +181,9 @@ pub(super) async fn renew_work_lease(
         "SELECT session.lifecycle_state, session.lease_id::text AS lease_id,
                 session.continuity_id, session.last_monotonic_milliseconds,
                 session.expires_at_monotonic_milliseconds,
-                challenge.trusted_confirmation_required,
+                challenge.trusted_confirmation_required
+                    OR session.material_trusted_confirmation_required
+                    AS trusted_confirmation_required,
                 ceremony.receipt_expires_at_unix_seconds
          FROM gate_authority.work_sessions AS session
          JOIN gate_authority.work_challenges AS challenge
@@ -481,7 +483,9 @@ async fn lock_challenge_and_session(
 ) -> Result<LockedLeaseContext, AuthorityPersistenceError> {
     let maybe_row = sqlx::query(
         "SELECT challenge.challenge_id, challenge.lifecycle_state AS challenge_state,
-                challenge.trusted_confirmation_required,
+                challenge.trusted_confirmation_required
+                    OR session.material_trusted_confirmation_required
+                    AS trusted_confirmation_required,
                 session.lifecycle_state AS session_state,
                 session.trusted_consent_ceremony_id,
                 selection.status = 'consented' AS selection_consented

@@ -9,7 +9,9 @@ use crate::{
         WorkerClock, WorkerInterruption,
     },
     pool_offer::PoolSelectionCommitment,
-    pool_offer::{PoolOffer, PoolOfferChange, PoolOfferReplacementDecision},
+    pool_offer::{
+        MaterialPoolOfferConfirmation, PoolOffer, PoolOfferChange, PoolOfferReplacementDecision,
+    },
     progress::{AcceptedWorkAcknowledgement, AcceptedWorkEvent, ProgressError, WorkSessionId},
     trusted_consent::{
         TrustedConsentBinding, TrustedConsentCeremony, TrustedConsentCeremonyId,
@@ -48,6 +50,15 @@ pub(crate) struct PersistPoolOfferReplacement<'a> {
     pub candidate_set_digest: &'a str,
     pub change: &'a PoolOfferChange,
     pub now: u64,
+}
+
+pub(crate) struct PendingMaterialPoolOfferReplacement {
+    pub challenge_id: ChallengeId,
+    pub replaced_session_id: WorkSessionId,
+    pub candidate_session_id: WorkSessionId,
+    pub prior_offer: PoolOffer,
+    pub candidate_offer: PoolOffer,
+    pub change: PoolOfferChange,
 }
 
 pub(crate) struct ClaimedIssuance {
@@ -167,6 +178,34 @@ pub(crate) trait AuthorityRepository: Send + Sync {
         &self,
         input: PersistPoolOfferReplacement<'_>,
     ) -> Result<PoolOfferReplacementDecision, AuthorityPersistenceError>;
+
+    async fn pending_material_pool_offer_replacement(
+        &self,
+        replaced_session_id: &WorkSessionId,
+    ) -> Result<PendingMaterialPoolOfferReplacement, AuthorityPersistenceError>;
+
+    async fn persist_material_pool_offer_confirmation(
+        &self,
+        confirmation: &MaterialPoolOfferConfirmation,
+    ) -> Result<MaterialPoolOfferConfirmation, AuthorityPersistenceError>;
+
+    async fn maybe_material_pool_offer_confirmation(
+        &self,
+        replaced_session_id: &WorkSessionId,
+    ) -> Result<Option<MaterialPoolOfferConfirmation>, AuthorityPersistenceError>;
+
+    async fn maybe_material_confirmation_by_binding(
+        &self,
+        challenge_id: &ChallengeId,
+        signature_digest_sha256: &crate::pool_offer::Sha256Base64Url,
+    ) -> Result<Option<MaterialPoolOfferConfirmation>, AuthorityPersistenceError>;
+
+    async fn release_material_pool_offer_replacement(
+        &self,
+        replaced_session_id: &WorkSessionId,
+        candidate_session_id: &WorkSessionId,
+        now: u64,
+    ) -> Result<crate::lifecycle::SessionReplacement, AuthorityPersistenceError>;
 
     async fn propose_pool_selection(
         &self,
@@ -380,6 +419,8 @@ pub(crate) enum AuthorityPersistenceError {
     PoolSelectionMismatch,
     #[error("Pool Offer replacement conflicts with its durable decision")]
     ConflictingPoolOfferReplacement,
+    #[error("Pool Offer replacement was not found")]
+    UnknownPoolOfferReplacement,
     #[error("Accepted Work Event identity conflicts with its canonical delivery")]
     ConflictingEventReplay,
     #[error("Gate Pass signing lease is no longer owned by this worker")]

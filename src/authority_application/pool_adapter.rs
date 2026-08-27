@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use super::{
     AuthorityApplication, AuthorityApplicationError, current_unix_seconds,
-    trusted_consent::binding_for_challenge,
+    trusted_consent::{binding_for_challenge, binding_for_material_confirmation},
 };
 use crate::{
     authority_persistence::{
@@ -17,8 +17,9 @@ use crate::{
         WORK_LEASE_RENEWAL_SECONDS, WorkLease, WorkerClock, WorkerInterruption,
     },
     pool_offer::{
-        PoolOffer, PoolOfferReplacementDecision, PoolSelection, PoolSelectionCommitment,
-        SignedPoolOfferSet, classify_pool_offer_change, signed_pool_offers, verify_pool_offer_set,
+        MaterialPoolOfferConfirmation, PoolOffer, PoolOfferReplacementDecision, PoolSelection,
+        PoolSelectionCommitment, SignedPoolOfferSet, classify_pool_offer_change,
+        material_replacement_disclosure_digest, signed_pool_offers, verify_pool_offer_set,
     },
     progress::{AcceptedWorkAcknowledgement, AcceptedWorkEvent, WorkSessionId},
     stratum_v1::{
@@ -190,6 +191,7 @@ impl SimulatedPoolAdapter {
             descriptor.action_policy(),
             offers,
             trusted_confirmation_required,
+            None,
         )?)
     }
 
@@ -255,6 +257,110 @@ impl SimulatedPoolAdapter {
             })
             .await?;
         Ok(decision)
+    }
+
+    /// Derives and durably signs the trusted-confirmation candidate for one material decision.
+    pub async fn prepare_material_pool_offer_confirmation(
+        &self,
+        replaced_session_id: &WorkSessionId,
+    ) -> Result<MaterialPoolOfferConfirmation, AuthorityApplicationError> {
+        if let Some(existing) = self
+            .application
+            .repository
+            .maybe_material_pool_offer_confirmation(replaced_session_id)
+            .await?
+        {
+            return Ok(existing);
+        }
+        let pending = self
+            .application
+            .repository
+            .pending_material_pool_offer_replacement(replaced_session_id)
+            .await?;
+        let descriptor = self
+            .application
+            .repository
+            .challenge(&pending.challenge_id)
+            .await?;
+        let signer = self
+            .application
+            .config
+            .maybe_signer()
+            .ok_or(AuthorityApplicationError::SigningUnavailable)?;
+        let disclosure_digest = material_replacement_disclosure_digest(
+            &pending.replaced_session_id,
+            &pending.candidate_session_id,
+            &pending.prior_offer,
+            &pending.candidate_offer,
+            &pending.change,
+        )?;
+        let signed = signed_pool_offers(
+            &signer,
+            self.application.config.issuer(),
+            pending.challenge_id.as_str(),
+            descriptor.action_policy(),
+            vec![pending.candidate_offer.clone()],
+            true,
+            Some(disclosure_digest.clone()),
+        )?;
+        let confirmation = MaterialPoolOfferConfirmation::persisted(
+            pending.replaced_session_id,
+            pending.candidate_session_id,
+            signed,
+            disclosure_digest,
+        )?;
+        Ok(self
+            .application
+            .repository
+            .persist_material_pool_offer_confirmation(&confirmation)
+            .await?)
+    }
+
+    /// Releases and starts one material replacement only with its matching fresh receipt.
+    pub async fn start_material_replacement_lease(
+        &self,
+        replaced_session_id: &WorkSessionId,
+        clock: WorkerClock,
+        compact_receipt: &str,
+    ) -> Result<WorkLease, AuthorityApplicationError> {
+        let confirmation = self
+            .prepare_material_pool_offer_confirmation(replaced_session_id)
+            .await?;
+        let pending = self
+            .application
+            .repository
+            .pending_material_pool_offer_replacement(replaced_session_id)
+            .await?;
+        let descriptor = self
+            .application
+            .repository
+            .challenge(&pending.challenge_id)
+            .await?;
+        let binding = binding_for_material_confirmation(
+            &descriptor,
+            &confirmation,
+            self.application.config.issuer(),
+        )?;
+        let now = current_unix_seconds()?;
+        let verified = verify_trusted_consent_receipt(
+            compact_receipt,
+            self.application.config.issuer(),
+            &binding,
+            self.application.config.verification_keys(),
+            now,
+        )
+        .map_err(|_| AuthorityApplicationError::InvalidTrustedConsentReceipt)?;
+        let admission = TrustedConsentLeaseAdmission::new(compact_receipt, verified);
+        self.application
+            .repository
+            .release_material_pool_offer_replacement(
+                replaced_session_id,
+                &pending.candidate_session_id,
+                now,
+            )
+            .await?;
+        self.start_lease_internal(&pending.candidate_session_id, clock, Some(&admission))
+            .await
     }
 
     /// Starts one bounded lease after a ready or safely restored session.

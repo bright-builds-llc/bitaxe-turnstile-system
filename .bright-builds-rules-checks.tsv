@@ -1,0 +1,2 @@
+# check-id	repo-relative-file-or-directory/	reason
+file-lengths	src/authority_persistence/postgres.rs	Single async-trait repository implementation; domain behavior is delegated to focused PostgreSQL modules and query files.

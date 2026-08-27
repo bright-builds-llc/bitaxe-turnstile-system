@@ -42,12 +42,52 @@ try {
   });
   assertEqual(admitted.status, 204, "receipt_lease_gate");
 
+  const material = await (
+    await fetch("https://authority.example/fixture/material-config")
+  ).json();
+  const materialRequest = {
+    reason: "material_pool_terms",
+    authorityOrigin: "https://authority.example",
+    challengeId: material.descriptor.challenge_id,
+    disclosureDigestSha256: material.disclosureDigestSha256,
+    poolOfferSetSignatureSha256: await sha256Base64Url(material.signedPoolOffers.signature),
+    expiresAtUnixSeconds: material.descriptor.expires_at_unix_seconds,
+  };
+  const oldReceipt = await fetch("https://authority.example/fixture/start-material-lease", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ trusted_consent_receipt: receipt }),
+  });
+  assertEqual(oldReceipt.status, 403, "old_material_receipt_gate");
+  const materialReceipt = await requestTrustedConsentWithPopup(materialRequest);
+  console.log("trusted-consent: material-popup-complete");
+  await verifyTrustedConsentReceipt(
+    materialReceipt,
+    materialRequest,
+    config.authorityTrust,
+    Math.floor(Date.now() / 1000),
+  );
+  const materialAdmitted = await fetch(
+    "https://authority.example/fixture/start-material-lease",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ trusted_consent_receipt: materialReceipt }),
+    },
+  );
+  assertEqual(materialAdmitted.status, 204, "material_receipt_lease_gate");
+
   result.value = "passed";
   result.dataset.status = "passed";
   details.textContent = JSON.stringify({
-    productionRoutes: ["begin", "finish"],
+    productionRoutes: ["begin", "finish", "material-begin", "material-finish"],
     browserReceiptVerification: true,
-    leaseAdmission: ["missing-rejected", "receipt-accepted"],
+    leaseAdmission: [
+      "missing-rejected",
+      "receipt-accepted",
+      "old-material-rejected",
+      "material-receipt-accepted",
+    ],
   }, null, 2);
 } catch (error) {
   console.error(error);

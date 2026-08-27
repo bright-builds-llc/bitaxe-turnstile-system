@@ -18,6 +18,30 @@ fn ceremony_id_requires_a_non_empty_database_compatible_suffix() {
 }
 
 #[test]
+fn consent_reason_has_an_explicit_challenge_lifecycle_matrix() {
+    // Arrange
+    let states = [
+        ChallengeLifecycleState::Issued,
+        ChallengeLifecycleState::Active,
+        ChallengeLifecycleState::Satisfied,
+        ChallengeLifecycleState::PassIssued,
+        ChallengeLifecycleState::Cancelled,
+        ChallengeLifecycleState::Expired,
+    ];
+
+    // Act
+    let elevated = states
+        .map(|state| challenge_accepts_trusted_consent(state, &TrustedConsentReason::ElevatedWork));
+    let material = states.map(|state| {
+        challenge_accepts_trusted_consent(state, &TrustedConsentReason::MaterialPoolTerms)
+    });
+
+    // Assert
+    assert_eq!(elevated, [true, false, false, false, false, false]);
+    assert_eq!(material, [true, true, false, false, false, false]);
+}
+
+#[test]
 fn binding_rejects_malformed_digests_and_non_authority_origin() {
     // Arrange
     let valid = TrustedConsentBindingInput {

@@ -102,6 +102,83 @@ fn material_decision_rejects_unexpected_replacement_session() -> Result<(), Box<
     Ok(())
 }
 
+#[test]
+fn sha256_digest_rejects_non_base64url_bytes() {
+    // Arrange
+    let malformed = "!".repeat(43);
+    // Act
+    let result = Sha256Base64Url::try_from(malformed);
+    // Assert
+    assert!(matches!(result, Err(PoolOfferError::InvalidPoolOffer)));
+}
+
+#[test]
+fn material_confirmation_accepts_a_parsed_digest() -> Result<(), Box<dyn Error>> {
+    // Arrange
+    let signed =
+        super::super::test_signed_default_pool_offers(ActionPolicy::AccountCreationElevatedV1);
+    let digest = Sha256Base64Url::try_from("A".repeat(43))?;
+    // Act
+    let result = MaterialPoolOfferConfirmation::persisted(
+        session("session_confirmation_old_01")?,
+        session("session_confirmation_new_01")?,
+        signed,
+        digest,
+    )?;
+    // Assert
+    assert_eq!(result.disclosure_digest_sha256(), "A".repeat(43));
+    Ok(())
+}
+
+#[test]
+fn material_replacement_disclosure_digest_matches_stable_vector() -> Result<(), Box<dyn Error>> {
+    // Arrange
+    let prior = test_offer()?;
+    let candidate = material_offer(&prior)?;
+    let change = classify_pool_offer_change(&prior, &candidate)?;
+
+    // Act
+    let digest = material_replacement_disclosure_digest(
+        &session("session_disclosure_old_01")?,
+        &session("session_disclosure_new_01")?,
+        &prior,
+        &candidate,
+        &change,
+    )?;
+
+    // Assert
+    assert_eq!(
+        digest.as_str(),
+        "tMVwhcz07fHhJfFWn3sMOpddzYaRD5zDM2-hWMFb6Sw"
+    );
+    Ok(())
+}
+
+#[test]
+fn material_confirmation_signature_digest_matches_stable_vector() -> Result<(), Box<dyn Error>> {
+    // Arrange
+    let signed: SignedPoolOfferSet = serde_json::from_value(json!({
+        "offers": [test_offer()?],
+        "signature": "header.payload.signature",
+    }))?;
+    let confirmation = MaterialPoolOfferConfirmation::persisted(
+        session("session_signature_old_01")?,
+        session("session_signature_new_01")?,
+        signed,
+        Sha256Base64Url::try_from("A".repeat(43))?,
+    )?;
+
+    // Act
+    let digest = confirmation.signature_digest_sha256();
+
+    // Assert
+    assert_eq!(
+        digest.as_str(),
+        "JW0E205eSsMIdR7QiFtyK3WGMFZ8U6cSXtn70Gjlw_Y"
+    );
+    Ok(())
+}
+
 fn test_offer() -> Result<PoolOffer, Box<dyn Error>> {
     Ok(super::super::default_pool_offer(
         "https://authority.example/privacy",

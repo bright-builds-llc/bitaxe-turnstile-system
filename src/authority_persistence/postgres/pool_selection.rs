@@ -97,9 +97,14 @@ pub(super) async fn replace_work_session(
     now: u64,
 ) -> Result<SessionReplacement, AuthorityPersistenceError> {
     let mut transaction = pool.begin().await?;
-    let replacement =
-        replace_work_session_in_transaction(&mut transaction, replaced_session_id, session_id, now)
-            .await?;
+    let replacement = replace_work_session_in_transaction(
+        &mut transaction,
+        replaced_session_id,
+        session_id,
+        now,
+        false,
+    )
+    .await?;
     transaction.commit().await?;
     Ok(replacement)
 }
@@ -109,6 +114,7 @@ pub(super) async fn replace_work_session_in_transaction(
     replaced_session_id: &WorkSessionId,
     session_id: &WorkSessionId,
     now: u64,
+    allow_material_pending: bool,
 ) -> Result<SessionReplacement, AuthorityPersistenceError> {
     let maybe_row = sqlx::query(include_str!("queries/lock_replaced_work_session.sql"))
         .bind(replaced_session_id.as_str())
@@ -118,6 +124,15 @@ pub(super) async fn replace_work_session_in_transaction(
         return Err(AuthorityPersistenceError::UnknownWorkSession);
     };
     let challenge_id = row.try_get::<String, _>("challenge_id")?;
+    let maybe_pending_candidate = sqlx::query_scalar::<_, String>(include_str!(
+        "queries/select_pending_replacement_candidate.sql"
+    ))
+    .bind(replaced_session_id.as_str())
+    .fetch_optional(&mut **transaction)
+    .await?;
+    if maybe_pending_candidate.is_some() && !allow_material_pending {
+        return Err(AuthorityPersistenceError::TrustedConsentRequired);
+    }
     let maybe_existing = sqlx::query(include_str!(
         "queries/select_work_session_replacement_by_predecessor.sql"
     ))

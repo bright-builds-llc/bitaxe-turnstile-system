@@ -24,8 +24,13 @@ mod tests;
 pub use classification::{
     MaterialPoolOfferChange, MaterialPoolOfferChanges, PoolOfferChange, classify_pool_offer_change,
 };
-pub(crate) use replacement::signed_pool_offers;
-pub use replacement::{PoolOfferReplacementDecision, PoolOfferReplacementStatus};
+pub use replacement::{
+    MaterialPoolOfferConfirmation, PoolOfferReplacementDecision, PoolOfferReplacementStatus,
+};
+pub(crate) use replacement::{
+    Sha256Base64Url, material_replacement_disclosure_digest, signed_default_pool_offers,
+    signed_pool_offers,
+};
 use selection::PayoutChoice;
 pub use selection::{PoolSelection, PoolSelectionCommitment};
 
@@ -347,6 +352,8 @@ struct PoolOfferSetClaims {
     offers: Vec<PoolOffer>,
     #[serde(default, skip_serializing_if = "is_false")]
     trusted_confirmation_required: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    material_replacement_digest_sha256: Option<Sha256Base64Url>,
     bwg_version: String,
 }
 
@@ -359,6 +366,7 @@ pub struct VerifiedPoolOfferSet {
     action_policy: String,
     offers: Vec<PoolOffer>,
     trusted_confirmation_required: bool,
+    maybe_material_replacement_digest_sha256: Option<Sha256Base64Url>,
 }
 
 impl VerifiedPoolOfferSet {
@@ -390,6 +398,12 @@ impl VerifiedPoolOfferSet {
     /// Whether the authenticated terms require Authority-origin confirmation before work starts.
     pub fn trusted_confirmation_required(&self) -> bool {
         self.trusted_confirmation_required
+    }
+
+    pub fn maybe_material_replacement_digest_sha256(&self) -> Option<&str> {
+        self.maybe_material_replacement_digest_sha256
+            .as_ref()
+            .map(Sha256Base64Url::as_str)
     }
 }
 
@@ -424,26 +438,8 @@ pub fn verify_pool_offer_set(
         action_policy: claims.action_policy,
         offers: claims.offers,
         trusted_confirmation_required: claims.trusted_confirmation_required,
+        maybe_material_replacement_digest_sha256: claims.material_replacement_digest_sha256,
     })
-}
-
-pub(crate) fn signed_default_pool_offers(
-    signer: &AuthoritySigningKey,
-    issuer: &str,
-    challenge_id: &str,
-    action_policy: ActionPolicy,
-    privacy_terms_url: &str,
-    operator_terms_url: &str,
-) -> Result<SignedPoolOfferSet, PoolOfferError> {
-    let offers = vec![default_pool_offer(privacy_terms_url, operator_terms_url)?];
-    signed_pool_offers(
-        signer,
-        issuer,
-        challenge_id,
-        action_policy,
-        offers,
-        action_policy.requires_trusted_confirmation(),
-    )
 }
 
 fn is_false(value: &bool) -> bool {
@@ -507,6 +503,8 @@ fn validate_claims(claims: &PoolOfferSetClaims) -> Result<(), PoolOfferError> {
         || ChallengeId::try_from(claims.challenge_id.clone()).is_err()
         || ActionPolicy::parse(&claims.action_policy).is_err()
         || claims.bwg_version != PROTOCOL_VERSION
+        || claims.material_replacement_digest_sha256.is_some()
+            && !claims.trusted_confirmation_required
     {
         return Err(PoolOfferError::InvalidPoolOfferClaims);
     }
