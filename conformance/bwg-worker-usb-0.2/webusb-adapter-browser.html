@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>BWG Worker WebUSB Adapter Conformance</title>
+  </head>
+  <body>
+    <main aria-labelledby="title">
+      <h1 id="title">Worker WebUSB adapter conformance</h1>
+      <p id="instructions">Each connection requires an explicit local-device action.</p>
+      <button id="connect" type="button" aria-describedby="instructions">Connect reference Worker</button>
+      <button id="wrong-device" type="button" aria-describedby="instructions">Check wrong USB device</button>
+      <button id="reject" type="button" aria-describedby="instructions">Check wrong USB function</button>
+      <button id="reacquire" type="button" aria-describedby="instructions">Check Worker reacquisition</button>
+      <button id="durable" type="button" aria-describedby="instructions">Check durable Worker recovery</button>
+      <button id="atomic" type="button" aria-describedby="instructions">Check atomic Worker admission</button>
+      <p>
+        Status: <output id="result" role="status" aria-live="polite" data-status="running">running</output>
+      </p>
+      <pre id="details" aria-label="Redacted conformance details"></pre>
+    </main>
+    <script type="module" src="./webusb-adapter-browser-harness.mjs"></script>
+  </body>
+</html>

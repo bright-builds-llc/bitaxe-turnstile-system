@@ -41,6 +41,10 @@ USB Serial/JTAG to application TinyUSB requires:
 A repeated enumeration identity is not reacquisition. A different Device Identity, unexpected
 function, missing profile, or invalid capability blocks control.
 
+The production browser adapter may use VID/PID and enumeration-object identity as admission and
+stale-session hints. USB serial is optional and never authorizes continuity. The fresh Device
+Identity proof is the sole same-Worker authority.
+
 ## Restoration gate
 
 Identity drift or loss of original-Worker contact enters `restoration_pending`. It does not imply a

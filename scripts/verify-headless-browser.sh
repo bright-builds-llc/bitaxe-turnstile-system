@@ -108,6 +108,19 @@ fi
 
 : >"$browser_output"
 "$playwright_cli" -s="$session_name" goto \
+  "http://127.0.0.1:$server_port/conformance/bwg-worker-usb-0.2/webusb-adapter-browser.html" \
+  >"$browser_output"
+"$playwright_cli" -s="$session_name" run-code \
+  --filename "$repository_root/scripts/run-worker-webusb-browser.mjs" \
+  >>"$browser_output"
+"$playwright_cli" -s="$session_name" snapshot >>"$browser_output"
+
+if ! grep -q 'status.*passed' "$browser_output"; then
+  exit 1
+fi
+
+: >"$browser_output"
+"$playwright_cli" -s="$session_name" goto \
   "http://127.0.0.1:$server_port/conformance/bwg-0.1/work-gate-component-browser.html" \
   >"$browser_output"
 "$playwright_cli" -s="$session_name" run-code \

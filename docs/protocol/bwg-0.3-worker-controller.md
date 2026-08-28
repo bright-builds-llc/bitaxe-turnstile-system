@@ -63,6 +63,23 @@ control. The client verifies a fresh-nonce Device Identity proof bound to the ac
 this exact signed capability, and the application descriptor. USB serial, VID/PID, enumeration
 identity, and their hashes cannot satisfy this prerequisite.
 
+## Browser WebUSB adapter
+
+`createWebUsbWorkerControllerV03` performs no construction-time USB effect. Its explicit
+permission method requests one deployment-filtered device while browser user activation is live,
+admits the exact USB 0.2 function, verifies capability and possession, and only then enables the
+stable high-level Controller methods. It returns redacted initial/recovered connection state rather
+than Device Identity or USB values.
+
+The adapter stores only a challenge-binding digest, Device Identity fingerprint, and exclusive
+retention expiry in a separate `bwg-worker` IndexedDB database. Recovered tabs must re-prove the
+same key and a baseline state; terminal cancellation, satisfaction, or expiry deletes the record.
+The fingerprint-bearing store is internal to the trusted application origin and is not a package
+interface, UI value, backend field, export, log, or telemetry value. Same-origin script compromise
+is not protected by browser storage isolation.
+Disconnect and response-loss paths require a new enumeration, same-key proof, exact restoration
+reason, and successful host disconnect handling before control becomes ready.
+
 ## Version relationship
 
 Controller 0.1 remains the existing simulator and Web Serial profile. Controller 0.2 and Worker USB
