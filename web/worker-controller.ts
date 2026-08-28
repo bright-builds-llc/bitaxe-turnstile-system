@@ -94,27 +94,36 @@ export type WorkerControllerStatus =
 /** Device-local transport-loss notification delivered after fail-safe restoration. */
 export type WorkerControllerDisconnectReason = "connectivity_lost";
 
-/** Public controller boundary used identically by headless clients, USB adapters, and firmware. */
-export interface WorkerController {
+/** Version-parameterized controller method surface shared by every strict wire profile. */
+export interface WorkerControllerContract<Capabilities, Grant, Renewal, Status> {
   /** Reads strict non-secret local compatibility metadata. */
-  discover(): Promise<WorkerControllerCapabilities>;
+  discover(): Promise<Capabilities>;
   /** Authenticates and starts one bounded challenge lease after capturing Mining Baseline. */
-  startLease(grant: WorkerLeaseGrant): Promise<WorkerControllerStatus>;
+  startLease(grant: Grant): Promise<Status>;
   /** Authenticates and extends the exact active lease. */
-  renewLease(renewal: WorkerLeaseRenewal): Promise<WorkerControllerStatus>;
+  renewLease(renewal: Renewal): Promise<Status>;
   /** Reads redacted state and monotonic deadlines. */
-  status(): Promise<WorkerControllerStatus>;
+  status(): Promise<Status>;
   /** Restores Mining Baseline with a paused confirmation. */
-  pause(): Promise<WorkerControllerStatus>;
+  pause(): Promise<Status>;
   /** Restores Mining Baseline with a cancelled confirmation. */
-  cancel(): Promise<WorkerControllerStatus>;
+  cancel(): Promise<Status>;
   /** Restores Mining Baseline for an explicit closed reason. */
-  restore(reason: WorkerRestorationReason): Promise<WorkerControllerStatus>;
+  restore(reason: WorkerRestorationReason): Promise<Status>;
   /** Observes device-local USB/control loss after the Worker has restored autonomously. */
   subscribeDisconnect?(
     listener: (reason: WorkerControllerDisconnectReason) => Promise<void>,
   ): () => void;
 }
+
+/** Controller 0.1 specialization used by existing headless clients, USB adapters, and firmware. */
+export interface WorkerController
+  extends WorkerControllerContract<
+    WorkerControllerCapabilities,
+    WorkerLeaseGrant,
+    WorkerLeaseRenewal,
+    WorkerControllerStatus
+  > {}
 
 /** Parses untrusted capability bytes into the strict non-secret domain shape. */
 export function parseWorkerControllerCapabilities(input: unknown): WorkerControllerCapabilities {

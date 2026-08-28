@@ -1,0 +1,144 @@
+{
+  "profile": "bwg-worker-usb/0.1",
+  "topology": {
+    "profile": "bwg-worker-usb/0.1",
+    "bootloader": {
+      "controller": "usb_serial_jtag",
+      "purpose": "flash_debug_only",
+      "acceptsWorkerController": false
+    },
+    "application": {
+      "controller": "tinyusb_composite",
+      "descriptor": {
+        "configurationValue": 1,
+        "control": {
+          "interfaceNumber": 0,
+          "alternateSetting": 0,
+          "classCode": 255,
+          "subclassCode": 66,
+          "protocolCode": 1,
+          "endpointOut": 1,
+          "endpointIn": 1,
+          "transferType": "bulk"
+        },
+        "evidence": {
+          "communicationInterfaceNumber": 1,
+          "dataInterfaceNumber": 2,
+          "notificationEndpointIn": 2,
+          "dataEndpointOut": 3,
+          "dataEndpointIn": 3,
+          "hostWritesAccepted": false
+        }
+      },
+      "functions": [
+        {
+          "role": "worker_control",
+          "usbClass": "vendor_specific",
+          "browserTransport": "web_usb",
+          "direction": "bidirectional",
+          "content": "controller_frames_only"
+        },
+        {
+          "role": "worker_evidence",
+          "usbClass": "cdc_acm",
+          "browserTransport": "none",
+          "direction": "device_to_host",
+          "content": "redacted_observations_only"
+        }
+      ]
+    },
+    "reacquisition": {
+      "physicalIdentity": "must_match",
+      "enumerationIdentity": "must_change",
+      "identityDrift": "restoration_pending"
+    }
+  },
+  "framing": {
+    "encoding": "utf8_json_lf",
+    "transfer": "webusb_bulk",
+    "maximumFrameBytes": 65536,
+    "controlAllowsLogs": false,
+    "evidenceAcceptsCommands": false
+  },
+  "identities": {
+    "workerA": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "workerB": "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+    "bootloaderEnumeration": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+    "applicationEnumeration": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "restoredEnumeration": "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
+  },
+  "scenarios": [
+    {
+      "id": "bootloader_application_reacquisition",
+      "events": ["bootloader_admitted", "application_observed", "application_admitted"],
+      "expectedState": "application_ready"
+    },
+    {
+      "id": "identity_drift_requires_restoration",
+      "events": ["bootloader_admitted", "application_observed", "application_admitted", "lease_started", "identity_drift"],
+      "expectedState": "restoration_pending"
+    },
+    {
+      "id": "original_worker_confirms_restoration",
+      "events": ["bootloader_admitted", "application_observed", "application_admitted", "lease_started", "identity_drift", "restoration_confirmed"],
+      "expectedState": "application_ready"
+    },
+    {
+      "id": "same_enumeration_is_not_reacquisition",
+      "events": ["bootloader_admitted", "same_enumeration_observed"],
+      "expectedError": "application_reacquisition_failed"
+    },
+    {
+      "id": "evidence_never_becomes_control",
+      "events": ["bootloader_admitted", "application_observed", "application_admitted", "lease_started", "evidence_observed"],
+      "expectedState": "application_ready"
+    },
+    {
+      "id": "control_loss_requires_restoration",
+      "events": ["bootloader_admitted", "application_observed", "application_admitted", "lease_started", "control_lost"],
+      "expectedState": "restoration_pending"
+    },
+    {
+      "id": "response_loss_requires_restoration",
+      "events": ["bootloader_admitted", "application_observed", "application_admitted", "response_lost"],
+      "expectedState": "restoration_pending"
+    }
+  ],
+  "negativeVectors": [
+    {
+      "id": "wrong_function_role",
+      "operation": "evidence_claims_control_role",
+      "expectedError": "invalid_profile"
+    },
+    {
+      "id": "ambiguous_control_functions",
+      "operation": "duplicate_control_function",
+      "expectedError": "invalid_profile"
+    },
+    {
+      "id": "bootloader_control_attempt",
+      "operation": "start_lease_from_bootloader",
+      "expectedError": "invalid_transition"
+    },
+    {
+      "id": "unknown_profile_field",
+      "operation": "add_unknown_profile_field",
+      "expectedError": "invalid_profile"
+    },
+    {
+      "id": "control_descriptor_drift",
+      "operation": "change_control_interface_number",
+      "expectedError": "invalid_descriptor"
+    },
+    {
+      "id": "multiple_frame_transfer",
+      "operation": "send_multiple_control_frames",
+      "expectedError": "invalid_frame"
+    },
+    {
+      "id": "runtime_log_injection",
+      "operation": "prefix_control_with_runtime_log",
+      "expectedError": "invalid_frame"
+    }
+  ]
+}

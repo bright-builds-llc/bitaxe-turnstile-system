@@ -72,6 +72,9 @@ restores the Mining Baseline before public completion.
   scan, stale port reuse, or write to an unadmitted function is permitted.
 - Restore the Mining Baseline locally before reporting controller disconnect, continuity loss,
   reboot recovery, or any terminal Work Lease state.
+- Represent identity drift or lost original-Worker contact as `restoration_pending`; never project
+  a confirmed baseline or terminal completion until the original physical Worker is reacquired and
+  supplies restoration proof.
 - Let this repository own profiles, browser adapters, fixtures, simulator behavior, and parent
   orchestration. Let `bitaxe-esp-miner` own TinyUSB implementation, volatile credential handling,
   device-local restoration, and native hardware evidence under its task/evidence policies.

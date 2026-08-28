@@ -25,11 +25,18 @@ real Reference Firmware evolution.
 - [Ticket 01](./issues/01-separated-usb-contract.md) published the glossary, ADR, ownership split,
   versioning decision, threat model, five-ticket dependency graph, and parent prerequisite without
   production code or hardware effects.
+- Ticket 02's throwaway prototype confirmed the separated topology and found one required state:
+  identity drift enters `restoration_pending`, and only reacquisition of the original physical
+  Worker plus restoration proof can permit public completion.
+- [Ticket 02](./issues/02-controller-02-transport-profile.md) published strict Controller 0.2 and
+  `bwg-worker-usb/0.1` runtime types, exact TinyUSB descriptor roles, a pure reacquisition reducer,
+  executable positive/negative fixtures and schemas, additive package exports, and protocol docs
+  while preserving every Controller 0.1 consumer.
 
 ## Delivery order
 
 1. [x] [Publish the separated USB contract and threat model](./issues/01-separated-usb-contract.md)
-1. [ ] [Prototype and publish Controller 0.2 transport fixtures](./issues/02-controller-02-transport-profile.md)
+1. [x] [Prototype and publish Controller 0.2 transport fixtures](./issues/02-controller-02-transport-profile.md)
 1. [ ] [Add the production Reference Client WebUSB adapter](./issues/03-reference-client-webusb-adapter.md)
 1. [ ] [Implement the Reference Firmware composite USB adapter](./issues/04-reference-firmware-composite-usb.md)
 1. [ ] [Prove cross-repository restoration and close the parent](./issues/05-real-hardware-restoration-closure.md)

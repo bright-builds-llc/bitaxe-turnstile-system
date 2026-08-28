@@ -36,6 +36,9 @@ The framework-independent browser SDK is exported as the package subpath `bwg-co
 The versioned local Worker Controller and USB contract, simulator, and cross-repository fixtures are
 documented in
 [`docs/protocol/bwg-0.1-worker-controller.md`](docs/protocol/bwg-0.1-worker-controller.md).
+The separated real-firmware evolution is documented in
+[`docs/protocol/bwg-0.2-worker-controller.md`](docs/protocol/bwg-0.2-worker-controller.md) and
+[`docs/protocol/bwg-worker-usb-0.1.md`](docs/protocol/bwg-worker-usb-0.1.md).
 
 The accountless settings-preserving Reference Firmware installation and rollback profile is
 documented in
