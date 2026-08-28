@@ -6,6 +6,7 @@
 
 [![GitHub Stars](https://img.shields.io/github/stars/bright-builds-llc/bitaxe-turnstile-system)](https://github.com/bright-builds-llc/bitaxe-turnstile-system)
 [![License](https://img.shields.io/github/license/bright-builds-llc/bitaxe-turnstile-system?style=flat-square)](./LICENSE)
+[![SolidJS 1.9.15](https://img.shields.io/badge/SolidJS-1.9.15-2C4F7C?logo=solid&logoColor=white)](https://www.solidjs.com/)
 [![Bright Builds: Rules](https://raw.githubusercontent.com/bright-builds-llc/bright-builds-rules/main/public/badges/bright-builds-rules-flat.svg)](https://github.com/bright-builds-llc/bright-builds-rules)
 
 <!-- bright-builds-rules-readme-badges:end -->
