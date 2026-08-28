@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://brightbuilds.dev/schemas/bwg-worker-usb-0.2-fixtures.json",
+  "title": "BWG Worker USB 0.2 transport fixtures",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profile", "topology", "framing", "identities", "scenarios", "negativeVectors"],
+  "properties": {
+    "profile": { "const": "bwg-worker-usb/0.2" },
+    "topology": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "bootloader", "application", "reacquisition"],
+      "properties": {
+        "profile": { "const": "bwg-worker-usb/0.2" },
+        "bootloader": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["controller", "purpose", "acceptsWorkerController"],
+          "properties": {
+            "controller": { "const": "usb_serial_jtag" },
+            "purpose": { "const": "flash_debug_only" },
+            "acceptsWorkerController": { "const": false }
+          }
+        },
+        "application": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["controller", "descriptor", "functions"],
+          "properties": {
+            "controller": { "const": "tinyusb_composite" },
+            "descriptor": { "$ref": "#/$defs/applicationDescriptor" },
+            "functions": {
+              "type": "array",
+              "prefixItems": [
+                { "$ref": "#/$defs/control" },
+                { "$ref": "#/$defs/evidence" }
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
+            }
+          }
+        },
+        "reacquisition": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["physicalIdentity", "enumerationIdentity", "identityDrift"],
+          "properties": {
+            "physicalIdentity": { "const": "device_identity_possession" },
+            "enumerationIdentity": { "const": "must_change" },
+            "identityDrift": { "const": "restoration_pending" }
+          }
+        }
+      }
+    },
+    "framing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["encoding", "transfer", "maximumFrameBytes", "controlAllowsLogs", "evidenceAcceptsCommands"],
+      "properties": {
+        "encoding": { "const": "utf8_json_lf" },
+        "transfer": { "const": "webusb_bulk" },
+        "maximumFrameBytes": { "const": 65536 },
+        "controlAllowsLogs": { "const": false },
+        "evidenceAcceptsCommands": { "const": false }
+      }
+    },
+    "identities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workerA", "workerB", "bootloaderEnumeration", "applicationEnumeration", "restoredEnumeration"],
+      "properties": {
+        "workerA": { "$ref": "#/$defs/digest" },
+        "workerB": { "$ref": "#/$defs/digest" },
+        "bootloaderEnumeration": { "$ref": "#/$defs/digest" },
+        "applicationEnumeration": { "$ref": "#/$defs/digest" },
+        "restoredEnumeration": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 7,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "events"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+          "events": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "enum": [
+                "bootloader_admitted",
+                "application_observed",
+                "same_enumeration_observed",
+                "application_admitted",
+                "lease_started",
+                "evidence_observed",
+                "control_lost",
+                "response_lost",
+                "identity_drift",
+                "restoration_confirmed"
+              ]
+            }
+          },
+          "expectedState": { "enum": ["application_ready", "restoration_pending"] },
+          "expectedError": { "enum": ["application_reacquisition_failed"] }
+        },
+        "oneOf": [
+          {
+            "required": ["expectedState"],
+            "properties": { "expectedState": true }
+          },
+          {
+            "required": ["expectedError"],
+            "properties": { "expectedError": true }
+          }
+        ]
+      }
+    },
+    "negativeVectors": {
+      "type": "array",
+      "minItems": 7,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "operation", "expectedError"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+          "operation": {
+            "enum": [
+              "evidence_claims_control_role",
+              "duplicate_control_function",
+              "start_lease_from_bootloader",
+              "add_unknown_profile_field",
+              "change_control_interface_number",
+              "send_multiple_control_frames",
+              "prefix_control_with_runtime_log"
+            ]
+          },
+          "expectedError": { "enum": ["invalid_profile", "invalid_descriptor", "invalid_transition", "invalid_frame"] }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" },
+    "applicationDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["configurationValue", "control", "evidence"],
+      "properties": {
+        "configurationValue": { "const": 1 },
+        "control": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["interfaceNumber", "alternateSetting", "classCode", "subclassCode", "protocolCode", "endpointOut", "endpointIn", "transferType"],
+          "properties": {
+            "interfaceNumber": { "const": 0 },
+            "alternateSetting": { "const": 0 },
+            "classCode": { "const": 255 },
+            "subclassCode": { "const": 66 },
+            "protocolCode": { "const": 1 },
+            "endpointOut": { "const": 1 },
+            "endpointIn": { "const": 1 },
+            "transferType": { "const": "bulk" }
+          }
+        },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["communicationInterfaceNumber", "dataInterfaceNumber", "notificationEndpointIn", "dataEndpointOut", "dataEndpointIn", "hostWritesAccepted"],
+          "properties": {
+            "communicationInterfaceNumber": { "const": 1 },
+            "dataInterfaceNumber": { "const": 2 },
+            "notificationEndpointIn": { "const": 2 },
+            "dataEndpointOut": { "const": 3 },
+            "dataEndpointIn": { "const": 3 },
+            "hostWritesAccepted": { "const": false }
+          }
+        }
+      }
+    },
+    "control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "usbClass", "browserTransport", "direction", "content"],
+      "properties": {
+        "role": { "const": "worker_control" },
+        "usbClass": { "const": "vendor_specific" },
+        "browserTransport": { "const": "web_usb" },
+        "direction": { "const": "bidirectional" },
+        "content": { "const": "possession_and_controller_frames_only" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "usbClass", "browserTransport", "direction", "content"],
+      "properties": {
+        "role": { "const": "worker_evidence" },
+        "usbClass": { "const": "cdc_acm" },
+        "browserTransport": { "const": "none" },
+        "direction": { "const": "device_to_host" },
+        "content": { "const": "redacted_observations_only" }
+      }
+    }
+  }
+}

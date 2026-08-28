@@ -9,18 +9,26 @@
     "dist/component",
     "dist/worker-controller",
     "dist/worker-controller-v02",
+    "dist/worker-controller-v03",
+    "dist/worker-possession",
     "dist/worker-controller-simulator",
     "dist/bitaxe-onboarding",
     "dist/bitaxe-onboarding-simulator",
     "docs/protocol/bwg-0.1-headless-client.md",
     "docs/protocol/bwg-0.1-worker-controller.md",
     "docs/protocol/bwg-0.2-worker-controller.md",
+    "docs/protocol/bwg-0.3-worker-controller.md",
     "docs/protocol/bwg-worker-usb-0.1.md",
+    "docs/protocol/bwg-worker-usb-0.2.md",
+    "docs/protocol/bwg-worker-possession-0.1.md",
     "docs/protocol/bwg-0.1-bitaxe-onboarding.md",
     "docs/protocol/bwg-0.1-web-component.md",
     "conformance/bwg-worker-controller-0.1",
     "conformance/bwg-worker-controller-0.2",
+    "conformance/bwg-worker-controller-0.3",
     "conformance/bwg-worker-usb-0.1",
+    "conformance/bwg-worker-usb-0.2",
+    "conformance/bwg-worker-possession-0.1",
     "LICENSE",
     "README.md"
   ],
@@ -45,6 +53,14 @@
       "types": "./dist/worker-controller-v02/worker-controller-v02-entry.d.ts",
       "import": "./dist/worker-controller-v02/worker-controller-v02-entry.js"
     },
+    "./worker-controller-v03": {
+      "types": "./dist/worker-controller-v03/worker-controller-v03-entry.d.ts",
+      "import": "./dist/worker-controller-v03/worker-controller-v03-entry.js"
+    },
+    "./worker-possession": {
+      "types": "./dist/worker-possession/worker-possession-entry.d.ts",
+      "import": "./dist/worker-possession/worker-possession-entry.js"
+    },
     "./worker-controller-conformance/fixtures": {
       "default": "./conformance/bwg-worker-controller-0.1/fixtures.json"
     },
@@ -57,11 +73,29 @@
     "./worker-controller-v02-conformance/schema": {
       "default": "./conformance/bwg-worker-controller-0.2/contract.schema.json"
     },
+    "./worker-controller-v03-conformance/fixtures": {
+      "default": "./conformance/bwg-worker-controller-0.3/fixtures.json"
+    },
+    "./worker-controller-v03-conformance/schema": {
+      "default": "./conformance/bwg-worker-controller-0.3/contract.schema.json"
+    },
     "./worker-usb-conformance/fixtures": {
       "default": "./conformance/bwg-worker-usb-0.1/fixtures.json"
     },
     "./worker-usb-conformance/schema": {
       "default": "./conformance/bwg-worker-usb-0.1/contract.schema.json"
+    },
+    "./worker-usb-v02-conformance/fixtures": {
+      "default": "./conformance/bwg-worker-usb-0.2/fixtures.json"
+    },
+    "./worker-usb-v02-conformance/schema": {
+      "default": "./conformance/bwg-worker-usb-0.2/contract.schema.json"
+    },
+    "./worker-possession-conformance/fixtures": {
+      "default": "./conformance/bwg-worker-possession-0.1/fixtures.json"
+    },
+    "./worker-possession-conformance/schema": {
+      "default": "./conformance/bwg-worker-possession-0.1/contract.schema.json"
     },
     "./bitaxe-onboarding": {
       "types": "./dist/bitaxe-onboarding/bitaxe-onboarding-entry.d.ts",
@@ -78,7 +112,7 @@
     "lint": "cargo clippy --all-targets --all-features -- -D warnings",
     "typecheck": "tsc --noEmit",
     "build": "cargo build --all-targets --all-features && bun run build:browser",
-    "build:browser": "bun build web/headless-client.ts --target=browser --format=esm --outdir=dist/headless && tsc --project tsconfig.browser.json && bun build web/bwg-work-gate.ts --target=browser --format=esm --loader .css:text --loader .html:text --outdir=dist/component && tsc --project tsconfig.component.json && bun build web/worker-controller-entry.ts --target=browser --format=esm --outdir=dist/worker-controller && tsc --project tsconfig.worker-controller.json && bun build web/worker-controller-v02-entry.ts --target=browser --format=esm --outdir=dist/worker-controller-v02 && tsc --project tsconfig.worker-controller-v02.json && bun build web/worker-controller-simulator-entry.ts --target=browser --format=esm --outdir=dist/worker-controller-simulator && tsc --project tsconfig.worker-controller-simulator.json && bun build web/bitaxe-onboarding-entry.ts --target=browser --format=esm --outdir=dist/bitaxe-onboarding && tsc --project tsconfig.bitaxe-onboarding.json && bun build web/bitaxe-onboarding-simulator-entry.ts --target=browser --format=esm --outdir=dist/bitaxe-onboarding-simulator && tsc --project tsconfig.bitaxe-onboarding-simulator.json && bun build web/trusted-consent-surface.ts --target=browser --format=esm --outfile web/generated/trusted-consent-surface.js",
+    "build:browser": "bun build web/headless-client.ts --target=browser --format=esm --outdir=dist/headless && tsc --project tsconfig.browser.json && bun build web/bwg-work-gate.ts --target=browser --format=esm --loader .css:text --loader .html:text --outdir=dist/component && tsc --project tsconfig.component.json && bun build web/worker-controller-entry.ts --target=browser --format=esm --outdir=dist/worker-controller && tsc --project tsconfig.worker-controller.json && bun build web/worker-controller-v02-entry.ts --target=browser --format=esm --outdir=dist/worker-controller-v02 && tsc --project tsconfig.worker-controller-v02.json && bun build web/worker-controller-v03-entry.ts --target=browser --format=esm --outdir=dist/worker-controller-v03 && tsc --project tsconfig.worker-controller-v03.json && bun build web/worker-possession-entry.ts --target=browser --format=esm --outdir=dist/worker-possession && tsc --project tsconfig.worker-possession.json && bun build web/worker-controller-simulator-entry.ts --target=browser --format=esm --outdir=dist/worker-controller-simulator && tsc --project tsconfig.worker-controller-simulator.json && bun build web/bitaxe-onboarding-entry.ts --target=browser --format=esm --outdir=dist/bitaxe-onboarding && tsc --project tsconfig.bitaxe-onboarding.json && bun build web/bitaxe-onboarding-simulator-entry.ts --target=browser --format=esm --outdir=dist/bitaxe-onboarding-simulator && tsc --project tsconfig.bitaxe-onboarding-simulator.json && bun build web/trusted-consent-surface.ts --target=browser --format=esm --outfile web/generated/trusted-consent-surface.js",
     "test": "bun run test:rust && bun run test:webcrypto && bun run test:browser && bun run verify:lookup-vectors",
     "test:rust": "cargo test --all-features",
     "test:webcrypto": "bun test conformance/bwg-0.1/*.test.mjs web/*.test.ts",

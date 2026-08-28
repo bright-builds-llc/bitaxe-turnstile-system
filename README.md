@@ -39,6 +39,10 @@ documented in
 The separated real-firmware evolution is documented in
 [`docs/protocol/bwg-0.2-worker-controller.md`](docs/protocol/bwg-0.2-worker-controller.md) and
 [`docs/protocol/bwg-worker-usb-0.1.md`](docs/protocol/bwg-worker-usb-0.1.md).
+Possession-bound production profiles are documented in
+[`docs/protocol/bwg-0.3-worker-controller.md`](docs/protocol/bwg-0.3-worker-controller.md),
+[`docs/protocol/bwg-worker-usb-0.2.md`](docs/protocol/bwg-worker-usb-0.2.md), and
+[`docs/protocol/bwg-worker-possession-0.1.md`](docs/protocol/bwg-worker-possession-0.1.md).
 
 The accountless settings-preserving Reference Firmware installation and rollback profile is
 documented in

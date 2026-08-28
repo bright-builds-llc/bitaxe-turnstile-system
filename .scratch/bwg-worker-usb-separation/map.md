@@ -40,12 +40,15 @@ real Reference Firmware evolution.
   before local Worker control can start or resume.
 - Ticket 03 owns that possession profile. Ticket 04 consumes it in the browser, Ticket 05 consumes
   it in Reference Firmware, and Ticket 06 composes their hardware evidence.
+- [Ticket 03](./issues/03-local-device-possession-proof.md) published Controller 0.3, Worker USB
+  0.2, and the one-shot Local Device Possession Proof with strict schemas, executable fixtures,
+  WebCrypto verification, and additive package exports while preserving every earlier profile.
 
 ## Delivery order
 
 1. [x] [Publish the separated USB contract and threat model](./issues/01-separated-usb-contract.md)
 1. [x] [Prototype and publish Controller 0.2 transport fixtures](./issues/02-controller-02-transport-profile.md)
-1. [ ] [Publish possession-bound Controller 0.3 transport profiles](./issues/03-local-device-possession-proof.md)
+1. [x] [Publish possession-bound Controller 0.3 transport profiles](./issues/03-local-device-possession-proof.md)
 1. [ ] [Add the production Reference Client WebUSB adapter](./issues/04-reference-client-webusb-adapter.md)
 1. [ ] [Implement the Reference Firmware composite USB adapter](./issues/05-reference-firmware-composite-usb.md)
 1. [ ] [Prove cross-repository restoration and close the parent](./issues/06-real-hardware-restoration-closure.md)

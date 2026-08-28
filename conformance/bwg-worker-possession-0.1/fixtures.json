@@ -1,0 +1,227 @@
+{
+  "profile": "bwg-worker-possession/0.1",
+  "proofProfile": "bwg-worker-possession-proof/0.1",
+  "fixtureIdentity": {
+    "classification": "non_production_conformance_only",
+    "publicJwk": {
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+      "alg": "Ed25519",
+      "use": "sig",
+      "key_ops": [
+        "verify"
+      ]
+    },
+    "fingerprintSha256": "hY0InB-Rsm_aD1yTwooBeb9rZ70sRetubQskIJmm490"
+  },
+  "initialAdmission": {
+    "request": {
+      "profile": "bwg-worker-possession/0.1",
+      "requestId": "pos_initial_01",
+      "command": "prove_possession",
+      "payload": {
+        "purpose": "initial_admission",
+        "possessionNonce": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+        "challengeBindingSha256": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+        "controllerCapabilitySha256": "JFWsyueHvXS9M9GlDlK6yEOwUzO8oPXtloalyTRxFvE",
+        "applicationDescriptorSha256": "rOKO_7whZfy0ntMKM9RIeZNAA3x97tt3rWMAm_QshVA"
+      }
+    },
+    "response": {
+      "profile": "bwg-worker-possession/0.1",
+      "requestId": "pos_initial_01",
+      "ok": true,
+      "result": {
+        "claims": {
+          "profile": "bwg-worker-possession-proof/0.1",
+          "purpose": "initial_admission",
+          "possessionNonce": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+          "challengeBindingSha256": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+          "controllerCapabilitySha256": "JFWsyueHvXS9M9GlDlK6yEOwUzO8oPXtloalyTRxFvE",
+          "applicationDescriptorSha256": "rOKO_7whZfy0ntMKM9RIeZNAA3x97tt3rWMAm_QshVA",
+          "deviceIdentityJwk": {
+            "kty": "OKP",
+            "crv": "Ed25519",
+            "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+            "alg": "Ed25519",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ]
+          }
+        },
+        "compactJws": "eyJhbGciOiJFZDI1NTE5IiwidHlwIjoiYndnLXdvcmtlci1wb3NzZXNzaW9uK2p3cyJ9.eyJhcHBsaWNhdGlvbkRlc2NyaXB0b3JTaGEyNTYiOiJyT0tPXzd3aFpmeTBudE1LTTlSSWVaTkFBM3g5N3R0M3JXTUFtX1FzaFZBIiwiY2hhbGxlbmdlQmluZGluZ1NoYTI1NiI6IkNDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0MiLCJjb250cm9sbGVyQ2FwYWJpbGl0eVNoYTI1NiI6IkpGV3N5dWVIdlhTOU05R2xEbEs2eUVPd1V6TzhvUFh0bG9hbHlUUnhGdkUiLCJkZXZpY2VJZGVudGl0eUp3ayI6eyJhbGciOiJFZDI1NTE5IiwiY3J2IjoiRWQyNTUxOSIsImtleV9vcHMiOlsidmVyaWZ5Il0sImt0eSI6Ik9LUCIsInVzZSI6InNpZyIsIngiOiIxMXFZQVlLeENyZlZTXzdUeVdRSE9nN2hjdlBhcGlNbHJ3SWFhUGNIVVJvIn0sInBvc3Nlc3Npb25Ob25jZSI6IkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkIiLCJwcm9maWxlIjoiYndnLXdvcmtlci1wb3NzZXNzaW9uLXByb29mLzAuMSIsInB1cnBvc2UiOiJpbml0aWFsX2FkbWlzc2lvbiJ9.u0LrP4qp_PlaxXLzshKQ5EJhFmks_HTu_QUuvKLnt9_BRYYrvLr6ecbh5pBe49x8xTmF_m--Kd_O-Kk6rA5qAg"
+      }
+    }
+  },
+  "reacquisition": {
+    "request": {
+      "profile": "bwg-worker-possession/0.1",
+      "requestId": "pos_reacquire_01",
+      "command": "prove_possession",
+      "payload": {
+        "purpose": "transport_reacquisition",
+        "possessionNonce": "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+        "challengeBindingSha256": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+        "controllerCapabilitySha256": "JFWsyueHvXS9M9GlDlK6yEOwUzO8oPXtloalyTRxFvE",
+        "applicationDescriptorSha256": "rOKO_7whZfy0ntMKM9RIeZNAA3x97tt3rWMAm_QshVA"
+      }
+    },
+    "response": {
+      "profile": "bwg-worker-possession/0.1",
+      "requestId": "pos_reacquire_01",
+      "ok": true,
+      "result": {
+        "claims": {
+          "profile": "bwg-worker-possession-proof/0.1",
+          "purpose": "transport_reacquisition",
+          "possessionNonce": "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+          "challengeBindingSha256": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+          "controllerCapabilitySha256": "JFWsyueHvXS9M9GlDlK6yEOwUzO8oPXtloalyTRxFvE",
+          "applicationDescriptorSha256": "rOKO_7whZfy0ntMKM9RIeZNAA3x97tt3rWMAm_QshVA",
+          "deviceIdentityJwk": {
+            "kty": "OKP",
+            "crv": "Ed25519",
+            "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+            "alg": "Ed25519",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ]
+          }
+        },
+        "compactJws": "eyJhbGciOiJFZDI1NTE5IiwidHlwIjoiYndnLXdvcmtlci1wb3NzZXNzaW9uK2p3cyJ9.eyJhcHBsaWNhdGlvbkRlc2NyaXB0b3JTaGEyNTYiOiJyT0tPXzd3aFpmeTBudE1LTTlSSWVaTkFBM3g5N3R0M3JXTUFtX1FzaFZBIiwiY2hhbGxlbmdlQmluZGluZ1NoYTI1NiI6IkNDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0MiLCJjb250cm9sbGVyQ2FwYWJpbGl0eVNoYTI1NiI6IkpGV3N5dWVIdlhTOU05R2xEbEs2eUVPd1V6TzhvUFh0bG9hbHlUUnhGdkUiLCJkZXZpY2VJZGVudGl0eUp3ayI6eyJhbGciOiJFZDI1NTE5IiwiY3J2IjoiRWQyNTUxOSIsImtleV9vcHMiOlsidmVyaWZ5Il0sImt0eSI6Ik9LUCIsInVzZSI6InNpZyIsIngiOiIxMXFZQVlLeENyZlZTXzdUeVdRSE9nN2hjdlBhcGlNbHJ3SWFhUGNIVVJvIn0sInBvc3Nlc3Npb25Ob25jZSI6IkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkYiLCJwcm9maWxlIjoiYndnLXdvcmtlci1wb3NzZXNzaW9uLXByb29mLzAuMSIsInB1cnBvc2UiOiJ0cmFuc3BvcnRfcmVhY3F1aXNpdGlvbiJ9.RQeumYQipB8jq_5QYghqAhPVLppKkije0mM-IeofmDH-G919koSMED2j1IA5dmZlOJKDiiQ-xox_BC6dUNW5Bw"
+      }
+    }
+  },
+  "weakKeyForgery": {
+    "profile": "bwg-worker-possession/0.1",
+    "requestId": "pos_initial_01",
+    "ok": true,
+    "result": {
+      "claims": {
+        "profile": "bwg-worker-possession-proof/0.1",
+        "purpose": "initial_admission",
+        "possessionNonce": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+        "challengeBindingSha256": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+        "controllerCapabilitySha256": "JFWsyueHvXS9M9GlDlK6yEOwUzO8oPXtloalyTRxFvE",
+        "applicationDescriptorSha256": "rOKO_7whZfy0ntMKM9RIeZNAA3x97tt3rWMAm_QshVA",
+        "deviceIdentityJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "alg": "Ed25519",
+          "use": "sig",
+          "key_ops": ["verify"]
+        }
+      },
+      "compactJws": "eyJhbGciOiJFZDI1NTE5IiwidHlwIjoiYndnLXdvcmtlci1wb3NzZXNzaW9uK2p3cyJ9.eyJhcHBsaWNhdGlvbkRlc2NyaXB0b3JTaGEyNTYiOiJyT0tPXzd3aFpmeTBudE1LTTlSSWVaTkFBM3g5N3R0M3JXTUFtX1FzaFZBIiwiY2hhbGxlbmdlQmluZGluZ1NoYTI1NiI6IkNDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0MiLCJjb250cm9sbGVyQ2FwYWJpbGl0eVNoYTI1NiI6IkpGV3N5dWVIdlhTOU05R2xEbEs2eUVPd1V6TzhvUFh0bG9hbHlUUnhGdkUiLCJkZXZpY2VJZGVudGl0eUp3ayI6eyJhbGciOiJFZDI1NTE5IiwiY3J2IjoiRWQyNTUxOSIsImtleV9vcHMiOlsidmVyaWZ5Il0sImt0eSI6Ik9LUCIsInVzZSI6InNpZyIsIngiOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBIn0sInBvc3Nlc3Npb25Ob25jZSI6IkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkIiLCJwcm9maWxlIjoiYndnLXdvcmtlci1wb3NzZXNzaW9uLXByb29mLzAuMSIsInB1cnBvc2UiOiJpbml0aWFsX2FkbWlzc2lvbiJ9.WGZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmYBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    }
+  },
+  "nonCanonicalWeakKeyForgery": {
+    "profile": "bwg-worker-possession/0.1",
+    "requestId": "pos_initial_01",
+    "ok": true,
+    "result": {
+      "claims": {
+        "profile": "bwg-worker-possession-proof/0.1",
+        "purpose": "initial_admission",
+        "possessionNonce": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+        "challengeBindingSha256": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+        "controllerCapabilitySha256": "JFWsyueHvXS9M9GlDlK6yEOwUzO8oPXtloalyTRxFvE",
+        "applicationDescriptorSha256": "rOKO_7whZfy0ntMKM9RIeZNAA3x97tt3rWMAm_QshVA",
+        "deviceIdentityJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "7v_______________________________________38",
+          "alg": "Ed25519",
+          "use": "sig",
+          "key_ops": ["verify"]
+        }
+      },
+      "compactJws": "eyJhbGciOiJFZDI1NTE5IiwidHlwIjoiYndnLXdvcmtlci1wb3NzZXNzaW9uK2p3cyJ9.eyJhcHBsaWNhdGlvbkRlc2NyaXB0b3JTaGEyNTYiOiJyT0tPXzd3aFpmeTBudE1LTTlSSWVaTkFBM3g5N3R0M3JXTUFtX1FzaFZBIiwiY2hhbGxlbmdlQmluZGluZ1NoYTI1NiI6IkNDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0MiLCJjb250cm9sbGVyQ2FwYWJpbGl0eVNoYTI1NiI6IkpGV3N5dWVIdlhTOU05R2xEbEs2eUVPd1V6TzhvUFh0bG9hbHlUUnhGdkUiLCJkZXZpY2VJZGVudGl0eUp3ayI6eyJhbGciOiJFZDI1NTE5IiwiY3J2IjoiRWQyNTUxOSIsImtleV9vcHMiOlsidmVyaWZ5Il0sImt0eSI6Ik9LUCIsInVzZSI6InNpZyIsIngiOiI3dl9fX19fX19fX19fX19fX19fX19fX19fX19fX19fX19fX19fX19fXzM4In0sInBvc3Nlc3Npb25Ob25jZSI6IkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkIiLCJwcm9maWxlIjoiYndnLXdvcmtlci1wb3NzZXNzaW9uLXByb29mLzAuMSIsInB1cnBvc2UiOiJpbml0aWFsX2FkbWlzc2lvbiJ9.WGZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmYBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    }
+  },
+  "invalidSignWeakKeyForgery": {
+    "profile": "bwg-worker-possession/0.1",
+    "requestId": "pos_initial_01",
+    "ok": true,
+    "result": {
+      "claims": {
+        "profile": "bwg-worker-possession-proof/0.1",
+        "purpose": "initial_admission",
+        "possessionNonce": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+        "challengeBindingSha256": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+        "controllerCapabilitySha256": "JFWsyueHvXS9M9GlDlK6yEOwUzO8oPXtloalyTRxFvE",
+        "applicationDescriptorSha256": "rOKO_7whZfy0ntMKM9RIeZNAA3x97tt3rWMAm_QshVA",
+        "deviceIdentityJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA",
+          "alg": "Ed25519",
+          "use": "sig",
+          "key_ops": ["verify"]
+        }
+      },
+      "compactJws": "eyJhbGciOiJFZDI1NTE5IiwidHlwIjoiYndnLXdvcmtlci1wb3NzZXNzaW9uK2p3cyJ9.eyJhcHBsaWNhdGlvbkRlc2NyaXB0b3JTaGEyNTYiOiJyT0tPXzd3aFpmeTBudE1LTTlSSWVaTkFBM3g5N3R0M3JXTUFtX1FzaFZBIiwiY2hhbGxlbmdlQmluZGluZ1NoYTI1NiI6IkNDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0MiLCJjb250cm9sbGVyQ2FwYWJpbGl0eVNoYTI1NiI6IkpGV3N5dWVIdlhTOU05R2xEbEs2eUVPd1V6TzhvUFh0bG9hbHlUUnhGdkUiLCJkZXZpY2VJZGVudGl0eUp3ayI6eyJhbGciOiJFZDI1NTE5IiwiY3J2IjoiRWQyNTUxOSIsImtleV9vcHMiOlsidmVyaWZ5Il0sImt0eSI6Ik9LUCIsInVzZSI6InNpZyIsIngiOiJBUUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUlBIn0sInBvc3Nlc3Npb25Ob25jZSI6IkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkIiLCJwcm9maWxlIjoiYndnLXdvcmtlci1wb3NzZXNzaW9uLXByb29mLzAuMSIsInB1cnBvc2UiOiJpbml0aWFsX2FkbWlzc2lvbiJ9.WGZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmYBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    }
+  },
+  "negativeCases": [
+    {
+      "id": "replayed_response",
+      "operation": "replay",
+      "expectedError": "invalid_proof"
+    },
+    {
+      "id": "changed_nonce",
+      "operation": "changed_nonce",
+      "expectedError": "invalid_proof"
+    },
+    {
+      "id": "changed_purpose",
+      "operation": "changed_purpose",
+      "expectedError": "invalid_proof"
+    },
+    {
+      "id": "changed_challenge_binding",
+      "operation": "changed_challenge_binding",
+      "expectedError": "invalid_proof"
+    },
+    {
+      "id": "changed_capability_digest",
+      "operation": "changed_capability_digest",
+      "expectedError": "invalid_proof"
+    },
+    {
+      "id": "changed_descriptor_digest",
+      "operation": "changed_descriptor_digest",
+      "expectedError": "invalid_proof"
+    },
+    {
+      "id": "replacement_identity",
+      "operation": "replacement_identity",
+      "expectedError": "invalid_proof"
+    },
+    {
+      "id": "weak_identity_key",
+      "operation": "weak_identity_key",
+      "expectedError": "invalid_proof"
+    },
+    {
+      "id": "unknown_request_field",
+      "operation": "unknown_request_field",
+      "expectedError": "invalid_request"
+    },
+    {
+      "id": "arbitrary_signing_request",
+      "operation": "arbitrary_signing_request",
+      "expectedError": "invalid_request"
+    },
+    {
+      "id": "oversized_frame",
+      "operation": "oversized_frame",
+      "expectedError": "invalid_frame"
+    }
+  ]
+}

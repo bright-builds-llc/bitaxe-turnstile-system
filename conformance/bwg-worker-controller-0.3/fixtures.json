@@ -1,0 +1,391 @@
+{
+  "profile": "bwg-worker-controller/0.3",
+  "semanticProfile": "bwg-worker-controller/0.1",
+  "transportProfile": "bwg-worker-usb/0.2",
+  "updateAuthorityKeys": [
+    {
+      "crv": "Ed25519",
+      "ext": true,
+      "key_ops": [
+        "verify"
+      ],
+      "kty": "OKP",
+      "x": "PUAXw-hDiVqStwqnTRt-vJyYLM8uxJaMwM1V8Sr0Zgw",
+      "kid": "update-capability-fixture-03",
+      "alg": "Ed25519",
+      "use": "sig"
+    }
+  ],
+  "capabilities": {
+    "protocolVersion": "bwg-worker-controller/0.3",
+    "board": {
+      "model": "bitaxe-gamma",
+      "revision": "204",
+      "usbTransport": "web_usb"
+    },
+    "firmware": {
+      "name": "bright-builds-reference-firmware",
+      "version": "0.3.0"
+    },
+    "compatibility": {
+      "referenceFirmware": true,
+      "workLease": "supported",
+      "miningBaselineRestoration": "supported",
+      "settingsPreservation": "compatible"
+    },
+    "transportProfile": "bwg-worker-usb/0.2",
+    "attestation": {
+      "claims": {
+        "profile": "bwg-reference-firmware-capability/0.1",
+        "protocolVersion": "bwg-worker-controller/0.3",
+        "board": {
+          "model": "bitaxe-gamma",
+          "revision": "204"
+        },
+        "firmware": {
+          "name": "bright-builds-reference-firmware",
+          "version": "0.3.0"
+        },
+        "compatibility": {
+          "referenceFirmware": true,
+          "workLease": "supported",
+          "miningBaselineRestoration": "supported",
+          "settingsPreservation": "compatible"
+        },
+        "transportProfile": "bwg-worker-usb/0.2",
+        "applicationDescriptorSha256": "rOKO_7whZfy0ntMKM9RIeZNAA3x97tt3rWMAm_QshVA"
+      },
+      "compactJws": "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoidXBkYXRlLWNhcGFiaWxpdHktZml4dHVyZS0wMyIsInR5cCI6ImJ3Zy13b3JrZXItY2FwYWJpbGl0eStqd3MifQ.eyJhcHBsaWNhdGlvbkRlc2NyaXB0b3JTaGEyNTYiOiJyT0tPXzd3aFpmeTBudE1LTTlSSWVaTkFBM3g5N3R0M3JXTUFtX1FzaFZBIiwiYm9hcmQiOnsibW9kZWwiOiJiaXRheGUtZ2FtbWEiLCJyZXZpc2lvbiI6IjIwNCJ9LCJjb21wYXRpYmlsaXR5Ijp7Im1pbmluZ0Jhc2VsaW5lUmVzdG9yYXRpb24iOiJzdXBwb3J0ZWQiLCJyZWZlcmVuY2VGaXJtd2FyZSI6dHJ1ZSwic2V0dGluZ3NQcmVzZXJ2YXRpb24iOiJjb21wYXRpYmxlIiwid29ya0xlYXNlIjoic3VwcG9ydGVkIn0sImZpcm13YXJlIjp7Im5hbWUiOiJicmlnaHQtYnVpbGRzLXJlZmVyZW5jZS1maXJtd2FyZSIsInZlcnNpb24iOiIwLjMuMCJ9LCJwcm9maWxlIjoiYndnLXJlZmVyZW5jZS1maXJtd2FyZS1jYXBhYmlsaXR5LzAuMSIsInByb3RvY29sVmVyc2lvbiI6ImJ3Zy13b3JrZXItY29udHJvbGxlci8wLjMiLCJ0cmFuc3BvcnRQcm9maWxlIjoiYndnLXdvcmtlci11c2IvMC4yIn0.ZisLU-gehxrvKi6ERJhrZavxd6eHnTrpoS5odKhhqSnSaYy5TZgbzDOY25c0_pnvqXg5_eeqlq1vBzir9-YyDQ"
+    }
+  },
+  "lease": {
+    "protocolVersion": "bwg-worker-controller/0.3",
+    "leaseId": "lease_fixture_03",
+    "challengeId": "challenge_00000000000000000000000000000001",
+    "authorization": "fixture-authentication-not-a-production-secret",
+    "durationMilliseconds": 60000,
+    "renewAfterMilliseconds": 20000,
+    "stratum": {
+      "endpoint": "stratum+tcp://127.0.0.1:3333/",
+      "username": "fixture-session-user",
+      "password": "fixture-session-password"
+    }
+  },
+  "renewal": {
+    "protocolVersion": "bwg-worker-controller/0.3",
+    "leaseId": "lease_fixture_03",
+    "authorization": "fixture-renewal-authentication",
+    "durationMilliseconds": 60000,
+    "renewAfterMilliseconds": 20000
+  },
+  "status": {
+    "protocolVersion": "bwg-worker-controller/0.3",
+    "state": "baseline",
+    "monotonicMilliseconds": 0,
+    "restoration": {
+      "status": "not_required"
+    }
+  },
+  "negativeTransfers": [
+    {
+      "id": "empty_transfer",
+      "operation": "empty",
+      "expectedError": "invalid_frame"
+    },
+    {
+      "id": "oversized_transfer",
+      "operation": "oversized",
+      "expectedError": "invalid_frame"
+    },
+    {
+      "id": "invalid_utf8_transfer",
+      "operation": "invalid_utf8",
+      "expectedError": "invalid_frame"
+    },
+    {
+      "id": "invalid_json_transfer",
+      "operation": "invalid_json",
+      "expectedError": "invalid_frame"
+    },
+    {
+      "id": "truncated_transfer",
+      "operation": "missing_lf",
+      "expectedError": "invalid_frame"
+    },
+    {
+      "id": "multiple_transfer_frames",
+      "operation": "multiple_frames",
+      "expectedError": "invalid_frame"
+    },
+    {
+      "id": "unknown_request_field",
+      "operation": "unknown_request_field",
+      "expectedError": "invalid_message"
+    }
+  ],
+  "usbVectors": [
+    {
+      "id": "v03_discover",
+      "request": {
+        "protocolVersion": "bwg-worker-controller/0.3",
+        "requestId": "usb_v03_discover",
+        "command": "discover"
+      },
+      "response": {
+        "protocolVersion": "bwg-worker-controller/0.3",
+        "requestId": "usb_v03_discover",
+        "ok": true,
+        "result": {
+          "protocolVersion": "bwg-worker-controller/0.3",
+          "board": {
+            "model": "bitaxe-gamma",
+            "revision": "204",
+            "usbTransport": "web_usb"
+          },
+          "firmware": {
+            "name": "bright-builds-reference-firmware",
+            "version": "0.3.0"
+          },
+          "compatibility": {
+            "referenceFirmware": true,
+            "workLease": "supported",
+            "miningBaselineRestoration": "supported",
+            "settingsPreservation": "compatible"
+          },
+          "transportProfile": "bwg-worker-usb/0.2",
+          "attestation": {
+            "claims": {
+              "profile": "bwg-reference-firmware-capability/0.1",
+              "protocolVersion": "bwg-worker-controller/0.3",
+              "board": {
+                "model": "bitaxe-gamma",
+                "revision": "204"
+              },
+              "firmware": {
+                "name": "bright-builds-reference-firmware",
+                "version": "0.3.0"
+              },
+              "compatibility": {
+                "referenceFirmware": true,
+                "workLease": "supported",
+                "miningBaselineRestoration": "supported",
+                "settingsPreservation": "compatible"
+              },
+              "transportProfile": "bwg-worker-usb/0.2",
+              "applicationDescriptorSha256": "rOKO_7whZfy0ntMKM9RIeZNAA3x97tt3rWMAm_QshVA"
+            },
+            "compactJws": "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoidXBkYXRlLWNhcGFiaWxpdHktZml4dHVyZS0wMyIsInR5cCI6ImJ3Zy13b3JrZXItY2FwYWJpbGl0eStqd3MifQ.eyJhcHBsaWNhdGlvbkRlc2NyaXB0b3JTaGEyNTYiOiJyT0tPXzd3aFpmeTBudE1LTTlSSWVaTkFBM3g5N3R0M3JXTUFtX1FzaFZBIiwiYm9hcmQiOnsibW9kZWwiOiJiaXRheGUtZ2FtbWEiLCJyZXZpc2lvbiI6IjIwNCJ9LCJjb21wYXRpYmlsaXR5Ijp7Im1pbmluZ0Jhc2VsaW5lUmVzdG9yYXRpb24iOiJzdXBwb3J0ZWQiLCJyZWZlcmVuY2VGaXJtd2FyZSI6dHJ1ZSwic2V0dGluZ3NQcmVzZXJ2YXRpb24iOiJjb21wYXRpYmxlIiwid29ya0xlYXNlIjoic3VwcG9ydGVkIn0sImZpcm13YXJlIjp7Im5hbWUiOiJicmlnaHQtYnVpbGRzLXJlZmVyZW5jZS1maXJtd2FyZSIsInZlcnNpb24iOiIwLjMuMCJ9LCJwcm9maWxlIjoiYndnLXJlZmVyZW5jZS1maXJtd2FyZS1jYXBhYmlsaXR5LzAuMSIsInByb3RvY29sVmVyc2lvbiI6ImJ3Zy13b3JrZXItY29udHJvbGxlci8wLjMiLCJ0cmFuc3BvcnRQcm9maWxlIjoiYndnLXdvcmtlci11c2IvMC4yIn0.ZisLU-gehxrvKi6ERJhrZavxd6eHnTrpoS5odKhhqSnSaYy5TZgbzDOY25c0_pnvqXg5_eeqlq1vBzir9-YyDQ"
+          }
+        }
+      }
+    },
+    {
+      "id": "v03_start",
+      "request": {
+        "protocolVersion": "bwg-worker-controller/0.3",
+        "requestId": "usb_v03_start",
+        "command": "start_lease",
+        "payload": {
+          "protocolVersion": "bwg-worker-controller/0.3",
+          "leaseId": "lease_fixture_03",
+          "challengeId": "challenge_00000000000000000000000000000001",
+          "authorization": "fixture-authentication-not-a-production-secret",
+          "durationMilliseconds": 60000,
+          "renewAfterMilliseconds": 20000,
+          "stratum": {
+            "endpoint": "stratum+tcp://127.0.0.1:3333/",
+            "username": "fixture-session-user",
+            "password": "fixture-session-password"
+          }
+        }
+      },
+      "response": {
+        "protocolVersion": "bwg-worker-controller/0.3",
+        "requestId": "usb_v03_start",
+        "ok": true,
+        "result": {
+          "protocolVersion": "bwg-worker-controller/0.3",
+          "state": "mining",
+          "monotonicMilliseconds": 0,
+          "lease": {
+            "leaseId": "lease_fixture_03",
+            "challengeId": "challenge_00000000000000000000000000000001",
+            "renewAtMonotonicMilliseconds": 20000,
+            "expiresAtMonotonicMilliseconds": 60000
+          },
+          "restoration": {
+            "status": "pending"
+          }
+        }
+      }
+    },
+    {
+      "id": "v03_renew",
+      "request": {
+        "protocolVersion": "bwg-worker-controller/0.3",
+        "requestId": "usb_v03_renew",
+        "command": "renew_lease",
+        "payload": {
+          "protocolVersion": "bwg-worker-controller/0.3",
+          "leaseId": "lease_fixture_03",
+          "authorization": "fixture-renewal-authentication",
+          "durationMilliseconds": 60000,
+          "renewAfterMilliseconds": 20000
+        }
+      },
+      "response": {
+        "protocolVersion": "bwg-worker-controller/0.3",
+        "requestId": "usb_v03_renew",
+        "ok": true,
+        "result": {
+          "protocolVersion": "bwg-worker-controller/0.3",
+          "state": "mining",
+          "monotonicMilliseconds": 10000,
+          "lease": {
+            "leaseId": "lease_fixture_03",
+            "challengeId": "challenge_00000000000000000000000000000001",
+            "renewAtMonotonicMilliseconds": 30000,
+            "expiresAtMonotonicMilliseconds": 70000
+          },
+          "restoration": {
+            "status": "pending"
+          }
+        }
+      }
+    },
+    {
+      "id": "v03_status",
+      "request": {
+        "protocolVersion": "bwg-worker-controller/0.3",
+        "requestId": "usb_v03_status",
+        "command": "status"
+      },
+      "response": {
+        "protocolVersion": "bwg-worker-controller/0.3",
+        "requestId": "usb_v03_status",
+        "ok": true,
+        "result": {
+          "protocolVersion": "bwg-worker-controller/0.3",
+          "state": "baseline",
+          "monotonicMilliseconds": 0,
+          "restoration": {
+            "status": "not_required"
+          }
+        }
+      }
+    },
+    {
+      "id": "v03_pause",
+      "request": {
+        "protocolVersion": "bwg-worker-controller/0.3",
+        "requestId": "usb_v03_pause",
+        "command": "pause"
+      },
+      "response": {
+        "protocolVersion": "bwg-worker-controller/0.3",
+        "requestId": "usb_v03_pause",
+        "ok": true,
+        "result": {
+          "protocolVersion": "bwg-worker-controller/0.3",
+          "state": "baseline",
+          "monotonicMilliseconds": 10000,
+          "restoration": {
+            "status": "confirmed",
+            "reason": "paused"
+          }
+        }
+      }
+    },
+    {
+      "id": "v03_cancel",
+      "request": {
+        "protocolVersion": "bwg-worker-controller/0.3",
+        "requestId": "usb_v03_cancel",
+        "command": "cancel"
+      },
+      "response": {
+        "protocolVersion": "bwg-worker-controller/0.3",
+        "requestId": "usb_v03_cancel",
+        "ok": true,
+        "result": {
+          "protocolVersion": "bwg-worker-controller/0.3",
+          "state": "baseline",
+          "monotonicMilliseconds": 10000,
+          "restoration": {
+            "status": "confirmed",
+            "reason": "cancelled"
+          }
+        }
+      }
+    },
+    {
+      "id": "v03_restore",
+      "request": {
+        "protocolVersion": "bwg-worker-controller/0.3",
+        "requestId": "usb_v03_restore",
+        "command": "restore",
+        "payload": {
+          "reason": "connectivity_lost"
+        }
+      },
+      "response": {
+        "protocolVersion": "bwg-worker-controller/0.3",
+        "requestId": "usb_v03_restore",
+        "ok": true,
+        "result": {
+          "protocolVersion": "bwg-worker-controller/0.3",
+          "state": "baseline",
+          "monotonicMilliseconds": 10000,
+          "restoration": {
+            "status": "confirmed",
+            "reason": "connectivity_lost"
+          }
+        }
+      }
+    },
+    {
+      "id": "v03_rejected",
+      "request": {
+        "protocolVersion": "bwg-worker-controller/0.3",
+        "requestId": "usb_v03_rejected",
+        "command": "status"
+      },
+      "response": {
+        "protocolVersion": "bwg-worker-controller/0.3",
+        "requestId": "usb_v03_rejected",
+        "ok": false,
+        "error": {
+          "code": "command_rejected",
+          "message": "Worker Controller command was rejected"
+        }
+      }
+    },
+    {
+      "id": "v03_response_identity_mismatch",
+      "request": {
+        "protocolVersion": "bwg-worker-controller/0.3",
+        "requestId": "usb_v03_expected",
+        "command": "status"
+      },
+      "response": {
+        "protocolVersion": "bwg-worker-controller/0.3",
+        "requestId": "usb_v03_other",
+        "ok": true,
+        "result": {
+          "protocolVersion": "bwg-worker-controller/0.3",
+          "state": "baseline",
+          "monotonicMilliseconds": 0,
+          "restoration": {
+            "status": "not_required"
+          }
+        }
+      },
+      "expectedError": "correlation"
+    },
+    {
+      "id": "v03_reject_log_injection",
+      "requestText": "runtime_log=not_a_controller_frame\n{\"protocolVersion\":\"bwg-worker-controller/0.3\"}\n",
+      "expectedError": "invalid_frame"
+    }
+  ]
+}
