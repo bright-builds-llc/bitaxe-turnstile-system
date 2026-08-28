@@ -73,6 +73,12 @@
   entry, strict signed Reference Firmware admission, bounded local encrypted Migration Backup,
   default NVS preservation, redacted post-reboot evidence, and verified A/B rollback before the gate
   resumes.
+- [ADR 0091](../../docs/adr/0091-separate-local-worker-control-from-runtime-evidence.md) and the
+  [`bwg-worker-usb-separation`](../bwg-worker-usb-separation/map.md) child effort now separate
+  application-time Worker control from receive-only runtime evidence. Controller 0.2 will use a
+  vendor-specific WebUSB control function beside CDC evidence, preserve the higher-level
+  `WorkerController` interface, and make bootloader/application reacquisition an explicit
+  prerequisite of Ticket 23 rather than weakening the firmware serial contract.
 
 ## Multi-worker failover boundary split
 
@@ -86,11 +92,11 @@ The unresolved work now uses the
 the BWG Core roadmap:
 
 1. aggregate exact work across concurrent and successive sessions;
-2. isolate failed leases and admit unlinkable replacement Workers;
-3. establish the production equivalent-offer/pending-reconfirmation seam;
-4. let [`bwg-trusted-consent` Ticket 04](../bwg-trusted-consent/issues/04-material-change-bridge.md)
+1. isolate failed leases and admit unlinkable replacement Workers;
+1. establish the production equivalent-offer/pending-reconfirmation seam;
+1. let [`bwg-trusted-consent` Ticket 04](../bwg-trusted-consent/issues/04-material-change-bridge.md)
    bind material terms to fresh signed confirmation; and
-5. compose failover, reconfirmation, threshold issuance, terminal lease shutdown, and closure of
+1. compose failover, reconfirmation, threshold issuance, terminal lease shutdown, and closure of
    parent Tickets 14 and 20.
 
 The parent tickets are integration records, not prerequisites of their own child slices. This keeps
@@ -106,7 +112,7 @@ The former Tickets 06 and 07 created a dependency cycle: durable issuance and Re
 - [Ticket 09](./issues/09-persistent-lifecycle.md) retains the remaining former Ticket 07 system-wide recovery and data-governance evidence.
 
 | Former ticket | Current ticket |
-| --- | --- |
-| 06 | 08 |
-| 07 | 09 |
-| 08–23 | 10–25 |
+| ------------- | -------------- |
+| 06            | 08             |
+| 07            | 09             |
+| 08–23         | 10–25          |

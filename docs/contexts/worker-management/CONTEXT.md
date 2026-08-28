@@ -8,6 +8,18 @@ This context describes optional local and remote control of Workers. It does not
 The boundary through which a client starts, observes, cancels, and restores a Worker's challenge-scoped activity.
 _Avoid_: Gate Authority, mining pool, arbitrary remote shell
 
+**Worker Control Transport**:
+A local bidirectional path that carries only authenticated Worker Controller requests and their redacted responses.
+_Avoid_: Runtime log, evidence channel, remote shell
+
+**Worker Evidence Transport**:
+A local receive-only path for redaction-safe Worker observations that cannot authorize or accept Worker Controller requests.
+_Avoid_: Worker Control Transport, command channel, credential stream
+
+**Transport Reacquisition**:
+The fail-closed process that binds a newly enumerated transport session to the same Worker before local control or evidence observation resumes.
+_Avoid_: Device discovery, lease renewal, automatic reconnect
+
 **Work Lease**:
 A short-lived authorization for a Worker to perform one challenge's work, after which it must stop that activity and restore its Mining Baseline unless the lease is validly renewed.
 _Avoid_: Persistent pool configuration, unbounded remote command

@@ -90,3 +90,13 @@ depending on this repository's implementation internals.
 
 Package consumers import the vectors from `bwg-core/worker-controller-conformance/fixtures` and the
 schema from `bwg-core/worker-controller-conformance/schema`.
+
+## Application transport follow-up
+
+This 0.1 profile remains the strict simulated and Web Serial contract; it is not evidence that real
+Reference Firmware may mix controller frames with its runtime log transport. The
+[`bwg-worker-usb-separation`](../../.scratch/bwg-worker-usb-separation/spec.md) child effort owns the
+additive Controller 0.2 and `bwg-worker-usb/0.1` profiles for separated application WebUSB control,
+receive-only CDC evidence, and bootloader/application Transport Reacquisition. Controller 0.1
+fixtures and package exports remain valid for existing consumers while real Reference Firmware
+eligibility moves to the new profiles.

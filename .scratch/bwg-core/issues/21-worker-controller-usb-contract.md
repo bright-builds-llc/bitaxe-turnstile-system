@@ -37,3 +37,9 @@ admission or renewal failure restores the Worker and pauses the Authority while 
 rollback error. Pause/Cancel, terminal observations, USB disconnect, and async tab cleanup restore
 or pause before client completion. Runtime, simulator, fixtures, and schema have explicit package
 subpaths; firmware CI executes the same structured operation/clock/outcome vectors.
+
+The resolved 0.1 profile remains valid for its simulator, Web Serial codec, and headless-client
+composition. It does not claim that real Reference Firmware may mix controller frames with runtime
+logs. The additive [`bwg-worker-usb-separation`](../../bwg-worker-usb-separation/spec.md) child
+effort owns Controller 0.2 application transport separation and the real-firmware prerequisite for
+Ticket 23 without reopening this ticket.

@@ -2,7 +2,7 @@
 
 **What to build:** Real Bitaxe evidence proves that bounded mainnet-capable challenge work can run through Reference Firmware and restore the exact Mining Baseline across every terminal and interruption path.
 
-**Blocked by:** 18: Admit only exact BIP 23-valid mainnet jobs; 20: Aggregate Workers and fail over equivalent Pool Offers; 22: Onboard Bitaxe with settings-preserving Reference Firmware.
+**Blocked by:** 18: Admit only exact BIP 23-valid mainnet jobs; 20: Aggregate Workers and fail over equivalent Pool Offers; 22: Onboard Bitaxe with settings-preserving Reference Firmware; child effort `bwg-worker-usb-separation` through Ticket 05.
 
 **Status:** ready-for-agent
 
@@ -13,3 +13,11 @@
 - [ ] Challenge credentials never persist as ordinary pool configuration.
 - [ ] Mainnet use follows the established per-job BIP 23 and Reward Policy guardrails rather than a regtest stage gate.
 - [ ] Evidence records source identity, commands, safety, privacy, cleanup, outcome, and residual risks through the firmware repository's native workflow.
+
+## Transport prerequisite
+
+[`bwg-worker-usb-separation`](../../bwg-worker-usb-separation/spec.md) must first publish and compose
+the separated application control/evidence profiles. Ticket 23 consumes that child effort's exact
+Controller 0.2 fixtures, Reference Client adapter, Reference Firmware adapter, and cross-repository
+hardware evidence; it does not send Work Lease commands over the receive-only 0.1 runtime log
+transport.
