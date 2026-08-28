@@ -2,11 +2,12 @@
 
 **What to build:** Real Bitaxe evidence proves that bounded mainnet-capable challenge work can run through Reference Firmware and restore the exact Mining Baseline across every terminal and interruption path.
 
-**Blocked by:** 18: Admit only exact BIP 23-valid mainnet jobs; 20: Aggregate Workers and fail over equivalent Pool Offers; 22: Onboard Bitaxe with settings-preserving Reference Firmware; child effort `bwg-worker-usb-separation` through Ticket 05.
+**Blocked by:** 18: Admit only exact BIP 23-valid mainnet jobs; 20: Aggregate Workers and fail over equivalent Pool Offers; 22: Onboard Bitaxe with settings-preserving Reference Firmware; child effort `bwg-worker-usb-separation` through Ticket 06.
 
 **Status:** ready-for-agent
 
-- [ ] The firmware repository consumes the shared Worker Controller and USB conformance fixtures.
+- [ ] The firmware repository consumes the shared Controller 0.3, Worker USB 0.2, and Local Device
+  Possession conformance profiles and fixtures.
 - [ ] Exact-device admission and safe hardware state are proven before each effectful attempt.
 - [ ] Completion, Pause, terminal Cancel, expiry, disconnect, reboot, and uncertain-time cases each end challenge mining.
 - [ ] Mining Baseline restoration is independently confirmed without exposing Wi-Fi or pool credentials.
@@ -18,6 +19,6 @@
 
 [`bwg-worker-usb-separation`](../../bwg-worker-usb-separation/spec.md) must first publish and compose
 the separated application control/evidence profiles. Ticket 23 consumes that child effort's exact
-Controller 0.2 fixtures, Reference Client adapter, Reference Firmware adapter, and cross-repository
-hardware evidence; it does not send Work Lease commands over the receive-only 0.1 runtime log
-transport.
+Controller 0.3, Worker USB 0.2, and Local Device Possession fixtures, Reference Client adapter,
+Reference Firmware adapter, and cross-repository hardware evidence; it does not send Work Lease
+commands over the receive-only 0.1 runtime log transport.

@@ -56,12 +56,19 @@ Commands remain `discover`, `start_lease`, `renew_lease`, `status`, `pause`, `ca
 transfers and volatile implementations. They never belong in logs, evidence, errors, telemetry,
 ordinary pool configuration, or public state.
 
+## Possession-bound successor
+
+Controller 0.2 remains an unchanged compatibility profile bound to `bwg-worker-usb/0.1`; it cannot
+be widened to carry a possession protocol. Production Reference Firmware advances to Controller
+0.3 and Worker USB 0.2, which add a separate fresh-nonce Local Device Possession Proof before Work
+Lease control while preserving these Work Lease semantics.
+
 ## Version relationship
 
 Controller 0.1 remains a valid simulator and Web Serial profile for existing consumers. Controller
-0.2 is additive and is the only profile eligible for the first real separated Reference Firmware
-claim. Implementations must not accept an 0.1 capability or payload as 0.2 merely by changing a
-version string.
+0.2 remains its additive separated-control compatibility successor. Possession-bound production
+firmware uses Controller 0.3; implementations must not accept an earlier capability or payload as a
+later profile merely by changing a version string.
 
 ## Conformance artifacts
 

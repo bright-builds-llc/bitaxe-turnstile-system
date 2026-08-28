@@ -1,11 +1,11 @@
-# 05: Prove cross-repository restoration and close the parent
+# 06: Prove cross-repository restoration and close the parent
 
-**What to build:** Compose the production Reference Client, Controller 0.2 transport, Reference
+**What to build:** Compose the production Reference Client, Controller 0.3 transport, Reference
 Firmware, local mainnet-shaped pool path, and native hardware evidence into one bounded Ultra 205
 restoration proof that closes BWG Core Ticket 23.
 
-**Blocked by:** 03: Add the production Reference Client WebUSB adapter;
-04: Implement the Reference Firmware composite USB adapter.
+**Blocked by:** 04: Add the production Reference Client WebUSB adapter;
+05: Implement the Reference Firmware composite USB adapter.
 
 **Status:** ready-for-agent
 
@@ -24,7 +24,7 @@ restoration proof that closes BWG Core Ticket 23.
   deterministic cleanup/restoration, independent redaction validation, and a closed terminal
   outcome under the firmware repository's native workflow.
 - [ ] Cross-repository package/version/digest evidence proves the firmware consumed the exact
-  published Controller and USB fixtures.
+  published Controller 0.3, Worker USB 0.2, and Local Device Possession profiles and fixtures.
 - [ ] The accepted redacted evidence is linked from and resolves every acceptance item in BWG Core
   Ticket 23; unresolved boundaries remain explicit non-claims.
 

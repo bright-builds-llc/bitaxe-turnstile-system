@@ -5,3 +5,7 @@ Application-time Reference Firmware will expose one TinyUSB composite device wit
 ## Consequences
 
 ESP32-S3 USB-OTG and USB Serial/JTAG share one internal PHY, so application TinyUSB replaces rather than runs alongside application-time USB Serial/JTAG; reset into the ROM bootloader and return to Reference Firmware are explicit Transport Reacquisition events. The Reference Client must obtain local permission through a direct user gesture and admit the exact application control function before sending a request. Reference Firmware and hardware evidence must preserve physical Worker identity separately from enumeration identity, keep evidence receive-only, and prove baseline restoration before this transport can close BWG Core Ticket 23. See the [ESP32-S3 USB Device Stack](https://docs.espressif.com/projects/esp-usb/en/latest/esp32s3/usb_device.html) and [ESP-IDF console configuration](https://docs.espressif.com/projects/esp-idf/en/release-v5.5/esp32s3/api-guides/stdio.html).
+
+[ADR 0092](0092-prove-local-worker-continuity-with-device-identity.md) preserves Controller 0.2 and
+Worker USB 0.1 as compatibility profiles, then advances possession-bound production control to
+Controller 0.3 and Worker USB 0.2 rather than widening either strict profile in place.

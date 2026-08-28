@@ -1,14 +1,14 @@
-# 03: Add the production Reference Client WebUSB adapter
+# 04: Add the production Reference Client WebUSB adapter
 
 **What to build:** Implement the browser production adapter behind the stable `WorkerController`
 interface, hiding permission, WebUSB transfer, interface admission, reacquisition, and disconnect.
 
-**Blocked by:** 02: Prototype and publish Controller 0.2 transport fixtures.
+**Blocked by:** 03: Publish possession-bound Controller 0.3 transport profiles.
 
 **Status:** ready-for-agent
 
 - [ ] A direct user gesture is the only path to request one local USB device and claim the exact
-  vendor-specific Controller 0.2 control function.
+  vendor-specific Controller 0.3 control function.
 - [ ] The adapter admits exact signed Reference Firmware capability and physical continuity before
   sending any Work Lease request; ambiguity or wrong function fails without a write.
 - [ ] Bootloader/application and reboot enumeration changes use bounded Transport Reacquisition
@@ -23,3 +23,9 @@ interface, hiding permission, WebUSB transfer, interface admission, reacquisitio
 ## Answer
 
 Pending.
+
+## Comments
+
+An implementation review proved the permission, exact-function, bounded-transfer, restoration,
+cleanup, privacy, and Chromium seams, then found that a serial-derived digest cannot establish
+same-Worker possession. Ticket 04 must consume Ticket 03 before any production export or claim.

@@ -19,13 +19,14 @@ reacquisition contract before real hardware work can begin.
 
 ## Solution
 
-Keep the higher-level `WorkerController` interface and Work Lease semantics stable. Publish a strict
-`bwg-worker-controller/0.2` wire profile whose local transport profile is
-`bwg-worker-usb/0.1`. Application-time Reference Firmware will enumerate one TinyUSB composite
+Keep the higher-level `WorkerController` interface and Work Lease semantics stable. Controller 0.2
+and `bwg-worker-usb/0.1` remain unchanged compatibility profiles. Publish a strict
+`bwg-worker-controller/0.3` wire profile whose local transport profile is
+`bwg-worker-usb/0.2`. Application-time Reference Firmware will enumerate one TinyUSB composite
 device with two non-interchangeable functions:
 
-- a vendor-specific WebUSB Worker Control Transport carrying only bounded authenticated controller
-  requests and redacted responses; and
+- a vendor-specific WebUSB Worker Control Transport carrying only bounded possession and
+  authenticated Controller frames with redacted responses; and
 - a CDC Worker Evidence Transport carrying only redaction-safe, receive-only runtime observations.
 
 ROM USB Serial/JTAG remains available only while the device is in its bootloader/debug lifecycle.
@@ -33,6 +34,11 @@ Moving between bootloader and application transports is an explicit Transport Re
 not continuity of one serial session. Ambiguity, identity drift, unexpected function ownership,
 control/evidence crossover, disconnect, reboot, or lost monotonic continuity fails closed and
 restores the Mining Baseline before public completion.
+
+Before an admitted application transport can start or resume a Work Lease, the client first runs
+`bwg-worker-possession/0.1`: a Device Identity signature bound to `possessionNonce`,
+`challengeBindingSha256`, the exact signed Controller capability digest, and the application
+descriptor digest. USB serial, VID/PID, and enumeration identity remain non-authoritative hints.
 
 ## User Stories
 
@@ -55,10 +61,12 @@ restores the Mining Baseline before public completion.
 - Keep `WorkerController` as the deep module interface used by the headless client and Web
   Component. Physical USB selection, descriptors, transfers, reacquisition, and disconnect
   detection stay behind its production adapter.
-- Advance the strict wire profile to `bwg-worker-controller/0.2`; do not reinterpret the 0.1
-  capability value `usbTransport: "web_serial"` or silently accept unknown fields.
-- Publish `bwg-worker-usb/0.1` as the exact physical-transport profile bound by 0.2 capability
-  discovery and cross-repository fixtures.
+- Preserve strict Controller 0.1, Controller 0.2, and Worker USB 0.1 compatibility profiles. Publish
+  Controller 0.3 rather than widening any existing strict shape.
+- Publish `bwg-worker-usb/0.2` with the same exact physical descriptor as USB 0.1, but widen the
+  vendor control function from Controller-only frames to possession-or-Controller frames.
+- Publish `bwg-worker-possession/0.1` as a separate pre-admission profile on that USB 0.2 control
+  function. Controller 0.3 Work Lease commands retain Controller 0.2 semantics.
 - Use a vendor-specific WebUSB function for control so the browser can claim an exact interface
   rather than probing or writing an ambiguous CDC port. Keep one distinct CDC function for
   receive-only evidence.
@@ -68,6 +76,8 @@ restores the Mining Baseline before public completion.
 - Treat ROM bootloader USB Serial/JTAG and application TinyUSB as separate enumeration identities
   of one admitted physical Worker. Neither a device-node name nor one enumeration identity proves
   physical continuity.
+- Establish physical continuity only from a fresh Device Identity possession proof. Pairing,
+  accounts, Control Grants, and hardware attestation remain outside this local proof.
 - Require a direct browser user gesture before device permission. No automatic discovery, network
   scan, stale port reuse, or write to an unadmitted function is permitted.
 - Restore the Mining Baseline locally before reporting controller disconnect, continuity loss,
@@ -78,8 +88,9 @@ restores the Mining Baseline before public completion.
 - Let this repository own profiles, browser adapters, fixtures, simulator behavior, and parent
   orchestration. Let `bitaxe-esp-miner` own TinyUSB implementation, volatile credential handling,
   device-local restoration, and native hardware evidence under its task/evidence policies.
-- Preserve Controller 0.1 fixtures and exports for existing consumers. Controller 0.2 conformance
-  is additive and becomes the only profile eligible for the first real Reference Firmware claim.
+- Preserve Controller 0.1, Controller 0.2, and Worker USB 0.1 fixtures and exports for existing
+  consumers. Controller 0.3 with USB 0.2 and possession becomes the only profile eligible for the
+  first real Reference Firmware claim.
 
 ## Threat Model
 
@@ -99,8 +110,10 @@ restores the Mining Baseline before public completion.
 ## Testing Decisions
 
 - Keep pure Worker Controller lifecycle vectors independent from physical transport vectors.
-- Add strict Controller 0.2 capability, request, response, and negative fixtures plus
-  `bwg-worker-usb/0.1` descriptor/function/reacquisition fixtures.
+- Keep strict Controller 0.2 and `bwg-worker-usb/0.1` fixtures unchanged. Add Controller 0.3
+  capability/request/response fixtures plus USB 0.2 function/reacquisition fixtures.
+- Add strict Local Device Possession Proof vectors for initial admission, same-key reacquisition,
+  replay, replacement-key rejection, changed bindings, weak keys, and arbitrary-signing attempts.
 - Prove the evidence function cannot parse commands and the control function emits no logs or
   uncorrelated bytes.
 - Exercise wrong function, wrong device, ambiguous selection, bootloader selection, interface
@@ -118,6 +131,7 @@ restores the Mining Baseline before public completion.
 
 - External USB PHY hardware, direct UART, pins, pads, probes, jumpers, or electrical modification.
 - Remote Device Relay, Device Identity pairing, fleet management, or persistent Control Grants.
+  Local proof of possession by an already selected Device Identity is in scope.
 - General-purpose firmware console input, remote shell behavior, arbitrary USB writes, or log
   streaming through the control function.
 - Changing Gate Authority accounting, Pool Adapter BIP 23 admission, Reward Policy, Gate Pass

@@ -9,7 +9,7 @@ The boundary through which a client starts, observes, cancels, and restores a Wo
 _Avoid_: Gate Authority, mining pool, arbitrary remote shell
 
 **Worker Control Transport**:
-A local bidirectional path that carries only authenticated Worker Controller requests and their redacted responses.
+A local bidirectional path that carries only Device Identity possession and authenticated Worker Controller requests with their redacted responses.
 _Avoid_: Runtime log, evidence channel, remote shell
 
 **Worker Evidence Transport**:
@@ -31,6 +31,10 @@ _Avoid_: Challenge credentials, factory defaults
 **Device Identity**:
 A cryptographic possession identity generated and controlled by Reference Firmware that represents one Worker across authenticated management connections without claiming tamper-proof hardware attestation.
 _Avoid_: Serial number, IP address, user account, hardware attestation
+
+**Local Device Possession Proof**:
+A fresh Device Identity signature that proves one locally connected transport belongs to the same Worker without pairing it or granting persistent management authority.
+_Avoid_: USB serial match, hardware attestation, Pairing Ceremony, Control Grant
 
 **Pairing Ceremony**:
 A short-lived, explicitly confirmed process that proves local possession of a Device Identity before granting persistent management authority.

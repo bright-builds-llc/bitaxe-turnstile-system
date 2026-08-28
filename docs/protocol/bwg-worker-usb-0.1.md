@@ -48,6 +48,10 @@ confirmed Mining Baseline. Public completion remains blocked until the original 
 reacquired under a new enumeration identity and supplies restoration confirmation. Reboot,
 monotonic reset, disconnect, and continuity loss likewise cannot resume an old lease.
 
+USB 0.1 remains an unchanged compatibility profile whose vendor function carries Controller frames
+only. Possession-bound production control advances to Worker USB 0.2, retaining this descriptor
+topology while admitting the separate Local Device Possession Proof before Controller 0.3 frames.
+
 ## Prototype finding
 
 The throwaway state-model prototype is retained off main at local branch
