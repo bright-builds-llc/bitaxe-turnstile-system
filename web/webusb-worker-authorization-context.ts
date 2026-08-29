@@ -91,6 +91,7 @@ export async function proveWorkerWebUsbPossession(input: {
   maybeExpectedFingerprint?: string;
   requestId: string;
   challengeBindingSha256: string;
+  expectedFirmwareSourceCommit?: string;
   runtime: WorkerWebUsbRuntime;
   transportGeneration: number;
   currentTransportGeneration: () => number;
@@ -107,6 +108,9 @@ export async function proveWorkerWebUsbPossession(input: {
     challengeBindingSha256: input.challengeBindingSha256,
     controllerCapabilitySha256,
     applicationDescriptorSha256,
+    ...(input.expectedFirmwareSourceCommit
+      ? { expectedFirmwareSourceCommit: input.expectedFirmwareSourceCommit }
+      : {}),
   };
   const challenge = input.maybeExpectedFingerprint
     ? createWorkerPossessionChallenge({

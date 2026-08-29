@@ -323,7 +323,7 @@ export async function signedPossessionResponse(request: {
     controllerCapabilitySha256?: string;
     applicationDescriptorSha256?: string;
   };
-}, maybeIdentity?: Promise<CryptoKeyPair>) {
+}, maybeIdentity?: Promise<CryptoKeyPair>, firmwareSourceCommit = "a".repeat(40)) {
   const payload = request.payload;
   if (
     !payload ||
@@ -347,6 +347,7 @@ export async function signedPossessionResponse(request: {
     challengeBindingSha256: payload.challengeBindingSha256,
     controllerCapabilitySha256: payload.controllerCapabilitySha256,
     applicationDescriptorSha256: payload.applicationDescriptorSha256,
+    firmwareSourceCommit,
     deviceIdentityJwk: {
       kty: "OKP",
       crv: "Ed25519",

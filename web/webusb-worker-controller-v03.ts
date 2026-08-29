@@ -39,7 +39,6 @@ import type { VerifiedWorkerPossession } from "./worker-possession";
 import {
   WorkerWebUsbTransferError,
   assertWorkerWebUsbUserActivation,
-  createWorkerWebUsbRuntime,
   releaseAndCloseWorkerWebUsbDevice,
   releaseAndCloseWorkerWebUsbDeviceStrict,
   selectWorkerWebUsbDevice,
@@ -58,8 +57,11 @@ import {
 } from "./webusb-worker-authorization-context";
 import {
   isDeviceCommandRejection,
+  configuredWorkerWebUsbRuntime,
+  assertWorkerWebUsbReady,
   normalizeAdapterError,
   notifyWorkerDisconnect,
+  type WorkerWebUsbAdapterState,
 } from "./webusb-worker-adapter-support";
 import {
   closeWorkerAfterPostconditionFailure,
@@ -96,6 +98,7 @@ export type WebUsbWorkerControllerV03Input = {
   deviceFilter: WorkerWebUsbDeviceFilter;
   trustedUpdateKeys: readonly unknown[];
   continuityScope: WorkerContinuityScope;
+  expectedFirmwareSourceCommit?: string;
   transferTimeoutMilliseconds?: number;
 };
 /** Creates an unconnected, accountless Controller 0.3 adapter over browser WebUSB. */
@@ -108,6 +111,7 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
   readonly #runtime: WorkerWebUsbRuntime;
   readonly #trustedUpdateKeys: readonly unknown[];
   readonly #continuity: WorkerContinuityAccess;
+  readonly #maybeExpectedFirmwareSourceCommit: string | undefined;
   readonly #authorizationContext = new WorkerWebUsbAuthorizationContext();
   readonly #challengeId: string;
   readonly #disconnectListeners = new Set<
@@ -121,8 +125,7 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
   #maybeEnumerationDevice: WorkerWebUsbDevice | undefined;
   #maybeRequiredRestorationReason: WorkerRestorationReason | undefined;
   #maybeUnconfirmedOutcomeMessage: string | undefined;
-  #state: "unconnected" | "admitting" | "ready" | "restoration_pending" | "cleanup_pending" | "closed" =
-    "unconnected";
+  #state: WorkerWebUsbAdapterState = "unconnected";
   #sequence = 0;
   #possessionSequence = 0;
   #transportGeneration = 0;
@@ -133,19 +136,19 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
         [workerWebUsbTestOptions]?: WorkerWebUsbTestOptions;
       }
     )[workerWebUsbTestOptions];
-    this.#runtime = createWorkerWebUsbRuntime({
-      deviceFilter: input.deviceFilter,
-      ...(input.transferTimeoutMilliseconds === undefined
-        ? {}
-        : { transferTimeoutMilliseconds: input.transferTimeoutMilliseconds }),
-      ...(maybeUsbTestOptions
-        ? {
-            usb: maybeUsbTestOptions.usb,
-            userActivation: maybeUsbTestOptions.userActivation,
-          }
-        : {}),
-    });
+    this.#runtime = configuredWorkerWebUsbRuntime(
+      input.deviceFilter,
+      input.transferTimeoutMilliseconds,
+      maybeUsbTestOptions,
+    );
     this.#trustedUpdateKeys = structuredClone(input.trustedUpdateKeys);
+    if (
+      input.expectedFirmwareSourceCommit !== undefined &&
+      !/^[0-9a-f]{40}$/u.test(input.expectedFirmwareSourceCommit)
+    ) {
+      throw new Error("Worker firmware source commitment is invalid");
+    }
+    this.#maybeExpectedFirmwareSourceCommit = input.expectedFirmwareSourceCommit;
     this.#challengeId = input.continuityScope.challengeId;
     const maybeTestOptions = (
       input as WebUsbWorkerControllerV03Input & {
@@ -474,6 +477,9 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
         descriptor,
         capabilities,
         ...(maybeExpectedFingerprint ? { maybeExpectedFingerprint } : {}),
+        ...(this.#maybeExpectedFirmwareSourceCommit
+          ? { expectedFirmwareSourceCommit: this.#maybeExpectedFirmwareSourceCommit }
+          : {}),
         requestId: `pos_browser_${String(++this.#possessionSequence)}`,
         challengeBindingSha256: await this.#continuity.challengeBindingSha256(),
         runtime: this.#runtime,
@@ -551,13 +557,7 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
   }
 
   #requireReady(): void {
-    if (this.#state !== "ready") {
-      throw new Error(
-        this.#state === "restoration_pending"
-          ? "Worker WebUSB reacquisition is required"
-          : "Worker WebUSB permission is required",
-      );
-    }
+    assertWorkerWebUsbReady(this.#state);
   }
 
   #assertAdmissionCurrent(admitted: {

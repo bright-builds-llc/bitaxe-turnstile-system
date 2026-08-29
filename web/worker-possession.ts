@@ -26,6 +26,7 @@ type WorkerPossessionBindingFields = {
 export type InitialWorkerPossessionBinding = WorkerPossessionBindingFields & {
   requestId: string;
   purpose: "initial_admission";
+  expectedFirmwareSourceCommit?: string;
   maybeExpectedDeviceIdentityFingerprint?: never;
 };
 
@@ -33,6 +34,7 @@ export type InitialWorkerPossessionBinding = WorkerPossessionBindingFields & {
 export type ReacquisitionWorkerPossessionBinding = WorkerPossessionBindingFields & {
   requestId: string;
   purpose: "transport_reacquisition";
+  expectedFirmwareSourceCommit?: string;
   expectedDeviceIdentityFingerprint: string;
 };
 
@@ -62,6 +64,7 @@ export type WorkerDeviceIdentityJwk = {
 /** Canonical signed possession transcript. */
 export type WorkerPossessionClaims = WorkerPossessionRequest["payload"] & {
   profile: typeof WORKER_POSSESSION_PROOF_PROFILE;
+  firmwareSourceCommit: string;
   deviceIdentityJwk: WorkerDeviceIdentityJwk;
 };
 
@@ -83,6 +86,7 @@ export type WorkerPossessionResponse =
 /** Successful local continuity result retained only inside the browser adapter. */
 export type VerifiedWorkerPossession = {
   deviceIdentityFingerprint: string;
+  firmwareSourceCommit: string;
   controlSessionBindingSha256: string;
 };
 
@@ -179,9 +183,16 @@ async function verifyResponse(
     challengeBindingSha256: binding.challengeBindingSha256,
     controllerCapabilitySha256: binding.controllerCapabilitySha256,
     applicationDescriptorSha256: binding.applicationDescriptorSha256,
+    firmwareSourceCommit: claims.firmwareSourceCommit,
     deviceIdentityJwk: claims.deviceIdentityJwk,
   };
-  if (canonicalJson(claims) !== canonicalJson(expectedClaims)) throw invalidProof();
+  if (
+    canonicalJson(claims) !== canonicalJson(expectedClaims) ||
+    (binding.expectedFirmwareSourceCommit !== undefined &&
+      binding.expectedFirmwareSourceCommit !== claims.firmwareSourceCommit)
+  ) {
+    throw invalidProof();
+  }
 
   const [protectedHeader, payload, signature, maybeExtra] = response.result.compactJws.split(".");
   if (
@@ -247,7 +258,11 @@ async function verifyResponse(
       response,
     })),
   );
-  return { deviceIdentityFingerprint, controlSessionBindingSha256 };
+  return {
+    deviceIdentityFingerprint,
+    firmwareSourceCommit: claims.firmwareSourceCommit,
+    controlSessionBindingSha256,
+  };
 }
 
 function requestFor(binding: WorkerPossessionBinding): WorkerPossessionRequest {
@@ -276,7 +291,7 @@ function parseBinding(input: unknown): WorkerPossessionBinding {
       "controllerCapabilitySha256",
       "applicationDescriptorSha256",
     ],
-    ["expectedDeviceIdentityFingerprint"],
+    ["expectedDeviceIdentityFingerprint", "expectedFirmwareSourceCommit"],
   );
   if (
     typeof value.requestId !== "string" ||
@@ -286,6 +301,8 @@ function parseBinding(input: unknown): WorkerPossessionBinding {
     !digest(value.challengeBindingSha256) ||
     !digest(value.controllerCapabilitySha256) ||
     !digest(value.applicationDescriptorSha256) ||
+    (value.expectedFirmwareSourceCommit !== undefined &&
+      !sourceCommit(value.expectedFirmwareSourceCommit)) ||
     (value.expectedDeviceIdentityFingerprint !== undefined &&
       !digest(value.expectedDeviceIdentityFingerprint)) ||
     (value.purpose === "initial_admission" &&
@@ -301,6 +318,9 @@ function parseBinding(input: unknown): WorkerPossessionBinding {
     challengeBindingSha256: value.challengeBindingSha256,
     controllerCapabilitySha256: value.controllerCapabilitySha256,
     applicationDescriptorSha256: value.applicationDescriptorSha256,
+    ...(sourceCommit(value.expectedFirmwareSourceCommit)
+      ? { expectedFirmwareSourceCommit: value.expectedFirmwareSourceCommit }
+      : {}),
   };
   if (value.purpose === "initial_admission") {
     return { ...fields, purpose: value.purpose };
@@ -371,6 +391,7 @@ function parseClaims(input: unknown): WorkerPossessionClaims {
     "challengeBindingSha256",
     "controllerCapabilitySha256",
     "applicationDescriptorSha256",
+    "firmwareSourceCommit",
     "deviceIdentityJwk",
   ]);
   const key = exactRecord(value.deviceIdentityJwk, [
@@ -388,6 +409,7 @@ function parseClaims(input: unknown): WorkerPossessionClaims {
     !digest(value.challengeBindingSha256) ||
     !digest(value.controllerCapabilitySha256) ||
     !digest(value.applicationDescriptorSha256) ||
+    !sourceCommit(value.firmwareSourceCommit) ||
     key.kty !== "OKP" ||
     key.crv !== "Ed25519" ||
     !isCanonicalPrimeSubgroupEd25519PublicKey(key.x) ||
@@ -406,6 +428,7 @@ function parseClaims(input: unknown): WorkerPossessionClaims {
     challengeBindingSha256: value.challengeBindingSha256,
     controllerCapabilitySha256: value.controllerCapabilitySha256,
     applicationDescriptorSha256: value.applicationDescriptorSha256,
+    firmwareSourceCommit: value.firmwareSourceCommit,
     deviceIdentityJwk: {
       kty: "OKP",
       crv: "Ed25519",
@@ -427,6 +450,10 @@ function validRequestId(input: string): boolean {
 
 function digest(input: unknown): input is string {
   return typeof input === "string" && /^[A-Za-z0-9_-]{43}$/u.test(input);
+}
+
+function sourceCommit(input: unknown): input is string {
+  return typeof input === "string" && /^[0-9a-f]{40}$/u.test(input);
 }
 
 function jsonRecord(bytes: Uint8Array): Record<string, unknown> {

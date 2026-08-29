@@ -10,6 +10,7 @@ import {
   decodeWorkerPossessionRequest,
   encodeWorkerPossessionMessage,
 } from "./worker-possession-usb";
+import { signedPossessionResponse } from "./webusb-worker-controller-v03-test-harness";
 
 for (const fixture of fixtures.negativeCases) {
   test(`shared possession negative fixture: ${fixture.id}`, async () => {
@@ -55,6 +56,15 @@ function negativeOperation(operation: string): () => unknown {
       return challenge.verify(fixtures.initialAdmission.response);
     };
   }
+  if (operation === "changed_firmware_source_commit") {
+    return async () => createWorkerPossessionChallenge(initialBinding()).verify(
+      await signedPossessionResponse(
+        fixtures.initialAdmission.request,
+        undefined,
+        "b".repeat(40),
+      ),
+    );
+  }
   return () => {
     const response = parseWorkerPossessionResponse(
       structuredClone(fixtures.initialAdmission.response),
@@ -72,6 +82,9 @@ function negativeOperation(operation: string): () => unknown {
     }
     if (operation === "changed_descriptor_digest") {
       response.result.claims.applicationDescriptorSha256 = "F".repeat(43);
+    }
+    if (operation === "malformed_firmware_source_commit") {
+      response.result.claims.firmwareSourceCommit = "A".repeat(40);
     }
     if (operation === "replacement_identity") {
       response.result.claims.deviceIdentityJwk.x = "G".repeat(43);
@@ -94,5 +107,6 @@ function initialBinding(): WorkerPossessionBinding {
       fixtures.initialAdmission.request.payload.controllerCapabilitySha256,
     applicationDescriptorSha256:
       fixtures.initialAdmission.request.payload.applicationDescriptorSha256,
+    expectedFirmwareSourceCommit: "a".repeat(40),
   };
 }

@@ -32,6 +32,25 @@ describe("WebUSB Worker authorization context", () => {
     });
   });
 
+  test("rejects a possessed Worker whose signed runtime source is not expected", async () => {
+    // Arrange
+    const harness = webUsbHarness();
+    const controller = testController({
+      usb: harness.usb,
+      deviceFilter: { vendorId: 0x1209, productId: 0xb17a },
+      trustedUpdateKeys: controllerFixtures.updateAuthorityKeys,
+      expectedFirmwareSourceCommit: "b".repeat(40),
+      userActivation: () => true,
+    });
+
+    // Act
+    const permission = controller.requestPermission();
+
+    // Assert
+    await expect(permission).rejects.toThrow("Worker WebUSB device admission failed");
+    expect(harness.commands()).toEqual(["discover", "prove_possession"]);
+  });
+
   test("the same request produces different contexts for different Device Identities", async () => {
     // Arrange
     const binding = {

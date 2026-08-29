@@ -7,3 +7,9 @@ to Controller 0.3 bound to `bwg-worker-usb/0.2`, whose control function admits o
 Controller frames. VID/PID, USB serial, enumeration identity, and their hashes remain admission
 hints because a replacement device can clone them. This proves continuity without adding pairing,
 accounts, persistent Control Grants, remote relay, or hardware-attestation claims.
+
+The Device Identity-signed proof also carries the running firmware's full source commit. When a
+deployment supplies an expected commit, the browser rejects any other signed value. This lets
+exact-package runtime evidence join to the WebUSB-selected Device Identity while keeping serial
+and enumeration hints non-authoritative. It is a build-continuity assertion by the possession key,
+not tamper-proof hardware attestation.

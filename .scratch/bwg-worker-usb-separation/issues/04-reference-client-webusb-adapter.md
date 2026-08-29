@@ -11,6 +11,8 @@ interface, hiding permission, WebUSB transfer, interface admission, reacquisitio
   vendor-specific Controller 0.3 control function.
 - [x] The adapter admits exact signed Reference Firmware capability and physical continuity before
   sending any Work Lease request; ambiguity or wrong function fails without a write.
+- [x] An optional deployment source-commit expectation is verified inside the same Device
+  Identity-signed possession proof, joining exact runtime package evidence to the selected Worker.
 - [x] Bootloader/application and reboot enumeration changes use bounded Transport Reacquisition
   rather than stale `USBDevice` or interface state.
 - [x] Bulk request/response correlation, bounds, timeouts, cancellation, response loss, and

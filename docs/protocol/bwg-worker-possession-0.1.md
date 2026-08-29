@@ -17,6 +17,13 @@ five exact bindings:
 - `controllerCapabilitySha256`: the canonical signed Controller 0.3 capability digest; and
 - `applicationDescriptorSha256`: the exact Worker USB application descriptor digest.
 
+The signed proof additionally carries `firmwareSourceCommit`, the running
+firmware's full lowercase source commit. A deployment that supplies an expected
+commit must reject a proof from any other build. Because the Device Identity
+signs this claim alongside the fresh nonce and transport bindings, an exact
+runtime package observation can be joined to the WebUSB-selected Worker without
+treating USB serial data as authority.
+
 Reference Firmware returns the correlated bindings, its public Ed25519 Device Identity JWK, and a
 compact JWS with protected type `bwg-worker-possession+jws`. It signs only this closed canonical
 claim shape. Arbitrary messages, Work Lease credentials, unknown fields, weak keys, and oversized

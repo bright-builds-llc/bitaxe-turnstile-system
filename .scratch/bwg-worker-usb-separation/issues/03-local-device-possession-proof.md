@@ -16,7 +16,8 @@ Identity without pairing or exposing it to a backend.
   vendor control function admits only possession and Controller frames.
 - [x] `bwg-worker-possession/0.1` publishes one strict fresh-nonce `prove_possession` request and
   correlated Ed25519 JWS response bound to `purpose`, `possessionNonce`,
-  `challengeBindingSha256`, capability digest, and descriptor digest.
+  `challengeBindingSha256`, capability digest, descriptor digest, and the running firmware source
+  commit asserted by the Device Identity.
 - [x] Initial admission establishes the Device Identity public-key fingerprint; reacquisition
   requires the exact same key under a fresh nonce without adding pairing or a persistent grant.
 - [x] Strict runtime parsers and verification reject replay, weak or malformed keys, changed
@@ -42,7 +43,7 @@ status behavior.
 Ed25519 JWS response. The one-shot verifier consumes its nonce before asynchronous work, binds the
 exact purpose and three digests, verifies the canonical public JWK and signature, establishes a
 SHA-256 Device Identity fingerprint, and optionally requires the previously established
-fingerprint during reacquisition. Device-supplied failure text is normalized and arbitrary signing
+fingerprint and expected running firmware source commit during reacquisition. Device-supplied failure text is normalized and arbitrary signing
 shapes never reach the signer contract.
 
 Strict Draft 2020-12 schemas and deterministic non-production fixtures cover initial admission,

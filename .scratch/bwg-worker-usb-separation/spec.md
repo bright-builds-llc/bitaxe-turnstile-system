@@ -38,7 +38,9 @@ restores the Mining Baseline before public completion.
 Before an admitted application transport can start or resume a Work Lease, the client first runs
 `bwg-worker-possession/0.1`: a Device Identity signature bound to `possessionNonce`,
 `challengeBindingSha256`, the exact signed Controller capability digest, and the application
-descriptor digest. USB serial, VID/PID, and enumeration identity remain non-authoritative hints.
+descriptor digest. The signed response also asserts the running firmware source commit; a client
+with an exact expected package rejects any other commit inside the same Device Identity proof. USB
+serial, VID/PID, and enumeration identity remain non-authoritative hints.
 
 Deployment trust uses two replaceable Ed25519 authority roles. The Update Authority signs the
 closed Reference Firmware capability bound to the exact application descriptor. The Work Lease
@@ -52,7 +54,7 @@ Controller shape.
 A separate `WorkerLeaseAuthorizationContext` interface derives
 `bwg-worker-control-session/0.1` from the canonical verified possession transcript: the exact
 request plus signed response/JWK. That transcript binds the fresh nonce, Challenge, capability,
-descriptor, and Device Identity. The headless client supplies only the final domain-separated
+descriptor, running firmware source commit, and Device Identity. The headless client supplies only the final domain-separated
 digest when asking the Authority for Start or Renew authorization. Firmware accepts an unused
 Start context for at most 60 local monotonic seconds, retains it only while that lease is active,
 and invalidates it on every restoration or continuity-loss path. The stable `WorkerController`

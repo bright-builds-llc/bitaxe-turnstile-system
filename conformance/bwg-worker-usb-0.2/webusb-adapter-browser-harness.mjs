@@ -320,6 +320,7 @@ async function possessionResponse(request, identityPromise) {
   const claims = {
     profile: "bwg-worker-possession-proof/0.1",
     ...request.payload,
+    firmwareSourceCommit: "a".repeat(40),
     deviceIdentityJwk: {
       kty: "OKP",
       crv: "Ed25519",

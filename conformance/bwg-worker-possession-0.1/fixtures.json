@@ -40,6 +40,7 @@
           "challengeBindingSha256": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
           "controllerCapabilitySha256": "JFWsyueHvXS9M9GlDlK6yEOwUzO8oPXtloalyTRxFvE",
           "applicationDescriptorSha256": "rOKO_7whZfy0ntMKM9RIeZNAA3x97tt3rWMAm_QshVA",
+          "firmwareSourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "deviceIdentityJwk": {
             "kty": "OKP",
             "crv": "Ed25519",
@@ -51,7 +52,7 @@
             ]
           }
         },
-        "compactJws": "eyJhbGciOiJFZDI1NTE5IiwidHlwIjoiYndnLXdvcmtlci1wb3NzZXNzaW9uK2p3cyJ9.eyJhcHBsaWNhdGlvbkRlc2NyaXB0b3JTaGEyNTYiOiJyT0tPXzd3aFpmeTBudE1LTTlSSWVaTkFBM3g5N3R0M3JXTUFtX1FzaFZBIiwiY2hhbGxlbmdlQmluZGluZ1NoYTI1NiI6IkNDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0MiLCJjb250cm9sbGVyQ2FwYWJpbGl0eVNoYTI1NiI6IkpGV3N5dWVIdlhTOU05R2xEbEs2eUVPd1V6TzhvUFh0bG9hbHlUUnhGdkUiLCJkZXZpY2VJZGVudGl0eUp3ayI6eyJhbGciOiJFZDI1NTE5IiwiY3J2IjoiRWQyNTUxOSIsImtleV9vcHMiOlsidmVyaWZ5Il0sImt0eSI6Ik9LUCIsInVzZSI6InNpZyIsIngiOiIxMXFZQVlLeENyZlZTXzdUeVdRSE9nN2hjdlBhcGlNbHJ3SWFhUGNIVVJvIn0sInBvc3Nlc3Npb25Ob25jZSI6IkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkIiLCJwcm9maWxlIjoiYndnLXdvcmtlci1wb3NzZXNzaW9uLXByb29mLzAuMSIsInB1cnBvc2UiOiJpbml0aWFsX2FkbWlzc2lvbiJ9.u0LrP4qp_PlaxXLzshKQ5EJhFmks_HTu_QUuvKLnt9_BRYYrvLr6ecbh5pBe49x8xTmF_m--Kd_O-Kk6rA5qAg"
+        "compactJws": "eyJhbGciOiJFZDI1NTE5IiwidHlwIjoiYndnLXdvcmtlci1wb3NzZXNzaW9uK2p3cyJ9.eyJhcHBsaWNhdGlvbkRlc2NyaXB0b3JTaGEyNTYiOiJyT0tPXzd3aFpmeTBudE1LTTlSSWVaTkFBM3g5N3R0M3JXTUFtX1FzaFZBIiwiY2hhbGxlbmdlQmluZGluZ1NoYTI1NiI6IkNDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0MiLCJjb250cm9sbGVyQ2FwYWJpbGl0eVNoYTI1NiI6IkpGV3N5dWVIdlhTOU05R2xEbEs2eUVPd1V6TzhvUFh0bG9hbHlUUnhGdkUiLCJkZXZpY2VJZGVudGl0eUp3ayI6eyJhbGciOiJFZDI1NTE5IiwiY3J2IjoiRWQyNTUxOSIsImtleV9vcHMiOlsidmVyaWZ5Il0sImt0eSI6Ik9LUCIsInVzZSI6InNpZyIsIngiOiIxMXFZQVlLeENyZlZTXzdUeVdRSE9nN2hjdlBhcGlNbHJ3SWFhUGNIVVJvIn0sImZpcm13YXJlU291cmNlQ29tbWl0IjoiYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsInBvc3Nlc3Npb25Ob25jZSI6IkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkIiLCJwcm9maWxlIjoiYndnLXdvcmtlci1wb3NzZXNzaW9uLXByb29mLzAuMSIsInB1cnBvc2UiOiJpbml0aWFsX2FkbWlzc2lvbiJ9.wIJRDtqd8U-dI2uIxjIurOePMyekb6dNwTwWyajUQ10Kw5uVOKp6D-x_dG2Ixs8327KGRwJTE6FMeJwtHmi6Cg"
       }
     }
   },
@@ -80,6 +81,7 @@
           "challengeBindingSha256": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
           "controllerCapabilitySha256": "JFWsyueHvXS9M9GlDlK6yEOwUzO8oPXtloalyTRxFvE",
           "applicationDescriptorSha256": "rOKO_7whZfy0ntMKM9RIeZNAA3x97tt3rWMAm_QshVA",
+          "firmwareSourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "deviceIdentityJwk": {
             "kty": "OKP",
             "crv": "Ed25519",
@@ -91,7 +93,7 @@
             ]
           }
         },
-        "compactJws": "eyJhbGciOiJFZDI1NTE5IiwidHlwIjoiYndnLXdvcmtlci1wb3NzZXNzaW9uK2p3cyJ9.eyJhcHBsaWNhdGlvbkRlc2NyaXB0b3JTaGEyNTYiOiJyT0tPXzd3aFpmeTBudE1LTTlSSWVaTkFBM3g5N3R0M3JXTUFtX1FzaFZBIiwiY2hhbGxlbmdlQmluZGluZ1NoYTI1NiI6IkNDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0MiLCJjb250cm9sbGVyQ2FwYWJpbGl0eVNoYTI1NiI6IkpGV3N5dWVIdlhTOU05R2xEbEs2eUVPd1V6TzhvUFh0bG9hbHlUUnhGdkUiLCJkZXZpY2VJZGVudGl0eUp3ayI6eyJhbGciOiJFZDI1NTE5IiwiY3J2IjoiRWQyNTUxOSIsImtleV9vcHMiOlsidmVyaWZ5Il0sImt0eSI6Ik9LUCIsInVzZSI6InNpZyIsIngiOiIxMXFZQVlLeENyZlZTXzdUeVdRSE9nN2hjdlBhcGlNbHJ3SWFhUGNIVVJvIn0sInBvc3Nlc3Npb25Ob25jZSI6IkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkYiLCJwcm9maWxlIjoiYndnLXdvcmtlci1wb3NzZXNzaW9uLXByb29mLzAuMSIsInB1cnBvc2UiOiJ0cmFuc3BvcnRfcmVhY3F1aXNpdGlvbiJ9.RQeumYQipB8jq_5QYghqAhPVLppKkije0mM-IeofmDH-G919koSMED2j1IA5dmZlOJKDiiQ-xox_BC6dUNW5Bw"
+        "compactJws": "eyJhbGciOiJFZDI1NTE5IiwidHlwIjoiYndnLXdvcmtlci1wb3NzZXNzaW9uK2p3cyJ9.eyJhcHBsaWNhdGlvbkRlc2NyaXB0b3JTaGEyNTYiOiJyT0tPXzd3aFpmeTBudE1LTTlSSWVaTkFBM3g5N3R0M3JXTUFtX1FzaFZBIiwiY2hhbGxlbmdlQmluZGluZ1NoYTI1NiI6IkNDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0MiLCJjb250cm9sbGVyQ2FwYWJpbGl0eVNoYTI1NiI6IkpGV3N5dWVIdlhTOU05R2xEbEs2eUVPd1V6TzhvUFh0bG9hbHlUUnhGdkUiLCJkZXZpY2VJZGVudGl0eUp3ayI6eyJhbGciOiJFZDI1NTE5IiwiY3J2IjoiRWQyNTUxOSIsImtleV9vcHMiOlsidmVyaWZ5Il0sImt0eSI6Ik9LUCIsInVzZSI6InNpZyIsIngiOiIxMXFZQVlLeENyZlZTXzdUeVdRSE9nN2hjdlBhcGlNbHJ3SWFhUGNIVVJvIn0sImZpcm13YXJlU291cmNlQ29tbWl0IjoiYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsInBvc3Nlc3Npb25Ob25jZSI6IkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkYiLCJwcm9maWxlIjoiYndnLXdvcmtlci1wb3NzZXNzaW9uLXByb29mLzAuMSIsInB1cnBvc2UiOiJ0cmFuc3BvcnRfcmVhY3F1aXNpdGlvbiJ9.EWM7BONrQtd2_mkfvGg7M_N_oNYclD0R9IiHNah_dINK4HMrU_Dxhnv49WHf1i9p8PYOFYYZeAFEfpIMhvkpBg"
       }
     }
   },
@@ -107,6 +109,7 @@
         "challengeBindingSha256": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
         "controllerCapabilitySha256": "JFWsyueHvXS9M9GlDlK6yEOwUzO8oPXtloalyTRxFvE",
         "applicationDescriptorSha256": "rOKO_7whZfy0ntMKM9RIeZNAA3x97tt3rWMAm_QshVA",
+        "firmwareSourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "deviceIdentityJwk": {
           "kty": "OKP",
           "crv": "Ed25519",
@@ -131,6 +134,7 @@
         "challengeBindingSha256": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
         "controllerCapabilitySha256": "JFWsyueHvXS9M9GlDlK6yEOwUzO8oPXtloalyTRxFvE",
         "applicationDescriptorSha256": "rOKO_7whZfy0ntMKM9RIeZNAA3x97tt3rWMAm_QshVA",
+        "firmwareSourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "deviceIdentityJwk": {
           "kty": "OKP",
           "crv": "Ed25519",
@@ -155,6 +159,7 @@
         "challengeBindingSha256": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
         "controllerCapabilitySha256": "JFWsyueHvXS9M9GlDlK6yEOwUzO8oPXtloalyTRxFvE",
         "applicationDescriptorSha256": "rOKO_7whZfy0ntMKM9RIeZNAA3x97tt3rWMAm_QshVA",
+        "firmwareSourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "deviceIdentityJwk": {
           "kty": "OKP",
           "crv": "Ed25519",
@@ -196,6 +201,16 @@
     {
       "id": "changed_descriptor_digest",
       "operation": "changed_descriptor_digest",
+      "expectedError": "invalid_proof"
+    },
+    {
+      "id": "changed_firmware_source_commit",
+      "operation": "changed_firmware_source_commit",
+      "expectedError": "invalid_proof"
+    },
+    {
+      "id": "malformed_firmware_source_commit",
+      "operation": "malformed_firmware_source_commit",
       "expectedError": "invalid_proof"
     },
     {
