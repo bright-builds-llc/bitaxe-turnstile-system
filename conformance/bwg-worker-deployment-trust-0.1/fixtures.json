@@ -35,10 +35,10 @@
       "role": "work_lease_authority",
       "keys": [
         {
-          "kid": "dev-lease-OVBcK5Mlzd6E_zbg",
+          "kid": "dev-lease-source-bound-v1",
           "kty": "OKP",
           "crv": "Ed25519",
-          "x": "abl7RfBOVNNiVmOIJhpBBuFlscyifz8coOVEks7c9r8",
+          "x": "JOGbtAPbsrRAYBYdHvTdsxwBVZCvxAKxjsNWgi0FQt4",
           "alg": "Ed25519",
           "use": "sig",
           "key_ops": [
@@ -138,7 +138,7 @@
     "input": {
       "operation": "start",
       "activeChallengeId": "challenge_00000000000000000000000000000001",
-      "controlSessionBindingSha256": "zD5uDDndFnK91hfVLZFfsPDr7HQ2iXOEIm9VGPPVAWI",
+      "controlSessionBindingSha256": "OVu7haWZbSztlTWc6djBGk10R1FzkHL9Wnf4M2sQtI0",
       "request": {
         "protocolVersion": "bwg-worker-controller/0.3",
         "leaseId": "lease_fixture_03",
@@ -156,14 +156,14 @@
       "profile": "bwg-worker-lease-authorization-artifact/0.1",
       "operation": "start",
       "sequence": "1",
-      "authorization": "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoiZGV2LWxlYXNlLU9WQmNLNU1semQ2RV96YmciLCJ0eXAiOiJid2ctd29ya2VyLWxlYXNlLWF1dGhvcml6YXRpb24randzIn0.eyJjb250cm9sU2Vzc2lvbkJpbmRpbmdTaGEyNTYiOiJ6RDV1RERuZEZuSzkxaGZWTFpGZnNQRHI3SFEyaVhPRUltOVZHUFBWQVdJIiwib3BlcmF0aW9uIjoic3RhcnQiLCJyZXF1ZXN0U2hhMjU2IjoiaVpQeVEwMVY0bzhsYUphaEhlZjQySXBBSWg4V2VqeFNPUHIzNTZlQzZMZyIsInNlcXVlbmNlIjoiMSJ9.jdMFNKg72Db3CCMaU1RZR9zGHQvXRe4kGeGnLEqPjzeaJuY974yhiSR5WTCScAZdrYtGq2U9dytuswI5ChKrCw"
+      "authorization": "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoiZGV2LWxlYXNlLXNvdXJjZS1ib3VuZC12MSIsInR5cCI6ImJ3Zy13b3JrZXItbGVhc2UtYXV0aG9yaXphdGlvbitqd3MifQ.eyJjb250cm9sU2Vzc2lvbkJpbmRpbmdTaGEyNTYiOiJPVnU3aGFXWmJTenRsVFdjNmRqQkdrMTBSMUZ6a0hMOVduZjRNMnNRdEkwIiwib3BlcmF0aW9uIjoic3RhcnQiLCJyZXF1ZXN0U2hhMjU2IjoiaVpQeVEwMVY0bzhsYUphaEhlZjQySXBBSWg4V2VqeFNPUHIzNTZlQzZMZyIsInNlcXVlbmNlIjoiMSJ9.kM-I1lmLAdLumwoi8JQ19VshbyEG-oV6bJx1UyN0hj2OEL7_pp4MavsZjGR5ck--FqDTpWy_YEjwEgNcyfR1CQ"
     }
   },
   "renew": {
     "input": {
       "operation": "renew",
       "activeChallengeId": "challenge_00000000000000000000000000000001",
-      "controlSessionBindingSha256": "zD5uDDndFnK91hfVLZFfsPDr7HQ2iXOEIm9VGPPVAWI",
+      "controlSessionBindingSha256": "OVu7haWZbSztlTWc6djBGk10R1FzkHL9Wnf4M2sQtI0",
       "request": {
         "protocolVersion": "bwg-worker-controller/0.3",
         "leaseId": "lease_fixture_03",
@@ -175,7 +175,7 @@
       "profile": "bwg-worker-lease-authorization-artifact/0.1",
       "operation": "renew",
       "sequence": "2",
-      "authorization": "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoiZGV2LWxlYXNlLU9WQmNLNU1semQ2RV96YmciLCJ0eXAiOiJid2ctd29ya2VyLWxlYXNlLWF1dGhvcml6YXRpb24randzIn0.eyJjb250cm9sU2Vzc2lvbkJpbmRpbmdTaGEyNTYiOiJ6RDV1RERuZEZuSzkxaGZWTFpGZnNQRHI3SFEyaVhPRUltOVZHUFBWQVdJIiwib3BlcmF0aW9uIjoicmVuZXciLCJyZXF1ZXN0U2hhMjU2IjoiVkhpZ3VfX044TVFDMnB1dkhQckp6NmlGY0wwck9LaU1lMWJZMkZSUjd3MCIsInNlcXVlbmNlIjoiMiJ9.tFC46zNC0wUlUcRhojV6aFilKx-BjjMAKecv7kGuW5eUuPfb3Yw1fU-_xszjf5XCuVHHo-erIuxGcE69Zky5Bg"
+      "authorization": "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoiZGV2LWxlYXNlLXNvdXJjZS1ib3VuZC12MSIsInR5cCI6ImJ3Zy13b3JrZXItbGVhc2UtYXV0aG9yaXphdGlvbitqd3MifQ.eyJjb250cm9sU2Vzc2lvbkJpbmRpbmdTaGEyNTYiOiJPVnU3aGFXWmJTenRsVFdjNmRqQkdrMTBSMUZ6a0hMOVduZjRNMnNRdEkwIiwib3BlcmF0aW9uIjoicmVuZXciLCJyZXF1ZXN0U2hhMjU2IjoiVkhpZ3VfX044TVFDMnB1dkhQckp6NmlGY0wwck9LaU1lMWJZMkZSUjd3MCIsInNlcXVlbmNlIjoiMiJ9.GcwoMJMEC41PTewyuNALGMdYp67QxOXHbO9fWRrRS3th9v1djmSkJjudTafJA9ilyxXDxLG6Zt8CWCqJ0i8WAw"
     }
   },
   "negativeCases": [

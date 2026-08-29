@@ -23,10 +23,10 @@
     "role": "work_lease_authority",
     "keys": [
       {
-        "kid": "dev-lease-OVBcK5Mlzd6E_zbg",
+        "kid": "dev-lease-source-bound-v1",
         "kty": "OKP",
         "crv": "Ed25519",
-        "x": "abl7RfBOVNNiVmOIJhpBBuFlscyifz8coOVEks7c9r8",
+        "x": "JOGbtAPbsrRAYBYdHvTdsxwBVZCvxAKxjsNWgi0FQt4",
         "alg": "Ed25519",
         "use": "sig",
         "key_ops": ["verify"]
