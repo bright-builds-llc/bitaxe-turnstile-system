@@ -40,6 +40,24 @@ Before an admitted application transport can start or resume a Work Lease, the c
 `challengeBindingSha256`, the exact signed Controller capability digest, and the application
 descriptor digest. USB serial, VID/PID, and enumeration identity remain non-authoritative hints.
 
+Deployment trust uses two replaceable Ed25519 authority roles. The Update Authority signs the
+closed Reference Firmware capability bound to the exact application descriptor. The Work Lease
+Authority signs `bwg-worker-lease-authorization/0.1` over the exact authorizationless Start or
+Renew input, active Challenge binding, and durable monotonic authorization sequence. The compact
+Work Lease JWS remains inside Controller 0.3's existing opaque 512-byte `authorization` string.
+Issuer, audience, role, and profile are pinned by the keyed trust configuration rather than
+repeated in the payload, keeping the maximum legal JWS representable without widening a strict
+Controller shape.
+
+A separate `WorkerLeaseAuthorizationContext` interface derives
+`bwg-worker-control-session/0.1` from the canonical verified possession transcript: the exact
+request plus signed response/JWK. That transcript binds the fresh nonce, Challenge, capability,
+descriptor, and Device Identity. The headless client supplies only the final domain-separated
+digest when asking the Authority for Start or Renew authorization. Firmware accepts an unused
+Start context for at most 60 local monotonic seconds, retains it only while that lease is active,
+and invalidates it on every restoration or continuity-loss path. The stable `WorkerController`
+interface and possession wire profile do not change.
+
 ## User Stories
 
 1. As a Claimant, I want the browser to select an exact local control function, so that a runtime
@@ -67,6 +85,31 @@ descriptor digest. USB serial, VID/PID, and enumeration identity remain non-auth
   vendor control function from Controller-only frames to possession-or-Controller frames.
 - Publish `bwg-worker-possession/0.1` as a separate pre-admission profile on that USB 0.2 control
   function. Controller 0.3 Work Lease commands retain Controller 0.2 semantics.
+- Keep Update Authority and Work Lease Authority verification separate. Publish a strict compact
+  JWS profile inside the existing opaque Work Lease `authorization` field rather than widening or
+  versioning Controller 0.3.
+- Bind Work Lease authorization to the complete authorizationless canonical request. Start binds
+  Challenge ID and all Stratum/deadline terms; Renew also binds the retained active Challenge ID.
+- Give every Work Lease Authority key a durable monotonic authorization sequence. Firmware
+  atomically persists its per-key accepted high-water mark before any Start or Renew effect and
+  rejects non-increasing values across restoration and reboot. Sequence state is metadata-only and
+  separate from ordinary settings and challenge credentials. The closed sequence domain is
+  canonical unsigned 64-bit decimal `1..=18446744073709551615` without a leading zero; allocator
+  exhaustion fails closed.
+- Keep the compact JWS payload closed to operation, request digest, and canonical decimal sequence;
+  add only the current control-session digest, and pin issuer, audience, role, and profile through
+  the `kid`-selected trust configuration. Restrict `kid` to
+  `[A-Za-z0-9_-]{1,32}` ASCII bytes and operation to exactly `start` or `renew`. Derive the maximum
+  header/payload/signature size from the maximum key ID, five-byte operation, two digests, unsigned
+  64-bit sequence, and fixed Ed25519 signature, and prove it remains within 512 bytes.
+- Preserve the `WorkerController` interface. Add a separate authorization-context interface that
+  proves a fresh Device Identity-bound local possession exchange before Authority Start/resume and
+  shares only a domain-separated transcript digest with the Authority. Firmware invalidates that
+  context after 60 unused local monotonic seconds, after any restoration/continuity loss, or when
+  no matching lease remains.
+- Keep private signing keys outside repositories and processes that only verify. Development
+  deployment tooling may create protected local keys, but committed fixtures and configuration
+  contain public JWKs and signed public artifacts only.
 - Use a vendor-specific WebUSB function for control so the browser can claim an exact interface
   rather than probing or writing an ambiguous CDC port. Keep one distinct CDC function for
   receive-only evidence.
@@ -102,6 +145,15 @@ descriptor digest. USB serial, VID/PID, and enumeration identity remain non-auth
   control continuity while challenge work is active.
 - A backend supplies a forged or overlong grant, reuses an old Lease ID, changes Stratum terms under
   a valid authorization, or attempts to persist challenge credentials as ordinary settings.
+- A capability-signing key is reused to authorize Work Leases, a Work Lease key signs firmware
+  capability, or a stale/retired key remains trusted outside an explicit overlap window.
+- A previously accepted signed Start or Renew is replayed after restoration, process interruption,
+  or firmware reboot, or work begins before its accepted-sequence high-water mark is durable.
+- A valid but never-presented authorization is withheld beyond its local possession context, moved
+  into another context, or presented after restoration/reboot with a sequence above the persisted
+  high-water mark.
+- One possession request is replayed against a different Device Identity in an attempt to derive
+  the same authorization context.
 - A replacement application function appears after flashing but does not belong to the admitted
   physical Worker or does not expose the exact signed Reference Firmware capability.
 - Evidence, logs, manifests, browser errors, telemetry, or public projections accidentally contain
@@ -114,6 +166,12 @@ descriptor digest. USB serial, VID/PID, and enumeration identity remain non-auth
   capability/request/response fixtures plus USB 0.2 function/reacquisition fixtures.
 - Add strict Local Device Possession Proof vectors for initial admission, same-key reacquisition,
   replay, replacement-key rejection, changed bindings, weak keys, and arbitrary-signing attempts.
+- Add strict Work Lease authorization vectors for complete Start/Renew binding, tampering, wrong
+  authority role, 512-byte representation bounds, monotonic sequence allocation, replay before and
+  after restoration/reboot, same-nonce/different-Device-Identity isolation,
+  withheld/cross-context/late presentation, 60-second local context boundaries, crash boundaries
+  around high-water persistence, overlap rotation, retirement, and byte-level private-key/input
+  privacy.
 - Prove the evidence function cannot parse commands and the control function emits no logs or
   uncorrelated bytes.
 - Exercise wrong function, wrong device, ambiguous selection, bootloader selection, interface
@@ -132,6 +190,8 @@ descriptor digest. USB serial, VID/PID, and enumeration identity remain non-auth
 - External USB PHY hardware, direct UART, pins, pads, probes, jumpers, or electrical modification.
 - Remote Device Relay, Device Identity pairing, fleet management, or persistent Control Grants.
   Local proof of possession by an already selected Device Identity is in scope.
+- A remote authority administration API, device registry, shared Update/Lease signing key, or
+  committed production private key.
 - General-purpose firmware console input, remote shell behavior, arbitrary USB writes, or log
   streaming through the control function.
 - Changing Gate Authority accounting, Pool Adapter BIP 23 admission, Reward Policy, Gate Pass

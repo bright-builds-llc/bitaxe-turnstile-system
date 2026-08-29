@@ -38,14 +38,18 @@ real Reference Firmware evolution.
 - [ADR 0092](../../docs/adr/0092-prove-local-worker-continuity-with-device-identity.md) requires
   additive Controller 0.3, Worker USB 0.2, and fresh-nonce Device Identity possession profiles
   before local Worker control can start or resume.
-- Ticket 03 owns that possession profile. Ticket 04 consumes it in the browser, Ticket 05 consumes
-  it in Reference Firmware, and Ticket 06 composes their hardware evidence.
+- Ticket 03 owns that possession profile. Ticket 04 consumes it in the browser, Ticket 05 supplies
+  deployment trust and full-input Work Lease verification, Ticket 06 consumes both in Reference
+  Firmware, and Ticket 07 composes their hardware evidence.
 - [Ticket 03](./issues/03-local-device-possession-proof.md) published Controller 0.3, Worker USB
   0.2, and the one-shot Local Device Possession Proof with strict schemas, executable fixtures,
   WebCrypto verification, and additive package exports while preserving every earlier profile.
 - [Ticket 04](./issues/04-reference-client-webusb-adapter.md) added the production possession-bound
   WebUSB adapter, challenge-scoped durable fingerprint retention, restoration-gated recovery and
   cleanup, and real Chromium permission/reacquisition/privacy conformance.
+- [ADR 0093](../../docs/adr/0093-separate-worker-update-and-lease-authorities.md) separates
+  Reference Firmware capability signing from complete Work Lease authorization while retaining the
+  opaque Controller 0.3 `authorization` seam.
 
 ## Delivery order
 
@@ -53,5 +57,6 @@ real Reference Firmware evolution.
 1. [x] [Prototype and publish Controller 0.2 transport fixtures](./issues/02-controller-02-transport-profile.md)
 1. [x] [Publish possession-bound Controller 0.3 transport profiles](./issues/03-local-device-possession-proof.md)
 1. [x] [Add the production Reference Client WebUSB adapter](./issues/04-reference-client-webusb-adapter.md)
-1. [ ] [Implement the Reference Firmware composite USB adapter](./issues/05-reference-firmware-composite-usb.md)
-1. [ ] [Prove cross-repository restoration and close the parent](./issues/06-real-hardware-restoration-closure.md)
+1. [ ] [Publish Worker deployment trust and Work Lease authorization](./issues/05-worker-deployment-trust.md)
+1. [ ] [Implement the Reference Firmware composite USB adapter](./issues/06-reference-firmware-composite-usb.md)
+1. [ ] [Prove cross-repository restoration and close the parent](./issues/07-real-hardware-restoration-closure.md)

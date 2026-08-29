@@ -69,8 +69,30 @@ An outbound TLS-protected connection authenticated by a Device Identity, carryin
 _Avoid_: Work Lease, device ownership, retained command queue
 
 **Update Authority**:
-A replaceable identity trusted by Reference Firmware to sign compatible remote update manifests and images.
-_Avoid_: Device Relay, permanent vendor lock, local owner
+A replaceable identity trusted by clients to sign compatible Reference Firmware capability and
+update artifacts without authorizing Work Leases.
+_Avoid_: Work Lease Authority, Device Relay, permanent vendor lock, local owner
+
+**Work Lease Authority**:
+A replaceable deployment identity trusted by Reference Firmware to authorize one complete,
+challenge-bound Start or Renew input without granting update authority.
+_Avoid_: Update Authority, Gate Pass signer, persistent Worker control
+
+**Development Deployment Authority**:
+A local non-production administration context that owns separate protected Update and Work Lease
+private keys while exporting only their public trust configuration and signed public artifacts.
+_Avoid_: Published fixture identity, shared authority key, production key escrow
+
+**Work Lease Authorization**:
+A compact signed proof over the complete authorizationless Work Lease input and active Challenge
+binding plus a durable monotonic authorization sequence, carried inside the Controller's existing
+opaque authorization field.
+_Avoid_: Syntax-valid bearer string, capability signature, Control Grant
+
+**Worker Lease Authorization Context**:
+A short local interface result that binds Authority issuance to one fresh Device Identity
+possession transcript without publishing the transcript, proof, or Device Identity.
+_Avoid_: Worker Controller method, Device Identity fingerprint, backend device registry
 
 **Migration Backup**:
 An optional client-encrypted local recovery artifact for credential-bearing device settings, never uploaded to a management or gating service.

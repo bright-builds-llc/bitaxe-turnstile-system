@@ -29,7 +29,8 @@ ROM USB Serial/JTAG remains bootloader/debug-only and never accepts Work Leases.
 The child specification fixes Controller 0.2 and `bwg-worker-usb/0.1` versioning, keeps the
 higher-level `WorkerController` interface stable, assigns profiles/browser fixtures to this
 repository and firmware/hardware evidence to `bitaxe-esp-miner`, and records strict privacy,
-reacquisition, threat, and non-claim rules. Six dependency-ordered tickets let possession,
-browser, and firmware adapters proceed after the transport fixtures, then converge on one
-cross-repository hardware proof that closes BWG Core Ticket 23. Resolved Tickets 21 and 22 remain
-closed and their existing evidence is not reinterpreted.
+reacquisition, threat, and non-claim rules. The dependency-ordered child tickets let possession,
+browser, deployment trust, and firmware adapters proceed after the transport fixtures, then
+converge on one cross-repository hardware proof that closes BWG Core Ticket 23. The deployment
+trust prerequisite was inserted later without changing completed ticket identities. Resolved
+Tickets 21 and 22 remain closed and their existing evidence is not reinterpreted.
