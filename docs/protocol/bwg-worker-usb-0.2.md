@@ -51,6 +51,9 @@ Identity drift or loss of original-Worker contact enters `restoration_pending`. 
 confirmed Mining Baseline. Public completion remains blocked until the original physical Worker is
 reacquired under a new enumeration identity and supplies restoration confirmation. Reboot,
 monotonic reset, disconnect, and continuity loss likewise cannot resume an old lease.
+When physical disconnect is followed by a same-Device-Identity application reboot, a persisted
+`reboot` restoration confirmation satisfies the browser's prior `connectivity_lost` requirement:
+it is the stronger terminal explanation for the same lost enumeration, not an unrelated reason.
 
 USB 0.1 remains an unchanged compatibility profile whose vendor function carries Controller frames
 only. USB 0.2 retains its descriptor topology while admitting the separate Local Device Possession

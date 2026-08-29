@@ -64,6 +64,7 @@ import {
 import {
   closeWorkerAfterPostconditionFailure,
   workerMiningStatusMatches,
+  workerReacquisitionRestorationMatches,
   workerRestoredStatusMatches,
 } from "./webusb-worker-postconditions";
 export type {
@@ -97,14 +98,12 @@ export type WebUsbWorkerControllerV03Input = {
   continuityScope: WorkerContinuityScope;
   transferTimeoutMilliseconds?: number;
 };
-
 /** Creates an unconnected, accountless Controller 0.3 adapter over browser WebUSB. */
 export function createWebUsbWorkerControllerV03(
   input: WebUsbWorkerControllerV03Input,
 ): WebUsbWorkerControllerV03 {
   return new BrowserWebUsbWorkerControllerV03(input);
 }
-
 class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
   readonly #runtime: WorkerWebUsbRuntime;
   readonly #trustedUpdateKeys: readonly unknown[];
@@ -128,7 +127,6 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
   #possessionSequence = 0;
   #transportGeneration = 0;
   #operationActive = false;
-
   constructor(input: WebUsbWorkerControllerV03Input) {
     const maybeUsbTestOptions = (
       input as WebUsbWorkerControllerV03Input & {
@@ -257,7 +255,10 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
       if (
         status.state !== "baseline" ||
         status.restoration.status !== "confirmed" ||
-        status.restoration.reason !== this.#maybeRequiredRestorationReason
+        !workerReacquisitionRestorationMatches(
+          status.restoration.reason,
+          this.#maybeRequiredRestorationReason,
+        )
       ) {
         throw new Error("Worker WebUSB Mining Baseline restoration is unconfirmed");
       }

@@ -36,6 +36,15 @@ export function workerRestoredStatusMatches(
     status.restoration.reason === reason;
 }
 
+/** Accepts a persisted reboot as the stronger explanation for lost enumeration continuity. */
+export function workerReacquisitionRestorationMatches(
+  actual: WorkerRestorationReason,
+  required: WorkerRestorationReason | undefined,
+): boolean {
+  return actual === required ||
+    (required === "connectivity_lost" && actual === "reboot");
+}
+
 /** Closes an untrusted transport while preserving both semantic and cleanup failures. */
 export async function closeWorkerAfterPostconditionFailure(
   device: WorkerWebUsbDevice,

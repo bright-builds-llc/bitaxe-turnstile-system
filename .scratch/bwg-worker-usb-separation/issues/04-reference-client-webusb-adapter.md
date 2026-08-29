@@ -43,6 +43,10 @@ result. The fingerprint-bearing storage seam is internal and unavailable through
 trusted same-origin client code is the storage boundary, while same-origin script compromise is an
 explicit browser security non-claim.
 
+Physical reboot closure additionally accepts a same-Device-Identity, new-enumeration baseline with
+persisted `reboot` restoration when the browser first observed `connectivity_lost`. Other wrong or
+unconfirmed restoration reasons remain rejected.
+
 Unit tests cover gesture ordering, exact descriptors, signed capability and possession admission,
 cloneable-serial independence, different-key rejection, durable recovery, expiry and terminal
 deletion, atomic first-Worker admission, live retention-scope mismatch, stale enumeration before
