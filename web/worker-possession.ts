@@ -1,37 +1,16 @@
 import {
   decodeBase64Url,
-  encodeBase64Url,
   sha256Base64UrlBytes,
 } from "./crypto-bytes";
+import { isCanonicalPrimeSubgroupEd25519PublicKey } from "./ed25519-public-key";
 import { canonicalJson } from "./headless-values";
 
 /** Independent pre-admission profile carried by the Worker USB 0.2 control function. */
 export const WORKER_POSSESSION_PROFILE = "bwg-worker-possession/0.1" as const;
 /** Canonical signed-claim profile for one fresh Local Device Possession Proof. */
 export const WORKER_POSSESSION_PROOF_PROFILE = "bwg-worker-possession-proof/0.1" as const;
-
-// Canonical compressed encodings of curve25519-dalek's complete EIGHT_TORSION set.
-const WEAK_ED25519_PUBLIC_KEYS = new Set([
-  "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-  "xxdqcD1N2E-6PAt2DRBnDyogU_osOczGTsf9d5KsA3o",
-  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA",
-  "JuiVj8KyJ7BFw_SJ8u-Y8NXfrAXTxjM5sTgCiG1T_AU",
-  "7P_______________________________________38",
-  "JuiVj8KyJ7BFw_SJ8u-Y8NXfrAXTxjM5sTgCiG1T_IU",
-  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-  "xxdqcD1N2E-6PAt2DRBnDyogU_osOczGTsf9d5KsA_o",
-]);
-
-const ED25519_FIELD_PRIME = (1n << 255n) - 19n;
-const ED25519_SUBGROUP_ORDER =
-  (1n << 252n) + 27742317777372353535851937790883648493n;
-const ED25519_D = field(
-  -121665n * fieldPower(121666n, ED25519_FIELD_PRIME - 2n),
-);
-const ED25519_SQRT_M1 = fieldPower(2n, (ED25519_FIELD_PRIME - 1n) / 4n);
-const ED25519_IDENTITY: EdwardsPoint = { x: 0n, y: 1n };
-
-type EdwardsPoint = { x: bigint; y: bigint };
+/** Domain separator for one verified possession transcript's authorization context. */
+export const WORKER_CONTROL_SESSION_PROFILE = "bwg-worker-control-session/0.1" as const;
 
 /** Closed reason separating first establishment from same-Worker reacquisition. */
 export type WorkerPossessionPurpose = "initial_admission" | "transport_reacquisition";
@@ -102,7 +81,10 @@ export type WorkerPossessionResponse =
     };
 
 /** Successful local continuity result retained only inside the browser adapter. */
-export type VerifiedWorkerPossession = { deviceIdentityFingerprint: string };
+export type VerifiedWorkerPossession = {
+  deviceIdentityFingerprint: string;
+  controlSessionBindingSha256: string;
+};
 
 /** One fresh bound transcript whose request and live proof must never be logged or persisted. */
 export interface WorkerPossessionChallenge {
@@ -258,7 +240,14 @@ async function verifyResponse(
   ) {
     throw invalidProof();
   }
-  return { deviceIdentityFingerprint };
+  const controlSessionBindingSha256 = await sha256Base64UrlBytes(
+    new TextEncoder().encode(canonicalJson({
+      profile: WORKER_CONTROL_SESSION_PROFILE,
+      request: requestFor(binding),
+      response,
+    })),
+  );
+  return { deviceIdentityFingerprint, controlSessionBindingSha256 };
 }
 
 function requestFor(binding: WorkerPossessionBinding): WorkerPossessionRequest {
@@ -401,8 +390,7 @@ function parseClaims(input: unknown): WorkerPossessionClaims {
     !digest(value.applicationDescriptorSha256) ||
     key.kty !== "OKP" ||
     key.crv !== "Ed25519" ||
-    !canonicalEd25519PublicKey(key.x) ||
-    WEAK_ED25519_PUBLIC_KEYS.has(key.x) ||
+    !isCanonicalPrimeSubgroupEd25519PublicKey(key.x) ||
     key.alg !== "Ed25519" ||
     key.use !== "sig" ||
     !Array.isArray(key.key_ops) ||
@@ -439,97 +427,6 @@ function validRequestId(input: string): boolean {
 
 function digest(input: unknown): input is string {
   return typeof input === "string" && /^[A-Za-z0-9_-]{43}$/u.test(input);
-}
-
-function canonicalEd25519PublicKey(input: unknown): input is string {
-  if (!digest(input)) return false;
-  let bytes: Uint8Array;
-  try {
-    bytes = decodeBase64Url(input, 43, invalidProof().message);
-  } catch {
-    return false;
-  }
-  if (bytes.byteLength !== 32 || encodeBase64Url(bytes) !== input) return false;
-
-  const encoded = littleEndianInteger(bytes);
-  const sign = encoded >> 255n;
-  const y = encoded & ((1n << 255n) - 1n);
-  if (y >= ED25519_FIELD_PRIME) return false;
-  const maybePoint = maybeDecompressEd25519(y, sign);
-  if (!maybePoint || pointsEqual(maybePoint, ED25519_IDENTITY)) return false;
-  return pointsEqual(scalarMultiply(maybePoint, ED25519_SUBGROUP_ORDER), ED25519_IDENTITY);
-}
-
-function maybeDecompressEd25519(y: bigint, sign: bigint): EdwardsPoint | undefined {
-  const ySquared = field(y * y);
-  const numerator = field(ySquared - 1n);
-  const denominator = field(ED25519_D * ySquared + 1n);
-  const xSquared = field(
-    numerator * fieldPower(denominator, ED25519_FIELD_PRIME - 2n),
-  );
-  let x = fieldPower(xSquared, (ED25519_FIELD_PRIME + 3n) / 8n);
-  if (field(x * x) !== xSquared) x = field(x * ED25519_SQRT_M1);
-  if (field(x * x) !== xSquared) return undefined;
-  if (x === 0n && sign === 1n) return undefined;
-  if ((x & 1n) !== sign) x = field(-x);
-  return { x, y };
-}
-
-function scalarMultiply(point: EdwardsPoint, scalar: bigint): EdwardsPoint {
-  let result = ED25519_IDENTITY;
-  let addend = point;
-  let remaining = scalar;
-  while (remaining > 0n) {
-    if ((remaining & 1n) === 1n) result = addPoints(result, addend);
-    addend = addPoints(addend, addend);
-    remaining >>= 1n;
-  }
-  return result;
-}
-
-function addPoints(left: EdwardsPoint, right: EdwardsPoint): EdwardsPoint {
-  const product = field(ED25519_D * left.x * right.x * left.y * right.y);
-  const xNumerator = field(left.x * right.y + left.y * right.x);
-  const yNumerator = field(left.y * right.y + left.x * right.x);
-  return {
-    x: field(
-      xNumerator * fieldPower(field(1n + product), ED25519_FIELD_PRIME - 2n),
-    ),
-    y: field(
-      yNumerator * fieldPower(field(1n - product), ED25519_FIELD_PRIME - 2n),
-    ),
-  };
-}
-
-function pointsEqual(left: EdwardsPoint, right: EdwardsPoint): boolean {
-  return left.x === right.x && left.y === right.y;
-}
-
-function littleEndianInteger(bytes: Uint8Array): bigint {
-  let value = 0n;
-  for (let index = bytes.length - 1; index >= 0; index -= 1) {
-    const byte = bytes[index];
-    if (byte === undefined) return 0n;
-    value = (value << 8n) | BigInt(byte);
-  }
-  return value;
-}
-
-function field(value: bigint): bigint {
-  const reduced = value % ED25519_FIELD_PRIME;
-  return reduced < 0n ? reduced + ED25519_FIELD_PRIME : reduced;
-}
-
-function fieldPower(base: bigint, exponent: bigint): bigint {
-  let result = 1n;
-  let factor = field(base);
-  let remaining = exponent;
-  while (remaining > 0n) {
-    if ((remaining & 1n) === 1n) result = field(result * factor);
-    factor = field(factor * factor);
-    remaining >>= 1n;
-  }
-  return result;
 }
 
 function jsonRecord(bytes: Uint8Array): Record<string, unknown> {

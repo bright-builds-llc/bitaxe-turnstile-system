@@ -1,0 +1,42 @@
+{
+  "capability": {
+    "protocolVersion": "bwg-worker-controller/0.3",
+    "board": {
+      "model": "bitaxe-ultra",
+      "revision": "205",
+      "usbTransport": "web_usb"
+    },
+    "firmware": {
+      "name": "bright-builds-reference-firmware",
+      "version": "0.3.0"
+    },
+    "compatibility": {
+      "referenceFirmware": true,
+      "workLease": "supported",
+      "miningBaselineRestoration": "supported",
+      "settingsPreservation": "compatible"
+    },
+    "transportProfile": "bwg-worker-usb/0.2"
+  },
+  "descriptor": {
+    "configurationValue": 1,
+    "control": {
+      "interfaceNumber": 0,
+      "alternateSetting": 0,
+      "classCode": 255,
+      "subclassCode": 66,
+      "protocolCode": 1,
+      "endpointOut": 1,
+      "endpointIn": 1,
+      "transferType": "bulk"
+    },
+    "evidence": {
+      "communicationInterfaceNumber": 1,
+      "dataInterfaceNumber": 2,
+      "notificationEndpointIn": 2,
+      "dataEndpointOut": 3,
+      "dataEndpointIn": 3,
+      "hostWritesAccepted": false
+    }
+  }
+}

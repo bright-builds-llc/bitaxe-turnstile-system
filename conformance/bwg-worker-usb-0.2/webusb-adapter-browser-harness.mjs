@@ -9,9 +9,10 @@ import {
   encodeWorkerPossessionMessage,
 } from "/dist/worker-possession/worker-possession-entry.js";
 
-const [controllerFixtures, transportFixtures] = await Promise.all([
+const [controllerFixtures, transportFixtures, deploymentFixtures] = await Promise.all([
   fetch("./../bwg-worker-controller-0.3/fixtures.json").then(requiredJson),
   fetch("./fixtures.json").then(requiredJson),
+  fetch("./../bwg-worker-deployment-trust-0.1/fixtures.json").then(requiredJson),
 ]);
 const output = requiredElement("result");
 const details = requiredElement("details");
@@ -175,7 +176,7 @@ document.body.dataset.harness = "ready";
 function controller(usb, challengeId = `challenge_browser_${crypto.randomUUID()}`) {
   return createWebUsbWorkerControllerV03({
     deviceFilter: { vendorId: 0x1209, productId: 0xb17a },
-    trustedUpdateKeys: controllerFixtures.updateAuthorityKeys,
+    trustedUpdateKeys: deploymentFixtures.trust.updateAuthority.keys,
     continuityScope: {
       challengeId,
       retentionExpiryUnixSeconds: Math.floor(Date.now() / 1000) + 300,
@@ -269,6 +270,9 @@ function makeDevice(serialNumber, options = {}) {
       if (!vector) throw new Error("fixture response is missing");
       const response = structuredClone(vector.response);
       response.requestId = maybeRequest.requestId;
+      if (maybeRequest.command === "discover") {
+        response.result = deploymentFixtures.ultra205.signedCapability;
+      }
       if (maybeRequest.command === "start_lease") {
         maybeActiveChallengeId = maybeRequest.payload.challengeId;
         response.result = miningStatusFor(maybeRequest.payload, maybeActiveChallengeId, 0);

@@ -1,0 +1,6 @@
+{
+  "profile": "bwg-worker-lease-authorization-artifact/0.1",
+  "operation": "start",
+  "sequence": "1",
+  "authorization": "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoiZGV2LWxlYXNlLU9WQmNLNU1semQ2RV96YmciLCJ0eXAiOiJid2ctd29ya2VyLWxlYXNlLWF1dGhvcml6YXRpb24randzIn0.eyJjb250cm9sU2Vzc2lvbkJpbmRpbmdTaGEyNTYiOiJ6RDV1RERuZEZuSzkxaGZWTFpGZnNQRHI3SFEyaVhPRUltOVZHUFBWQVdJIiwib3BlcmF0aW9uIjoic3RhcnQiLCJyZXF1ZXN0U2hhMjU2IjoiaVpQeVEwMVY0bzhsYUphaEhlZjQySXBBSWg4V2VqeFNPUHIzNTZlQzZMZyIsInNlcXVlbmNlIjoiMSJ9.jdMFNKg72Db3CCMaU1RZR9zGHQvXRe4kGeGnLEqPjzeaJuY974yhiSR5WTCScAZdrYtGq2U9dytuswI5ChKrCw"
+}

@@ -314,7 +314,7 @@ export function makeDevice(
   return device;
 }
 
-async function signedPossessionResponse(request: {
+export async function signedPossessionResponse(request: {
   requestId: string;
   payload?: {
     purpose?: string;

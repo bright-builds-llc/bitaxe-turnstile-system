@@ -59,6 +59,91 @@ test("headless client drives only the public Worker Controller interface", async
   expect(authority.calls).toEqual(["start", "pause", "resume", "cancel"]);
 });
 
+test("headless client obtains the possession context before Authority Start", async () => {
+  // Arrange
+  const ordering: string[] = [];
+  const controller = recordingWorkerController(ordering);
+  const authority = transportHarness();
+  const expectedContext = { controlSessionBindingSha256: "S".repeat(43) };
+  const transport = {
+    ...authority.transport,
+    async start(_maybeReceipt?: string, maybeContext?: unknown) {
+      ordering.push("authority:start");
+      expect(maybeContext).toEqual(expectedContext);
+      return workerLease;
+    },
+  };
+  const client = await createHeadlessClient({
+    ...(await headlessInput(transport)),
+    maybeWorkerController: controller,
+    maybeWorkerLeaseAuthorizationContext: {
+      async prepareWorkerLeaseAuthorizationContext(operation: "start" | "renew") {
+        ordering.push(`context:${operation}`);
+        return expectedContext;
+      },
+    },
+  });
+  await client.grantConsent();
+  ordering.length = 0;
+
+  // Act
+  await client.start();
+
+  // Assert
+  expect(ordering).toEqual(["context:start", "authority:start", "start"]);
+});
+
+test("headless client binds renewal and resume to their current authorization contexts", async () => {
+  // Arrange
+  const operations: string[] = [];
+  const controller = recordingWorkerController([]);
+  const authority = transportHarness();
+  const transport = {
+    ...authority.transport,
+    async start(_receipt?: string, context?: { controlSessionBindingSha256: string }) {
+      operations.push(`authority:start:${String(context?.controlSessionBindingSha256)}`);
+      return workerLease;
+    },
+    async renewWorkerLease(context?: { controlSessionBindingSha256: string }) {
+      operations.push(`authority:renew:${String(context?.controlSessionBindingSha256)}`);
+      return fixtures.renewal as WorkerLeaseRenewal;
+    },
+    async resume(context?: { controlSessionBindingSha256: string }) {
+      operations.push(`authority:resume:${String(context?.controlSessionBindingSha256)}`);
+      return workerLease;
+    },
+  };
+  let sequence = 0;
+  const client = await createHeadlessClient({
+    ...(await headlessInput(transport)),
+    maybeWorkerController: controller,
+    maybeWorkerLeaseAuthorizationContext: {
+      async prepareWorkerLeaseAuthorizationContext(operation) {
+        operations.push(`context:${operation}`);
+        sequence += 1;
+        return { controlSessionBindingSha256: String(sequence).padStart(43, "S") };
+      },
+    },
+  });
+  await client.grantConsent();
+
+  // Act
+  await client.start();
+  await client.renewWorkerLease();
+  await client.pause();
+  await client.resume();
+
+  // Assert
+  expect(operations).toEqual([
+    "context:start",
+    `authority:start:${String(1).padStart(43, "S")}`,
+    "context:renew",
+    `authority:renew:${String(2).padStart(43, "S")}`,
+    "context:start",
+    `authority:resume:${String(3).padStart(43, "S")}`,
+  ]);
+});
+
 test("terminal Authority state restores the Worker before client completion", async () => {
   // Arrange
   const calls: string[] = [];

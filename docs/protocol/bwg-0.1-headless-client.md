@@ -57,6 +57,10 @@ headless client forwards it, composes renewal, validates redacted status/restora
 rolls back both Worker and Authority on controller failure. `maybeWorkerCapabilities` and
 `maybeWorkerStatus` expose only the strict non-secret contract. USB disconnect pauses Authority
 after device-local restoration, while asynchronous `close()` requests `tab_closed` restoration.
+Possession-bound deployments may separately supply `WorkerLeaseAuthorizationContextProvider`.
+The client obtains its Device Identity-bound digest before Authority Start/resume and the active
+context before renewal, then passes only that digest to the transport's authorization seam. The
+stable `WorkerController` interface does not expose the context or change shape.
 The complete wire and simulator profile is documented in
 [`bwg-0.1-worker-controller.md`](./bwg-0.1-worker-controller.md).
 

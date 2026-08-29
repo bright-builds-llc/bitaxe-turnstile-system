@@ -1,0 +1,6 @@
+{
+  "profile": "bwg-worker-lease-authorization-artifact/0.1",
+  "operation": "renew",
+  "sequence": "2",
+  "authorization": "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoiZGV2LWxlYXNlLU9WQmNLNU1semQ2RV96YmciLCJ0eXAiOiJid2ctd29ya2VyLWxlYXNlLWF1dGhvcml6YXRpb24randzIn0.eyJjb250cm9sU2Vzc2lvbkJpbmRpbmdTaGEyNTYiOiJ6RDV1RERuZEZuSzkxaGZWTFpGZnNQRHI3SFEyaVhPRUltOVZHUFBWQVdJIiwib3BlcmF0aW9uIjoicmVuZXciLCJyZXF1ZXN0U2hhMjU2IjoiVkhpZ3VfX044TVFDMnB1dkhQckp6NmlGY0wwck9LaU1lMWJZMkZSUjd3MCIsInNlcXVlbmNlIjoiMiJ9.tFC46zNC0wUlUcRhojV6aFilKx-BjjMAKecv7kGuW5eUuPfb3Yw1fU-_xszjf5XCuVHHo-erIuxGcE69Zky5Bg"
+}

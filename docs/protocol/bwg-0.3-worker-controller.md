@@ -43,6 +43,12 @@ Status remains metadata-only. It exposes monotonic time, opaque challenge/lease 
 state, and a closed restoration status/reason without authorization, Stratum credentials, or
 captured Mining Baseline settings.
 
+Production deployment authorization uses the separate
+[`bwg-worker-deployment-trust/0.1`](./bwg-worker-deployment-trust-0.1.md) profile inside the
+existing opaque `authorization` string. Controller 0.3's shape and 512-byte authorization bound do
+not change. The signed request digest binds every authorizationless field, active Challenge, fresh
+Device Identity-bound control-session context, and durable monotonic authority sequence.
+
 ## Control framing
 
 Controller requests and responses retain the bounded UTF-8 JSON-plus-LF representation from 0.1,

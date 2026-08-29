@@ -65,7 +65,10 @@ test("published possession fixtures satisfy schema and runtime verification", as
   expect(validate.errors).toEqual(null);
   expect(schemaValid).toBe(true);
   expect(initial.deviceIdentityFingerprint).toBe(fixtures.fixtureIdentity.fingerprintSha256);
-  expect(reacquired).toEqual(initial);
+  expect(reacquired.deviceIdentityFingerprint).toBe(initial.deviceIdentityFingerprint);
+  expect(reacquired.controlSessionBindingSha256).not.toBe(
+    initial.controlSessionBindingSha256,
+  );
   expect(fixtures.initialAdmission.request.payload.controllerCapabilitySha256).toBe(
     capabilityDigest,
   );

@@ -1,0 +1,36 @@
+{
+  "profile": "bwg-worker-deployment-trust/0.1",
+  "updateAuthority": {
+    "issuer": "development-update-authority",
+    "audience": "bwg-reference-firmware-capability/0.1",
+    "role": "update_authority",
+    "keys": [
+      {
+        "kid": "dev-update-DwaQYLSvuWqah8oY",
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "xf8DO6ofYrezCboUdY03qe5Wq0zgFp3_k5kjW8ht96o",
+        "alg": "Ed25519",
+        "use": "sig",
+        "key_ops": ["verify"]
+      }
+    ]
+  },
+  "workLeaseAuthority": {
+    "profile": "bwg-worker-deployment-trust/0.1",
+    "issuer": "development-worker-lease-authority",
+    "audience": "bwg-worker-controller/0.3",
+    "role": "work_lease_authority",
+    "keys": [
+      {
+        "kid": "dev-lease-OVBcK5Mlzd6E_zbg",
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "abl7RfBOVNNiVmOIJhpBBuFlscyifz8coOVEks7c9r8",
+        "alg": "Ed25519",
+        "use": "sig",
+        "key_ops": ["verify"]
+      }
+    ]
+  }
+}

@@ -9,7 +9,12 @@ import {
   type WorkerLeaseGrant,
   type WorkerLeaseRenewal,
 } from "./worker-controller";
-import { decodeBase64Url, sha256Base64UrlBytes } from "./crypto-bytes";
+import {
+  decodeBase64Url,
+  encodeBase64Url,
+  sha256Base64UrlBytes,
+} from "./crypto-bytes";
+import { isCanonicalPrimeSubgroupEd25519PublicKey } from "./ed25519-public-key";
 import { canonicalJson } from "./headless-values";
 import {
   parseWorkerUsbApplicationDescriptor,
@@ -157,8 +162,18 @@ export async function verifySignedWorkerControllerCapability<
   ) {
     throw new Error(errorMessage);
   }
+  const headerBytes = decodeBase64Url(protectedHeader, 512, errorMessage);
+  const payloadBytes = decodeBase64Url(payload, 4_096, errorMessage);
+  const signatureBytes = decodeBase64Url(signature, 86, errorMessage);
+  if (
+    encodeBase64Url(headerBytes) !== protectedHeader ||
+    encodeBase64Url(payloadBytes) !== payload ||
+    encodeBase64Url(signatureBytes) !== signature
+  ) {
+    throw new Error(errorMessage);
+  }
   const header = jsonRecord(
-    decodeBase64Url(protectedHeader, 512, errorMessage),
+    headerBytes,
     ["alg", "typ", "kid"],
     errorMessage,
   );
@@ -174,7 +189,7 @@ export async function verifySignedWorkerControllerCapability<
   const key = matchingKeys[0];
   if (matchingKeys.length !== 1 || !key) throw new Error(errorMessage);
   const decodedPayload = new TextDecoder("utf-8", { fatal: true }).decode(
-    decodeBase64Url(payload, 4_096, errorMessage),
+    payloadBytes,
   );
   if (decodedPayload !== canonicalJson(admittedCapability.attestation.claims)) {
     throw new Error(errorMessage);
@@ -192,7 +207,7 @@ export async function verifySignedWorkerControllerCapability<
   const valid = await crypto.subtle.verify(
     "Ed25519",
     cryptoKey,
-    decodeBase64Url(signature, 86, errorMessage).slice().buffer,
+    signatureBytes.slice().buffer,
     new TextEncoder().encode(`${protectedHeader}.${payload}`).buffer,
   );
   if (!valid) throw new Error(errorMessage);
@@ -320,8 +335,7 @@ function parseCapabilityVerificationKey(
     "d" in key ||
     key.kty !== "OKP" ||
     key.crv !== "Ed25519" ||
-    typeof key.x !== "string" ||
-    !/^[A-Za-z0-9_-]{43}$/u.test(key.x) ||
+    !isCanonicalPrimeSubgroupEd25519PublicKey(key.x) ||
     typeof key.kid !== "string" ||
     !validLabel(key.kid) ||
     key.alg !== "Ed25519" ||

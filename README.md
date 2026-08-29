@@ -46,6 +46,10 @@ Possession-bound production profiles are documented in
 [`docs/protocol/bwg-worker-possession-0.1.md`](docs/protocol/bwg-worker-possession-0.1.md).
 The `bwg-core/worker-controller-v03` subpath includes the production possession-bound WebUSB
 adapter with challenge-scoped local continuity retention.
+Separate Update/Work Lease authority trust, the signed Ultra 205 capability, and full-input
+authorization are documented in
+[`docs/protocol/bwg-worker-deployment-trust-0.1.md`](docs/protocol/bwg-worker-deployment-trust-0.1.md)
+and exported through `bwg-core/worker-deployment-trust`.
 
 The accountless settings-preserving Reference Firmware installation and rollback profile is
 documented in

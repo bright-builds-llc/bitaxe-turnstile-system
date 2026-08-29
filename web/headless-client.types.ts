@@ -6,6 +6,10 @@ import type {
   WorkerLeaseGrant,
   WorkerLeaseRenewal,
 } from "./worker-controller";
+import type {
+  WorkerLeaseAuthorizationContext,
+  WorkerLeaseAuthorizationContextProvider,
+} from "./worker-lease-authorization";
 
 export type WorkChallengeInput = {
   challengeId: string;
@@ -144,11 +148,18 @@ export type AuthorityClientEvent =
   | { type: "artifact_expiry"; expiresAtUnixSeconds: number };
 
 export type HeadlessTransport = {
-  start(maybeTrustedConsentReceipt?: string): Promise<void | WorkerLeaseGrant>;
+  start(
+    maybeTrustedConsentReceipt?: string,
+    maybeWorkerLeaseAuthorizationContext?: WorkerLeaseAuthorizationContext,
+  ): Promise<void | WorkerLeaseGrant>;
   pause(): Promise<void>;
-  resume(): Promise<void | WorkerLeaseGrant>;
+  resume(
+    maybeWorkerLeaseAuthorizationContext?: WorkerLeaseAuthorizationContext,
+  ): Promise<void | WorkerLeaseGrant>;
   cancel(): Promise<void>;
-  renewWorkerLease?(): Promise<WorkerLeaseRenewal>;
+  renewWorkerLease?(
+    maybeWorkerLeaseAuthorizationContext?: WorkerLeaseAuthorizationContext,
+  ): Promise<WorkerLeaseRenewal>;
   subscribeAuthorityEvents(listener: (event: AuthorityClientEvent) => Promise<void>): () => void;
 };
 
@@ -184,6 +195,7 @@ export type HeadlessClientInput = {
   clientSafetyCeiling: string;
   transport: HeadlessTransport;
   maybeWorkerController?: WorkerController;
+  maybeWorkerLeaseAuthorizationContext?: WorkerLeaseAuthorizationContextProvider;
   maybeNowUnixSeconds?: () => number;
   maybeRestoration?: {
     challengeState: "issued" | "active" | "satisfied" | "pass_issued";

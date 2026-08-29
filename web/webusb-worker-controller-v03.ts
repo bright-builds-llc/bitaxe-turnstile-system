@@ -23,8 +23,6 @@ import type {
   WorkerRestorationReason,
 } from "./worker-controller";
 import { parseWorkerRestorationReason } from "./worker-controller";
-import { encodeBase64Url, sha256Base64UrlBytes } from "./crypto-bytes";
-import { canonicalJson } from "./headless-values";
 import {
   createWorkerContinuityAccess,
   workerContinuityTestOptions,
@@ -32,12 +30,12 @@ import {
   type WorkerContinuityScope,
   type WorkerContinuityTestOptions,
 } from "./worker-continuity-store";
-import { createWorkerPossessionChallenge } from "./worker-possession";
-import {
-  MAXIMUM_WORKER_POSSESSION_FRAME_BYTES,
-  decodeWorkerPossessionResponse,
-  encodeWorkerPossessionMessage,
-} from "./worker-possession-usb";
+import type {
+  WorkerLeaseAuthorizationContext,
+  WorkerLeaseAuthorizationContextProvider,
+  WorkerLeaseAuthorizationOperation,
+} from "./worker-lease-authorization";
+import type { VerifiedWorkerPossession } from "./worker-possession";
 import {
   WorkerWebUsbTransferError,
   assertWorkerWebUsbUserActivation,
@@ -55,11 +53,19 @@ import {
   type WorkerWebUsbTestOptions,
 } from "./webusb-worker-port";
 import {
+  WorkerWebUsbAuthorizationContext,
+  proveWorkerWebUsbPossession,
+} from "./webusb-worker-authorization-context";
+import {
+  isDeviceCommandRejection,
+  normalizeAdapterError,
+  notifyWorkerDisconnect,
+} from "./webusb-worker-adapter-support";
+import {
   closeWorkerAfterPostconditionFailure,
   workerMiningStatusMatches,
   workerRestoredStatusMatches,
 } from "./webusb-worker-postconditions";
-
 export type {
   WorkerWebUsbAccess,
   WorkerWebUsbDevice,
@@ -69,15 +75,14 @@ export type {
   WorkerWebUsbTransferOutResult,
 } from "./webusb-worker-port";
 export type { WorkerContinuityScope } from "./worker-continuity-store";
-
 /** Redacted result distinguishing first admission from durable same-Worker recovery. */
 export type WebUsbWorkerConnectionV03 = {
   mode: "initial" | "recovered";
   baselineRestoration: "not_required" | "confirmed";
 };
-
 /** Possession-bound browser adapter with explicit permission, reacquisition, and cleanup seams. */
-export type WebUsbWorkerControllerV03 = WorkerControllerV03 & {
+export type WebUsbWorkerControllerV03 = WorkerControllerV03 &
+  WorkerLeaseAuthorizationContextProvider & {
   /** The sole permission seam; callers invoke it synchronously from a direct user gesture. */
   requestPermission(): Promise<WebUsbWorkerConnectionV03>;
   /** Reacquires the same physical Worker after a disconnect or response-loss epoch. */
@@ -85,7 +90,6 @@ export type WebUsbWorkerControllerV03 = WorkerControllerV03 & {
   /** Restores Mining Baseline before releasing and closing the local device. */
   close(reason?: WorkerRestorationReason): Promise<void>;
 };
-
 /** Deployment trust, permission, continuity, and timing inputs for one local Worker. */
 export type WebUsbWorkerControllerV03Input = {
   deviceFilter: WorkerWebUsbDeviceFilter;
@@ -105,6 +109,7 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
   readonly #runtime: WorkerWebUsbRuntime;
   readonly #trustedUpdateKeys: readonly unknown[];
   readonly #continuity: WorkerContinuityAccess;
+  readonly #authorizationContext = new WorkerWebUsbAuthorizationContext();
   readonly #challengeId: string;
   readonly #disconnectListeners = new Set<
     (reason: WorkerControllerDisconnectReason) => Promise<void>
@@ -112,6 +117,7 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
   readonly #disconnectHandler: (event: WorkerWebUsbDisconnectEvent) => void;
   #maybeDevice: WorkerWebUsbDevice | undefined;
   #maybeCapabilities: WorkerControllerCapabilitiesV03 | undefined;
+  #maybeDescriptor: unknown;
   #maybeDeviceIdentityFingerprint: string | undefined;
   #maybeEnumerationDevice: WorkerWebUsbDevice | undefined;
   #maybeRequiredRestorationReason: WorkerRestorationReason | undefined;
@@ -163,6 +169,7 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
       this.#state = "restoration_pending";
       this.#maybeRequiredRestorationReason = "connectivity_lost";
       this.#maybeDevice = undefined;
+      this.#authorizationContext.clear();
     };
     this.#runtime.usb.addEventListener("disconnect", this.#disconnectHandler);
   }
@@ -178,8 +185,10 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
     const maybeExpectedFingerprint = admitted.maybeExpectedFingerprint;
     try {
       this.#maybeDeviceIdentityFingerprint = admitted.deviceIdentityFingerprint;
+      this.#authorizationContext.admit(admitted.possession);
       this.#maybeEnumerationDevice = admitted.device;
       this.#maybeCapabilities = admitted.capabilities;
+      this.#maybeDescriptor = admitted.descriptor;
       if (maybeExpectedFingerprint) {
         const status = await this.#request(
           "status",
@@ -205,6 +214,7 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
         baselineRestoration: "not_required" as const,
       };
     } catch (error) {
+      this.#authorizationContext.clear();
       this.#maybeDevice = undefined;
       await releaseAndCloseWorkerWebUsbDevice(admitted.device);
       const continuityLost =
@@ -215,6 +225,7 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
           : "unconnected";
       if (!maybeExpectedFingerprint && !continuityLost) {
         this.#maybeCapabilities = undefined;
+        this.#maybeDescriptor = undefined;
         this.#maybeDeviceIdentityFingerprint = undefined;
         this.#maybeEnumerationDevice = undefined;
       }
@@ -251,18 +262,21 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
         throw new Error("Worker WebUSB Mining Baseline restoration is unconfirmed");
       }
       try {
-        await this.#notifyDisconnect();
+        await notifyWorkerDisconnect(this.#disconnectListeners);
       } catch {
         throw new Error("Worker WebUSB disconnect handling failed");
       }
       this.#assertAdmissionCurrent(admitted);
       this.#maybeRequiredRestorationReason = undefined;
       this.#maybeDeviceIdentityFingerprint = admitted.deviceIdentityFingerprint;
+      this.#authorizationContext.admit(admitted.possession);
       this.#maybeEnumerationDevice = admitted.device;
+      this.#maybeDescriptor = admitted.descriptor;
       this.#state = "ready";
       return status;
     } catch (error) {
       this.#state = "restoration_pending";
+      this.#authorizationContext.clear();
       this.#maybeDevice = undefined;
       await releaseAndCloseWorkerWebUsbDevice(admitted.device);
       throw error;
@@ -276,7 +290,29 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
     return structuredClone(capabilities);
   }
 
+  async prepareWorkerLeaseAuthorizationContext(
+    operation: WorkerLeaseAuthorizationOperation,
+  ): Promise<WorkerLeaseAuthorizationContext> {
+    this.#requireReady();
+    const expectedFingerprint = this.#maybeDeviceIdentityFingerprint;
+    return this.#authorizationContext.prepare(operation, expectedFingerprint, async () => {
+      const device = this.#maybeDevice;
+      const descriptor = this.#maybeDescriptor;
+      const capabilities = this.#maybeCapabilities;
+      if (!device || !descriptor || !capabilities) {
+        throw new Error("Worker WebUSB possession admission is incomplete");
+      }
+      return this.#provePossession(
+        device,
+        descriptor,
+        capabilities,
+        undefined,
+      );
+    });
+  }
+
   async startLease(grant: WorkerLeaseGrantV03) {
+    this.#authorizationContext.requireStart();
     const parsed = parseWorkerLeaseGrantV03(grant);
     if (parsed.challengeId !== this.#challengeId) {
       throw new Error("Work Lease does not match Worker continuity scope");
@@ -285,10 +321,12 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
     await this.#assertPostcondition(workerMiningStatusMatches(status, parsed), "control_failed",
       "Worker WebUSB Work Lease postcondition is invalid",
     );
+    this.#authorizationContext.noteStarted();
     return status;
   }
 
   async renewLease(renewal: WorkerLeaseRenewalV03) {
+    this.#authorizationContext.requireRenew();
     const parsed = parseWorkerLeaseRenewalV03(renewal);
     const status = await this.#statusRequest("renew_lease", parsed);
     await this.#assertPostcondition(
@@ -307,6 +345,7 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
     await this.#assertPostcondition(workerRestoredStatusMatches(status, "paused"), "paused",
       "Worker WebUSB Mining Baseline restoration is unconfirmed",
     );
+    this.#authorizationContext.clear();
     return status;
   }
 
@@ -315,6 +354,7 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
     await this.#assertPostcondition(workerRestoredStatusMatches(status, "cancelled"), "cancelled",
       "Worker WebUSB Mining Baseline restoration is unconfirmed",
     );
+    this.#authorizationContext.clear();
     await this.#continuity.clear();
     return status;
   }
@@ -325,6 +365,7 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
     await this.#assertPostcondition(workerRestoredStatusMatches(status, parsedReason), parsedReason,
       "Worker WebUSB Mining Baseline restoration is unconfirmed",
     );
+    this.#authorizationContext.clear();
     if (["cancelled", "challenge_satisfied", "challenge_expired"].includes(parsedReason)) {
       await this.#continuity.clear();
     }
@@ -391,7 +432,7 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
         this.#trustedUpdateKeys,
       );
       const maybeExpectedFingerprint = await expectedFingerprint;
-      const deviceIdentityFingerprint = await this.#provePossession(
+      const possession = await this.#provePossession(
         device,
         descriptor,
         capabilities,
@@ -399,13 +440,16 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
       );
       return {
         device,
+        descriptor,
         capabilities,
-        deviceIdentityFingerprint,
+        possession,
+        deviceIdentityFingerprint: possession.deviceIdentityFingerprint,
         maybeExpectedFingerprint,
         transportGeneration,
       };
     } catch (error) {
       this.#maybeDevice = undefined;
+      this.#authorizationContext.clear();
       if (maybeDevice) await releaseAndCloseWorkerWebUsbDevice(maybeDevice);
       this.#state = this.#maybeDeviceIdentityFingerprint
         ? "restoration_pending"
@@ -419,48 +463,22 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
     descriptor: unknown,
     capabilities: WorkerControllerCapabilitiesV03,
     maybeExpectedFingerprint: string | undefined,
-  ): Promise<string> {
+  ): Promise<VerifiedWorkerPossession> {
     if (this.#operationActive) throw new Error("Worker WebUSB operation is already active");
-    const challengeBindingSha256 = await this.#continuity.challengeBindingSha256();
-    const controllerCapabilitySha256 = await sha256Base64UrlBytes(
-      new TextEncoder().encode(canonicalJson(capabilities)),
-    );
-    const applicationDescriptorSha256 = await sha256Base64UrlBytes(
-      new TextEncoder().encode(canonicalJson(descriptor)),
-    );
-    const common = {
-      requestId: `pos_browser_${String(++this.#possessionSequence)}`,
-      possessionNonce: encodeBase64Url(crypto.getRandomValues(new Uint8Array(32))),
-      challengeBindingSha256,
-      controllerCapabilitySha256,
-      applicationDescriptorSha256,
-    };
-    const challenge = maybeExpectedFingerprint
-      ? createWorkerPossessionChallenge({
-          ...common,
-          purpose: "transport_reacquisition",
-          expectedDeviceIdentityFingerprint: maybeExpectedFingerprint,
-        })
-      : createWorkerPossessionChallenge({
-          ...common,
-          purpose: "initial_admission",
-        });
     const generation = this.#transportGeneration;
     this.#operationActive = true;
     try {
-      const responseBytes = await transactWorkerWebUsb(
+      return await proveWorkerWebUsbPossession({
         device,
-        encodeWorkerPossessionMessage(challenge.request),
-        MAXIMUM_WORKER_POSSESSION_FRAME_BYTES,
-        this.#runtime.transferTimeoutMilliseconds,
-      );
-      if (generation !== this.#transportGeneration) {
-        throw new Error("Worker WebUSB possession response was lost");
-      }
-      const verified = await challenge.verify(
-        decodeWorkerPossessionResponse(responseBytes),
-      );
-      return verified.deviceIdentityFingerprint;
+        descriptor,
+        capabilities,
+        ...(maybeExpectedFingerprint ? { maybeExpectedFingerprint } : {}),
+        requestId: `pos_browser_${String(++this.#possessionSequence)}`,
+        challengeBindingSha256: await this.#continuity.challengeBindingSha256(),
+        runtime: this.#runtime,
+        transportGeneration: generation,
+        currentTransportGeneration: () => this.#transportGeneration,
+      });
     } finally {
       this.#operationActive = false;
     }
@@ -518,6 +536,7 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
       if (error instanceof WorkerWebUsbTransferError) maybeTransferPhase = error.phase;
       this.#state = "restoration_pending";
       this.#maybeRequiredRestorationReason = "control_failed";
+      this.#authorizationContext.clear();
       this.#maybeDevice = undefined;
       await releaseAndCloseWorkerWebUsbDevice(device);
       throw new Error(
@@ -569,6 +588,7 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
     const maybeDevice = this.#maybeDevice;
     this.#state = "restoration_pending";
     this.#maybeRequiredRestorationReason = reason;
+    this.#authorizationContext.clear();
     this.#maybeUnconfirmedOutcomeMessage = message;
     const semanticError = new Error(message);
     if (!maybeDevice) throw semanticError;
@@ -597,30 +617,11 @@ class BrowserWebUsbWorkerControllerV03 implements WebUsbWorkerControllerV03 {
     this.#state = "closed";
     this.#maybeDevice = undefined;
     this.#maybeCapabilities = undefined;
+    this.#maybeDescriptor = undefined;
     this.#maybeDeviceIdentityFingerprint = undefined;
     this.#maybeEnumerationDevice = undefined;
     this.#maybeUnconfirmedOutcomeMessage = undefined;
+    this.#authorizationContext.clear();
     this.#runtime.usb.removeEventListener("disconnect", this.#disconnectHandler);
   }
-
-  async #notifyDisconnect(): Promise<void> {
-    await Promise.all(
-      [...this.#disconnectListeners].map((listener) => listener("connectivity_lost")),
-    );
-  }
-}
-
-function isDeviceCommandRejection(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    [
-      "Worker Controller USB request was invalid",
-      "Worker Controller command was rejected",
-    ].includes(error.message)
-  );
-}
-
-function normalizeAdapterError(error: unknown): Error {
-  if (error instanceof Error && error.message.startsWith("Worker WebUSB")) return error;
-  return new Error("Worker WebUSB device admission failed");
 }

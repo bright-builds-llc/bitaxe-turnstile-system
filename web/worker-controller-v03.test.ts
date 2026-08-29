@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 import usbFixtures from "../conformance/bwg-worker-usb-0.1/fixtures.json";
+import { encodeBase64Url } from "./crypto-bytes";
+import { canonicalJson } from "./headless-values";
 import {
   parseWorkerControllerCapabilitiesV03,
   verifyWorkerControllerCapabilityV03,
@@ -65,5 +67,49 @@ describe("Worker Controller 0.3 profile", () => {
     // Assert
     expect(verified.transportProfile).toBe("bwg-worker-usb/0.2");
     expect(verified.protocolVersion).toBe("bwg-worker-controller/0.3");
+  });
+
+  test("rejects an identity-point Update key even with its universal forgery", async () => {
+    // Arrange
+    const header = encodeBase64Url(new TextEncoder().encode(canonicalJson({
+      alg: "Ed25519",
+      kid: "weak-update-key",
+      typ: "bwg-worker-capability+jws",
+    })));
+    const payload = encodeBase64Url(
+      new TextEncoder().encode(canonicalJson(capability.attestation.claims)),
+    );
+    const signature = new Uint8Array(64);
+    signature[0] = 0x58;
+    signature.fill(0x66, 1, 32);
+    signature[32] = 1;
+    const forged = parseWorkerControllerCapabilitiesV03({
+      ...capability,
+      attestation: {
+        ...capability.attestation,
+        compactJws: `${header}.${payload}.${encodeBase64Url(signature)}`,
+      },
+    });
+    const descriptor = parseWorkerUsbTransportProfile(
+      usbFixtures.topology,
+    ).application.descriptor;
+
+    // Act
+    const result = verifyWorkerControllerCapabilityV03(
+      forged,
+      descriptor,
+      [{
+        kty: "OKP",
+        crv: "Ed25519",
+        x: "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        kid: "weak-update-key",
+        alg: "Ed25519",
+        use: "sig",
+        key_ops: ["verify"],
+      }],
+    );
+
+    // Assert
+    await expect(result).rejects.toThrow("capability attestation is invalid");
   });
 });

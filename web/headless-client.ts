@@ -217,8 +217,13 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       if (lifecycle.challengeState !== "issued" || lifecycle.controlState !== "ready") {
         throw new Error("lifecycle transition is forbidden");
       }
+      const maybeAuthorizationContext = snapshot.maybeWorkerLeaseAuthorizationContext
+        ? await snapshot.maybeWorkerLeaseAuthorizationContext
+            .prepareWorkerLeaseAuthorizationContext("start")
+        : undefined;
       const maybeGrant = await snapshot.transport.start(
         maybeConsentReceipt.maybeTrustedConsentReceipt,
+        maybeAuthorizationContext,
       );
       await startWorkerController(
         snapshot.maybeWorkerController,
@@ -243,7 +248,11 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       if (lifecycle.challengeState !== "active" || lifecycle.controlState !== "paused") {
         throw new Error("lifecycle transition is forbidden");
       }
-      const maybeGrant = await snapshot.transport.resume();
+      const maybeAuthorizationContext = snapshot.maybeWorkerLeaseAuthorizationContext
+        ? await snapshot.maybeWorkerLeaseAuthorizationContext
+            .prepareWorkerLeaseAuthorizationContext("start")
+        : undefined;
+      const maybeGrant = await snapshot.transport.resume(maybeAuthorizationContext);
       await startWorkerController(
         snapshot.maybeWorkerController,
         maybeGrant,
@@ -283,9 +292,13 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       if (!maybeController || !maybeRenew) {
         throw new Error("Worker Controller renewal is unavailable");
       }
+      const maybeAuthorizationContext = snapshot.maybeWorkerLeaseAuthorizationContext
+        ? await snapshot.maybeWorkerLeaseAuthorizationContext
+            .prepareWorkerLeaseAuthorizationContext("renew")
+        : undefined;
       await renewWorkerController(
         maybeController,
-        maybeRenew,
+        () => maybeRenew(maybeAuthorizationContext),
         snapshot.challenge.challengeId,
         snapshot.transport,
       );
@@ -337,6 +350,9 @@ function snapshotInput(input: HeadlessClientInput): Omit<HeadlessClientInput, "c
     clientSafetyCeiling: input.clientSafetyCeiling,
     transport: input.transport,
     ...(input.maybeWorkerController ? { maybeWorkerController: input.maybeWorkerController } : {}),
+    ...(input.maybeWorkerLeaseAuthorizationContext
+      ? { maybeWorkerLeaseAuthorizationContext: input.maybeWorkerLeaseAuthorizationContext }
+      : {}),
     ...(input.maybeNowUnixSeconds ? { maybeNowUnixSeconds: input.maybeNowUnixSeconds } : {}),
     ...(input.maybeRestoration
       ? { maybeRestoration: structuredClone(input.maybeRestoration) }

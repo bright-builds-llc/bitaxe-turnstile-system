@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import possessionFixtures from "../conformance/bwg-worker-possession-0.1/fixtures.json";
 import {
   createWorkerPossessionChallenge,
   type WorkerPossessionBinding,
@@ -59,6 +60,24 @@ const reacquisitionResponse = {
 } as const satisfies WorkerPossessionResponse;
 
 describe("Local Device Possession Proof", () => {
+  test("derives a Device Identity-bound authorization context from the verified transcript", async () => {
+    // Arrange
+    const request = possessionFixtures.initialAdmission.request;
+    const challenge = createWorkerPossessionChallenge({
+      requestId: request.requestId,
+      ...request.payload,
+      purpose: "initial_admission",
+    });
+
+    // Act
+    const verified = await challenge.verify(possessionFixtures.initialAdmission.response);
+
+    // Assert
+    expect(verified.controlSessionBindingSha256).toBe(
+      "zD5uDDndFnK91hfVLZFfsPDr7HQ2iXOEIm9VGPPVAWI",
+    );
+  });
+
   test("establishes one Device Identity fingerprint from a fresh bound proof", async () => {
     // Arrange
     const challenge = createWorkerPossessionChallenge(binding);
