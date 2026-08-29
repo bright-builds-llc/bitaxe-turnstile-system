@@ -7,7 +7,7 @@
   },
   "firmware": {
     "name": "bright-builds-reference-firmware",
-    "version": "0.3.0"
+    "version": "0.1.0"
   },
   "compatibility": {
     "referenceFirmware": true,
@@ -26,7 +26,7 @@
       },
       "firmware": {
         "name": "bright-builds-reference-firmware",
-        "version": "0.3.0"
+      "version": "0.1.0"
       },
       "compatibility": {
         "referenceFirmware": true,
@@ -37,6 +37,6 @@
       "transportProfile": "bwg-worker-usb/0.2",
       "applicationDescriptorSha256": "rOKO_7whZfy0ntMKM9RIeZNAA3x97tt3rWMAm_QshVA"
     },
-    "compactJws": "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoiZGV2LXVwZGF0ZS1Ed2FRWUxTdnVXcWFoOG9ZIiwidHlwIjoiYndnLXdvcmtlci1jYXBhYmlsaXR5K2p3cyJ9.eyJhcHBsaWNhdGlvbkRlc2NyaXB0b3JTaGEyNTYiOiJyT0tPXzd3aFpmeTBudE1LTTlSSWVaTkFBM3g5N3R0M3JXTUFtX1FzaFZBIiwiYm9hcmQiOnsibW9kZWwiOiJiaXRheGUtdWx0cmEiLCJyZXZpc2lvbiI6IjIwNSJ9LCJjb21wYXRpYmlsaXR5Ijp7Im1pbmluZ0Jhc2VsaW5lUmVzdG9yYXRpb24iOiJzdXBwb3J0ZWQiLCJyZWZlcmVuY2VGaXJtd2FyZSI6dHJ1ZSwic2V0dGluZ3NQcmVzZXJ2YXRpb24iOiJjb21wYXRpYmxlIiwid29ya0xlYXNlIjoic3VwcG9ydGVkIn0sImZpcm13YXJlIjp7Im5hbWUiOiJicmlnaHQtYnVpbGRzLXJlZmVyZW5jZS1maXJtd2FyZSIsInZlcnNpb24iOiIwLjMuMCJ9LCJwcm9maWxlIjoiYndnLXJlZmVyZW5jZS1maXJtd2FyZS1jYXBhYmlsaXR5LzAuMSIsInByb3RvY29sVmVyc2lvbiI6ImJ3Zy13b3JrZXItY29udHJvbGxlci8wLjMiLCJ0cmFuc3BvcnRQcm9maWxlIjoiYndnLXdvcmtlci11c2IvMC4yIn0.umJlWdxGA6bW7FxcB7sKBhCweykr19bY4FoWBHZXbmqxyLLdT4JtVhjnSI5F0PVoySdfFqo2KN6ToMTboQ_TAQ"
+    "compactJws": "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoiZGV2LXVwZGF0ZS1Ed2FRWUxTdnVXcWFoOG9ZIiwidHlwIjoiYndnLXdvcmtlci1jYXBhYmlsaXR5K2p3cyJ9.eyJhcHBsaWNhdGlvbkRlc2NyaXB0b3JTaGEyNTYiOiJyT0tPXzd3aFpmeTBudE1LTTlSSWVaTkFBM3g5N3R0M3JXTUFtX1FzaFZBIiwiYm9hcmQiOnsibW9kZWwiOiJiaXRheGUtdWx0cmEiLCJyZXZpc2lvbiI6IjIwNSJ9LCJjb21wYXRpYmlsaXR5Ijp7Im1pbmluZ0Jhc2VsaW5lUmVzdG9yYXRpb24iOiJzdXBwb3J0ZWQiLCJyZWZlcmVuY2VGaXJtd2FyZSI6dHJ1ZSwic2V0dGluZ3NQcmVzZXJ2YXRpb24iOiJjb21wYXRpYmxlIiwid29ya0xlYXNlIjoic3VwcG9ydGVkIn0sImZpcm13YXJlIjp7Im5hbWUiOiJicmlnaHQtYnVpbGRzLXJlZmVyZW5jZS1maXJtd2FyZSIsInZlcnNpb24iOiIwLjEuMCJ9LCJwcm9maWxlIjoiYndnLXJlZmVyZW5jZS1maXJtd2FyZS1jYXBhYmlsaXR5LzAuMSIsInByb3RvY29sVmVyc2lvbiI6ImJ3Zy13b3JrZXItY29udHJvbGxlci8wLjMiLCJ0cmFuc3BvcnRQcm9maWxlIjoiYndnLXdvcmtlci11c2IvMC4yIn0.bhHtrWreAN7cFH5cwmpQBSJX2-unJDisKGc45MX2BkeSWYDWMol9G6vfWFQ8y2zopGiqv_7sIOwZXft9uTFqCg"
   }
 }
