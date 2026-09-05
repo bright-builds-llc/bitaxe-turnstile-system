@@ -10,26 +10,26 @@ export type WorkerControllerSerialRequestFor<Version extends string, Grant, Rene
   protocolVersion: Version;
   requestId: string;
 } & (
-  | { command: "discover" | "status" | "pause" | "cancel" }
-  | { command: "start_lease"; payload: Grant }
-  | { command: "renew_lease"; payload: Renewal }
-  | { command: "restore"; payload: { reason: WorkerRestorationReason } }
-  | { command: "transport_probe"; payload: { padding: string } }
-);
+    | { command: "discover" | "status" | "pause" | "cancel" }
+    | { command: "start_lease"; payload: Grant }
+    | { command: "renew_lease"; payload: Renewal }
+    | { command: "restore"; payload: { reason: WorkerRestorationReason } }
+    | { command: "transport_probe"; payload: { padding: string; responsePaddingBytes: number } }
+  );
 
 export type WorkerControllerSerialResponseFor<Version extends string> =
   | {
-      protocolVersion: Version;
-      requestId: string;
-      ok: true;
-      result: unknown;
-    }
+    protocolVersion: Version;
+    requestId: string;
+    ok: true;
+    result: unknown;
+  }
   | {
-      protocolVersion: Version;
-      requestId: string;
-      ok: false;
-      error: { code: "invalid_request" | "command_rejected"; message: string };
-    };
+    protocolVersion: Version;
+    requestId: string;
+    ok: false;
+    error: { code: "invalid_request" | "command_rejected"; message: string };
+  };
 
 export type WorkerControllerSerialCodecProfile<Version extends string, Grant, Renewal> = {
   protocolVersion: Version;
@@ -64,9 +64,9 @@ export function decodeWorkerControllerSerialRequestFor<Version extends string, G
     throw invalid(profile.label, "request");
   }
   if (command === "transport_probe") {
-    const payload = exactRecord(value.payload, ["padding"], profile.label);
-    if (typeof payload.padding !== "string" || !/^x*$/u.test(payload.padding)) throw invalid(profile.label, "request");
-    return { protocolVersion: profile.protocolVersion, requestId, command, payload: { padding: payload.padding } };
+    const payload = exactRecord(value.payload, ["padding", "responsePaddingBytes"], profile.label);
+    if (typeof payload.padding !== "string" || !/^x*$/u.test(payload.padding) || !Number.isSafeInteger(payload.responsePaddingBytes) || Number(payload.responsePaddingBytes) < payload.padding.length || Number(payload.responsePaddingBytes) > 65536) throw invalid(profile.label, "request");
+    return { protocolVersion: profile.protocolVersion, requestId, command, payload: { padding: payload.padding, responsePaddingBytes: Number(payload.responsePaddingBytes) } };
   }
   if (command === "start_lease") {
     return {

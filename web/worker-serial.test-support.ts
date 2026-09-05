@@ -24,6 +24,7 @@ import {
   WORKER_SERIAL_MANIFEST,
   WORKER_SERIAL_PROFILE,
   WorkerSerialFramer,
+  exactSerialRecord,
   encodeWorkerSerialEnvelope,
   type WorkerSerialEnvelope,
 } from "./worker-serial";
@@ -140,27 +141,27 @@ export async function serialHarness(
   const status = () =>
     active && maybeLease
       ? {
-          protocolVersion: "bwg-worker-controller/0.4",
-          preservation,
-          state: "mining",
-          monotonicMilliseconds: now,
-          lease: {
-            leaseId: maybeLease.leaseId,
-            challengeId: maybeLease.challengeId,
-            renewAtMonotonicMilliseconds:
-              now + maybeLease.renewAfterMilliseconds,
-            expiresAtMonotonicMilliseconds:
-              now + maybeLease.durationMilliseconds,
-          },
-          restoration: { status: "pending" },
-        }
+        protocolVersion: "bwg-worker-controller/0.4",
+        preservation,
+        state: "mining",
+        monotonicMilliseconds: now,
+        lease: {
+          leaseId: maybeLease.leaseId,
+          challengeId: maybeLease.challengeId,
+          renewAtMonotonicMilliseconds:
+            now + maybeLease.renewAfterMilliseconds,
+          expiresAtMonotonicMilliseconds:
+            now + maybeLease.durationMilliseconds,
+        },
+        restoration: { status: "pending" },
+      }
       : {
-          protocolVersion: "bwg-worker-controller/0.4",
-          preservation,
-          state: "baseline",
-          monotonicMilliseconds: now,
-          restoration: { status: "confirmed", reason },
-        };
+        protocolVersion: "bwg-worker-controller/0.4",
+        preservation,
+        state: "baseline",
+        monotonicMilliseconds: now,
+        restoration: { status: "confirmed", reason },
+      };
   const reply = (request: Record<string, unknown>, result: unknown) =>
     send("control", {
       protocolVersion: request.protocolVersion,
@@ -287,7 +288,9 @@ export async function serialHarness(
     }
     if (request.command === "transport_probe") {
       if (active) throw new Error("probe during lease");
-      reply(request, request.payload);
+      const payload = exactSerialRecord(request.payload, ["padding", "responsePaddingBytes"]);
+      if (typeof payload.padding !== "string" || !Number.isSafeInteger(payload.responsePaddingBytes)) throw new Error("fixture probe payload");
+      reply(request, { padding: payload.padding.padEnd(Number(payload.responsePaddingBytes), "x") });
       return;
     }
     if (["pause", "cancel", "restore"].includes(String(request.command))) {

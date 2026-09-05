@@ -322,10 +322,11 @@ export class BrowserSerialController implements WebSerialWorkerController {
     if (this.#activeLease || !this.#maybePossession)
       throw serialFailure("probe_admission");
     try {
+      await this.#heartbeat();
       return await probeWorkerSerialTransport(
         `serial_browser_${this.#requestSequence + 1}`,
         maybePaddingBytes,
-        (padding) => this.#request("transport_probe", { padding }),
+        (payload) => this.#request("transport_probe", payload),
       );
     } catch {
       this.#lost(serialFailure("probe_failed"));

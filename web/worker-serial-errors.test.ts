@@ -20,3 +20,13 @@ test("network startup observations admit only closed producer phases and error c
     expect(maybeWorkerSerialDiagnostic(invalid)).toBeUndefined();
   }
 });
+
+test("transfer diagnostics distinguish queued bytes from delivery and reject invalid bounds", () => {
+  // Arrange
+  const line = "usb_tx_failure schema=v1 stage=flush_timeout elapsed_ms=2000 queued_bytes=65536 record_bytes=65536 redacted=true";
+  // Act / Assert
+  expect(maybeWorkerSerialDiagnostic(line)).toEqual({ category: "serial_tx_failure", authoritative: false, stage: "flush_timeout", elapsed_ms: 2000, queued_bytes: 65536, record_bytes: 65536 });
+  for (const invalid of [line.replace("queued_bytes=65536", "queued_bytes=65537"), line.replace("record_bytes=65536", "record_bytes=66561"), `${line} payload=private`]) {
+    expect(maybeWorkerSerialDiagnostic(invalid)).toBeUndefined();
+  }
+});

@@ -162,7 +162,7 @@ export class WorkerSerialChannel {
           };
           await boundedSerial(
             this.#writer.write(encodeWorkerSerialEnvelope(frame)),
-            1_000,
+            2_000,
           );
           pending.resolve();
         } catch {

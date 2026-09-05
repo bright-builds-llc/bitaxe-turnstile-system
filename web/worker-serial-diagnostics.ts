@@ -5,6 +5,10 @@ const allocationStages = "early_identity|hardware|runtime_services|storage_http|
 type Grammar = { category: string; pattern: RegExp; fields: readonly string[]; numeric: readonly string[] };
 const grammars: readonly Grammar[] = [
   {
+    category: "serial_tx_failure", pattern: /^usb_tx_failure schema=v1 stage=(write|write_timeout|flush_timeout) elapsed_ms=(\d{1,10}) queued_bytes=(\d{1,5}) record_bytes=(\d{1,5}) redacted=true$/u,
+    fields: ["stage", "elapsed_ms", "queued_bytes", "record_bytes"], numeric: ["elapsed_ms", "queued_bytes", "record_bytes"]
+  },
+  {
     category: "network_failure",
     pattern: /^wifi_startup_failure schema=v1 phase=(netif|event_loop|driver|ap_configuration|station_configuration|driver_start|ap_netif|station_netif|captive_dns|owner_install|reconnect_subscription|reconnect_spawn) error=(no_memory|invalid_state|timeout|driver_error|io_error|owner_error) redacted=true$/u,
     fields: ["phase", "error"], numeric: [],
@@ -29,7 +33,7 @@ const grammars: readonly Grammar[] = [
   },
   {
     category: "memory",
-    pattern: /^usb_memory_checkpoint stage=(worker_owner_prepare|usb_install|usb_installed|statistics_start|statistics_started) free_bytes=(\d{1,10}) largest_block_bytes=(\d{1,10}) reserve_bytes=(\d{1,10}) redacted=true$/u,
+    pattern: /^usb_memory_checkpoint stage=(worker_owner_prepare|usb_install|usb_installed|statistics_start|statistics_started|wifi_driver_prepare|wifi_driver_prepared) free_bytes=(\d{1,10}) largest_block_bytes=(\d{1,10}) reserve_bytes=(\d{1,10}) redacted=true$/u,
     fields: ["stage", "free_bytes", "largest_block_bytes", "reserve_bytes"],
     numeric: ["free_bytes", "largest_block_bytes", "reserve_bytes"],
   },
@@ -75,6 +79,7 @@ export function maybeWorkerSerialDiagnostic(line: string): WorkerSerialDiagnosti
     }
     if (value.boot_ordinal === 0 || value.requested_bytes === 0 || value.line === 0) return undefined;
     if (value.state === "failed" && value.first_failure === "none") return undefined;
+    if (typeof value.record_bytes === "number" && (value.record_bytes > 66560 || Number(value.queued_bytes) > value.record_bytes)) return undefined;
     return Object.freeze(value);
   }
   return undefined;

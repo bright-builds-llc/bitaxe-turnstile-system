@@ -13,9 +13,8 @@ test("production serial admission binds capability, possession, baseline, and ma
   const probe = await h.controller.transportProbe();
   // Assert
   expect(connection.status).toBe("ready");
-  expect(Math.max(probe.requestPayloadBytes, probe.responsePayloadBytes)).toBe(
-    65536,
-  );
+  expect(probe.requestPayloadBytes).toBe(65536);
+  expect(probe.responsePayloadBytes).toBe(65536);
   expect(h.received.some((frame) => frame.kind === "heartbeat")).toBeTrue();
   await h.controller.close();
   expect(h.counts()).toMatchObject({ closed: 1, locked: false });
