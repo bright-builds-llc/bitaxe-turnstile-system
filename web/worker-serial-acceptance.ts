@@ -1,4 +1,11 @@
 import {
+  restoreAcceptanceBaseline,
+  acceptanceWindowShouldStop,
+  AcceptanceRenewalProgress,
+  requireAcceptanceFaultHeadroom,
+} from "./worker-serial-acceptance-actions";
+import { WorkerPreservationBaseline } from "./worker-preservation";
+import {
   createWebSerialWorkerController,
   workerSerialQualificationHook,
   type WebSerialWorkerController,
@@ -32,8 +39,20 @@ type WindowArtifacts = {
   grant: WorkerLeaseGrant;
   renewals: WorkerLeaseRenewal[];
 };
+const preservation = new WorkerPreservationBaseline();
+const renewalProgress = new AcceptanceRenewalProgress();
+let deviceRestorationConfirmed = false,
+  deviceLeaseInactive = false;
 const hook: WorkerSerialQualificationHook = {
+  observeStatus: (value) => {
+    deviceLeaseInactive = value?.state === "baseline";
+    deviceRestorationConfirmed =
+      value?.state === "baseline" && value.restoration.status === "confirmed";
+    if (value) maybeQualification = value.qualification;
+  },
+  observePreservation: (value) => preservation.observe(value),
   suppressHeartbeats: false,
+  memoryOnlyContinuity: true,
   async prepareScope() {
     const value = await localJson("/activate", {});
     if (
@@ -76,6 +95,9 @@ function state() {
     connected,
     running,
     heartbeatSuppressed: hook.suppressHeartbeats,
+    renewalsConfirmed: renewalProgress.confirmed,
+    deviceRestorationConfirmed,
+    deviceLeaseInactive,
     ...(maybeConfiguration
       ? {
           expectedFirmwareSourceCommit:
@@ -84,6 +106,9 @@ function state() {
         }
       : {}),
     ...(maybeQualification ? { qualification: maybeQualification } : {}),
+    ...(preservation.maybePublicState()
+      ? { preservation: preservation.maybePublicState() }
+      : {}),
     ...(maybeProbe ? { probe: maybeProbe } : {}),
     ...(maybeFailure ? { failure: maybeFailure } : {}),
   };
@@ -257,10 +282,19 @@ async function tick() {
     if (now >= nextRenew) {
       const renewal = maybeWindow.renewals.shift();
       if (!renewal) throw new Error("renewal_exhausted");
-      await controller().renewLease(renewal);
+      await renewalProgress.renew(controller(), renewal);
       nextRenew = performance.now() + renewal.renewAfterMilliseconds;
     }
     await refresh();
+    if (
+      acceptanceWindowShouldStop(
+        maybeWindow.grant.acceptanceCampaign?.window ?? -1,
+        duration,
+        performance.now() - began,
+        maybeQualification?.work_gate_remaining_ms,
+      )
+    )
+      await stop();
   } catch {
     await fail("window_control_failed");
     await close().catch(() => fail("cleanup_failed"));
@@ -273,6 +307,7 @@ async function startWindow() {
   if (!input || running) throw new Error("window_missing_or_active");
   const observed = await controller().startLease(input.grant);
   maybeQualification = observed.qualification;
+  renewalProgress.beginWindow();
   running = true;
   status = "running";
   began = performance.now();
@@ -288,7 +323,7 @@ async function stop() {
   running = false;
   status = "stopping";
   publish();
-  const observed = await controller().pause();
+  const observed = await restoreAcceptanceBaseline(controller());
   maybeQualification = observed.qualification;
   running = false;
   maybeWindow = undefined;
@@ -321,12 +356,29 @@ async function probe() {
   publish();
   return maybeProbe;
 }
-function suppressHeartbeats() {
-  if (!running || !maybeWindow?.grant.acceptanceCampaign)
+async function requirePlannedFault(window: 1 | 2) {
+  if (!running || maybeWindow?.grant.acceptanceCampaign?.window !== window)
     throw new Error("qualification_window_required");
+  stopTimer();
+  const waitingSince = performance.now();
+  while (polling) {
+    if (performance.now() - waitingSince >= 2000)
+      throw new Error("qualification_poll_busy");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  await refresh();
+  requireAcceptanceFaultHeadroom(maybeQualification?.work_gate_remaining_ms);
+}
+async function armForegroundLoss() {
+  await requirePlannedFault(1);
+  return state();
+}
+async function suppressHeartbeats() {
+  await requirePlannedFault(2);
   hook.suppressHeartbeats = true;
   publish();
 }
+
 export const workerAcceptance = {
   configure,
   connect,
@@ -339,6 +391,7 @@ export const workerAcceptance = {
   refresh,
   probe,
   suppressHeartbeats,
+  armForegroundLoss,
   state,
 };
 Object.assign(window, { workerAcceptance });
@@ -351,11 +404,12 @@ for (const [id, action] of [
   ["close", close],
   ["probe", probe],
   ["suppress", suppressHeartbeats],
+  ["arm-foreground", armForegroundLoss],
 ] as const) {
   document.getElementById(id)?.addEventListener("click", () => {
     Promise.resolve()
       .then(action)
-      .catch(() => fail(`${id}_failed`));
+      .catch(() => fail(`${id.replaceAll("-", "_")}_failed`));
   });
 }
 for (const [id, load] of [["configuration", configure]] as const) {

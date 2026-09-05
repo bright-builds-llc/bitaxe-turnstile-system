@@ -93,6 +93,8 @@ export type WorkerPossessionResponse =
 /** Successful local continuity result retained only inside the browser adapter. */
 export type VerifiedWorkerPossession = {
   deviceIdentityFingerprint: string;
+  /** Private SHA-256 of the verified raw public key, for local preservation checks only. */
+  deviceIdentityKeySha256: string;
   firmwareSourceCommit: string;
   appElfSha256: string;
   controlSessionBindingSha256: string;
@@ -276,8 +278,10 @@ async function verifyResponse(
       response,
     })),
   );
+  const deviceIdentityKeySha256 = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", decodeBase64Url(claims.deviceIdentityJwk.x, 43, invalidProof().message).slice().buffer)), byte => byte.toString(16).padStart(2, "0")).join("");
   return {
     deviceIdentityFingerprint,
+    deviceIdentityKeySha256,
     firmwareSourceCommit: claims.firmwareSourceCommit,
     appElfSha256: claims.appElfSha256,
     controlSessionBindingSha256,

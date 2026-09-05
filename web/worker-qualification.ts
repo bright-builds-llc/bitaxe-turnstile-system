@@ -3,6 +3,17 @@ import { exactSerialRecord, serialFailure } from "./worker-serial";
 /** Closed, read-only device evidence; never authority to Start or extend a lease. */
 export type WorkerQualification = {
   schema: "worker-qualification-v1";
+  revocation_reason:
+    | "none"
+    | "heartbeat_timeout"
+    | "lease_or_budget_expired"
+    | "restoration_requested"
+    | "unsafe_observation"
+    | "link_closed"
+    | "control_failed";
+  active_limit_ms: number | null;
+  shutdown_budget_ms: number;
+  work_gate_remaining_ms: number | null;
   generation: number;
   active_ms: number;
   generation_elapsed_ms: number;
@@ -39,6 +50,7 @@ export type WorkerQualification = {
   mine_on_boot: boolean;
 };
 const counters = [
+  "shutdown_budget_ms",
   "generation",
   "active_ms",
   "generation_elapsed_ms",
@@ -50,7 +62,12 @@ const counters = [
   "work_dispatched",
   "last_valid_heartbeat_ms",
 ] as const;
-const timestamps = ["gate_closed_ms", "shutdown_started_ms"] as const;
+const timestamps = [
+  "gate_closed_ms",
+  "shutdown_started_ms",
+  "active_limit_ms",
+  "work_gate_remaining_ms",
+] as const;
 const flags = [
   "budget_complete",
   "safe_stop_complete",
@@ -71,6 +88,7 @@ const samples = [
 export function parseWorkerQualification(input: unknown): WorkerQualification {
   const value = exactSerialRecord(input, [
     "schema",
+    "revocation_reason",
     ...counters,
     ...timestamps,
     "safe_stop_stage",
@@ -79,6 +97,18 @@ export function parseWorkerQualification(input: unknown): WorkerQualification {
   ]);
   if (value.schema !== "worker-qualification-v1")
     throw serialFailure("qualification_schema");
+  if (
+    ![
+      "none",
+      "heartbeat_timeout",
+      "lease_or_budget_expired",
+      "restoration_requested",
+      "unsafe_observation",
+      "link_closed",
+      "control_failed",
+    ].includes(String(value.revocation_reason))
+  )
+    throw serialFailure("qualification_revocation_reason");
   for (const field of counters)
     if (!u32(value[field])) throw serialFailure("qualification_counter");
   if (Number(value.budget_reserved_ms) > 240000)

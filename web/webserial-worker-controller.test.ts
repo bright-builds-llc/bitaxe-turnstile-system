@@ -152,3 +152,26 @@ test("graceful cooling keeps heartbeats but hiding aborts that wait and releases
   expect(await closing).toBe("unconfirmed");
   expect(h.counts()).toMatchObject({ closed: 1, locked: false });
 });
+
+test("graceful terminal acknowledgment after 130 seconds remains within the 145-second outer bound", async () => {
+  // Arrange
+  const h = await serialHarness();
+  await h.controller.requestPermission();
+  await h.controller.startLease(
+    await h.grant(
+      await h.controller.prepareWorkerLeaseAuthorizationContext("start"),
+    ),
+  );
+  h.holdRestore();
+  const restoring = h.controller.restore("cancelled").then(
+    (value) => ({ ok: true, value }),
+    () => ({ ok: false }),
+  );
+  // Act
+  await h.advance(130000);
+  h.completeRestore();
+  const result = await restoring;
+  // Assert
+  expect(result.ok).toBeTrue();
+  await h.controller.close();
+});

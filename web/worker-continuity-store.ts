@@ -281,3 +281,18 @@ function transactionResult(
     transaction.onabort = () => reject(new Error("Worker continuity storage failed"));
   });
 }
+
+/** Qualification-only continuity lives in RAM and never opens IndexedDB. */
+export function createMemoryWorkerContinuityAccess(scope: WorkerContinuityScope): WorkerContinuityAccess {
+  const records = new Map<string, StoredWorkerContinuity>();
+  return createWorkerContinuityAccess(scope, {store: {
+    async get(binding) { return records.get(binding); },
+    async compareAndEstablish(record) {
+      const maybePrior = records.get(record.challengeBindingSha256);
+      if (maybePrior) return maybePrior.deviceIdentityFingerprint === record.deviceIdentityFingerprint ? "matched" : "conflict";
+      records.set(record.challengeBindingSha256, {...record}); return "established";
+    },
+    async delete(binding) { records.delete(binding); },
+    async sweepExpired(now) { for (const [binding,record] of records) if(now >= record.retentionExpiryUnixSeconds) records.delete(binding); },
+  }});
+}

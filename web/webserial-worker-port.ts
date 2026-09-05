@@ -27,6 +27,7 @@ export type WorkerSerialBrowserRuntime = {
   foreground(): boolean;
   userActivation(): boolean;
   now(): number;
+  maybeAfter?: (milliseconds: number, listener: () => void) => () => void;
   acquireLock(): Promise<() => void>;
   subscribeForegroundLoss(listener: () => void): () => void;
   every(milliseconds: number, listener: () => void): () => void;
@@ -74,19 +75,25 @@ export function browserSerialRuntime(): WorkerSerialBrowserRuntime {
 export function boundedSerial<T>(
   operation: Promise<T>,
   milliseconds: number,
+  maybeAfter?: (milliseconds: number, listener: () => void) => () => void,
 ): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(serialFailure("timeout")),
-      milliseconds,
-    );
+    const cancel = maybeAfter
+      ? maybeAfter(milliseconds, () => reject(serialFailure("timeout")))
+      : (() => {
+          const timer = setTimeout(
+            () => reject(serialFailure("timeout")),
+            milliseconds,
+          );
+          return () => clearTimeout(timer);
+        })();
     operation.then(
       (value) => {
-        clearTimeout(timer);
+        cancel();
         resolve(value);
       },
       () => {
-        clearTimeout(timer);
+        cancel();
         reject(serialFailure("io"));
       },
     );

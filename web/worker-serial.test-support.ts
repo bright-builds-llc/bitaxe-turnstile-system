@@ -1,4 +1,8 @@
-import { encodeBase64Url, sha256Base64UrlBytes } from "./crypto-bytes";
+import {
+  decodeBase64Url,
+  encodeBase64Url,
+  sha256Base64UrlBytes,
+} from "./crypto-bytes";
 import { canonicalJson } from "./headless-values";
 import capabilityFixture from "../conformance/bwg-worker-deployment-trust-0.2/signed-capability.json";
 import trustFixture from "../conformance/bwg-worker-deployment-trust-0.2/trust.json";
@@ -47,6 +51,24 @@ export async function serialHarness(
   maybeChallengeId: string = controllerFixture.lease.challengeId,
 ) {
   const identityKey = await fixtureIdentityKey();
+  const keyBytes = decodeBase64Url(
+    possessionFixture.fixtureIdentity.publicJwk.x,
+    43,
+    "fixture key",
+  );
+  const deviceKeyHash = Array.from(
+    new Uint8Array(
+      await crypto.subtle.digest("SHA-256", keyBytes.slice().buffer),
+    ),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
+  const preservation = {
+    schema: "worker-preservation-v1",
+    settings_sha256: "1".repeat(64),
+    authorization_high_water_sha256: "2".repeat(64),
+    device_identity_sha256: deviceKeyHash,
+    mine_on_boot: false,
+  };
   const leaseKeys = await crypto.subtle.generateKey("Ed25519", true, [
     "sign",
     "verify",
@@ -92,6 +114,8 @@ export async function serialHarness(
   let maybeWritable: WritableStream<Uint8Array> | null = null;
   let maybeStoredFingerprint: string | undefined;
   const callbacks = new Set<() => void>();
+  const deadlines = new Set<{ at: number; call: () => void }>();
+  let maybeDelayedRestore: Record<string, unknown> | undefined;
   const hidden = new Set<() => void>();
   const received: { kind: string; command?: string }[] = [];
   let maybeLease: WorkerLeaseGrant | undefined;
@@ -117,6 +141,7 @@ export async function serialHarness(
     active && maybeLease
       ? {
           protocolVersion: "bwg-worker-controller/0.4",
+          preservation,
           state: "mining",
           monotonicMilliseconds: now,
           lease: {
@@ -131,6 +156,7 @@ export async function serialHarness(
         }
       : {
           protocolVersion: "bwg-worker-controller/0.4",
+          preservation,
           state: "baseline",
           monotonicMilliseconds: now,
           restoration: { status: "confirmed", reason },
@@ -272,7 +298,10 @@ export async function serialHarness(
           : request.command === "cancel"
             ? "cancelled"
             : String((request.payload as { reason: string }).reason);
-      if (holdRestore) return;
+      if (holdRestore) {
+        maybeDelayedRestore = request;
+        return;
+      }
     }
     reply(request, status());
   }
@@ -321,6 +350,13 @@ export async function serialHarness(
     foreground: () => foreground,
     userActivation: () => true,
     now: () => now,
+    maybeAfter(milliseconds, call) {
+      const deadline = { at: now + milliseconds, call };
+      deadlines.add(deadline);
+      return () => {
+        deadlines.delete(deadline);
+      };
+    },
     async acquireLock() {
       if (locked) throw new Error("fixture lock held");
       locked = true;
@@ -381,6 +417,11 @@ export async function serialHarness(
           send("heartbeat", {});
         }
         for (const callback of callbacks) callback();
+        for (const deadline of deadlines)
+          if (now >= deadline.at) {
+            deadlines.delete(deadline);
+            deadline.call();
+          }
         await flush();
       }
     },
@@ -395,11 +436,26 @@ export async function serialHarness(
     dropHeartbeats() {
       dropHeartbeats = true;
     },
+    alterPreservation(
+      field:
+        | "settings_sha256"
+        | "authorization_high_water_sha256"
+        | "device_identity_sha256",
+    ) {
+      preservation[field] = "f".repeat(64);
+    },
     holdStart() {
       holdStart = true;
     },
     holdRestore() {
       holdRestore = true;
+    },
+    completeRestore() {
+      if (!maybeDelayedRestore) throw new Error("restore_not_pending");
+      const request = maybeDelayedRestore;
+      maybeDelayedRestore = undefined;
+      holdRestore = false;
+      reply(request, status());
     },
     delayPermission() {
       delayedPermission = true;

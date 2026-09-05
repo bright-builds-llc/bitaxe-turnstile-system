@@ -2,6 +2,10 @@ import { expect, test } from "bun:test";
 import { parseWorkerControllerStatus } from "./worker-controller";
 const qualification = {
   schema: "worker-qualification-v1",
+  revocation_reason: "none",
+  active_limit_ms: null,
+  shutdown_budget_ms: 15550,
+  work_gate_remaining_ms: null,
   generation: 1,
   active_ms: 10,
   generation_elapsed_ms: 15,
@@ -52,4 +56,29 @@ test("status rejects unknown telemetry, nonfinite samples, and false freshness",
     expect(() =>
       parseWorkerControllerStatus({ ...baseline, qualification: invalid }),
     ).toThrow();
+});
+
+test("qualification admits only the closed winning revocation attribution", () => {
+  // Arrange / Act / Assert
+  for (const reason of [
+    "none",
+    "heartbeat_timeout",
+    "lease_or_budget_expired",
+    "restoration_requested",
+    "unsafe_observation",
+    "link_closed",
+    "control_failed",
+  ] as const)
+    expect(
+      parseWorkerControllerStatus({
+        ...baseline,
+        qualification: { ...qualification, revocation_reason: reason },
+      }).qualification?.revocation_reason,
+    ).toBe(reason);
+  expect(() =>
+    parseWorkerControllerStatus({
+      ...baseline,
+      qualification: { ...qualification, revocation_reason: "private-detail" },
+    }),
+  ).toThrow();
 });

@@ -1,3 +1,4 @@
+import { parseWorkerPreservation, type WorkerPreservation } from "./worker-preservation";
 import { parseWorkerQualification, type WorkerQualification } from "./worker-qualification";
 /** Stable wire/profile identifier for the local Worker Controller contract. */
 export const WORKER_CONTROLLER_PROTOCOL_VERSION = "bwg-worker-controller/0.4" as const;
@@ -93,7 +94,7 @@ export type WorkerControllerStatus = (
       restoration:
         | { status: "not_required"; reason?: never }
         | { status: "confirmed"; reason: WorkerRestorationReason };
-    }) & { qualification?: WorkerQualification };
+    }) & { qualification?: WorkerQualification; preservation?: WorkerPreservation };
 
 /** Device-local transport-loss notification delivered after fail-safe restoration. */
 export type WorkerControllerDisconnectReason = "connectivity_lost";
@@ -241,8 +242,9 @@ export function parseWorkerControllerStatus(input: unknown): WorkerControllerSta
   const value = exactRecord(
     input,
     ["protocolVersion", "state", "monotonicMilliseconds", "restoration"],
-    ["lease", "qualification"],
+    ["lease", "qualification", "preservation"],
   );
+  const preservation = value.preservation === undefined ? {} : { preservation: parseWorkerPreservation(value.preservation) };
   const qualification = value.qualification === undefined ? {} : { qualification: parseWorkerQualification(value.qualification) };
   const restoration = exactRecord(value.restoration, ["status"], ["reason"]);
   const monotonicMilliseconds = requiredNumber(value, "monotonicMilliseconds");
@@ -275,6 +277,7 @@ export function parseWorkerControllerStatus(input: unknown): WorkerControllerSta
     }
     return {
       ...qualification,
+      ...preservation,
       protocolVersion: WORKER_CONTROLLER_PROTOCOL_VERSION,
       state,
       monotonicMilliseconds,
@@ -287,6 +290,7 @@ export function parseWorkerControllerStatus(input: unknown): WorkerControllerSta
   }
   return {
     ...qualification,
+    ...preservation,
     protocolVersion: WORKER_CONTROLLER_PROTOCOL_VERSION,
     state: "baseline",
     monotonicMilliseconds,

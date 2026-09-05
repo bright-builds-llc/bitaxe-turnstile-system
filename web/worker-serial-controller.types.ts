@@ -1,7 +1,9 @@
+import type { WorkerPreservation } from "./worker-preservation";
 import type {
   WorkerController,
   WorkerControllerDisconnectReason,
   WorkerRestorationReason,
+  WorkerControllerStatus,
 } from "./worker-controller";
 import type { WorkerLeaseAuthorizationContextProvider } from "./worker-lease-authorization";
 import type {
@@ -49,7 +51,10 @@ export const workerSerialQualificationHook = Symbol(
 );
 export type WorkerSerialQualificationHook = {
   suppressHeartbeats: boolean;
+  memoryOnlyContinuity?: boolean;
   prepareScope?: () => Promise<WorkerContinuityScope>;
+  observePreservation?: (value: WorkerPreservation) => void;
+  observeStatus?: (value: WorkerControllerStatus | undefined) => void;
 };
 
 export type WorkerSerialInternalOptions = {
