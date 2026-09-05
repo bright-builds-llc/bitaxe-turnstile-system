@@ -1,3 +1,4 @@
+import type { WorkerSerialDiagnostic } from "./worker-serial-diagnostics";
 import {
   encodeWorkerSerialEnvelope,
   WorkerSerialFramer,
@@ -81,12 +82,12 @@ export function boundedSerial<T>(
     const cancel = maybeAfter
       ? maybeAfter(milliseconds, () => reject(serialFailure("timeout")))
       : (() => {
-          const timer = setTimeout(
-            () => reject(serialFailure("timeout")),
-            milliseconds,
-          );
-          return () => clearTimeout(timer);
-        })();
+        const timer = setTimeout(
+          () => reject(serialFailure("timeout")),
+          milliseconds,
+        );
+        return () => clearTimeout(timer);
+      })();
     operation.then(
       (value) => {
         cancel();
@@ -109,7 +110,7 @@ type PendingWrite = {
 export class WorkerSerialChannel {
   readonly #reader: ReadableStreamDefaultReader<Uint8Array>;
   readonly #writer: WritableStreamDefaultWriter<Uint8Array>;
-  readonly #framer = new WorkerSerialFramer();
+  readonly #framer: WorkerSerialFramer;
   readonly #pending: PendingWrite[] = [];
   #writing = false;
   #closed = false;
@@ -119,7 +120,9 @@ export class WorkerSerialChannel {
     readonly port: WorkerSerialPort,
     receive: (frame: WorkerSerialEnvelope) => void,
     failure: (error: Error) => void,
+    maybeDiagnostic?: (value: WorkerSerialDiagnostic) => void,
   ) {
+    this.#framer = new WorkerSerialFramer(maybeDiagnostic);
     if (!port.readable || !port.writable) throw serialFailure("streams");
     this.#reader = port.readable.getReader();
     this.#writer = port.writable.getWriter();

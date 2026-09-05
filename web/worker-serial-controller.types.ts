@@ -1,3 +1,4 @@
+import type { WorkerSerialDiagnostic } from "./worker-serial-diagnostics";
 import type { WorkerPreservation } from "./worker-preservation";
 import type {
   WorkerController,
@@ -33,7 +34,7 @@ export type WebSerialWorkerControllerInput = {
 };
 export interface WebSerialWorkerController
   extends WorkerController,
-    WorkerLeaseAuthorizationContextProvider {
+  WorkerLeaseAuthorizationContextProvider {
   requestPermission(): Promise<{ status: "ready"; recovered: boolean }>;
   subscribeDisconnect(
     listener: (reason: WorkerControllerDisconnectReason) => Promise<void>,
@@ -49,7 +50,11 @@ export interface WebSerialWorkerController
 export const workerSerialQualificationHook = Symbol(
   "workerSerialQualificationHook",
 );
+export type WorkerSerialAdmissionStage = "ownership" | "permission" | "device_filter" | "scope" | "opening" | "hello" | "manifest_identity" | "capability" | "possession" | "baseline" | "continuity" | "cleanup";
 export type WorkerSerialQualificationHook = {
+  maybeObserveDiagnostic?: (value: WorkerSerialDiagnostic) => void;
+  maybeObserveSerialOwnership?: (released: boolean) => void;
+  maybeObserveAdmissionFailure?: (stage: WorkerSerialAdmissionStage) => void;
   suppressHeartbeats: boolean;
   memoryOnlyContinuity?: boolean;
   prepareScope?: () => Promise<WorkerContinuityScope>;

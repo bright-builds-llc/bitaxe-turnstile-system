@@ -1,3 +1,4 @@
+import type { WorkerSerialDiagnostic } from "./worker-serial-diagnostics";
 import {
   restoreAcceptanceBaseline,
   acceptanceWindowShouldStop,
@@ -43,7 +44,19 @@ const preservation = new WorkerPreservationBaseline();
 const renewalProgress = new AcceptanceRenewalProgress();
 let deviceRestorationConfirmed = false,
   deviceLeaseInactive = false;
+let maybeAdmissionFailureStage: string | undefined;
+let serialOwnershipReleased = true;
+const localDiagnostics = new Map<string, WorkerSerialDiagnostic>();
 const hook: WorkerSerialQualificationHook = {
+  maybeObserveDiagnostic(value) {
+    const key = `${value.category}:${value.stage ?? ""}`;
+    if (localDiagnostics.size >= 32 && !localDiagnostics.has(key)) return;
+    localDiagnostics.set(key, value);
+    const output = document.querySelector("#diagnostics");
+    if (output) output.textContent = JSON.stringify([...localDiagnostics.values()], null, 2);
+  },
+  maybeObserveAdmissionFailure(stage) { maybeAdmissionFailureStage ??= stage; },
+  maybeObserveSerialOwnership(released) { serialOwnershipReleased = released; publish(); },
   observeStatus: (value) => {
     deviceLeaseInactive = value?.state === "baseline";
     deviceRestorationConfirmed =
@@ -96,14 +109,15 @@ function state() {
     running,
     heartbeatSuppressed: hook.suppressHeartbeats,
     renewalsConfirmed: renewalProgress.confirmed,
+    serialOwnershipReleased,
     deviceRestorationConfirmed,
     deviceLeaseInactive,
     ...(maybeConfiguration
       ? {
-          expectedFirmwareSourceCommit:
-            maybeConfiguration.expectedFirmwareSourceCommit,
-          expectedAppElfSha256: maybeConfiguration.expectedAppElfSha256,
-        }
+        expectedFirmwareSourceCommit:
+          maybeConfiguration.expectedFirmwareSourceCommit,
+        expectedAppElfSha256: maybeConfiguration.expectedAppElfSha256,
+      }
       : {}),
     ...(maybeQualification ? { qualification: maybeQualification } : {}),
     ...(preservation.maybePublicState()
@@ -111,6 +125,7 @@ function state() {
       : {}),
     ...(maybeProbe ? { probe: maybeProbe } : {}),
     ...(maybeFailure ? { failure: maybeFailure } : {}),
+    ...(maybeAdmissionFailureStage ? { admissionFailureStage: maybeAdmissionFailureStage } : {}),
   };
 }
 function controller() {
@@ -164,6 +179,7 @@ async function connect() {
   if (!config) throw new Error("configuration_missing");
   if (connected) throw new Error("already_connected");
   hook.suppressHeartbeats = false;
+  maybeAdmissionFailureStage = undefined;
   const input: WebSerialWorkerControllerInput & {
     [workerSerialQualificationHook]: WorkerSerialQualificationHook;
   } = {
@@ -231,9 +247,9 @@ async function localJson(path: string, body?: object): Promise<any> {
       ...(body === undefined
         ? {}
         : {
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(body),
-          }),
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
     });
     if (!response.ok || !response.body) throw new Error("local_response");
     const reader = response.body.getReader();

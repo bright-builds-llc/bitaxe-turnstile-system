@@ -1,3 +1,4 @@
+import { maybeWorkerSerialDiagnostic, type WorkerSerialDiagnostic } from "./worker-serial-diagnostics";
 import { parseWorkerSerialJson } from "./worker-serial-lexeme";
 import { canonicalJson } from "./headless-values";
 import { sha256Base64UrlBytes } from "./crypto-bytes";
@@ -107,7 +108,7 @@ export function parseWorkerSerialEnvelope(
   if (
     value.kind === "control" &&
     new TextEncoder().encode(JSON.stringify(payload)).length >
-      MAXIMUM_SERIAL_CONTROL_PAYLOAD_BYTES
+    MAXIMUM_SERIAL_CONTROL_PAYLOAD_BYTES
   )
     throw serialFailure("payload_bound");
   return {
@@ -130,6 +131,7 @@ export function encodeWorkerSerialEnvelope(
 }
 /** Incremental bounded reader; startup text is discarded without public disclosure. */
 export class WorkerSerialFramer {
+  constructor(private readonly maybeDiagnostic?: (value: WorkerSerialDiagnostic) => void) { }
   #bytes = new Uint8Array(MAXIMUM_SERIAL_WIRE_BYTES);
   #length = 0;
   #discarding = false;
@@ -155,8 +157,12 @@ export class WorkerSerialFramer {
       } catch {
         throw serialFailure("utf8");
       }
+      if (!text.trimStart().startsWith("{")) {
+        const maybeDiagnostic = maybeWorkerSerialDiagnostic(text);
+        if (maybeDiagnostic) this.maybeDiagnostic?.(maybeDiagnostic);
+        continue;
+      }
       if (text.includes("\r")) throw serialFailure("line_ending");
-      if (!text.trimStart().startsWith("{")) continue;
       const parsed = parseWorkerSerialJson(text);
       const value = parsed.value;
       const record = serialRecord(value);

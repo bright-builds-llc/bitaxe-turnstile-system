@@ -20,7 +20,7 @@ After hello/ack, each direction starts at sequence 1 and strictly increases acro
 
 Heartbeat payload is exactly `{}`. A valid current-session, advancing incoming heartbeat refreshes the peer deadline. Other incoming traffic, outgoing success, queued but unprocessed bytes, and repeated/stale heartbeats do not. Send every 1000 ms, revoke at 2800 ms. Heartbeat/protocol owners must not wait for Work Lease execution or large diagnostic writes.
 
-A close payload is `{op:"close",reason:<closed Worker restoration reason>}` in a session envelope. Controller request IDs use the `serial_` prefix and remain at most 128 characters. Control payloads are bounded request/response object shapes specialized to Controller 0.4, or possession 0.2 requests/responses. Diagnostic payloads contain only a closed `category` and bounded numeric/boolean fields admitted by their producer; no raw log, credentials, network identity, Device Identity, or request payload is public diagnostic material. Startup text outside protocol envelopes is discarded by browser control admission and never exposed by the adapter.
+A close payload is `{op:"close",reason:<closed Worker restoration reason>}` in a session envelope. Controller request IDs use the `serial_` prefix and remain at most 128 characters. Control payloads are bounded request/response object shapes specialized to Controller 0.4, or possession 0.2 requests/responses. Diagnostic payloads use `{line:<bounded producer marker>}`. Only the exact startup, memory, boot/reset, code-identity, allocation-context and panic marker grammars are eligible for a local qualification view; adapters parse them into closed categories, bounded numbers, closed enums, and public code digests. Arbitrary log text, extra fields, credentials, network identity, Device Identity, and request payloads are discarded. The same closed startup markers may be recognized while resynchronizing pre-session text. These observations never establish admission or liveness and are never submitted to the backend or included in public controller status.
 
 ## Signed possession
 
@@ -58,7 +58,6 @@ After building from a verified Gate commit with `bun run build:browser`, serve t
 
 Heartbeat suppression is available only in the task-gated acceptance page after a campaign window has started. It only stops sending heartbeats; it cannot extend a lease or grant control. Hardware commands remain subject to the firmware repository's approved exact-package task and acceptance budget.
 
-
 ## Protected local supervisor and streaming signing
 
 The qualification page automatically reads public `GET /context` without opening USB or starting a credential lifetime. After the permission chooser has actually granted a port, it calls `POST /activate` with `{}` and receives exactly `{challengeId,retentionExpiryUnixSeconds}`. Only then does it open the port and send Hello. Human chooser wait is unbounded; no challenge, credential, or heartbeat deadline runs during that wait.
@@ -84,7 +83,6 @@ Qualification window termination explicitly requests `restore("cancelled")` and 
 The normal acceptance window requests terminal Restore when fresh `work_gate_remaining_ms <= 2000`, leaving a margin before the device stops dispatch; that deadline already reserves the complete ordered shutdown tail. Browser elapsed time remains a fallback, never an extension. Public `renewalsConfirmed` is reset for each successful Start and increments only after a validated signed renewal acknowledgment; normal acceptance requires at least one. There is no invented 175-second minimum. Lack of an accepted share within the fixed budget remains an explicitly unverified criterion and never extends work.
 
 The acceptance page also uses RAM-only challenge continuity storage; qualification never opens IndexedDB or persists the canonical Device Identity fingerprint. Normal non-qualification SDK challenge-retention behavior is separate.
-
 
 Qualification includes required `active_limit_ms` (nullable u32; 180000/30000 for acceptance windows, null for unlimited normal operation), `shutdown_budget_ms` (u32; current derived bound 15550), and `work_gate_remaining_ms` (nullable u32; null before first dispatch or when unlimited, zero after revocation). The device arms the active budget at first dispatch and reserves the shutdown tail inside that same allowance. The 180/30/30 limits include hashing during ramp-down; stopping order is not shortened.
 
