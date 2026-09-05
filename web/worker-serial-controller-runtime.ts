@@ -1,3 +1,4 @@
+import { workerSerialFailureCategory } from "./worker-serial-errors";
 import { maybeWorkerDiagnosticPayload } from "./worker-serial-diagnostics";
 import { parseWorkerSerialHelloAck } from "./worker-serial-hello";
 import { WorkerSerialPortOwner } from "./worker-serial-port-owner";
@@ -80,6 +81,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
   #heartbeatAdmitted = false;
   #lastHeartbeatSent = 0;
   #generation = 0;
+  #admission = 0;
   #maybeFailure: Error | undefined;
   constructor(
     readonly input: WebSerialWorkerControllerInput,
@@ -115,6 +117,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
     this.#maybeClosing = undefined;
     this.#maybeFailure = undefined;
     const generation = this.#generation;
+    const admission = ++this.#admission;
     // requestPort must be called in the original user-activation task.
     const selection = this.runtime.serial.requestPort({ filters: [this.input.deviceFilter] })
       .then(port => ({ port }), () => ({ port: undefined }));
@@ -225,13 +228,16 @@ export class BrowserSerialController implements WebSerialWorkerController {
       this.#maybeFingerprint = this.#maybePossession.deviceIdentityFingerprint;
       this.#state = "ready";
       return { status: "ready" as const, recovered };
-    } catch {
-      if (generation === this.#generation) this.maybeQualificationHook?.maybeObserveAdmissionFailure?.(stage);
+    } catch (error) {
+      if (admission === this.#admission) {
+        this.maybeQualificationHook?.maybeObserveAdmissionFailure?.(stage);
+        this.maybeQualificationHook?.maybeObserveSerialFailure?.(workerSerialFailureCategory(error));
+      }
       try {
         if (generation === this.#generation) await this.#cleanup();
         else if (maybeOwner) await maybeOwner.close();
       } catch {
-        this.maybeQualificationHook?.maybeObserveAdmissionFailure?.("cleanup");
+        if (admission === this.#admission) this.maybeQualificationHook?.maybeObserveAdmissionFailure?.("cleanup");
         throw serialFailure("cleanup_pending");
       }
       throw serialFailure("admission_failed");
@@ -472,7 +478,8 @@ export class BrowserSerialController implements WebSerialWorkerController {
     if (["closed", "unconnected"].includes(this.#state)) return;
     this.#heartbeatAdmitted = false;
     this.maybeQualificationHook?.observeStatus?.(undefined);
-    this.#maybeFailure = error;
+    this.maybeQualificationHook?.maybeObserveSerialFailure?.(workerSerialFailureCategory(error));
+    this.#maybeFailure ??= error;
     this.#maybePeer?.revoke();
     this.#maybePending?.reject(error);
     this.#maybePending = undefined;
@@ -480,11 +487,11 @@ export class BrowserSerialController implements WebSerialWorkerController {
     this.#maybeHello = undefined;
     if (this.#state === "closing") return;
     void this.close("control_failed").catch((failure: Error) => {
-      this.#maybeFailure = failure;
+      this.#maybeFailure ??= failure;
     });
     for (const listener of this.#listeners)
       void listener("connectivity_lost").catch(() => {
-        this.#maybeFailure = serialFailure("disconnect_listener");
+        this.#maybeFailure ??= serialFailure("disconnect_listener");
       });
   }
   async #request(

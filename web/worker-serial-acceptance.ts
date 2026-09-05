@@ -45,9 +45,11 @@ const renewalProgress = new AcceptanceRenewalProgress();
 let deviceRestorationConfirmed = false,
   deviceLeaseInactive = false;
 let maybeAdmissionFailureStage: string | undefined;
+let maybeSerialFailureCategory: string | undefined;
 let serialOwnershipReleased = true;
 const localDiagnostics = new Map<string, WorkerSerialDiagnostic>();
 const hook: WorkerSerialQualificationHook = {
+  maybeObserveSerialFailure(category) { maybeSerialFailureCategory ??= category; },
   maybeObserveDiagnostic(value) {
     const key = `${value.category}:${value.stage ?? ""}`;
     if (localDiagnostics.size >= 32 && !localDiagnostics.has(key)) return;
@@ -125,6 +127,7 @@ function state() {
       : {}),
     ...(maybeProbe ? { probe: maybeProbe } : {}),
     ...(maybeFailure ? { failure: maybeFailure } : {}),
+    ...(maybeSerialFailureCategory ? { serialFailureCategory: maybeSerialFailureCategory } : {}),
     ...(maybeAdmissionFailureStage ? { admissionFailureStage: maybeAdmissionFailureStage } : {}),
   };
 }
@@ -180,6 +183,7 @@ async function connect() {
   if (connected) throw new Error("already_connected");
   hook.suppressHeartbeats = false;
   maybeAdmissionFailureStage = undefined;
+  maybeSerialFailureCategory = undefined;
   const input: WebSerialWorkerControllerInput & {
     [workerSerialQualificationHook]: WorkerSerialQualificationHook;
   } = {

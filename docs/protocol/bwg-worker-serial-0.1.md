@@ -89,3 +89,11 @@ Qualification includes required `active_limit_ms` (nullable u32; 180000/30000 fo
 Before intentionally hiding the page in window 1, call `armForegroundLoss()` to refresh device evidence and require more than 3000 ms of work-gate headroom. Window 2 heartbeat suppression performs the same fresh check. Automatic visibility-loss fail-safe handling remains unconditional. Missing or exhausted headroom rejects a planned fault instead of racing the budget deadline.
 
 Public acceptance `deviceRestorationConfirmed` and `deviceLeaseInactive` reflect the latest validated Controller status, including internal graceful Close acknowledgments. They are invalidated on a new connection, an issued state-changing command, or ownership loss. Local `running:false` and hardware `safe_stop_complete` cannot substitute for these device confirmations; final window/cleanup verdicts require both. The outer graceful-response bound is 145 seconds for the derived 138550 ms terminal sequence plus transport allowance; cooling remains 120 seconds and heartbeat revocation remains 2.8 seconds.
+
+## Peer liveness and diagnostic failures
+
+Both peers emit advancing session-bound heartbeats at one-second intervals. Device output owns one sequence across heartbeats, control responses, and diagnostics; periodic heartbeats take priority over queued control and diagnostic records. Device heartbeats preserve browser link observation only. They never authenticate a browser, extend its signed Work Lease, or replace advancing authenticated browser heartbeats at firmware admission boundaries.
+
+The qualification page preserves its current admission stage across asynchronous transport closure and records only a closed failure category. A stream failure and actual port closure are separate outcomes: the failure remains visible, while confirmed native closure releases origin ownership. A pending native close retains ownership even after the bounded caller returns.
+
+Network startup observations use the exact `wifi_startup_failure` producer grammar with closed phase/error categories. These observations remain local and non-authoritative; raw exception text and network inputs are never projected.

@@ -56,3 +56,30 @@ test("cancellation before opening prevents a later native open", async () => {
   await expect(f.owner.open(f.port)).rejects.toThrow();
   expect(f.counts()).toEqual({ closed: 0, released: true });
 });
+
+test("late native channel closure releases ownership after the bounded caller has returned", async () => {
+  // Arrange
+  const { WorkerSerialChannel } = await import("./webserial-worker-port");
+  let finishClose: () => void = () => { throw new Error("close not pending"); };
+  const port: WorkerSerialPort = {
+    getInfo: () => ({}),
+    readable: new ReadableStream<Uint8Array>(),
+    writable: new WritableStream<Uint8Array>(),
+    async open() { },
+    close: () => new Promise<void>(resolve => { finishClose = resolve; }),
+  };
+  let released = false;
+  const owner = new WorkerSerialPortOwner(() => { released = true; }, undefined);
+  await owner.open(port);
+  owner.attach(new WorkerSerialChannel(port, () => { }, () => { }));
+  // Act
+  const closing = owner.close().then(() => "closed", () => "pending");
+  await new Promise(resolve => setTimeout(resolve, 2100));
+  // Assert
+  expect(await closing).toBe("pending");
+  expect(released).toBeFalse();
+  finishClose();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(released).toBeTrue();
+  expect(owner.released).toBeTrue();
+});

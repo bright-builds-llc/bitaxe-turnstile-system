@@ -64,7 +64,7 @@ test("silent application reports hello failure while retaining local startup obs
       },
     }),
     writable: new WritableStream<Uint8Array>(),
-    async open() {},
+    async open() { },
     async close() { closed += 1; },
   };
   f.input[workerSerialTestRuntime].runtime.serial.requestPort = async () => port;
@@ -73,5 +73,23 @@ test("silent application reports hello failure while retaining local startup obs
   expect(f.stages).toEqual(["hello"]);
   expect(observations).toEqual([{ category: "startup", authoritative: false, stage: "network", state: "entered", first_failure: "none", uptime_ms: 123 }]);
   expect(closed).toBe(1);
+  expect(f.ownership).toEqual([false, true]);
+});
+
+test("asynchronous reader failure preserves its admission stage after lifecycle closure", async () => {
+  // Arrange
+  const f = await admissionFixture();
+  let failRead: () => void = () => { throw new Error("reader not installed"); };
+  const port = {
+    getInfo: () => f.input.deviceFilter,
+    readable: new ReadableStream<Uint8Array>({ start(output) { failRead = () => output.error(new Error("synthetic private transport detail")); } }),
+    writable: new WritableStream<Uint8Array>({ write() { failRead(); } }),
+    async open() { },
+    async close() { },
+  };
+  f.input[workerSerialTestRuntime].runtime.serial.requestPort = async () => port;
+  // Act / Assert
+  await expect(f.controller().requestPermission()).rejects.toThrow();
+  expect(f.stages).toContain("hello");
   expect(f.ownership).toEqual([false, true]);
 });

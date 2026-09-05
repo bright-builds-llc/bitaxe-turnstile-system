@@ -1,3 +1,4 @@
+import type { WorkerSerialFailureCategory } from "./worker-serial-errors";
 import type { WorkerSerialDiagnostic } from "./worker-serial-diagnostics";
 import type { WorkerPreservation } from "./worker-preservation";
 import type {
@@ -52,6 +53,7 @@ export const workerSerialQualificationHook = Symbol(
 );
 export type WorkerSerialAdmissionStage = "ownership" | "permission" | "device_filter" | "scope" | "opening" | "hello" | "manifest_identity" | "capability" | "possession" | "baseline" | "continuity" | "cleanup";
 export type WorkerSerialQualificationHook = {
+  maybeObserveSerialFailure?: (category: WorkerSerialFailureCategory) => void;
   maybeObserveDiagnostic?: (value: WorkerSerialDiagnostic) => void;
   maybeObserveSerialOwnership?: (released: boolean) => void;
   maybeObserveAdmissionFailure?: (stage: WorkerSerialAdmissionStage) => void;

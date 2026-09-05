@@ -5,6 +5,11 @@ const allocationStages = "early_identity|hardware|runtime_services|storage_http|
 type Grammar = { category: string; pattern: RegExp; fields: readonly string[]; numeric: readonly string[] };
 const grammars: readonly Grammar[] = [
   {
+    category: "network_failure",
+    pattern: /^wifi_startup_failure schema=v1 phase=(netif|event_loop|driver|ap_configuration|station_configuration|driver_start|ap_netif|station_netif|captive_dns|owner_install|reconnect_subscription|reconnect_spawn) error=(no_memory|invalid_state|timeout|driver_error|io_error|owner_error) redacted=true$/u,
+    fields: ["phase", "error"], numeric: [],
+  },
+  {
     category: "startup",
     pattern: new RegExp(`^usb_startup schema=v1 stage=(${stages}) state=(entered|failed|complete) first_failure=(none|${stages}) uptime_ms=(\\d{1,16}) redacted=true$`, "u"),
     fields: ["stage", "state", "first_failure", "uptime_ms"],

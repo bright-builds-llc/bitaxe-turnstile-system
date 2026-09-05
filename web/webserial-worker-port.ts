@@ -4,6 +4,7 @@ import {
   WorkerSerialFramer,
   type WorkerSerialEnvelope,
   serialFailure,
+  serialFailureFor,
 } from "./worker-serial";
 
 /** Minimal direct Web Serial surface; production uses navigator.serial. */
@@ -114,6 +115,8 @@ export class WorkerSerialChannel {
   readonly #pending: PendingWrite[] = [];
   #writing = false;
   #closed = false;
+  #portClosed = false;
+  #maybeClosing: Promise<void> | undefined;
   #sequence = 0;
   readonly #reading: Promise<void>;
   constructor(
@@ -126,8 +129,8 @@ export class WorkerSerialChannel {
     if (!port.readable || !port.writable) throw serialFailure("streams");
     this.#reader = port.readable.getReader();
     this.#writer = port.writable.getWriter();
-    this.#reading = this.#read(receive).catch(() => {
-      if (!this.#closed) failure(serialFailure("read_failed"));
+    this.#reading = this.#read(receive).catch((error: unknown) => {
+      if (!this.#closed) failure(serialFailureFor(error, "read_failed"));
     });
   }
   send(frame: WorkerSerialEnvelope): Promise<void> {
@@ -183,8 +186,11 @@ export class WorkerSerialChannel {
       for (const frame of this.#framer.push(result.value)) receive(frame);
     }
   }
-  async close(): Promise<void> {
-    if (this.#closed) return;
+  get portClosed(): boolean { return this.#portClosed; }
+  close(): Promise<void> {
+    return this.#maybeClosing ??= this.#finishClose();
+  }
+  async #finishClose(): Promise<void> {
     this.#closed = true;
     for (const queued of this.#pending.splice(0))
       queued.reject(serialFailure("closed"));
@@ -211,7 +217,9 @@ export class WorkerSerialChannel {
       errors.push(error);
     }
     try {
-      await boundedSerial(this.port.close(), 1_000);
+      // The owner bounds its caller while retaining this native settlement promise.
+      await this.port.close();
+      this.#portClosed = true;
     } catch (error) {
       errors.push(error);
     }

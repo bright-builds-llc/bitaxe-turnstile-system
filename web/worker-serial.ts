@@ -1,3 +1,5 @@
+import { serialFailure } from "./worker-serial-errors";
+export { serialFailure, serialFailureFor, workerSerialFailureCategory } from "./worker-serial-errors";
 import { maybeWorkerSerialDiagnostic, type WorkerSerialDiagnostic } from "./worker-serial-diagnostics";
 import { parseWorkerSerialJson } from "./worker-serial-lexeme";
 import { canonicalJson } from "./headless-values";
@@ -219,7 +221,4 @@ export class WorkerSerialPeer {
   revoke(): void {
     this.#revoked = true;
   }
-}
-export function serialFailure(category: string): Error {
-  return new Error(`Worker Serial ${category}`);
 }

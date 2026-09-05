@@ -28,12 +28,21 @@ export class WorkerSerialPortOwner {
   }
   async #finishClose() {
     const opened = this.#maybeOpening ? await this.#maybeOpening : false;
-    if (opened) {
-      if (this.#maybeChannel) await this.#maybeChannel.close();
-      else if (this.#maybePort) await this.#maybePort.close();
+    try {
+      if (opened) {
+        if (this.#maybeChannel) await this.#maybeChannel.close();
+        else if (this.#maybePort) await this.#maybePort.close();
+      }
+    } catch (error) {
+      // A prior stream error still propagates, but confirmed native closure releases ownership.
+      if (this.#maybeChannel?.portClosed) this.#release();
+      throw error;
     }
-    // A failed or pending close retains the lock. Late success releases it, never reconnects.
-    this.release();
+    this.#release();
+  }
+  #release() {
+    if (this.#released) return;
     this.#released = true;
+    this.release();
   }
 }
