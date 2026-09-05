@@ -5,6 +5,18 @@ const allocationStages = "early_identity|hardware|runtime_services|storage_http|
 type Grammar = { category: string; pattern: RegExp; fields: readonly string[]; numeric: readonly string[] };
 const grammars: readonly Grammar[] = [
   {
+    category: "serial_rx_failure", pattern: /^usb_rx_failure schema=v1 stage=(read|framing|envelope|sequence|heartbeat_payload|heartbeat_timeout|control_allocation|control_queue|unexpected_kind|session_revoked) observed_bytes=(\d{1,5}) redacted=true$/u,
+    fields: ["stage", "observed_bytes"], numeric: ["observed_bytes"],
+  },
+  {
+    category: "storage_http_failure", pattern: /^storage_http_failure schema=v1 phase=(spiffs_register|spiffs_info|http_netif|http_deferred_worker|http_server|http_routes|http_telemetry_worker) error=(no_memory|not_found|invalid_state|invalid_argument|mount_failed|handler_exists|handlers_full|http_task|socket_setup|timeout|io_error|other) redacted=true$/u,
+    fields: ["phase", "error"], numeric: [],
+  },
+  {
+    category: "storage_http_status", pattern: /^storage_http_status schema=v1 spiffs_available=(true|false) http_ready=(true|false) redacted=true$/u,
+    fields: ["spiffs_available", "http_ready"], numeric: [],
+  },
+  {
     category: "serial_tx_failure", pattern: /^usb_tx_failure schema=v1 stage=(write|write_timeout|flush_timeout) elapsed_ms=(\d{1,10}) queued_bytes=(\d{1,5}) record_bytes=(\d{1,5}) redacted=true$/u,
     fields: ["stage", "elapsed_ms", "queued_bytes", "record_bytes"], numeric: ["elapsed_ms", "queued_bytes", "record_bytes"]
   },
@@ -77,6 +89,7 @@ export function maybeWorkerSerialDiagnostic(line: string): WorkerSerialDiagnosti
       if (typeof field === "number" && !["uptime_ms", "boot_ordinal"].includes(key) && field > 0xffffffff) return undefined;
       value[key] = field;
     }
+    if (typeof value.observed_bytes === "number" && value.observed_bytes > 66560) return undefined;
     if (value.boot_ordinal === 0 || value.requested_bytes === 0 || value.line === 0) return undefined;
     if (value.state === "failed" && value.first_failure === "none") return undefined;
     if (typeof value.record_bytes === "number" && (value.record_bytes > 66560 || Number(value.queued_bytes) > value.record_bytes)) return undefined;

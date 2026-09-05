@@ -290,7 +290,7 @@ export async function serialHarness(
       if (active) throw new Error("probe during lease");
       const payload = exactSerialRecord(request.payload, ["padding", "responsePaddingBytes"]);
       if (typeof payload.padding !== "string" || !Number.isSafeInteger(payload.responsePaddingBytes)) throw new Error("fixture probe payload");
-      reply(request, { padding: payload.padding.padEnd(Number(payload.responsePaddingBytes), "x") });
+      reply(request, { padding: payload.padding.padEnd(Number(payload.responsePaddingBytes), "x"), requestPaddingBytes: payload.padding.length });
       return;
     }
     if (["pause", "cancel", "restore"].includes(String(request.command))) {

@@ -46,3 +46,20 @@ test("code identity and allocation metadata remain closed non-authoritative obse
   ];
   for (const line of lines) expect(maybeWorkerSerialDiagnostic(line)?.authoritative).toBeFalse();
 });
+
+
+test("receive and storage diagnostics retain closed stages without arbitrary error text", () => {
+  // Arrange
+  const lines = [
+    "usb_rx_failure schema=v1 stage=heartbeat_timeout observed_bytes=4096 redacted=true",
+    "storage_http_failure schema=v1 phase=http_server error=no_memory redacted=true",
+    "storage_http_status schema=v1 spiffs_available=true http_ready=false redacted=true",
+  ];
+  // Act / Assert
+  for (const line of lines) {
+    expect(maybeWorkerSerialDiagnostic(line)?.authoritative).toBeFalse();
+    expect(maybeWorkerSerialDiagnostic(`${line} secret=synthetic`)).toBeUndefined();
+  }
+  expect(maybeWorkerSerialDiagnostic(lines[0]!.replace("4096", "66561"))).toBeUndefined();
+  expect(maybeWorkerSerialDiagnostic(lines[1]!.replace("no_memory", "synthetic-secret"))).toBeUndefined();
+});
