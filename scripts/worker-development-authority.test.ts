@@ -12,14 +12,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import controllerFixtures from "../conformance/bwg-worker-controller-0.3/fixtures.json";
-import usbFixtures from "../conformance/bwg-worker-usb-0.2/fixtures.json";
-import startInputFixture from "../conformance/bwg-worker-deployment-trust-0.1/start-input.json";
-import {
-  parseWorkerDeploymentTrust,
-} from "../web/worker-deployment-trust";
-import { verifyWorkerControllerCapabilityV03 } from "../web/worker-controller-v03";
-import { parseWorkerUsbApplicationDescriptor } from "../web/worker-usb-profile";
+import controllerFixtures from "../conformance/bwg-worker-controller-0.4/fixtures.json";
+import usbFixtures from "../conformance/bwg-worker-serial-0.1/fixtures.json";
+import startInputFixture from "../conformance/bwg-worker-deployment-trust-0.2/start-input.json";
+import { parseWorkerDeploymentTrust } from "../web/worker-deployment-trust";
+import { verifyWorkerControllerCapability } from "../web/worker-controller";
+import { parseWorkerSerialManifest } from "../web/worker-serial";
 import {
   verifyWorkerLeaseAuthorization,
   type WorkerLeaseAuthorizationInput,
@@ -32,17 +30,20 @@ test("initializes separate protected development authority keys without printing
 
   try {
     // Act
-    const process = Bun.spawn([
-      "bun",
-      "scripts/worker-development-authority.ts",
-      "init",
-      "--directory",
-      directory,
-    ], {
-      cwd: import.meta.dir + "/..",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const process = Bun.spawn(
+      [
+        "bun",
+        "scripts/worker-development-authority.ts",
+        "init",
+        "--directory",
+        directory,
+      ],
+      {
+        cwd: import.meta.dir + "/..",
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
     const [exitCode, stdout, stderr] = await Promise.all([
       process.exited,
       new Response(process.stdout).text(),
@@ -52,17 +53,29 @@ test("initializes separate protected development authority keys without printing
     // Assert
     expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
     expect(stdout).toContain("development_authority=initialized");
-    const updatePrivate = await readFile(join(directory, "update-private.json"), "utf8");
-    const leasePrivate = await readFile(join(directory, "lease-private.json"), "utf8");
+    const updatePrivate = await readFile(
+      join(directory, "update-private.json"),
+      "utf8",
+    );
+    const leasePrivate = await readFile(
+      join(directory, "lease-private.json"),
+      "utf8",
+    );
     const trust = await readFile(join(directory, "trust.json"), "utf8");
-    expect(updatePrivate).toContain("\"d\":");
-    expect(leasePrivate).toContain("\"d\":");
-    expect(trust).not.toContain("\"d\":");
-    expect(stdout).not.toContain("\"d\":");
+    expect(updatePrivate).toContain('"d":');
+    expect(leasePrivate).toContain('"d":');
+    expect(trust).not.toContain('"d":');
+    expect(stdout).not.toContain('"d":');
     expect((await stat(directory)).mode & 0o077).toBe(0);
-    expect((await stat(join(directory, "update-private.json"))).mode & 0o077).toBe(0);
-    expect((await stat(join(directory, "lease-private.json"))).mode & 0o077).toBe(0);
-    expect(JSON.parse(updatePrivate).activeKid).not.toBe(JSON.parse(leasePrivate).activeKid);
+    expect(
+      (await stat(join(directory, "update-private.json"))).mode & 0o077,
+    ).toBe(0);
+    expect(
+      (await stat(join(directory, "lease-private.json"))).mode & 0o077,
+    ).toBe(0);
+    expect(JSON.parse(updatePrivate).activeKid).not.toBe(
+      JSON.parse(leasePrivate).activeKid,
+    );
   } finally {
     await rm(parent, { recursive: true });
   }
@@ -70,7 +83,9 @@ test("initializes separate protected development authority keys without printing
 
 test("allocates and signs one full-input Start authorization without stdout secrets", async () => {
   // Arrange
-  const parent = await mkdtemp(join(tmpdir(), "bwg-worker-authority-sign-test-"));
+  const parent = await mkdtemp(
+    join(tmpdir(), "bwg-worker-authority-sign-test-"),
+  );
   const directory = join(parent, "authority");
   const inputPath = join(parent, "start.private.json");
   const outputPath = join(parent, "authorization.private.json");
@@ -79,7 +94,7 @@ test("allocates and signs one full-input Start authorization without stdout secr
     activeChallengeId: "challenge_00000000000000000000000000000001",
     controlSessionBindingSha256: "S".repeat(43),
     request: {
-      protocolVersion: "bwg-worker-controller/0.3",
+      protocolVersion: "bwg-worker-controller/0.4",
       leaseId: "lease_fixture_03",
       challengeId: "challenge_00000000000000000000000000000001",
       durationMilliseconds: 60_000,
@@ -120,11 +135,13 @@ test("allocates and signs one full-input Start authorization without stdout secr
     const trust = parseWorkerDeploymentTrust(
       JSON.parse(await readFile(join(directory, "trust.json"), "utf8")),
     );
-    await expect(verifyWorkerLeaseAuthorization(
-      artifact.authorization,
-      input,
-      trust.workLeaseAuthority,
-    )).resolves.toEqual({
+    await expect(
+      verifyWorkerLeaseAuthorization(
+        artifact.authorization,
+        input,
+        trust.workLeaseAuthority,
+      ),
+    ).resolves.toEqual({
       keyId: trust.workLeaseAuthority.keys[0]?.kid,
       sequence: 1n,
     });
@@ -135,7 +152,9 @@ test("allocates and signs one full-input Start authorization without stdout secr
 
 test("signs the exact Ultra 205 capability with the separate Update Authority", async () => {
   // Arrange
-  const parent = await mkdtemp(join(tmpdir(), "bwg-worker-capability-sign-test-"));
+  const parent = await mkdtemp(
+    join(tmpdir(), "bwg-worker-capability-sign-test-"),
+  );
   const directory = join(parent, "authority");
   const inputPath = join(parent, "capability.json");
   const outputPath = join(parent, "signed-capability.json");
@@ -147,10 +166,10 @@ test("signs the exact Ultra 205 capability with the separate Update Authority", 
       board: {
         model: "bitaxe-ultra",
         revision: "205",
-        usbTransport: "web_usb",
+        usbTransport: "web_serial",
       },
     },
-    descriptor: usbFixtures.topology.application.descriptor,
+    manifest: usbFixtures.manifest,
   };
 
   try {
@@ -178,11 +197,15 @@ test("signs the exact Ultra 205 capability with the separate Update Authority", 
       JSON.parse(await readFile(join(directory, "trust.json"), "utf8")),
     );
     const capability = JSON.parse(await readFile(outputPath, "utf8"));
-    await expect(verifyWorkerControllerCapabilityV03(
-      capability,
-      parseWorkerUsbApplicationDescriptor(input.descriptor),
-      trust.updateAuthority.keys,
-    )).resolves.toMatchObject({ board: { model: "bitaxe-ultra", revision: "205" } });
+    await expect(
+      verifyWorkerControllerCapability(
+        capability,
+        parseWorkerSerialManifest(input.manifest),
+        trust.updateAuthority.keys,
+      ),
+    ).resolves.toMatchObject({
+      board: { model: "bitaxe-ultra", revision: "205" },
+    });
   } finally {
     await rm(parent, { recursive: true });
   }
@@ -199,86 +222,113 @@ test("rotates with overlap and retires only an explicitly named inactive key", a
 
   try {
     await run(["init", "--directory", directory]);
-    const initial = JSON.parse(await readFile(join(directory, "trust.json"), "utf8"));
+    const initial = JSON.parse(
+      await readFile(join(directory, "trust.json"), "utf8"),
+    );
     const oldUpdateKid = initial.updateAuthority.keys[0].kid;
     const oldLeaseKid = initial.workLeaseAuthority.keys[0].kid;
-    const startInput = structuredClone(startInputFixture) as WorkerLeaseAuthorizationInput;
-    await writeFile(startInputPath, JSON.stringify(startInput), { mode: 0o600 });
+    const startInput = structuredClone(
+      startInputFixture,
+    ) as WorkerLeaseAuthorizationInput;
+    await writeFile(startInputPath, JSON.stringify(startInput), {
+      mode: 0o600,
+    });
     await chmod(startInputPath, 0o600);
     await writeFile(
       capabilityInputPath,
       await readFile(
-        join(import.meta.dir, "../conformance/bwg-worker-deployment-trust-0.1/ultra205-capability-input.json"),
+        join(
+          import.meta.dir,
+          "../conformance/bwg-worker-deployment-trust-0.2/ultra205-capability-input.json",
+        ),
       ),
       { mode: 0o644 },
     );
     await run([
-      "sign-start", "--directory", directory, "--input", startInputPath,
-      "--output", startOutputPath,
+      "sign-start",
+      "--directory",
+      directory,
+      "--input",
+      startInputPath,
+      "--output",
+      startOutputPath,
     ]);
     await run([
-      "sign-capability", "--directory", directory, "--input", capabilityInputPath,
-      "--output", capabilityOutputPath,
+      "sign-capability",
+      "--directory",
+      directory,
+      "--input",
+      capabilityInputPath,
+      "--output",
+      capabilityOutputPath,
     ]);
-    const oldAuthorization = JSON.parse(await readFile(startOutputPath, "utf8"));
-    const oldCapability = JSON.parse(await readFile(capabilityOutputPath, "utf8"));
+    const oldAuthorization = JSON.parse(
+      await readFile(startOutputPath, "utf8"),
+    );
+    const oldCapability = JSON.parse(
+      await readFile(capabilityOutputPath, "utf8"),
+    );
 
     // Act
-    await expect(run([
-      "rotate",
-      "--directory",
-      directory,
-      "--role",
-      "update",
-    ])).resolves.toMatchObject({ exitCode: 0, stderr: "" });
-    await expect(run([
-      "rotate",
-      "--directory",
-      directory,
-      "--role",
-      "lease",
-    ])).resolves.toMatchObject({ exitCode: 0, stderr: "" });
-    const overlapped = JSON.parse(await readFile(join(directory, "trust.json"), "utf8"));
+    await expect(
+      run(["rotate", "--directory", directory, "--role", "update"]),
+    ).resolves.toMatchObject({ exitCode: 0, stderr: "" });
+    await expect(
+      run(["rotate", "--directory", directory, "--role", "lease"]),
+    ).resolves.toMatchObject({ exitCode: 0, stderr: "" });
+    const overlapped = JSON.parse(
+      await readFile(join(directory, "trust.json"), "utf8"),
+    );
     const overlapTrust = parseWorkerDeploymentTrust(overlapped);
-    await expect(verifyWorkerLeaseAuthorization(
-      oldAuthorization.authorization,
-      startInput,
-      overlapTrust.workLeaseAuthority,
-    )).resolves.toMatchObject({ keyId: oldLeaseKid });
-    await expect(verifyWorkerControllerCapabilityV03(
-      oldCapability,
-      parseWorkerUsbApplicationDescriptor(
-        JSON.parse(await readFile(capabilityInputPath, "utf8")).descriptor,
+    await expect(
+      verifyWorkerLeaseAuthorization(
+        oldAuthorization.authorization,
+        startInput,
+        overlapTrust.workLeaseAuthority,
       ),
-      overlapTrust.updateAuthority.keys,
-    )).resolves.toMatchObject({ board: { revision: "205" } });
-    await expect(run([
-      "retire",
-      "--directory",
-      directory,
-      "--role",
-      "update",
-      "--kid",
-      oldUpdateKid,
-      "--confirm-destructive-retirement",
-      oldUpdateKid,
-    ])).resolves.toMatchObject({ exitCode: 0, stderr: "" });
-    await expect(run([
-      "retire",
-      "--directory",
-      directory,
-      "--role",
-      "lease",
-      "--kid",
-      oldLeaseKid,
-      "--confirm-destructive-retirement",
-      oldLeaseKid,
-    ])).resolves.toMatchObject({ exitCode: 0, stderr: "" });
+    ).resolves.toMatchObject({ keyId: oldLeaseKid });
+    await expect(
+      verifyWorkerControllerCapability(
+        oldCapability,
+        parseWorkerSerialManifest(
+          JSON.parse(await readFile(capabilityInputPath, "utf8")).manifest,
+        ),
+        overlapTrust.updateAuthority.keys,
+      ),
+    ).resolves.toMatchObject({ board: { revision: "205" } });
+    await expect(
+      run([
+        "retire",
+        "--directory",
+        directory,
+        "--role",
+        "update",
+        "--kid",
+        oldUpdateKid,
+        "--confirm-destructive-retirement",
+        oldUpdateKid,
+      ]),
+    ).resolves.toMatchObject({ exitCode: 0, stderr: "" });
+    await expect(
+      run([
+        "retire",
+        "--directory",
+        directory,
+        "--role",
+        "lease",
+        "--kid",
+        oldLeaseKid,
+        "--confirm-destructive-retirement",
+        oldLeaseKid,
+      ]),
+    ).resolves.toMatchObject({ exitCode: 0, stderr: "" });
 
     // Assert
     expect(overlapped.updateAuthority.keys).toHaveLength(2);
     expect(overlapped.workLeaseAuthority.keys).toHaveLength(2);
-    const retired = JSON.parse(await readFile(join(directory, "trust.json"), "utf8"));
+    const retired = JSON.parse(
+      await readFile(join(directory, "trust.json"), "utf8"),
+    );
     expect(retired.updateAuthority.keys).toHaveLength(1);
     expect(retired.workLeaseAuthority.keys).toHaveLength(1);
     const sequences = JSON.parse(
@@ -286,18 +336,22 @@ test("rotates with overlap and retires only an explicitly named inactive key", a
     ).sequences;
     expect(sequences[oldLeaseKid]).toBeUndefined();
     const retiredTrust = parseWorkerDeploymentTrust(retired);
-    await expect(verifyWorkerLeaseAuthorization(
-      oldAuthorization.authorization,
-      startInput,
-      retiredTrust.workLeaseAuthority,
-    )).rejects.toThrow("Worker Lease authorization is invalid");
-    await expect(verifyWorkerControllerCapabilityV03(
-      oldCapability,
-      parseWorkerUsbApplicationDescriptor(
-        JSON.parse(await readFile(capabilityInputPath, "utf8")).descriptor,
+    await expect(
+      verifyWorkerLeaseAuthorization(
+        oldAuthorization.authorization,
+        startInput,
+        retiredTrust.workLeaseAuthority,
       ),
-      retiredTrust.updateAuthority.keys,
-    )).rejects.toThrow("capability attestation is invalid");
+    ).rejects.toThrow("Worker Lease authorization is invalid");
+    await expect(
+      verifyWorkerControllerCapability(
+        oldCapability,
+        parseWorkerSerialManifest(
+          JSON.parse(await readFile(capabilityInputPath, "utf8")).manifest,
+        ),
+        retiredTrust.updateAuthority.keys,
+      ),
+    ).rejects.toThrow("capability attestation is invalid");
   } finally {
     await rm(parent, { recursive: true });
   }
@@ -305,7 +359,9 @@ test("rotates with overlap and retires only an explicitly named inactive key", a
 
 test("concurrent signers never reuse a durable Work Lease sequence", async () => {
   // Arrange
-  const parent = await mkdtemp(join(tmpdir(), "bwg-worker-sequence-race-test-"));
+  const parent = await mkdtemp(
+    join(tmpdir(), "bwg-worker-sequence-race-test-"),
+  );
   const directory = join(parent, "authority");
   const inputPath = join(parent, "start.private.json");
   const input: WorkerLeaseAuthorizationInput = {
@@ -313,7 +369,7 @@ test("concurrent signers never reuse a durable Work Lease sequence", async () =>
     activeChallengeId: "challenge_00000000000000000000000000000001",
     controlSessionBindingSha256: "S".repeat(43),
     request: {
-      protocolVersion: "bwg-worker-controller/0.3",
+      protocolVersion: "bwg-worker-controller/0.4",
       leaseId: "lease_fixture_03",
       challengeId: "challenge_00000000000000000000000000000001",
       durationMilliseconds: 60_000,
@@ -333,21 +389,26 @@ test("concurrent signers never reuse a durable Work Lease sequence", async () =>
 
     // Act
     const results = await Promise.all(
-      Array.from({ length: 8 }, (_, index) => run([
-        "sign-start",
-        "--directory",
-        directory,
-        "--input",
-        inputPath,
-        "--output",
-        join(parent, `authorization-${String(index)}.json`),
-      ])),
+      Array.from({ length: 8 }, (_, index) =>
+        run([
+          "sign-start",
+          "--directory",
+          directory,
+          "--input",
+          inputPath,
+          "--output",
+          join(parent, `authorization-${String(index)}.json`),
+        ]),
+      ),
     );
     const successfulSequences: string[] = [];
     for (const [index, result] of results.entries()) {
       if (result.exitCode !== 0) continue;
       const artifact = JSON.parse(
-        await readFile(join(parent, `authorization-${String(index)}.json`), "utf8"),
+        await readFile(
+          join(parent, `authorization-${String(index)}.json`),
+          "utf8",
+        ),
       );
       successfulSequences.push(artifact.sequence);
     }
@@ -362,7 +423,9 @@ test("concurrent signers never reuse a durable Work Lease sequence", async () =>
 
 test("revalidates that private authority operations remain outside Git", async () => {
   // Arrange
-  const parent = await mkdtemp(join(tmpdir(), "bwg-worker-moved-authority-test-"));
+  const parent = await mkdtemp(
+    join(tmpdir(), "bwg-worker-moved-authority-test-"),
+  );
   const original = join(parent, "authority");
   const repository = join(parent, "repository");
   const moved = join(repository, "authority");
@@ -374,7 +437,11 @@ test("revalidates that private authority operations remain outside Git", async (
 
     // Act
     const result = await run([
-      "rotate", "--directory", moved, "--role", "update",
+      "rotate",
+      "--directory",
+      moved,
+      "--role",
+      "update",
     ]);
 
     // Assert
@@ -393,23 +460,31 @@ test("recovers a journaled rotation before the next private-key operation", asyn
   const outputPath = join(parent, "signed-capability.json");
   await writeFile(
     inputPath,
-    await readFile(join(
-      import.meta.dir,
-      "../conformance/bwg-worker-deployment-trust-0.1/ultra205-capability-input.json",
-    )),
+    await readFile(
+      join(
+        import.meta.dir,
+        "../conformance/bwg-worker-deployment-trust-0.2/ultra205-capability-input.json",
+      ),
+    ),
     { mode: 0o644 },
   );
 
   try {
     await run(["init", "--directory", directory]);
-    const interrupted = await run([
-      "rotate", "--directory", directory, "--role", "update",
-    ], { BWG_WORKER_AUTHORITY_FAIL_AFTER: "after_trust" });
+    const interrupted = await run(
+      ["rotate", "--directory", directory, "--role", "update"],
+      { BWG_WORKER_AUTHORITY_FAIL_AFTER: "after_trust" },
+    );
 
     // Act
     const recovered = await run([
-      "sign-capability", "--directory", directory, "--input", inputPath,
-      "--output", outputPath,
+      "sign-capability",
+      "--directory",
+      directory,
+      "--input",
+      inputPath,
+      "--output",
+      outputPath,
     ]);
 
     // Assert
@@ -419,14 +494,18 @@ test("recovers a journaled rotation before the next private-key operation", asyn
       JSON.parse(await readFile(join(directory, "trust.json"), "utf8")),
     );
     expect(trust.updateAuthority.keys).toHaveLength(2);
-    await expect(stat(join(directory, "authority-journal.json"))).rejects.toThrow();
-    await expect(verifyWorkerControllerCapabilityV03(
-      JSON.parse(await readFile(outputPath, "utf8")),
-      parseWorkerUsbApplicationDescriptor(
-        JSON.parse(await readFile(inputPath, "utf8")).descriptor,
+    await expect(
+      stat(join(directory, "authority-journal.json")),
+    ).rejects.toThrow();
+    await expect(
+      verifyWorkerControllerCapability(
+        JSON.parse(await readFile(outputPath, "utf8")),
+        parseWorkerSerialManifest(
+          JSON.parse(await readFile(inputPath, "utf8")).manifest,
+        ),
+        trust.updateAuthority.keys,
       ),
-      trust.updateAuthority.keys,
-    )).resolves.toMatchObject({ board: { revision: "205" } });
+    ).resolves.toMatchObject({ board: { revision: "205" } });
   } finally {
     await rm(parent, { recursive: true });
   }
@@ -434,7 +513,9 @@ test("recovers a journaled rotation before the next private-key operation", asyn
 
 test("serializes concurrent authority rotations without losing either key", async () => {
   // Arrange
-  const parent = await mkdtemp(join(tmpdir(), "bwg-worker-rotation-race-test-"));
+  const parent = await mkdtemp(
+    join(tmpdir(), "bwg-worker-rotation-race-test-"),
+  );
   const directory = join(parent, "authority");
 
   try {
@@ -459,27 +540,42 @@ test("serializes concurrent authority rotations without losing either key", asyn
 
 test("fails closed instead of wrapping an exhausted durable sequence", async () => {
   // Arrange
-  const parent = await mkdtemp(join(tmpdir(), "bwg-worker-sequence-limit-test-"));
+  const parent = await mkdtemp(
+    join(tmpdir(), "bwg-worker-sequence-limit-test-"),
+  );
   const directory = join(parent, "authority");
   const inputPath = join(parent, "start.private.json");
   const outputPath = join(parent, "authorization.private.json");
-  const input = structuredClone(startInputFixture) as WorkerLeaseAuthorizationInput;
+  const input = structuredClone(
+    startInputFixture,
+  ) as WorkerLeaseAuthorizationInput;
 
   try {
     await run(["init", "--directory", directory]);
     await writeFile(inputPath, JSON.stringify(input), { mode: 0o600 });
-    const trust = JSON.parse(await readFile(join(directory, "trust.json"), "utf8"));
-    await writeFile(join(directory, "lease-sequence.json"), JSON.stringify({
-      profile: "bwg-worker-lease-sequence/0.1",
-      sequences: {
-        [trust.workLeaseAuthority.keys[0].kid]: "18446744073709551615",
-      },
-    }), { mode: 0o600 });
+    const trust = JSON.parse(
+      await readFile(join(directory, "trust.json"), "utf8"),
+    );
+    await writeFile(
+      join(directory, "lease-sequence.json"),
+      JSON.stringify({
+        profile: "bwg-worker-lease-sequence/0.1",
+        sequences: {
+          [trust.workLeaseAuthority.keys[0].kid]: "18446744073709551615",
+        },
+      }),
+      { mode: 0o600 },
+    );
 
     // Act
     const result = await run([
-      "sign-start", "--directory", directory, "--input", inputPath,
-      "--output", outputPath,
+      "sign-start",
+      "--directory",
+      directory,
+      "--input",
+      inputPath,
+      "--output",
+      outputPath,
     ]);
 
     // Assert
@@ -494,16 +590,15 @@ async function run(
   args: readonly string[],
   environment: Readonly<Record<string, string>> = {},
 ) {
-  const child = Bun.spawn([
-    "bun",
-    "scripts/worker-development-authority.ts",
-    ...args,
-  ], {
-    cwd: import.meta.dir + "/..",
-    env: { ...globalThis.process.env, ...environment },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  const child = Bun.spawn(
+    ["bun", "scripts/worker-development-authority.ts", ...args],
+    {
+      cwd: import.meta.dir + "/..",
+      env: { ...globalThis.process.env, ...environment },
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
   const [exitCode, stdout, stderr] = await Promise.all([
     child.exited,
     new Response(child.stdout).text(),

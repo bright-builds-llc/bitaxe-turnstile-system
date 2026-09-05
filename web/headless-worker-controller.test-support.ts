@@ -1,4 +1,4 @@
-import fixtures from "../conformance/bwg-worker-controller-0.1/fixtures.json";
+import fixtures from "../conformance/bwg-worker-controller-0.4/fixtures.json";
 import headlessFixtures from "../conformance/bwg-0.1/headless-work-consent-vectors.json";
 import type {
   WorkerController,
@@ -11,13 +11,13 @@ export function recordingWorkerController(calls: string[]): WorkerController {
   const baseline = (
     reason: WorkerControllerStatus["restoration"]["reason"],
   ): WorkerControllerStatus => ({
-    protocolVersion: "bwg-worker-controller/0.1",
+    protocolVersion: "bwg-worker-controller/0.4",
     state: "baseline",
     monotonicMilliseconds: 0,
     restoration: { status: "confirmed", ...(reason ? { reason } : {}) },
   });
   const mining: WorkerControllerStatus = {
-    protocolVersion: "bwg-worker-controller/0.1",
+    protocolVersion: "bwg-worker-controller/0.4",
     state: "mining",
     monotonicMilliseconds: 0,
     lease: {

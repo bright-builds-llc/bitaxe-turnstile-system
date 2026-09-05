@@ -6,22 +6,22 @@ import {
 import { isCanonicalPrimeSubgroupEd25519PublicKey } from "./ed25519-public-key";
 import { canonicalJson } from "./headless-values";
 import {
-  parseWorkerLeaseGrantV03,
-  parseWorkerLeaseRenewalV03,
-  type WorkerLeaseGrantV03,
-  type WorkerLeaseRenewalV03,
-} from "./worker-controller-v03";
+  parseWorkerLeaseGrant,
+  parseWorkerLeaseRenewal,
+  type WorkerLeaseGrant,
+  type WorkerLeaseRenewal,
+} from "./worker-controller";
 
 /** Canonical signed Work Lease authorization profile. */
 export const WORKER_LEASE_AUTHORIZATION_PROFILE =
-  "bwg-worker-lease-authorization/0.1" as const;
+  "bwg-worker-lease-authorization/0.2" as const;
 /** Role-separated deployment trust document profile. */
 export const WORKER_DEPLOYMENT_TRUST_PROFILE =
-  "bwg-worker-deployment-trust/0.1" as const;
+  "bwg-worker-deployment-trust/0.2" as const;
 /** Required compact-JWS protected-header type. */
 export const WORKER_LEASE_AUTHORIZATION_TYPE =
   "bwg-worker-lease-authorization+jws" as const;
-/** Controller 0.3 authorization-field byte limit. */
+/** Controller 0.4 authorization-field byte limit. */
 export const MAXIMUM_WORKER_LEASE_AUTHORIZATION_BYTES = 512;
 /** Largest durable unsigned Work Lease authority sequence. */
 export const MAXIMUM_WORKER_LEASE_AUTHORIZATION_SEQUENCE = (1n << 64n) - 1n;
@@ -42,13 +42,13 @@ export interface WorkerLeaseAuthorizationContextProvider {
 }
 
 /** Start request shape before the opaque authorization is attached. */
-export type AuthorizationlessWorkerLeaseGrantV03 = Omit<
-  WorkerLeaseGrantV03,
+export type AuthorizationlessWorkerLeaseGrant = Omit<
+  WorkerLeaseGrant,
   "authorization"
 >;
 /** Renew request shape before the opaque authorization is attached. */
-export type AuthorizationlessWorkerLeaseRenewalV03 = Omit<
-  WorkerLeaseRenewalV03,
+export type AuthorizationlessWorkerLeaseRenewal = Omit<
+  WorkerLeaseRenewal,
   "authorization"
 >;
 
@@ -58,13 +58,13 @@ export type WorkerLeaseAuthorizationInput =
       operation: "start";
       activeChallengeId: string;
       controlSessionBindingSha256: string;
-      request: AuthorizationlessWorkerLeaseGrantV03;
+      request: AuthorizationlessWorkerLeaseGrant;
     }
   | {
       operation: "renew";
       activeChallengeId: string;
       controlSessionBindingSha256: string;
-      request: AuthorizationlessWorkerLeaseRenewalV03;
+      request: AuthorizationlessWorkerLeaseRenewal;
     };
 
 /** Strict public Work Lease Authority verification key. */
@@ -82,7 +82,7 @@ export type WorkLeaseAuthorityJwk = JsonWebKey & {
 export type WorkLeaseAuthorityTrust = {
   profile: typeof WORKER_DEPLOYMENT_TRUST_PROFILE;
   issuer: string;
-  audience: "bwg-worker-controller/0.3";
+  audience: "bwg-worker-controller/0.4";
   role: "work_lease_authority";
   keys: readonly WorkLeaseAuthorityJwk[];
 };
@@ -308,7 +308,7 @@ function parseAuthorizationInput(input: unknown): WorkerLeaseAuthorizationInput 
   };
 }
 
-function authorizationlessGrant(input: unknown): AuthorizationlessWorkerLeaseGrantV03 {
+function authorizationlessGrant(input: unknown): AuthorizationlessWorkerLeaseGrant {
   const value = exactRecord(input, [
     "protocolVersion",
     "leaseId",
@@ -316,8 +316,8 @@ function authorizationlessGrant(input: unknown): AuthorizationlessWorkerLeaseGra
     "durationMilliseconds",
     "renewAfterMilliseconds",
     "stratum",
-  ]);
-  const parsed = parseWorkerLeaseGrantV03({
+  ], ["acceptanceCampaign"]);
+  const parsed = parseWorkerLeaseGrant({
     ...value,
     authorization: "authorization-is-verified-separately",
   });
@@ -327,14 +327,14 @@ function authorizationlessGrant(input: unknown): AuthorizationlessWorkerLeaseGra
 
 function authorizationlessRenewal(
   input: unknown,
-): AuthorizationlessWorkerLeaseRenewalV03 {
+): AuthorizationlessWorkerLeaseRenewal {
   const value = exactRecord(input, [
     "protocolVersion",
     "leaseId",
     "durationMilliseconds",
     "renewAfterMilliseconds",
   ]);
-  const parsed = parseWorkerLeaseRenewalV03({
+  const parsed = parseWorkerLeaseRenewal({
     ...value,
     authorization: "authorization-is-verified-separately",
   });
@@ -436,8 +436,8 @@ function parseTrustLabel(input: unknown): string {
   return input;
 }
 
-function parseAudience(input: unknown): "bwg-worker-controller/0.3" {
-  if (input !== "bwg-worker-controller/0.3") throw invalidAuthorization();
+function parseAudience(input: unknown): "bwg-worker-controller/0.4" {
+  if (input !== "bwg-worker-controller/0.4") throw invalidAuthorization();
   return input;
 }
 
@@ -454,12 +454,13 @@ function assertPrivateSigningKey(key: CryptoKey): void {
 function exactRecord(
   input: unknown,
   keys: readonly string[],
+  optional: readonly string[] = [],
 ): Record<string, unknown> {
   const value = record(input);
   const actual = Object.keys(value);
   if (
-    actual.length !== keys.length ||
-    !actual.every((key) => keys.includes(key))
+    keys.some((key) => !Object.hasOwn(value, key)) ||
+    !actual.every((key) => keys.includes(key) || optional.includes(key))
   ) {
     throw invalidAuthorization();
   }
@@ -469,6 +470,7 @@ function exactRecord(
 function jsonRecord(
   bytes: Uint8Array,
   keys: readonly string[],
+  optional: readonly string[] = [],
 ): Record<string, unknown> {
   return exactRecord(
     JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),

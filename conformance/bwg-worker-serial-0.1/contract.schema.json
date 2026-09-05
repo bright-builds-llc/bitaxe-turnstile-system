@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://brightbuilds.dev/schemas/bwg-worker-serial-0.1-fixtures.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "manifest",
+    "frames"
+  ],
+  "properties": {
+    "profile": {
+      "const": "bwg-worker-serial/0.1"
+    },
+    "manifest": {
+      "$ref": "#/$defs/manifest"
+    },
+    "frames": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "frame"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z_]+$"
+          },
+          "frame": {
+            "$ref": "#/$defs/envelope"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "transport",
+        "baudRate",
+        "framing",
+        "maximumControlPayloadBytes",
+        "maximumWireFrameBytes",
+        "heartbeatIntervalMilliseconds",
+        "heartbeatTimeoutMilliseconds",
+        "foregroundOnly"
+      ],
+      "properties": {
+        "profile": {
+          "const": "bwg-worker-serial/0.1"
+        },
+        "transport": {
+          "const": "esp32s3_usb_serial_jtag"
+        },
+        "baudRate": {
+          "const": 115200
+        },
+        "framing": {
+          "const": "utf8_ndjson"
+        },
+        "maximumControlPayloadBytes": {
+          "const": 65536
+        },
+        "maximumWireFrameBytes": {
+          "const": 66560
+        },
+        "heartbeatIntervalMilliseconds": {
+          "const": 1000
+        },
+        "heartbeatTimeoutMilliseconds": {
+          "const": 2800
+        },
+        "foregroundOnly": {
+          "const": true
+        }
+      }
+    },
+    "envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "kind",
+        "sessionId",
+        "sequence",
+        "payload"
+      ],
+      "properties": {
+        "profile": {
+          "const": "bwg-worker-serial/0.1"
+        },
+        "kind": {
+          "enum": [
+            "session",
+            "control",
+            "heartbeat",
+            "diagnostic"
+          ]
+        },
+        "sessionId": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{21}[AQgw]$"
+            }
+          ]
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "payload": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

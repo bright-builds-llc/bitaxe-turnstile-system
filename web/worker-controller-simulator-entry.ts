@@ -4,6 +4,6 @@ export {
   type SimulatedWorkerLeaseAuthorizationVerifier,
 } from "./simulated-worker-controller";
 export {
-  SimulatedWorkerControllerUsbExchange,
-  simulatedWorkerControllerUsbExchange,
-} from "./simulated-worker-controller-usb";
+  SimulatedWorkerControllerSerialExchange,
+  simulatedWorkerControllerSerialExchange,
+} from "./simulated-worker-controller-serial";

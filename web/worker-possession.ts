@@ -1,3 +1,4 @@
+import { serialToken, serialNonce } from "./worker-serial";
 import {
   decodeBase64Url,
   sha256Base64UrlBytes,
@@ -5,12 +6,12 @@ import {
 import { isCanonicalPrimeSubgroupEd25519PublicKey } from "./ed25519-public-key";
 import { canonicalJson } from "./headless-values";
 
-/** Independent pre-admission profile carried by the Worker USB 0.2 control function. */
-export const WORKER_POSSESSION_PROFILE = "bwg-worker-possession/0.1" as const;
+/** Independent pre-admission profile carried by the Worker Serial 0.1 control channel. */
+export const WORKER_POSSESSION_PROFILE = "bwg-worker-possession/0.2" as const;
 /** Canonical signed-claim profile for one fresh Local Device Possession Proof. */
-export const WORKER_POSSESSION_PROOF_PROFILE = "bwg-worker-possession-proof/0.1" as const;
+export const WORKER_POSSESSION_PROOF_PROFILE = "bwg-worker-possession-proof/0.2" as const;
 /** Domain separator for one verified possession transcript's authorization context. */
-export const WORKER_CONTROL_SESSION_PROFILE = "bwg-worker-control-session/0.1" as const;
+export const WORKER_CONTROL_SESSION_PROFILE = "bwg-worker-control-session/0.2" as const;
 
 /** Closed reason separating first establishment from same-Worker reacquisition. */
 export type WorkerPossessionPurpose = "initial_admission" | "transport_reacquisition";
@@ -19,7 +20,10 @@ type WorkerPossessionBindingFields = {
   possessionNonce: string;
   challengeBindingSha256: string;
   controllerCapabilitySha256: string;
-  applicationDescriptorSha256: string;
+  serialManifestSha256: string;
+  sessionId: string;
+  hostNonce: string;
+  deviceNonce: string;
 };
 
 /** Initial establishment forbids an already trusted Device Identity fingerprint. */
@@ -27,6 +31,7 @@ export type InitialWorkerPossessionBinding = WorkerPossessionBindingFields & {
   requestId: string;
   purpose: "initial_admission";
   expectedFirmwareSourceCommit?: string;
+  expectedAppElfSha256?: string;
   maybeExpectedDeviceIdentityFingerprint?: never;
 };
 
@@ -35,6 +40,7 @@ export type ReacquisitionWorkerPossessionBinding = WorkerPossessionBindingFields
   requestId: string;
   purpose: "transport_reacquisition";
   expectedFirmwareSourceCommit?: string;
+  expectedAppElfSha256?: string;
   expectedDeviceIdentityFingerprint: string;
 };
 
@@ -43,7 +49,7 @@ export type WorkerPossessionBinding =
   | InitialWorkerPossessionBinding
   | ReacquisitionWorkerPossessionBinding;
 
-/** Strict request sent before any Controller 0.3 Work Lease command. */
+/** Strict request sent before any Controller 0.4 Work Lease command. */
 export type WorkerPossessionRequest = {
   profile: typeof WORKER_POSSESSION_PROFILE;
   requestId: string;
@@ -65,6 +71,7 @@ export type WorkerDeviceIdentityJwk = {
 export type WorkerPossessionClaims = WorkerPossessionRequest["payload"] & {
   profile: typeof WORKER_POSSESSION_PROOF_PROFILE;
   firmwareSourceCommit: string;
+  appElfSha256: string;
   deviceIdentityJwk: WorkerDeviceIdentityJwk;
 };
 
@@ -87,12 +94,13 @@ export type WorkerPossessionResponse =
 export type VerifiedWorkerPossession = {
   deviceIdentityFingerprint: string;
   firmwareSourceCommit: string;
+  appElfSha256: string;
   controlSessionBindingSha256: string;
 };
 
 /** One fresh bound transcript whose request and live proof must never be logged or persisted. */
 export interface WorkerPossessionChallenge {
-  /** Single request to send once over the admitted Worker USB 0.2 control function. */
+  /** Single request to send once over the admitted Worker Serial 0.1 control channel. */
   readonly request: WorkerPossessionRequest;
   /** Consumes this challenge exactly once, including on failed or concurrent verification. */
   verify(response: unknown): Promise<VerifiedWorkerPossession>;
@@ -134,7 +142,10 @@ export function parseWorkerPossessionRequest(input: unknown): WorkerPossessionRe
       "possessionNonce",
       "challengeBindingSha256",
       "controllerCapabilitySha256",
-      "applicationDescriptorSha256",
+      "serialManifestSha256",
+      "sessionId",
+      "hostNonce",
+      "deviceNonce",
     ]);
     if (
       typeof value.requestId !== "string" ||
@@ -143,7 +154,7 @@ export function parseWorkerPossessionRequest(input: unknown): WorkerPossessionRe
       !digest(payload.possessionNonce) ||
       !digest(payload.challengeBindingSha256) ||
       !digest(payload.controllerCapabilitySha256) ||
-      !digest(payload.applicationDescriptorSha256)
+      !digest(payload.serialManifestSha256) || !serialToken(payload.sessionId) || !serialNonce(payload.hostNonce) || !serialNonce(payload.deviceNonce)
     ) {
       throw invalidRequest();
     }
@@ -156,7 +167,10 @@ export function parseWorkerPossessionRequest(input: unknown): WorkerPossessionRe
         possessionNonce: payload.possessionNonce,
         challengeBindingSha256: payload.challengeBindingSha256,
         controllerCapabilitySha256: payload.controllerCapabilitySha256,
-        applicationDescriptorSha256: payload.applicationDescriptorSha256,
+        serialManifestSha256: payload.serialManifestSha256,
+      sessionId: payload.sessionId,
+      hostNonce: payload.hostNonce,
+      deviceNonce: payload.deviceNonce,
       },
     };
   } catch {
@@ -182,14 +196,18 @@ async function verifyResponse(
     possessionNonce: binding.possessionNonce,
     challengeBindingSha256: binding.challengeBindingSha256,
     controllerCapabilitySha256: binding.controllerCapabilitySha256,
-    applicationDescriptorSha256: binding.applicationDescriptorSha256,
+    serialManifestSha256: binding.serialManifestSha256,
+      sessionId: binding.sessionId,
+      hostNonce: binding.hostNonce,
+      deviceNonce: binding.deviceNonce,
     firmwareSourceCommit: claims.firmwareSourceCommit,
+    appElfSha256: claims.appElfSha256,
     deviceIdentityJwk: claims.deviceIdentityJwk,
   };
   if (
     canonicalJson(claims) !== canonicalJson(expectedClaims) ||
     (binding.expectedFirmwareSourceCommit !== undefined &&
-      binding.expectedFirmwareSourceCommit !== claims.firmwareSourceCommit)
+      binding.expectedFirmwareSourceCommit !== claims.firmwareSourceCommit) || (binding.expectedAppElfSha256 !== undefined && binding.expectedAppElfSha256 !== claims.appElfSha256)
   ) {
     throw invalidProof();
   }
@@ -261,6 +279,7 @@ async function verifyResponse(
   return {
     deviceIdentityFingerprint,
     firmwareSourceCommit: claims.firmwareSourceCommit,
+    appElfSha256: claims.appElfSha256,
     controlSessionBindingSha256,
   };
 }
@@ -275,7 +294,10 @@ function requestFor(binding: WorkerPossessionBinding): WorkerPossessionRequest {
       possessionNonce: binding.possessionNonce,
       challengeBindingSha256: binding.challengeBindingSha256,
       controllerCapabilitySha256: binding.controllerCapabilitySha256,
-      applicationDescriptorSha256: binding.applicationDescriptorSha256,
+      serialManifestSha256: binding.serialManifestSha256,
+      sessionId: binding.sessionId,
+      hostNonce: binding.hostNonce,
+      deviceNonce: binding.deviceNonce,
     },
   };
 }
@@ -289,9 +311,12 @@ function parseBinding(input: unknown): WorkerPossessionBinding {
       "possessionNonce",
       "challengeBindingSha256",
       "controllerCapabilitySha256",
-      "applicationDescriptorSha256",
+      "serialManifestSha256",
+      "sessionId",
+      "hostNonce",
+      "deviceNonce",
     ],
-    ["expectedDeviceIdentityFingerprint", "expectedFirmwareSourceCommit"],
+    ["expectedDeviceIdentityFingerprint", "expectedFirmwareSourceCommit", "expectedAppElfSha256"],
   );
   if (
     typeof value.requestId !== "string" ||
@@ -300,9 +325,9 @@ function parseBinding(input: unknown): WorkerPossessionBinding {
     !digest(value.possessionNonce) ||
     !digest(value.challengeBindingSha256) ||
     !digest(value.controllerCapabilitySha256) ||
-    !digest(value.applicationDescriptorSha256) ||
+    !digest(value.serialManifestSha256) || !serialToken(value.sessionId) || !serialNonce(value.hostNonce) || !serialNonce(value.deviceNonce) ||
     (value.expectedFirmwareSourceCommit !== undefined &&
-      !sourceCommit(value.expectedFirmwareSourceCommit)) ||
+      !sourceCommit(value.expectedFirmwareSourceCommit)) || (value.expectedAppElfSha256 !== undefined && !elfDigest(value.expectedAppElfSha256)) ||
     (value.expectedDeviceIdentityFingerprint !== undefined &&
       !digest(value.expectedDeviceIdentityFingerprint)) ||
     (value.purpose === "initial_admission" &&
@@ -317,7 +342,11 @@ function parseBinding(input: unknown): WorkerPossessionBinding {
     possessionNonce: value.possessionNonce,
     challengeBindingSha256: value.challengeBindingSha256,
     controllerCapabilitySha256: value.controllerCapabilitySha256,
-    applicationDescriptorSha256: value.applicationDescriptorSha256,
+    serialManifestSha256: value.serialManifestSha256,
+      sessionId: value.sessionId,
+      hostNonce: value.hostNonce,
+      deviceNonce: value.deviceNonce,
+    ...(elfDigest(value.expectedAppElfSha256) ? { expectedAppElfSha256: value.expectedAppElfSha256 } : {}),
     ...(sourceCommit(value.expectedFirmwareSourceCommit)
       ? { expectedFirmwareSourceCommit: value.expectedFirmwareSourceCommit }
       : {}),
@@ -390,8 +419,12 @@ function parseClaims(input: unknown): WorkerPossessionClaims {
     "possessionNonce",
     "challengeBindingSha256",
     "controllerCapabilitySha256",
-    "applicationDescriptorSha256",
+    "serialManifestSha256",
+      "sessionId",
+      "hostNonce",
+      "deviceNonce",
     "firmwareSourceCommit",
+    "appElfSha256",
     "deviceIdentityJwk",
   ]);
   const key = exactRecord(value.deviceIdentityJwk, [
@@ -408,8 +441,8 @@ function parseClaims(input: unknown): WorkerPossessionClaims {
     !digest(value.possessionNonce) ||
     !digest(value.challengeBindingSha256) ||
     !digest(value.controllerCapabilitySha256) ||
-    !digest(value.applicationDescriptorSha256) ||
-    !sourceCommit(value.firmwareSourceCommit) ||
+    !digest(value.serialManifestSha256) || !serialToken(value.sessionId) || !serialNonce(value.hostNonce) || !serialNonce(value.deviceNonce) ||
+    !sourceCommit(value.firmwareSourceCommit) || !elfDigest(value.appElfSha256) ||
     key.kty !== "OKP" ||
     key.crv !== "Ed25519" ||
     !isCanonicalPrimeSubgroupEd25519PublicKey(key.x) ||
@@ -427,8 +460,12 @@ function parseClaims(input: unknown): WorkerPossessionClaims {
     possessionNonce: value.possessionNonce,
     challengeBindingSha256: value.challengeBindingSha256,
     controllerCapabilitySha256: value.controllerCapabilitySha256,
-    applicationDescriptorSha256: value.applicationDescriptorSha256,
+    serialManifestSha256: value.serialManifestSha256,
+      sessionId: value.sessionId,
+      hostNonce: value.hostNonce,
+      deviceNonce: value.deviceNonce,
     firmwareSourceCommit: value.firmwareSourceCommit,
+    appElfSha256: value.appElfSha256,
     deviceIdentityJwk: {
       kty: "OKP",
       crv: "Ed25519",
@@ -494,3 +531,5 @@ function invalidRequest(): Error {
 function invalidProof(): Error {
   return new Error("Worker possession proof is invalid");
 }
+
+function elfDigest(value: unknown): value is string { return typeof value === "string" && /^[0-9a-f]{64}$/u.test(value); }

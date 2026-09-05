@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import Ajv2020 from "ajv/dist/2020";
 
-import schema from "../conformance/bwg-worker-controller-0.1/contract.schema.json";
-import fixtures from "../conformance/bwg-worker-controller-0.1/fixtures.json";
+import schema from "../conformance/bwg-worker-controller-0.4/contract.schema.json";
+import fixtures from "../conformance/bwg-worker-controller-0.4/fixtures.json";
 import {
   parseWorkerControllerCapabilities,
   parseWorkerLeaseGrant,

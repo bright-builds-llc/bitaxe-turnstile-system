@@ -198,7 +198,7 @@ try {
   onboardingButton.click();
   await waitFor(() => shadow(modal).querySelector("[data-panel=terms]:not([hidden])"));
   assertEqual(onboardingRequests, 1, "explicit_bitaxe_onboarding");
-  assertEqual(onboardingFixture.connector.requestCount(), 1, "bitaxe_usb_request_count");
+  assertEqual(onboardingFixture.connector.requestCount(), 1, "bitaxe_serial_request_count");
   assertEqual(onboardingFixture.connector.device().flashCount(), 1, "bitaxe_flash_count");
   assertEqual(maybeOnboardingResult?.status, "ready", "bitaxe_onboarding_ready");
   assertEqual(

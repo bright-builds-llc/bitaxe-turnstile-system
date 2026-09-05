@@ -1,0 +1,9 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Ultra 205 serial qualification</title>
+<style>body{background:#101319;color:#eee;font:16px system-ui;max-width:960px;margin:2rem auto;padding:1rem}button,input,textarea{font:inherit;margin:.4rem;padding:.6rem}textarea{width:95%}pre{white-space:pre-wrap}label{display:block}</style>
+<h1>Ultra 205 serial qualification</h1><p>Task-gated local hardware qualification. Keep this tab visible. Each connection requires fresh permission and possession. Only public configuration may come from a file. Signed leases stay in memory between the protected local supervisor and this page.</p>
+<label>Public deployment configuration <input id="configuration" type="file" accept="application/json"></label>
+<button id="connect">Connect Worker</button><button id="probe">Check maximum frame</button><button id="prepare">Prepare Start authorization</button>
+<label>Local Authority context digest <textarea id="authorization-context" readonly rows="2"></textarea></label>
+<p>Signed private windows arrive once from the protected local supervisor and are never saved to files.</p><button id="load">Load signed window</button>
+<button id="start">Start bounded window</button><button id="stop">Stop and restore</button><button id="suppress">Suppress qualification heartbeats</button><button id="close">Close connection</button>
+<pre id="state" aria-live="polite"></pre><script type="module" src="/dist/worker-serial-acceptance/worker-serial-acceptance.js"></script></html>

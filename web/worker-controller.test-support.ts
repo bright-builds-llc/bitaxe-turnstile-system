@@ -1,4 +1,4 @@
-import fixtures from "../conformance/bwg-worker-controller-0.1/fixtures.json";
+import fixtures from "../conformance/bwg-worker-controller-0.4/fixtures.json";
 import {
   parseWorkerLeaseGrant,
   parseWorkerLeaseRenewal,

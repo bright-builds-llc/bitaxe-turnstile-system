@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 
-import fixtures from "../conformance/bwg-worker-controller-0.1/fixtures.json";
+import fixtures from "../conformance/bwg-worker-controller-0.4/fixtures.json";
 import {
   SimulatedWorkerController,
   SimulatedWorkerControllerClock,
 } from "./simulated-worker-controller";
-import { simulatedWorkerControllerUsbExchange } from "./simulated-worker-controller-usb";
+import { simulatedWorkerControllerSerialExchange } from "./simulated-worker-controller-serial";
 import type {
   WorkerControllerCapabilities,
   WorkerControllerStatus,
@@ -17,10 +17,10 @@ import {
   fixtureInput,
 } from "./worker-controller.test-support";
 import {
-  decodeWorkerControllerUsbResponse,
-  encodeWorkerControllerUsbMessage,
-  type WorkerControllerUsbResponse,
-} from "./worker-controller-usb";
+  decodeWorkerControllerSerialResponse,
+  encodeWorkerControllerSerialMessage,
+  type WorkerControllerSerialResponse,
+} from "./worker-controller-serial";
 
 type Step = {
   operation:
@@ -99,22 +99,22 @@ for (const scenario of scenarios) {
 }
 
 for (const vector of fixtures.usbVectors) {
-  test(`shared Worker Controller USB vector: ${vector.id}`, async () => {
+  test(`shared Worker Controller Serial vector: ${vector.id}`, async () => {
     // Arrange
     const controller = new SimulatedWorkerController(
       fixtures.capabilities as WorkerControllerCapabilities,
-      new SimulatedWorkerControllerClock("boot_usb_vector_01", 0, 1),
+      new SimulatedWorkerControllerClock("boot_serial_vector_01", 0, 1),
       fixtureAuthorizationVerifier,
     );
-    const exchange = simulatedWorkerControllerUsbExchange(controller);
+    const exchange = simulatedWorkerControllerSerialExchange(controller);
 
     // Act
-    const response = decodeWorkerControllerUsbResponse(
-      await exchange.transact(encodeWorkerControllerUsbMessage(vector.request)),
+    const response = decodeWorkerControllerSerialResponse(
+      await exchange.transact(encodeWorkerControllerSerialMessage(vector.request)),
     );
 
     // Assert
-    expect(response).toEqual(vector.response as WorkerControllerUsbResponse);
+    expect(response).toEqual(vector.response as WorkerControllerSerialResponse);
   });
 }
 

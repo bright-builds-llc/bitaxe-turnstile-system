@@ -1,5 +1,5 @@
 import { canonicalJson } from "./headless-values";
-import type { WorkerControllerCapabilities } from "./worker-controller";
+import type { WorkerControllerCapabilities } from "./worker-controller-semantics";
 import {
   parseDeviceSnapshot,
   parseVerification,

@@ -1,0 +1,702 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://brightbuilds.dev/schemas/bwg-worker-deployment-trust-0.2-fixtures.json",
+  "title": "BWG Worker deployment trust 0.1 conformance fixtures",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "classification",
+    "maximumCompactJwsBytes",
+    "controllerAuthorizationLimitBytes",
+    "authorizationBoundaries",
+    "trust",
+    "ultra205",
+    "start",
+    "renew",
+    "negativeCases"
+  ],
+  "properties": {
+    "profile": {
+      "const": "bwg-worker-deployment-trust/0.2"
+    },
+    "classification": {
+      "const": "development_deployment_public_artifacts"
+    },
+    "maximumCompactJwsBytes": {
+      "const": 481
+    },
+    "controllerAuthorizationLimitBytes": {
+      "const": 512
+    },
+    "authorizationBoundaries": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bytes",
+            "expected"
+          ],
+          "properties": {
+            "bytes": {
+              "const": 511
+            },
+            "expected": {
+              "const": "controller_syntax_accepted"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bytes",
+            "expected"
+          ],
+          "properties": {
+            "bytes": {
+              "const": 512
+            },
+            "expected": {
+              "const": "controller_syntax_accepted"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bytes",
+            "expected"
+          ],
+          "properties": {
+            "bytes": {
+              "const": 513
+            },
+            "expected": {
+              "const": "controller_syntax_rejected"
+            }
+          }
+        }
+      ],
+      "items": false,
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "trust": {
+      "$ref": "#/$defs/trust"
+    },
+    "ultra205": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capabilityInput",
+        "signedCapability"
+      ],
+      "properties": {
+        "capabilityInput": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "capability",
+            "manifest"
+          ],
+          "properties": {
+            "capability": {
+              "$ref": "#/$defs/unsignedCapability"
+            },
+            "manifest": {
+              "$ref": "https://brightbuilds.dev/schemas/bwg-worker-serial-0.1-fixtures.json#/$defs/manifest"
+            }
+          }
+        },
+        "signedCapability": {
+          "$ref": "https://brightbuilds.dev/schemas/bwg-worker-controller-0.4-fixtures.json#/$defs/capabilities"
+        }
+      }
+    },
+    "start": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "input",
+        "artifact"
+      ],
+      "properties": {
+        "input": {
+          "$ref": "#/$defs/startInput"
+        },
+        "artifact": {
+          "$ref": "#/$defs/authorizationArtifact"
+        }
+      }
+    },
+    "renew": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "input",
+        "artifact"
+      ],
+      "properties": {
+        "input": {
+          "$ref": "#/$defs/renewInput"
+        },
+        "artifact": {
+          "$ref": "#/$defs/authorizationArtifact"
+        }
+      }
+    },
+    "negativeCases": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "operation",
+          "parameters",
+          "expectedError"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "operation": {
+            "enum": [
+              "verify_with_update_key",
+              "change_stratum_terms",
+              "change_control_session_binding",
+              "change_verified_possession_transcript",
+              "reuse_accepted_sequence",
+              "present_after_context_expiry",
+              "present_after_restoration",
+              "present_after_reboot",
+              "reuse_sequence_in_new_context",
+              "present_after_monotonic_reset",
+              "load_corrupt_high_water",
+              "allocate_after_u64_max",
+              "oversized_authorization"
+            ]
+          },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "role": {
+                "const": "update_authority"
+              },
+              "changedPassword": {
+                "type": "string",
+                "minLength": 1
+              },
+              "controlSessionBindingSha256": {
+                "$ref": "#/$defs/digest"
+              },
+              "highWater": {
+                "$ref": "#/$defs/sequence"
+              },
+              "corruptHighWater": {
+                "type": "string",
+                "minLength": 1
+              },
+              "presentedSequence": {
+                "$ref": "#/$defs/sequence"
+              },
+              "establishedAtMonotonicMilliseconds": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "presentedAtMonotonicMilliseconds": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "lifecycleEvent": {
+                "enum": [
+                  "restoration",
+                  "reboot"
+                ]
+              },
+              "currentSequence": {
+                "$ref": "#/$defs/sequence"
+              },
+              "authorizationBytes": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          },
+          "expectedError": {
+            "enum": [
+              "invalid_authorization",
+              "replay",
+              "context_expired",
+              "context_invalid",
+              "monotonic_invalid",
+              "state_invalid",
+              "sequence_exhausted"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "sequence": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,19})$"
+    },
+    "keyId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,32}$"
+    },
+    "publicKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kid",
+        "kty",
+        "crv",
+        "x",
+        "alg",
+        "use",
+        "key_ops"
+      ],
+      "properties": {
+        "kid": {
+          "$ref": "#/$defs/keyId"
+        },
+        "kty": {
+          "const": "OKP"
+        },
+        "crv": {
+          "const": "Ed25519"
+        },
+        "x": {
+          "$ref": "#/$defs/digest"
+        },
+        "alg": {
+          "const": "Ed25519"
+        },
+        "use": {
+          "const": "sig"
+        },
+        "key_ops": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "const": "verify"
+            }
+          ],
+          "items": false,
+          "minItems": 1,
+          "maxItems": 1
+        }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "issuer",
+        "audience",
+        "role",
+        "keys"
+      ],
+      "properties": {
+        "profile": {
+          "const": "bwg-worker-deployment-trust/0.2"
+        },
+        "issuer": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,128}$"
+        },
+        "audience": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "role": {
+          "enum": [
+            "update_authority",
+            "work_lease_authority"
+          ]
+        },
+        "keys": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/publicKey"
+          }
+        }
+      }
+    },
+    "workLeaseAuthority": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/authority"
+        },
+        {
+          "type": "object",
+          "required": [
+            "profile"
+          ],
+          "properties": {
+            "profile": {
+              "const": "bwg-worker-deployment-trust/0.2"
+            },
+            "audience": {
+              "const": "bwg-worker-controller/0.4"
+            },
+            "role": {
+              "const": "work_lease_authority"
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "trust": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "updateAuthority",
+        "workLeaseAuthority"
+      ],
+      "properties": {
+        "profile": {
+          "const": "bwg-worker-deployment-trust/0.2"
+        },
+        "updateAuthority": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/authority"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "audience": {
+                  "const": "bwg-reference-firmware-capability/0.2"
+                },
+                "role": {
+                  "const": "update_authority"
+                }
+              }
+            }
+          ]
+        },
+        "workLeaseAuthority": {
+          "$ref": "#/$defs/workLeaseAuthority"
+        }
+      }
+    },
+    "unsignedCapability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocolVersion",
+        "board",
+        "firmware",
+        "compatibility",
+        "transportProfile"
+      ],
+      "properties": {
+        "protocolVersion": {
+          "const": "bwg-worker-controller/0.4"
+        },
+        "board": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "model",
+            "revision",
+            "usbTransport"
+          ],
+          "properties": {
+            "model": {
+              "const": "bitaxe-ultra"
+            },
+            "revision": {
+              "const": "205"
+            },
+            "usbTransport": {
+              "const": "web_serial"
+            }
+          }
+        },
+        "firmware": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "version"
+          ],
+          "properties": {
+            "name": {
+              "const": "bright-builds-reference-firmware"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        },
+        "compatibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "referenceFirmware",
+            "workLease",
+            "miningBaselineRestoration",
+            "settingsPreservation"
+          ],
+          "properties": {
+            "referenceFirmware": {
+              "const": true
+            },
+            "workLease": {
+              "const": "supported"
+            },
+            "miningBaselineRestoration": {
+              "const": "supported"
+            },
+            "settingsPreservation": {
+              "const": "compatible"
+            }
+          }
+        },
+        "transportProfile": {
+          "const": "bwg-worker-serial/0.1"
+        }
+      }
+    },
+    "leaseWindow": {
+      "type": "object",
+      "required": [
+        "protocolVersion",
+        "leaseId",
+        "durationMilliseconds",
+        "renewAfterMilliseconds"
+      ],
+      "properties": {
+        "protocolVersion": {
+          "const": "bwg-worker-controller/0.4"
+        },
+        "leaseId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "durationMilliseconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60000
+        },
+        "renewAfterMilliseconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20000
+        }
+      }
+    },
+    "startInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "activeChallengeId",
+        "controlSessionBindingSha256",
+        "request"
+      ],
+      "properties": {
+        "operation": {
+          "const": "start"
+        },
+        "activeChallengeId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "controlSessionBindingSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "request": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "allOf": [
+            {
+              "$ref": "#/$defs/leaseWindow"
+            },
+            {
+              "type": "object",
+              "required": [
+                "challengeId",
+                "stratum"
+              ],
+              "properties": {
+                "challengeId": {
+                  "$ref": "#/$defs/identifier"
+                },
+                "stratum": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "endpoint",
+                    "username",
+                    "password"
+                  ],
+                  "properties": {
+                    "endpoint": {
+                      "type": "string",
+                      "pattern": "^stratum\\+tcp://[^/?#@]+:[1-9][0-9]{0,4}/$"
+                    },
+                    "username": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "password": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    }
+                  }
+                },
+                "acceptanceCampaign": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "window",
+                    "maximumActiveMilliseconds"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_-]{21}[AQgw]$"
+                    },
+                    "window": {
+                      "type": "integer",
+                      "enum": [
+                        0,
+                        1,
+                        2
+                      ]
+                    },
+                    "maximumActiveMilliseconds": {
+                      "type": "integer",
+                      "enum": [
+                        180000,
+                        30000
+                      ]
+                    }
+                  },
+                  "allOf": [
+                    {
+                      "if": {
+                        "properties": {
+                          "window": {
+                            "const": 0
+                          }
+                        }
+                      },
+                      "then": {
+                        "properties": {
+                          "maximumActiveMilliseconds": {
+                            "const": 180000
+                          }
+                        }
+                      },
+                      "else": {
+                        "properties": {
+                          "maximumActiveMilliseconds": {
+                            "const": 30000
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "renewInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "activeChallengeId",
+        "controlSessionBindingSha256",
+        "request"
+      ],
+      "properties": {
+        "operation": {
+          "const": "renew"
+        },
+        "activeChallengeId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "controlSessionBindingSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "request": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "allOf": [
+            {
+              "$ref": "#/$defs/leaseWindow"
+            }
+          ]
+        }
+      }
+    },
+    "authorizationArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "operation",
+        "sequence",
+        "authorization"
+      ],
+      "properties": {
+        "profile": {
+          "const": "bwg-worker-lease-authorization-artifact/0.1"
+        },
+        "operation": {
+          "enum": [
+            "start",
+            "renew"
+          ]
+        },
+        "sequence": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,19}$"
+        },
+        "authorization": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    }
+  }
+}

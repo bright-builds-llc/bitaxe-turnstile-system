@@ -8,7 +8,7 @@ import {
   type WorkerControllerStatus,
   type WorkerLeaseGrant,
   type WorkerLeaseRenewal,
-} from "./worker-controller";
+} from "./worker-controller-semantics";
 import {
   decodeBase64Url,
   encodeBase64Url,
@@ -17,9 +17,9 @@ import {
 import { isCanonicalPrimeSubgroupEd25519PublicKey } from "./ed25519-public-key";
 import { canonicalJson } from "./headless-values";
 import {
-  parseWorkerUsbApplicationDescriptor,
-  type WorkerUsbApplicationDescriptor,
-} from "./worker-usb-profile";
+  parseWorkerSerialManifest,
+  type WorkerSerialManifest,
+} from "./worker-serial";
 
 export type SignedWorkerControllerCapabilities<
   Protocol extends string,
@@ -27,7 +27,7 @@ export type SignedWorkerControllerCapabilities<
 > = Omit<WorkerControllerCapabilities, "protocolVersion" | "board"> & {
   protocolVersion: Protocol;
   board: Omit<WorkerControllerCapabilities["board"], "usbTransport"> & {
-    usbTransport: "web_usb";
+    usbTransport: "web_serial";
   };
   transportProfile: TransportProfile;
   attestation: WorkerControllerCapabilityAttestation<Protocol, TransportProfile>;
@@ -37,13 +37,13 @@ export type WorkerControllerCapabilityClaims<
   Protocol extends string,
   TransportProfile extends string,
 > = {
-  profile: "bwg-reference-firmware-capability/0.1";
+  profile: "bwg-reference-firmware-capability/0.2";
   protocolVersion: Protocol;
   board: { model: string; revision: string };
   firmware: { name: string; version: string };
   compatibility: WorkerControllerCapabilities["compatibility"];
   transportProfile: TransportProfile;
-  applicationDescriptorSha256: string;
+  serialManifestSha256: string;
 };
 
 export type WorkerControllerCapabilityAttestation<
@@ -93,7 +93,7 @@ export function parseSignedWorkerControllerCapabilities<
   if (
     value.protocolVersion !== profile.protocolVersion ||
     value.transportProfile !== profile.transportProfile ||
-    board.usbTransport !== "web_usb"
+    board.usbTransport !== "web_serial"
   ) {
     throw new Error(errorMessage);
   }
@@ -111,19 +111,19 @@ export function parseSignedWorkerControllerCapabilities<
   const parsed: SignedWorkerControllerCapabilities<Protocol, TransportProfile> = {
     ...semantic,
     protocolVersion: profile.protocolVersion,
-    board: { ...semantic.board, usbTransport: "web_usb" },
+    board: { ...semantic.board, usbTransport: "web_serial" },
     transportProfile: profile.transportProfile,
     attestation,
   };
   if (
     canonicalJson(attestation.claims) !== canonicalJson({
-      profile: "bwg-reference-firmware-capability/0.1",
+      profile: "bwg-reference-firmware-capability/0.2",
       protocolVersion: profile.protocolVersion,
       board: { model: parsed.board.model, revision: parsed.board.revision },
       firmware: parsed.firmware,
       compatibility: parsed.compatibility,
       transportProfile: profile.transportProfile,
-      applicationDescriptorSha256: attestation.claims.applicationDescriptorSha256,
+      serialManifestSha256: attestation.claims.serialManifestSha256,
     })
   ) {
     throw new Error(errorMessage);
@@ -136,7 +136,7 @@ export async function verifySignedWorkerControllerCapability<
   TransportProfile extends string,
 >(
   capability: SignedWorkerControllerCapabilities<Protocol, TransportProfile>,
-  descriptor: WorkerUsbApplicationDescriptor,
+  manifest: WorkerSerialManifest,
   trustedKeys: readonly unknown[],
   profile: SignedWorkerControllerProfile<Protocol, TransportProfile>,
 ): Promise<SignedWorkerControllerCapabilities<Protocol, TransportProfile>> {
@@ -145,7 +145,7 @@ export async function verifySignedWorkerControllerCapability<
     structuredClone(capability),
     profile,
   );
-  const admittedDescriptor = parseWorkerUsbApplicationDescriptor(structuredClone(descriptor));
+  const admittedManifest = parseWorkerSerialManifest(structuredClone(manifest));
   const admittedKeys = trustedKeys.map((key) =>
     parseCapabilityVerificationKey(structuredClone(key), errorMessage),
   );
@@ -194,12 +194,12 @@ export async function verifySignedWorkerControllerCapability<
   if (decodedPayload !== canonicalJson(admittedCapability.attestation.claims)) {
     throw new Error(errorMessage);
   }
-  const descriptorDigest = await sha256Base64UrlBytes(
-    new TextEncoder().encode(canonicalJson(admittedDescriptor)),
+  const manifestDigest = await sha256Base64UrlBytes(
+    new TextEncoder().encode(canonicalJson(admittedManifest)),
   );
   if (
     !admittedCapability.compatibility.referenceFirmware ||
-    descriptorDigest !== admittedCapability.attestation.claims.applicationDescriptorSha256
+    manifestDigest !== admittedCapability.attestation.claims.serialManifestSha256
   ) {
     throw new Error(errorMessage);
   }
@@ -220,7 +220,7 @@ export function parseVersionedWorkerLeaseGrant<Protocol extends string>(
 ): VersionedWorkerLeaseGrant<Protocol> {
   const version = profile.protocolVersion.split("/").at(-1);
   const parsed = parseWorkerLeaseGrant(
-    legacyVersion(input, profile, `Work Lease ${String(version)} grant is invalid`),
+    semanticInput(input, profile, `Work Lease ${String(version)} grant is invalid`),
   );
   return { ...parsed, protocolVersion: profile.protocolVersion };
 }
@@ -231,7 +231,7 @@ export function parseVersionedWorkerLeaseRenewal<Protocol extends string>(
 ): VersionedWorkerLeaseRenewal<Protocol> {
   const version = profile.protocolVersion.split("/").at(-1);
   const parsed = parseWorkerLeaseRenewal(
-    legacyVersion(input, profile, `Work Lease ${String(version)} renewal is invalid`),
+    semanticInput(input, profile, `Work Lease ${String(version)} renewal is invalid`),
   );
   return { ...parsed, protocolVersion: profile.protocolVersion };
 }
@@ -241,7 +241,7 @@ export function parseVersionedWorkerControllerStatus<Protocol extends string>(
   profile: SignedWorkerControllerProfile<Protocol, string>,
 ): VersionedWorkerControllerStatus<Protocol> {
   const parsed = parseWorkerControllerStatus(
-    legacyVersion(input, profile, `${profile.label} status is invalid`),
+    semanticInput(input, profile, `${profile.label} status is invalid`),
   );
   return { ...parsed, protocolVersion: profile.protocolVersion } as
     VersionedWorkerControllerStatus<Protocol>;
@@ -262,7 +262,7 @@ function parseCapabilityAttestation<Protocol extends string, TransportProfile ex
       "firmware",
       "compatibility",
       "transportProfile",
-      "applicationDescriptorSha256",
+      "serialManifestSha256",
     ],
     errorMessage,
   );
@@ -274,7 +274,7 @@ function parseCapabilityAttestation<Protocol extends string, TransportProfile ex
     errorMessage,
   );
   if (
-    claims.profile !== "bwg-reference-firmware-capability/0.1" ||
+    claims.profile !== "bwg-reference-firmware-capability/0.2" ||
     claims.protocolVersion !== profile.protocolVersion ||
     typeof board.model !== "string" ||
     !validLabel(board.model) ||
@@ -291,8 +291,8 @@ function parseCapabilityAttestation<Protocol extends string, TransportProfile ex
       String(compatibility.settingsPreservation),
     ) ||
     claims.transportProfile !== profile.transportProfile ||
-    typeof claims.applicationDescriptorSha256 !== "string" ||
-    !/^[A-Za-z0-9_-]{43}$/u.test(claims.applicationDescriptorSha256) ||
+    typeof claims.serialManifestSha256 !== "string" ||
+    !/^[A-Za-z0-9_-]{43}$/u.test(claims.serialManifestSha256) ||
     typeof value.compactJws !== "string" ||
     value.compactJws.length === 0 ||
     value.compactJws.length > 8_192
@@ -301,7 +301,7 @@ function parseCapabilityAttestation<Protocol extends string, TransportProfile ex
   }
   return {
     claims: {
-      profile: "bwg-reference-firmware-capability/0.1",
+      profile: "bwg-reference-firmware-capability/0.2",
       protocolVersion: profile.protocolVersion,
       board: { model: board.model, revision: board.revision },
       firmware: { name: firmware.name, version: firmware.version },
@@ -315,7 +315,7 @@ function parseCapabilityAttestation<Protocol extends string, TransportProfile ex
           | "unsupported",
       },
       transportProfile: profile.transportProfile,
-      applicationDescriptorSha256: claims.applicationDescriptorSha256,
+      serialManifestSha256: claims.serialManifestSha256,
     },
     compactJws: value.compactJws,
   };
@@ -404,7 +404,7 @@ function validLabel(value: string): boolean {
   return value.length > 0 && value.length <= 128 && /^[A-Za-z0-9._-]+$/u.test(value);
 }
 
-function legacyVersion<Protocol extends string>(
+function semanticInput<Protocol extends string>(
   input: unknown,
   profile: SignedWorkerControllerProfile<Protocol, string>,
   message: string,

@@ -1,0 +1,32 @@
+{
+  "capability": {
+    "protocolVersion": "bwg-worker-controller/0.4",
+    "board": {
+      "model": "bitaxe-ultra",
+      "revision": "205",
+      "usbTransport": "web_serial"
+    },
+    "firmware": {
+      "name": "bright-builds-reference-firmware",
+      "version": "0.1.0"
+    },
+    "compatibility": {
+      "referenceFirmware": true,
+      "workLease": "supported",
+      "miningBaselineRestoration": "supported",
+      "settingsPreservation": "compatible"
+    },
+    "transportProfile": "bwg-worker-serial/0.1"
+  },
+  "manifest": {
+    "profile": "bwg-worker-serial/0.1",
+    "transport": "esp32s3_usb_serial_jtag",
+    "baudRate": 115200,
+    "framing": "utf8_ndjson",
+    "maximumControlPayloadBytes": 65536,
+    "maximumWireFrameBytes": 66560,
+    "heartbeatIntervalMilliseconds": 1000,
+    "heartbeatTimeoutMilliseconds": 2800,
+    "foregroundOnly": true
+  }
+}

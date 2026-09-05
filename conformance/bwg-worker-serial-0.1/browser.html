@@ -1,0 +1,8 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Serial adapter conformance</title><body>
+<h1>Serial adapter conformance</h1><p>Production browser adapter with a simulated device. No hardware effects.</p>
+<output id="result" role="status">running</output><pre id="details"></pre>
+<script type="module">
+import{runWorkerSerialBrowserConformance}from"/dist/test-worker-serial/webserial-worker-browser-test-entry.js";
+const output=document.getElementById("result"),details=document.getElementById("details");
+try{await runWorkerSerialBrowserConformance();output.value="passed";output.textContent="passed";output.dataset.status="passed";details.textContent="stream=true possession=true signed_start=true foreground_cleanup=true";}catch{output.textContent="failed";output.dataset.status="failed";details.textContent="serial_conformance_failed";}
+</script></body></html>

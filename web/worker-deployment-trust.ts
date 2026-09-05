@@ -8,13 +8,13 @@ import {
   type WorkLeaseAuthorityTrust,
 } from "./worker-lease-authorization";
 import {
-  parseWorkerControllerCapabilitiesV03,
-  type WorkerControllerCapabilitiesV03,
-} from "./worker-controller-v03";
+  parseWorkerControllerCapabilities,
+  type WorkerControllerCapabilities,
+} from "./worker-controller";
 import {
-  parseWorkerUsbApplicationDescriptor,
-  type WorkerUsbApplicationDescriptor,
-} from "./worker-usb-profile";
+  parseWorkerSerialManifest,
+  type WorkerSerialManifest,
+} from "./worker-serial";
 
 /** Strict public Update Authority verification key. */
 export type UpdateAuthorityJwk = WorkLeaseAuthorityJwk;
@@ -22,7 +22,7 @@ export type UpdateAuthorityJwk = WorkLeaseAuthorityJwk;
 /** Update Authority half of deployment trust. */
 export type UpdateAuthorityTrust = {
   issuer: string;
-  audience: "bwg-reference-firmware-capability/0.1";
+  audience: "bwg-reference-firmware-capability/0.2";
   role: "update_authority";
   keys: readonly UpdateAuthorityJwk[];
 };
@@ -35,8 +35,8 @@ export type WorkerDeploymentTrust = {
 };
 
 /** Controller capability shape before Update Authority attestation. */
-export type UnsignedWorkerControllerCapabilityV03 = Omit<
-  WorkerControllerCapabilitiesV03,
+export type UnsignedWorkerControllerCapability = Omit<
+  WorkerControllerCapabilities,
   "attestation"
 >;
 
@@ -69,22 +69,22 @@ export function parseWorkerDeploymentTrust(input: unknown): WorkerDeploymentTrus
 }
 
 /** Signs one Ultra 205 Controller capability with the Update Authority. */
-export async function signWorkerControllerCapabilityV03(input: {
-  capability: UnsignedWorkerControllerCapabilityV03;
-  descriptor: WorkerUsbApplicationDescriptor;
+export async function signWorkerControllerCapability(input: {
+  capability: UnsignedWorkerControllerCapability;
+  manifest: WorkerSerialManifest;
   kid: string;
   privateKey: CryptoKey;
-}): Promise<WorkerControllerCapabilitiesV03> {
+}): Promise<WorkerControllerCapabilities> {
   try {
     const capability = structuredClone(input.capability);
     if (Object.hasOwn(capability, "attestation")) throw invalidTrust();
-    const descriptor = parseWorkerUsbApplicationDescriptor(
-      structuredClone(input.descriptor),
+    const manifest = parseWorkerSerialManifest(
+      structuredClone(input.manifest),
     );
     const kid = keyId(input.kid);
     assertPrivateSigningKey(input.privateKey);
     const claims = {
-      profile: "bwg-reference-firmware-capability/0.1" as const,
+      profile: "bwg-reference-firmware-capability/0.2" as const,
       protocolVersion: capability.protocolVersion,
       board: {
         model: capability.board.model,
@@ -93,8 +93,8 @@ export async function signWorkerControllerCapabilityV03(input: {
       firmware: capability.firmware,
       compatibility: capability.compatibility,
       transportProfile: capability.transportProfile,
-      applicationDescriptorSha256: await sha256Base64UrlBytes(
-        new TextEncoder().encode(canonicalJson(descriptor)),
+      serialManifestSha256: await sha256Base64UrlBytes(
+        new TextEncoder().encode(canonicalJson(manifest)),
       ),
     };
     const header = {
@@ -114,7 +114,7 @@ export async function signWorkerControllerCapabilityV03(input: {
       input.privateKey,
       new TextEncoder().encode(signingInput).buffer,
     );
-    return parseWorkerControllerCapabilitiesV03({
+    return parseWorkerControllerCapabilities({
       ...capability,
       attestation: {
         claims,
@@ -136,7 +136,7 @@ function parseUpdateAuthorityTrust(input: unknown): UpdateAuthorityTrust {
   ]);
   if (
     !label(value.issuer) ||
-    value.audience !== "bwg-reference-firmware-capability/0.1" ||
+    value.audience !== "bwg-reference-firmware-capability/0.2" ||
     value.role !== "update_authority" ||
     !Array.isArray(value.keys) ||
     value.keys.length === 0 ||

@@ -34,22 +34,17 @@ The framework-independent browser SDK is exported as the package subpath `bwg-co
 `bun run build:browser` to emit its self-hostable ESM and declarations, then see
 [`docs/protocol/bwg-0.1-headless-client.md`](docs/protocol/bwg-0.1-headless-client.md).
 
-The versioned local Worker Controller and USB contract, simulator, and cross-repository fixtures are
-documented in
-[`docs/protocol/bwg-0.1-worker-controller.md`](docs/protocol/bwg-0.1-worker-controller.md).
-The separated real-firmware evolution is documented in
-[`docs/protocol/bwg-0.2-worker-controller.md`](docs/protocol/bwg-0.2-worker-controller.md) and
-[`docs/protocol/bwg-worker-usb-0.1.md`](docs/protocol/bwg-worker-usb-0.1.md).
-Possession-bound production profiles are documented in
-[`docs/protocol/bwg-0.3-worker-controller.md`](docs/protocol/bwg-0.3-worker-controller.md),
-[`docs/protocol/bwg-worker-usb-0.2.md`](docs/protocol/bwg-worker-usb-0.2.md), and
-[`docs/protocol/bwg-worker-possession-0.1.md`](docs/protocol/bwg-worker-possession-0.1.md).
-The `bwg-core/worker-controller-v03` subpath includes the production possession-bound WebUSB
-adapter with challenge-scoped local continuity retention.
-Separate Update/Work Lease authority trust, the signed Ultra 205 capability, and full-input
-authorization are documented in
-[`docs/protocol/bwg-worker-deployment-trust-0.1.md`](docs/protocol/bwg-worker-deployment-trust-0.1.md)
-and exported through `bwg-core/worker-deployment-trust`.
+The current local Worker contract is Controller 0.4 over fixed ESP32-S3 USB Serial/JTAG and direct
+Web Serial, documented in [Worker Serial 0.1](docs/protocol/bwg-worker-serial-0.1.md).
+`bwg-core/worker-controller` exports the foreground-only production adapter and strict parsers;
+`bwg-core/headless` exports `connectWebSerialHeadlessClient` to compose possession-bound device
+control with Authority Start/Renew flows. The device heartbeat cutoff is 2.8 seconds; changing tabs
+requires fresh explicit admission and never resumes mining automatically.
+
+`bwg-core/worker-possession` and `bwg-core/worker-deployment-trust` expose current possession,
+role-separated signing, and full-input authorization. Versioned conformance subpaths contain the
+current shared fixtures. Earlier prototype profiles and WebUSB exports have been removed; their
+formal protocol documents and ADRs remain historical records.
 
 The accountless settings-preserving Reference Firmware installation and rollback profile is
 documented in

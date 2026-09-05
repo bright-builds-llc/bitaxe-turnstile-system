@@ -1,20 +1,16 @@
 #!/usr/bin/env bun
-
 import {
-  access,
-  chmod,
-  mkdir,
-  readFile,
-  unlink,
-} from "node:fs/promises";
+  createAuthority,
+  parsePrivateAuthority,
+  publicTrust,
+  type PrivateAuthority,
+  type AuthorityRole,
+} from "./worker-development-authority-keys";
+
+import { access, chmod, mkdir, readFile, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { sha256Base64UrlBytes } from "../web/crypto-bytes";
-import { isCanonicalPrimeSubgroupEd25519PublicKey } from "../web/ed25519-public-key";
-import {
-  parseWorkerDeploymentTrust,
-  signWorkerControllerCapabilityV03,
-} from "../web/worker-deployment-trust";
+import { signWorkerControllerCapability } from "../web/worker-deployment-trust";
 import { signWorkerLeaseAuthorization } from "../web/worker-lease-authorization";
 import {
   assertMissing,
@@ -23,6 +19,9 @@ import {
   exactOptions,
   parseSequenceDocument,
   readJson,
+  readPrivateJsonInput,
+  validatePrivateOutput,
+  writeJsonOutput,
   readSequenceDocument,
   requiredOption,
   syncDirectory,
@@ -31,18 +30,6 @@ import {
   writeExclusiveJson,
   type SequenceDocument,
 } from "./worker-development-authority-files";
-
-const PRIVATE_PROFILE = "bwg-worker-private-authority/0.1";
-const TRUST_PROFILE = "bwg-worker-deployment-trust/0.1";
-
-type AuthorityRole = "update_authority" | "work_lease_authority";
-
-type PrivateAuthority = {
-  profile: typeof PRIVATE_PROFILE;
-  role: AuthorityRole;
-  activeKid: string;
-  keys: Array<JsonWebKey & { kid: string }>;
-};
 
 type AuthorityState = {
   update: PrivateAuthority;
@@ -61,26 +48,59 @@ async function main(args: readonly string[]): Promise<void> {
     return;
   }
   if (command === "sign-start" || command === "sign-renew") {
-    const parsed = exactOptions(options, ["--directory", "--input", "--output"]);
+    const parsed = exactOptions(options, [
+      "--directory",
+      "--input",
+      "--output",
+    ]);
     const operation = command === "sign-start" ? "start" : "renew";
     const directory = resolve(parsed["--directory"]);
-    await withAuthorityLock(directory, () => signLeaseAuthorization(
-      operation,
-      directory,
-      resolve(parsed["--input"]),
-      resolve(parsed["--output"]),
-    ));
-    console.log(`worker_lease_authorization=signed operation=${operation}`);
+    await withAuthorityLock(directory, () =>
+      signLeaseAuthorization(
+        operation,
+        directory,
+        parsed["--input"] === "-" ? "-" : resolve(parsed["--input"]),
+        parsed["--output"] === "-" ? "-" : resolve(parsed["--output"]),
+      ),
+    );
+    if (parsed["--output"] !== "-")
+      console.log(`worker_lease_authorization=signed operation=${operation}`);
+    return;
+  }
+  if (command === "public-trust") {
+    const parsed = exactOptions(options, ["--directory", "--output"]);
+    const directory = resolve(parsed["--directory"]);
+    await withAuthorityLock(directory, async () => {
+      const update = await privateAuthority(
+        join(directory, "update-private.json"),
+        "update_authority",
+      );
+      const lease = await privateAuthority(
+        join(directory, "lease-private.json"),
+        "work_lease_authority",
+      );
+      await writeJsonOutput(
+        parsed["--output"] === "-" ? "-" : resolve(parsed["--output"]),
+        publicTrust(update, lease),
+        0o644,
+      );
+    });
     return;
   }
   if (command === "sign-capability") {
-    const parsed = exactOptions(options, ["--directory", "--input", "--output"]);
+    const parsed = exactOptions(options, [
+      "--directory",
+      "--input",
+      "--output",
+    ]);
     const directory = resolve(parsed["--directory"]);
-    await withAuthorityLock(directory, () => signCapability(
-      directory,
-      resolve(parsed["--input"]),
-      resolve(parsed["--output"]),
-    ));
+    await withAuthorityLock(directory, () =>
+      signCapability(
+        directory,
+        resolve(parsed["--input"]),
+        resolve(parsed["--output"]),
+      ),
+    );
     console.log("worker_capability=signed board=205");
     return;
   }
@@ -104,11 +124,9 @@ async function main(args: readonly string[]): Promise<void> {
     }
     const role = authorityRole(parsed["--role"]);
     const directory = resolve(parsed["--directory"]);
-    await withAuthorityLock(directory, () => retireAuthority(
-      directory,
-      role,
-      parsed["--kid"],
-    ));
+    await withAuthorityLock(directory, () =>
+      retireAuthority(directory, role, parsed["--kid"]),
+    );
     console.log(`worker_authority=retired role=${parsed["--role"]}`);
     return;
   }
@@ -122,7 +140,11 @@ async function initialize(directory: string): Promise<void> {
   await chmod(directory, 0o700);
   const update = await createAuthority("update_authority");
   const lease = await createAuthority("work_lease_authority");
-  await writeExclusiveJson(join(directory, "update-private.json"), update, 0o600);
+  await writeExclusiveJson(
+    join(directory, "update-private.json"),
+    update,
+    0o600,
+  );
   await writeExclusiveJson(join(directory, "lease-private.json"), lease, 0o600);
   await writeExclusiveJson(
     join(directory, "lease-sequence.json"),
@@ -139,40 +161,13 @@ async function initialize(directory: string): Promise<void> {
   );
 }
 
-async function createAuthority(role: AuthorityRole): Promise<PrivateAuthority> {
-  const pair = await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]);
-  const privateJwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
-  const publicJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
-  if (!privateJwk.d || !publicJwk.x) throw new Error("key_generation_failed");
-  const digest = await sha256Base64UrlBytes(
-    new TextEncoder().encode(publicJwk.x),
-  );
-  const prefix = role === "update_authority" ? "dev-update-" : "dev-lease-";
-  const kid = prefix + digest.slice(0, 16);
-  return {
-    profile: PRIVATE_PROFILE,
-    role,
-    activeKid: kid,
-    keys: [{
-      ...privateJwk,
-      kid,
-      alg: "Ed25519",
-      use: "sig",
-      key_ops: ["sign"],
-      ext: false,
-    }],
-  };
-}
-
 async function signLeaseAuthorization(
   operation: "start" | "renew",
   directory: string,
   inputPath: string,
   outputPath: string,
 ): Promise<void> {
-  await assertOutsideGitWorktree(inputPath);
-  await assertOutsideGitWorktree(outputPath);
-  await assertProtected(inputPath, false);
+  await validatePrivateOutput(outputPath);
   const registry = await privateAuthority(
     join(directory, "lease-private.json"),
     "work_lease_authority",
@@ -186,7 +181,7 @@ async function signLeaseAuthorization(
     false,
     ["sign"],
   );
-  const request = await readJson(inputPath);
+  const request = await readPrivateJsonInput(inputPath);
   if (
     typeof request !== "object" ||
     request === null ||
@@ -197,14 +192,16 @@ async function signLeaseAuthorization(
   }
   const sequence = await allocateSequenceLocked(directory, registry.activeKid);
   const authorization = await signWorkerLeaseAuthorization({
-    input: request as Parameters<typeof signWorkerLeaseAuthorization>[0]["input"],
+    input: request as Parameters<
+      typeof signWorkerLeaseAuthorization
+    >[0]["input"],
     sequence,
     kid: registry.activeKid,
     issuer: "development-worker-lease-authority",
-    audience: "bwg-worker-controller/0.3",
+    audience: "bwg-worker-controller/0.4",
     privateKey,
   });
-  await writeExclusiveJson(
+  await writeJsonOutput(
     outputPath,
     {
       profile: "bwg-worker-lease-authorization-artifact/0.1",
@@ -239,16 +236,16 @@ async function signCapability(
     throw new Error("capability_input_invalid");
   }
   const value = input as Record<string, unknown>;
-  if (Object.keys(value).length !== 2 || !value.capability || !value.descriptor) {
+  if (Object.keys(value).length !== 2 || !value.capability || !value.manifest) {
     throw new Error("capability_input_invalid");
   }
-  const signed = await signWorkerControllerCapabilityV03({
+  const signed = await signWorkerControllerCapability({
     capability: value.capability as Parameters<
-      typeof signWorkerControllerCapabilityV03
+      typeof signWorkerControllerCapability
     >[0]["capability"],
-    descriptor: value.descriptor as Parameters<
-      typeof signWorkerControllerCapabilityV03
-    >[0]["descriptor"],
+    manifest: value.manifest as Parameters<
+      typeof signWorkerControllerCapability
+    >[0]["manifest"],
     kid: registry.activeKid,
     privateKey,
   });
@@ -323,7 +320,10 @@ async function retireAuthority(
   });
 }
 
-async function allocateSequenceLocked(directory: string, kid: string): Promise<string> {
+async function allocateSequenceLocked(
+  directory: string,
+  kid: string,
+): Promise<string> {
   const path = join(directory, "lease-sequence.json");
   const value = await sequenceDocument(path);
   const record = value.sequences;
@@ -387,10 +387,14 @@ async function commitAuthorityState(
 ): Promise<void> {
   validateAuthorityState(state);
   const journalPath = join(directory, "authority-journal.json");
-  await writeAtomicJson(journalPath, {
-    profile: AUTHORITY_JOURNAL_PROFILE,
-    ...state,
-  }, 0o600);
+  await writeAtomicJson(
+    journalPath,
+    {
+      profile: AUTHORITY_JOURNAL_PROFILE,
+      ...state,
+    },
+    0o600,
+  );
   maybeFail("after_journal");
   await applyAuthorityState(directory, state);
   await unlink(journalPath);
@@ -455,7 +459,11 @@ async function clearStaleAuthorityLock(
     process.kill(owner, 0);
     return;
   } catch (error) {
-    if (!(error instanceof Error) || !("code" in error) || error.code !== "ESRCH") {
+    if (
+      !(error instanceof Error) ||
+      !("code" in error) ||
+      error.code !== "ESRCH"
+    ) {
       return;
     }
   }
@@ -463,7 +471,11 @@ async function clearStaleAuthorityLock(
     await unlink(lockPath);
     await syncDirectory(directory);
   } catch (error) {
-    if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") {
+    if (
+      !(error instanceof Error) ||
+      !("code" in error) ||
+      error.code !== "ENOENT"
+    ) {
       throw error;
     }
   }
@@ -509,90 +521,6 @@ async function privateAuthority(
   return parsePrivateAuthority(await readJson(path), role);
 }
 
-function parsePrivateAuthority(
-  input: unknown,
-  role: AuthorityRole,
-): PrivateAuthority {
-  if (typeof input !== "object" || input === null || Array.isArray(input)) {
-    throw new Error("private_authority_invalid");
-  }
-  const value = input as Record<string, unknown>;
-  if (
-    Object.keys(value).length !== 4 ||
-    value.profile !== PRIVATE_PROFILE ||
-    value.role !== role ||
-    typeof value.activeKid !== "string" ||
-    !/^[A-Za-z0-9_-]{1,32}$/u.test(value.activeKid) ||
-    !Array.isArray(value.keys) ||
-    value.keys.length === 0 ||
-    value.keys.length > 8
-  ) {
-    throw new Error("private_authority_invalid");
-  }
-  const keys = value.keys as Array<JsonWebKey & { kid: string }>;
-  if (
-    keys.some((key) =>
-      Object.keys(key).length !== 9 ||
-      typeof key.kid !== "string" ||
-      !/^[A-Za-z0-9_-]{1,32}$/u.test(key.kid) ||
-      key.kty !== "OKP" ||
-      key.crv !== "Ed25519" ||
-      !isCanonicalPrimeSubgroupEd25519PublicKey(key.x) ||
-      typeof key.d !== "string" ||
-      !/^[A-Za-z0-9_-]{43}$/u.test(key.d) ||
-      key.alg !== "Ed25519" ||
-      key.use !== "sig" ||
-      key.ext !== false ||
-      !Array.isArray(key.key_ops) ||
-      key.key_ops.length !== 1 ||
-      key.key_ops[0] !== "sign"
-    ) ||
-    new Set(keys.map((key) => key.kid)).size !== keys.length ||
-    new Set(keys.map((key) => key.x)).size !== keys.length ||
-    !keys.some((key) => key.kid === value.activeKid)
-  ) {
-    throw new Error("private_authority_invalid");
-  }
-  return {
-    profile: PRIVATE_PROFILE,
-    role,
-    activeKid: value.activeKid,
-    keys,
-  };
-}
-
-function publicTrust(update: PrivateAuthority, lease: PrivateAuthority) {
-  return parseWorkerDeploymentTrust({
-    profile: TRUST_PROFILE,
-    updateAuthority: {
-      issuer: "development-update-authority",
-      audience: "bwg-reference-firmware-capability/0.1",
-      role: "update_authority",
-      keys: update.keys.map(publicKey),
-    },
-    workLeaseAuthority: {
-      profile: TRUST_PROFILE,
-      issuer: "development-worker-lease-authority",
-      audience: "bwg-worker-controller/0.3",
-      role: "work_lease_authority",
-      keys: lease.keys.map(publicKey),
-    },
-  });
-}
-
-function publicKey(key: JsonWebKey & { kid: string }) {
-  if (!key.x) throw new Error("public_key_missing");
-  return {
-    kid: key.kid,
-    kty: "OKP",
-    crv: "Ed25519",
-    x: key.x,
-    alg: "Ed25519",
-    use: "sig",
-    key_ops: ["verify"],
-  };
-}
-
 function authorityRole(input: string): AuthorityRole {
   if (input === "update") return "update_authority";
   if (input === "lease") return "work_lease_authority";
@@ -600,6 +528,8 @@ function authorityRole(input: string): AuthorityRole {
 }
 
 await main(Bun.argv.slice(2)).catch(() => {
-  console.error("worker_development_authority=failed category=invalid_operation");
+  console.error(
+    "worker_development_authority=failed category=invalid_operation",
+  );
   process.exitCode = 1;
 });

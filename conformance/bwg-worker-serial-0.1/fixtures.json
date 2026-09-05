@@ -1,0 +1,53 @@
+{
+  "profile": "bwg-worker-serial/0.1",
+  "manifest": {
+    "profile": "bwg-worker-serial/0.1",
+    "transport": "esp32s3_usb_serial_jtag",
+    "baudRate": 115200,
+    "framing": "utf8_ndjson",
+    "maximumControlPayloadBytes": 65536,
+    "maximumWireFrameBytes": 66560,
+    "heartbeatIntervalMilliseconds": 1000,
+    "heartbeatTimeoutMilliseconds": 2800,
+    "foregroundOnly": true
+  },
+  "frames": [
+    {
+      "id": "hello",
+      "frame": {
+        "profile": "bwg-worker-serial/0.1",
+        "kind": "session",
+        "sessionId": null,
+        "sequence": 0,
+        "payload": {
+          "op": "hello",
+          "hostNonce": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        }
+      }
+    },
+    {
+      "id": "heartbeat",
+      "frame": {
+        "profile": "bwg-worker-serial/0.1",
+        "kind": "heartbeat",
+        "sessionId": "AAAAAAAAAAAAAAAAAAAAAA",
+        "sequence": 1,
+        "payload": {}
+      }
+    },
+    {
+      "id": "discover",
+      "frame": {
+        "profile": "bwg-worker-serial/0.1",
+        "kind": "control",
+        "sessionId": "AAAAAAAAAAAAAAAAAAAAAA",
+        "sequence": 2,
+        "payload": {
+          "protocolVersion": "bwg-worker-controller/0.4",
+          "requestId": "serial_fixture_discover",
+          "command": "discover"
+        }
+      }
+    }
+  ]
+}

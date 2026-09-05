@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import fixtures from "../conformance/bwg-worker-deployment-trust-0.1/fixtures.json";
+import fixtures from "../conformance/bwg-worker-deployment-trust-0.2/fixtures.json";
 import { parseWorkerDeploymentTrust } from "./worker-deployment-trust";
 import {
   signWorkerLeaseAuthorization,
@@ -11,29 +11,34 @@ import {
 
 test("verifies one fully bound possession-context Start authorization", async () => {
   // Arrange
-  const keyPair = await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]);
+  const keyPair = await crypto.subtle.generateKey("Ed25519", true, [
+    "sign",
+    "verify",
+  ]);
   const publicJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
   const trust: WorkLeaseAuthorityTrust = {
-    profile: "bwg-worker-deployment-trust/0.1",
+    profile: "bwg-worker-deployment-trust/0.2",
     issuer: "development-worker-lease-authority",
-    audience: "bwg-worker-controller/0.3",
+    audience: "bwg-worker-controller/0.4",
     role: "work_lease_authority",
-    keys: [{
-      kid: "dev-lease-authority-01",
-      kty: "OKP",
-      crv: "Ed25519",
-      x: requiredJwkX(publicJwk),
-      alg: "Ed25519",
-      use: "sig",
-      key_ops: ["verify"],
-    }],
+    keys: [
+      {
+        kid: "dev-lease-authority-01",
+        kty: "OKP",
+        crv: "Ed25519",
+        x: requiredJwkX(publicJwk),
+        alg: "Ed25519",
+        use: "sig",
+        key_ops: ["verify"],
+      },
+    ],
   };
   const input: WorkerLeaseAuthorizationInput = {
     operation: "start",
     activeChallengeId: "challenge_00000000000000000000000000000001",
     controlSessionBindingSha256: "S".repeat(43),
     request: {
-      protocolVersion: "bwg-worker-controller/0.3",
+      protocolVersion: "bwg-worker-controller/0.4",
       leaseId: "lease_fixture_03",
       challengeId: "challenge_00000000000000000000000000000001",
       durationMilliseconds: 60_000,
@@ -55,7 +60,11 @@ test("verifies one fully bound possession-context Start authorization", async ()
   });
 
   // Act
-  const verified = await verifyWorkerLeaseAuthorization(authorization, input, trust);
+  const verified = await verifyWorkerLeaseAuthorization(
+    authorization,
+    input,
+    trust,
+  );
 
   // Assert
   expect(verified).toEqual({
@@ -70,16 +79,19 @@ function requiredJwkX(jwk: JsonWebKey): string {
   return jwk.x;
 }
 
-test("fits the maximum strict authorization inside Controller 0.3", async () => {
+test("fits the maximum strict authorization inside Controller 0.4", async () => {
   // Arrange
-  const keyPair = await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]);
+  const keyPair = await crypto.subtle.generateKey("Ed25519", true, [
+    "sign",
+    "verify",
+  ]);
   const kid = "K".repeat(32);
   const input: WorkerLeaseAuthorizationInput = {
     operation: "renew",
     activeChallengeId: "challenge_00000000000000000000000000000001",
     controlSessionBindingSha256: "S".repeat(43),
     request: {
-      protocolVersion: "bwg-worker-controller/0.3",
+      protocolVersion: "bwg-worker-controller/0.4",
       leaseId: "lease_fixture_03",
       durationMilliseconds: 60_000,
       renewAfterMilliseconds: 20_000,
@@ -92,48 +104,55 @@ test("fits the maximum strict authorization inside Controller 0.3", async () => 
     sequence: "18446744073709551615",
     kid,
     issuer: "development-worker-lease-authority",
-    audience: "bwg-worker-controller/0.3",
+    audience: "bwg-worker-controller/0.4",
     privateKey: keyPair.privateKey,
   });
 
   // Assert
   expect(new TextEncoder().encode(authorization).byteLength).toBe(481);
-  await expect(signWorkerLeaseAuthorization({
-    input,
-    sequence: "18446744073709551616",
-    kid,
-    issuer: "development-worker-lease-authority",
-    audience: "bwg-worker-controller/0.3",
-    privateKey: keyPair.privateKey,
-  })).rejects.toThrow("Worker Lease authorization is invalid");
+  await expect(
+    signWorkerLeaseAuthorization({
+      input,
+      sequence: "18446744073709551616",
+      kid,
+      issuer: "development-worker-lease-authority",
+      audience: "bwg-worker-controller/0.4",
+      privateKey: keyPair.privateKey,
+    }),
+  ).rejects.toThrow("Worker Lease authorization is invalid");
 });
 
 test("rejects changed request and possession-context bindings", async () => {
   // Arrange
-  const keyPair = await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]);
+  const keyPair = await crypto.subtle.generateKey("Ed25519", true, [
+    "sign",
+    "verify",
+  ]);
   const publicJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
   const kid = "dev-lease-authority-01";
   const trust: WorkLeaseAuthorityTrust = {
-    profile: "bwg-worker-deployment-trust/0.1",
+    profile: "bwg-worker-deployment-trust/0.2",
     issuer: "development-worker-lease-authority",
-    audience: "bwg-worker-controller/0.3",
+    audience: "bwg-worker-controller/0.4",
     role: "work_lease_authority",
-    keys: [{
-      kid,
-      kty: "OKP",
-      crv: "Ed25519",
-      x: requiredJwkX(publicJwk),
-      alg: "Ed25519",
-      use: "sig",
-      key_ops: ["verify"],
-    }],
+    keys: [
+      {
+        kid,
+        kty: "OKP",
+        crv: "Ed25519",
+        x: requiredJwkX(publicJwk),
+        alg: "Ed25519",
+        use: "sig",
+        key_ops: ["verify"],
+      },
+    ],
   };
   const input: WorkerLeaseAuthorizationInput = {
     operation: "start",
     activeChallengeId: "challenge_00000000000000000000000000000001",
     controlSessionBindingSha256: "S".repeat(43),
     request: {
-      protocolVersion: "bwg-worker-controller/0.3",
+      protocolVersion: "bwg-worker-controller/0.4",
       leaseId: "lease_fixture_03",
       challengeId: "challenge_00000000000000000000000000000001",
       durationMilliseconds: 60_000,
@@ -155,24 +174,37 @@ test("rejects changed request and possession-context bindings", async () => {
   });
 
   // Act
-  const changedRequest = verifyWorkerLeaseAuthorization(authorization, {
-    ...input,
-    request: {
-      ...input.request,
-      stratum: { ...input.request.stratum, password: "changed-password" },
+  const changedRequest = verifyWorkerLeaseAuthorization(
+    authorization,
+    {
+      ...input,
+      request: {
+        ...input.request,
+        stratum: { ...input.request.stratum, password: "changed-password" },
+      },
     },
-  }, trust);
-  const changedContext = verifyWorkerLeaseAuthorization(authorization, {
-    ...input,
-    controlSessionBindingSha256: "T".repeat(43),
-  }, trust);
+    trust,
+  );
+  const changedContext = verifyWorkerLeaseAuthorization(
+    authorization,
+    {
+      ...input,
+      controlSessionBindingSha256: "T".repeat(43),
+    },
+    trust,
+  );
   const results = await Promise.allSettled([changedRequest, changedContext]);
 
   // Assert
-  expect(results.map((result) => result.status)).toEqual(["rejected", "rejected"]);
-  expect(results.map((result) =>
-    result.status === "rejected" ? String(result.reason) : "fulfilled"
-  )).toEqual([
+  expect(results.map((result) => result.status)).toEqual([
+    "rejected",
+    "rejected",
+  ]);
+  expect(
+    results.map((result) =>
+      result.status === "rejected" ? String(result.reason) : "fulfilled",
+    ),
+  ).toEqual([
     "Error: Worker Lease authorization is invalid",
     "Error: Worker Lease authorization is invalid",
   ]);
@@ -183,8 +215,10 @@ test("rejects a noncanonical signature segment that decodes to valid bytes", asy
   const trust = parseWorkerDeploymentTrust(fixtures.trust);
   const parts = fixtures.start.artifact.authorization.split(".");
   const signature = parts[2];
-  if (!parts[0] || !parts[1] || !signature) throw new Error("fixture JWS invalid");
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  if (!parts[0] || !parts[1] || !signature)
+    throw new Error("fixture JWS invalid");
+  const alphabet =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
   const finalIndex = alphabet.indexOf(signature.at(-1) ?? "");
   if (finalIndex < 0 || (finalIndex & 15) !== 0) {
     throw new Error("fixture signature must be canonical");
@@ -202,4 +236,72 @@ test("rejects a noncanonical signature segment that decodes to valid bytes", asy
 
   // Assert
   await expect(result).rejects.toThrow("Worker Lease authorization is invalid");
+});
+
+test("acceptance campaign metadata is signed and cannot change between reserved windows", async () => {
+  // Arrange
+  const pair = await crypto.subtle.generateKey("Ed25519", true, [
+    "sign",
+    "verify",
+  ]);
+  const publicKey = await crypto.subtle.exportKey("jwk", pair.publicKey);
+  const trust: WorkLeaseAuthorityTrust = {
+    profile: "bwg-worker-deployment-trust/0.2",
+    issuer: "fixture-campaign",
+    audience: "bwg-worker-controller/0.4",
+    role: "work_lease_authority",
+    keys: [
+      {
+        kid: "campaign",
+        kty: "OKP",
+        crv: "Ed25519",
+        x: requiredJwkX(publicKey),
+        alg: "Ed25519",
+        use: "sig",
+        key_ops: ["verify"],
+      },
+    ],
+  };
+  const base = fixtures.start.input as WorkerLeaseAuthorizationInput;
+  if (base.operation !== "start") throw new Error("fixture must Start");
+  const input: WorkerLeaseAuthorizationInput = {
+    ...base,
+    request: {
+      ...base.request,
+      acceptanceCampaign: {
+        id: "AAAAAAAAAAAAAAAAAAAAAA",
+        window: 0,
+        maximumActiveMilliseconds: 180000,
+      },
+    },
+  };
+  const authorization = await signWorkerLeaseAuthorization({
+    input,
+    sequence: "1",
+    kid: "campaign",
+    issuer: trust.issuer,
+    audience: trust.audience,
+    privateKey: pair.privateKey,
+  });
+  // Act / Assert
+  await expect(
+    verifyWorkerLeaseAuthorization(authorization, input, trust),
+  ).resolves.toMatchObject({ sequence: 1n });
+  await expect(
+    verifyWorkerLeaseAuthorization(
+      authorization,
+      {
+        ...input,
+        request: {
+          ...input.request,
+          acceptanceCampaign: {
+            id: "AAAAAAAAAAAAAAAAAAAAAA",
+            window: 1,
+            maximumActiveMilliseconds: 30000,
+          },
+        },
+      },
+      trust,
+    ),
+  ).rejects.toThrow();
 });

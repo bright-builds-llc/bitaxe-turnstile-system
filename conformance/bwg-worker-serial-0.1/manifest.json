@@ -1,0 +1,11 @@
+{
+  "profile": "bwg-worker-serial/0.1",
+  "transport": "esp32s3_usb_serial_jtag",
+  "baudRate": 115200,
+  "framing": "utf8_ndjson",
+  "maximumControlPayloadBytes": 65536,
+  "maximumWireFrameBytes": 66560,
+  "heartbeatIntervalMilliseconds": 1000,
+  "heartbeatTimeoutMilliseconds": 2800,
+  "foregroundOnly": true
+}

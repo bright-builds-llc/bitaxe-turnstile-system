@@ -460,3 +460,5 @@ function challengeTransitionAllowed(
   };
   return allowed[from].includes(to);
 }
+
+export { connectWebSerialHeadlessClient } from "./headless-worker-serial";

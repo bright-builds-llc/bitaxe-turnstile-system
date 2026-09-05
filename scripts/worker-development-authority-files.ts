@@ -44,7 +44,9 @@ export async function writeAtomicJson(
   await syncDirectory(dirname(path));
 }
 
-export async function tryAcquireProcessLock(lockPath: string): Promise<boolean> {
+export async function tryAcquireProcessLock(
+  lockPath: string,
+): Promise<boolean> {
   const temporary = `${lockPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
   const file = await open(temporary, "wx", 0o600);
   try {
@@ -58,7 +60,11 @@ export async function tryAcquireProcessLock(lockPath: string): Promise<boolean> 
     await syncDirectory(dirname(lockPath));
     return true;
   } catch (error) {
-    if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") {
+    if (
+      !(error instanceof Error) ||
+      !("code" in error) ||
+      error.code !== "EEXIST"
+    ) {
       throw error;
     }
     return false;
@@ -107,12 +113,15 @@ export function parseSequenceDocument(input: unknown): SequenceDocument {
     throw new Error("sequence_state_invalid");
   }
   const record = sequences as Record<string, unknown>;
-  if (Object.entries(record).some(([kid, sequence]) =>
-    !/^[A-Za-z0-9_-]{1,32}$/u.test(kid) ||
-    typeof sequence !== "string" ||
-    !/^(0|[1-9][0-9]{0,19})$/u.test(sequence) ||
-    BigInt(sequence) > 18_446_744_073_709_551_615n
-  )) {
+  if (
+    Object.entries(record).some(
+      ([kid, sequence]) =>
+        !/^[A-Za-z0-9_-]{1,32}$/u.test(kid) ||
+        typeof sequence !== "string" ||
+        !/^(0|[1-9][0-9]{0,19})$/u.test(sequence) ||
+        BigInt(sequence) > 18_446_744_073_709_551_615n,
+    )
+  ) {
     throw new Error("sequence_state_invalid");
   }
   return {
@@ -197,4 +206,52 @@ export function exactOptions(
     throw new Error("invalid_arguments");
   }
   return result;
+}
+
+/** Reads a protected file or a bounded private stdin stream without persisting it. */
+export async function readPrivateJsonInput(path: string): Promise<unknown> {
+  if (path !== "-") {
+    await assertOutsideGitWorktree(path);
+    await assertProtected(path, false);
+    return readJson(path);
+  }
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  for await (const chunk of Bun.stdin.stream()) {
+    length += chunk.byteLength;
+    if (length > 65_536) throw new Error("private_input_bound");
+    chunks.push(chunk);
+  }
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+  try {
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    throw new Error("private_input_invalid");
+  } finally {
+    bytes.fill(0);
+    for (const chunk of chunks) chunk.fill(0);
+  }
+}
+
+/** Validates private output location before a durable sequence can be consumed. */
+export async function validatePrivateOutput(path: string): Promise<void> {
+  if (path !== "-") await assertOutsideGitWorktree(path);
+}
+
+/** Writes one artifact to a protected file or the caller-owned stdout pipe. */
+export async function writeJsonOutput(
+  path: string,
+  value: unknown,
+  mode: number,
+): Promise<void> {
+  if (path === "-") {
+    await Bun.write(Bun.stdout, JSON.stringify(value) + "\n");
+    return;
+  }
+  await writeExclusiveJson(path, value, mode);
 }

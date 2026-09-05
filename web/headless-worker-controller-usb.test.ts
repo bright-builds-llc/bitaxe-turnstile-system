@@ -1,25 +1,25 @@
 import { expect, test } from "bun:test";
 
-import fixtures from "../conformance/bwg-worker-controller-0.1/fixtures.json";
+import fixtures from "../conformance/bwg-worker-controller-0.4/fixtures.json";
 import { createHeadlessClient } from "./headless-client";
 import { headlessInput, transportHarness } from "./headless-client.test-support";
 import {
   SimulatedWorkerController,
   SimulatedWorkerControllerClock,
 } from "./simulated-worker-controller";
-import { simulatedWorkerControllerUsbExchange } from "./simulated-worker-controller-usb";
+import { simulatedWorkerControllerSerialExchange } from "./simulated-worker-controller-serial";
 import type { WorkerControllerCapabilities, WorkerLeaseGrant } from "./worker-controller";
 import { fixtureAuthorizationVerifier } from "./worker-controller.test-support";
-import { UsbWorkerController } from "./worker-controller-usb";
+import { SerialWorkerController } from "./worker-controller-serial";
 
 test("real USB controller path restores after admission rollback", async () => {
   // Arrange
   const simulator = new SimulatedWorkerController(
     fixtures.capabilities as WorkerControllerCapabilities,
-    new SimulatedWorkerControllerClock("boot_headless_usb_01", 0, 1),
+    new SimulatedWorkerControllerClock("boot_headless_serial_01", 0, 1),
     fixtureAuthorizationVerifier,
   );
-  const controller = new UsbWorkerController(simulatedWorkerControllerUsbExchange(simulator));
+  const controller = new SerialWorkerController(simulatedWorkerControllerSerialExchange(simulator));
   const authority = transportHarness();
   const transport = {
     ...authority.transport,

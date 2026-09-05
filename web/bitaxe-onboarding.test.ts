@@ -474,7 +474,7 @@ function snapshot(
   const { referenceFirmware = false, ...snapshotOverrides } = overrides;
   return {
     capabilities: {
-      protocolVersion: "bwg-worker-controller/0.1",
+      protocolVersion: "bwg-worker-controller/0.4",
       board: { model: "bitaxe-gamma", revision: "204", usbTransport: "web_serial" },
       firmware: { name: "stock-firmware", version: "1.0.0" },
       compatibility: {

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import fixtures from "../conformance/bwg-worker-controller-0.1/fixtures.json";
+import fixtures from "../conformance/bwg-worker-controller-0.4/fixtures.json";
 import headlessFixtures from "../conformance/bwg-0.1/headless-work-consent-vectors.json";
 import { createHeadlessClient } from "./headless-client";
 import { headlessInput, transportHarness } from "./headless-client.test-support";
@@ -306,7 +306,7 @@ test("wrong-challenge renewal status restores and pauses", async () => {
     async renewLease() {
       calls.push("renew_wrong_challenge");
       return {
-        protocolVersion: "bwg-worker-controller/0.1" as const,
+        protocolVersion: "bwg-worker-controller/0.4" as const,
         state: "mining" as const,
         monotonicMilliseconds: 1,
         lease: {

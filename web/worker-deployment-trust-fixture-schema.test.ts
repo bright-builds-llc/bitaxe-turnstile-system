@@ -1,16 +1,16 @@
 import { expect, test } from "bun:test";
 import Ajv2020 from "ajv/dist/2020";
 
-import controllerSchema from "../conformance/bwg-worker-controller-0.3/contract.schema.json";
-import usbSchema from "../conformance/bwg-worker-usb-0.2/contract.schema.json";
-import schema from "../conformance/bwg-worker-deployment-trust-0.1/contract.schema.json";
-import fixtures from "../conformance/bwg-worker-deployment-trust-0.1/fixtures.json";
+import controllerSchema from "../conformance/bwg-worker-controller-0.4/contract.schema.json";
+import usbSchema from "../conformance/bwg-worker-serial-0.1/contract.schema.json";
+import schema from "../conformance/bwg-worker-deployment-trust-0.2/contract.schema.json";
+import fixtures from "../conformance/bwg-worker-deployment-trust-0.2/fixtures.json";
 import { parseWorkerDeploymentTrust } from "./worker-deployment-trust";
 import {
-  parseWorkerLeaseGrantV03,
-  verifyWorkerControllerCapabilityV03,
-  type WorkerControllerCapabilitiesV03,
-} from "./worker-controller-v03";
+  parseWorkerLeaseGrant,
+  verifyWorkerControllerCapability,
+  type WorkerControllerCapabilities,
+} from "./worker-controller";
 import {
   invalidateWorkerLeaseAdmissionContext,
   planWorkerLeaseAdmission,
@@ -22,7 +22,7 @@ import {
   verifyWorkerLeaseAuthorization,
   type WorkerLeaseAuthorizationInput,
 } from "./worker-lease-authorization";
-import { parseWorkerUsbApplicationDescriptor } from "./worker-usb-profile";
+import { parseWorkerSerialManifest } from "./worker-serial";
 
 test("published deployment trust fixtures satisfy schema and runtime verification", async () => {
   // Arrange
@@ -34,16 +34,16 @@ test("published deployment trust fixtures satisfy schema and runtime verificatio
   // Act
   const schemaValid = validate(fixtures);
   const trust = parseWorkerDeploymentTrust(fixtures.trust);
-  const descriptor = parseWorkerUsbApplicationDescriptor(
-    fixtures.ultra205.capabilityInput.descriptor,
+  const manifest = parseWorkerSerialManifest(
+    fixtures.ultra205.capabilityInput.manifest,
   );
 
   // Assert
   expect(validate.errors).toBeNull();
   expect(schemaValid).toBeTrue();
-  await expect(verifyWorkerControllerCapabilityV03(
-    fixtures.ultra205.signedCapability as WorkerControllerCapabilitiesV03,
-    descriptor,
+  await expect(verifyWorkerControllerCapability(
+    fixtures.ultra205.signedCapability as WorkerControllerCapabilities,
+    manifest,
     trust.updateAuthority.keys,
   )).resolves.toMatchObject({
     board: { model: "bitaxe-ultra", revision: "205" },
@@ -78,9 +78,9 @@ test("published deployment trust fixtures satisfy schema and runtime verificatio
       authorization: "A".repeat(boundary.bytes),
     };
     if (boundary.expected === "controller_syntax_accepted") {
-      expect(() => parseWorkerLeaseGrantV03(candidate)).not.toThrow();
+      expect(() => parseWorkerLeaseGrant(candidate)).not.toThrow();
     } else {
-      expect(() => parseWorkerLeaseGrantV03(candidate)).toThrow("grant is invalid");
+      expect(() => parseWorkerLeaseGrant(candidate)).toThrow("grant is invalid");
     }
   }
 

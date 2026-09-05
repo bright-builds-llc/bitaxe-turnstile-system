@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import fixtures from "../conformance/bwg-worker-controller-0.1/fixtures.json";
+import fixtures from "../conformance/bwg-worker-controller-0.4/fixtures.json";
 import {
   SimulatedWorkerController,
   SimulatedWorkerControllerClock,
@@ -56,7 +56,7 @@ describe("Worker Controller status invariants", () => {
     // Act
     const parse = () =>
       parseWorkerControllerStatus({
-        protocolVersion: "bwg-worker-controller/0.1",
+        protocolVersion: "bwg-worker-controller/0.4",
         monotonicMilliseconds: 0,
         ...contradiction,
       });

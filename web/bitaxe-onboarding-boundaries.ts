@@ -1,4 +1,4 @@
-import { parseWorkerControllerCapabilities } from "./worker-controller";
+import { parseWorkerControllerCapabilities } from "./worker-controller-semantics";
 import type {
   BitaxeDeviceSnapshot,
   RedactedSettingsVerification,

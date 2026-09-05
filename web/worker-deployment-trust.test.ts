@@ -1,31 +1,31 @@
 import { expect, test } from "bun:test";
 
-import controllerFixtures from "../conformance/bwg-worker-controller-0.3/fixtures.json";
-import usbFixtures from "../conformance/bwg-worker-usb-0.2/fixtures.json";
+import controllerFixtures from "../conformance/bwg-worker-controller-0.4/fixtures.json";
+import usbFixtures from "../conformance/bwg-worker-serial-0.1/fixtures.json";
 import {
   parseWorkerDeploymentTrust,
-  signWorkerControllerCapabilityV03,
-  type UnsignedWorkerControllerCapabilityV03,
+  signWorkerControllerCapability,
+  type UnsignedWorkerControllerCapability,
 } from "./worker-deployment-trust";
-import { verifyWorkerControllerCapabilityV03 } from "./worker-controller-v03";
-import { parseWorkerUsbApplicationDescriptor } from "./worker-usb-profile";
+import { verifyWorkerControllerCapability } from "./worker-controller";
+import { parseWorkerSerialManifest } from "./worker-serial";
 
 test("signs an Ultra 205 capability with only the Update Authority", async () => {
   // Arrange
   const update = await key("development-update-authority-01");
   const lease = await key("development-lease-authority-01");
   const trust = parseWorkerDeploymentTrust({
-    profile: "bwg-worker-deployment-trust/0.1",
+    profile: "bwg-worker-deployment-trust/0.2",
     updateAuthority: {
       issuer: "development-update-authority",
-      audience: "bwg-reference-firmware-capability/0.1",
+      audience: "bwg-reference-firmware-capability/0.2",
       role: "update_authority",
       keys: [update.publicJwk],
     },
     workLeaseAuthority: {
-      profile: "bwg-worker-deployment-trust/0.1",
+      profile: "bwg-worker-deployment-trust/0.2",
       issuer: "development-worker-lease-authority",
-      audience: "bwg-worker-controller/0.3",
+      audience: "bwg-worker-controller/0.4",
       role: "work_lease_authority",
       keys: [lease.publicJwk],
     },
@@ -37,32 +37,32 @@ test("signs an Ultra 205 capability with only the Update Authority", async () =>
     board: {
       model: "bitaxe-ultra",
       revision: "205",
-      usbTransport: "web_usb",
+      usbTransport: "web_serial",
     },
-  } as UnsignedWorkerControllerCapabilityV03;
-  const descriptor = parseWorkerUsbApplicationDescriptor(
-    usbFixtures.topology.application.descriptor,
+  } as UnsignedWorkerControllerCapability;
+  const manifest = parseWorkerSerialManifest(
+    usbFixtures.manifest,
   );
 
   // Act
-  const signed = await signWorkerControllerCapabilityV03({
+  const signed = await signWorkerControllerCapability({
     capability: unsignedCapability,
-    descriptor,
+    manifest,
     kid: update.publicJwk.kid,
     privateKey: update.privateKey,
   });
 
   // Assert
-  await expect(verifyWorkerControllerCapabilityV03(
+  await expect(verifyWorkerControllerCapability(
     signed,
-    descriptor,
+    manifest,
     trust.updateAuthority.keys,
   )).resolves.toMatchObject({
     board: { model: "bitaxe-ultra", revision: "205" },
   });
-  await expect(verifyWorkerControllerCapabilityV03(
+  await expect(verifyWorkerControllerCapability(
     signed,
-    descriptor,
+    manifest,
     trust.workLeaseAuthority.keys,
   )).rejects.toThrow("capability attestation is invalid");
 });
@@ -72,17 +72,17 @@ test("rejects low-order authority keys and same-role public-key aliases", async 
   const update = await key("development-update-authority-01");
   const lease = await key("development-lease-authority-01");
   const base = {
-    profile: "bwg-worker-deployment-trust/0.1",
+    profile: "bwg-worker-deployment-trust/0.2",
     updateAuthority: {
       issuer: "development-update-authority",
-      audience: "bwg-reference-firmware-capability/0.1",
+      audience: "bwg-reference-firmware-capability/0.2",
       role: "update_authority",
       keys: [update.publicJwk],
     },
     workLeaseAuthority: {
-      profile: "bwg-worker-deployment-trust/0.1",
+      profile: "bwg-worker-deployment-trust/0.2",
       issuer: "development-worker-lease-authority",
-      audience: "bwg-worker-controller/0.3",
+      audience: "bwg-worker-controller/0.4",
       role: "work_lease_authority",
       keys: [lease.publicJwk],
     },

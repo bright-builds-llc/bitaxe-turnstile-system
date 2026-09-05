@@ -95,7 +95,7 @@ fi
 
 : >"$browser_output"
 "$playwright_cli" -s="$session_name" goto \
-  "http://127.0.0.1:$server_port/conformance/bwg-worker-possession-0.1/browser.html" \
+  "http://127.0.0.1:$server_port/conformance/bwg-worker-possession-0.2/browser.html" \
   >"$browser_output"
 "$playwright_cli" -s="$session_name" run-code \
   --filename "$repository_root/scripts/wait-browser-conformance.mjs" \
@@ -108,10 +108,10 @@ fi
 
 : >"$browser_output"
 "$playwright_cli" -s="$session_name" goto \
-  "http://127.0.0.1:$server_port/conformance/bwg-worker-usb-0.2/webusb-adapter-browser.html" \
+  "http://127.0.0.1:$server_port/conformance/bwg-worker-serial-0.1/browser.html" \
   >"$browser_output"
 "$playwright_cli" -s="$session_name" run-code \
-  --filename "$repository_root/scripts/run-worker-webusb-browser.mjs" \
+  --filename "$repository_root/scripts/wait-browser-conformance.mjs" \
   >>"$browser_output"
 "$playwright_cli" -s="$session_name" snapshot >>"$browser_output"
 
