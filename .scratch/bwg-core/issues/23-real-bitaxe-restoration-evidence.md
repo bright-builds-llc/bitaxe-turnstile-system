@@ -2,11 +2,11 @@
 
 **What to build:** Real Bitaxe evidence proves that bounded mainnet-capable challenge work can run through Reference Firmware and restore the exact Mining Baseline across every terminal and interruption path.
 
-**Blocked by:** 18: Admit only exact BIP 23-valid mainnet jobs; 20: Aggregate Workers and fail over equivalent Pool Offers; 22: Onboard Bitaxe with settings-preserving Reference Firmware; child effort `bwg-worker-usb-separation` through Ticket 07.
+**Blocked by:** 18: Admit only exact BIP 23-valid mainnet jobs; 20: Aggregate Workers and fail over equivalent Pool Offers; 22: Onboard Bitaxe with settings-preserving Reference Firmware; child effort `bwg-worker-serial` Ticket 01 and firmware hardware qualification.
 
 **Status:** ready-for-agent
 
-- [ ] The firmware repository consumes the shared Controller 0.3, Worker USB 0.2, Local Device
+- [ ] The firmware repository consumes the shared Controller 0.4, Worker Serial 0.1, Local Device
   Possession, and Work Lease Authorization conformance profiles and fixtures, separate authority
   trust configurations, and exact signed Ultra 205 capability artifact.
 - [ ] Exact-device admission and safe hardware state are proven before each effectful attempt.
@@ -24,9 +24,9 @@
 
 ## Transport prerequisite
 
-[`bwg-worker-usb-separation`](../../bwg-worker-usb-separation/spec.md) must first publish and compose
-the separated application control/evidence profiles. Ticket 23 consumes that child effort's exact
-Controller 0.3, Worker USB 0.2, Local Device Possession, and Work Lease Authorization fixtures,
+[`bwg-worker-serial`](../../bwg-worker-serial/spec.md) must first publish and compose
+the fixed Serial/JTAG session and typed control/evidence profiles. Ticket 23 consumes that child effort's exact
+Controller 0.4, Worker Serial 0.1, Local Device Possession, and Work Lease Authorization fixtures,
 separate authority trust configurations, signed Ultra 205 capability, Reference Client adapter,
 Reference Firmware adapter, and cross-repository hardware evidence. It does not send Work Lease
-commands over the receive-only 0.1 runtime log transport.
+commands over the unframed runtime log transport.

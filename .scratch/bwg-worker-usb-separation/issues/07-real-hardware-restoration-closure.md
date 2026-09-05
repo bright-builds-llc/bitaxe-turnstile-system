@@ -7,7 +7,7 @@ restoration proof that closes BWG Core Ticket 23.
 **Blocked by:** 04: Add the production Reference Client WebUSB adapter;
 06: Implement the Reference Firmware composite USB adapter.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] Exact device, source, reference, package, transport functions, safe baseline, protected root,
   and recovery artifacts pass the firmware repository's no-effect preflight before each scenario.
@@ -41,3 +41,7 @@ restoration proof that closes BWG Core Ticket 23.
 ## Answer
 
 Pending.
+
+## Superseded — 2026-09-04
+
+Closed without claiming hardware verification. The approved fixed Serial/JTAG task replaces this active implementation: `.scratch/bwg-worker-serial/issues/01-fixed-serial-worker.md`. Earlier checked evidence remains historical.

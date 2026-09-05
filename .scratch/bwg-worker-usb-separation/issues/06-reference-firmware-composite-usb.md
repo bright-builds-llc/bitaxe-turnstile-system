@@ -6,7 +6,7 @@ Possession, and Work Lease Authorization fixtures plus the exact signed Ultra 20
 
 **Blocked by:** 05: Publish Worker deployment trust and Work Lease authorization.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] The firmware repository records a companion ADR and active task contract covering the exact
   command, device identity, effects, safety, privacy, recovery, cleanup, retry, and stop rules.
@@ -41,3 +41,7 @@ Possession, and Work Lease Authorization fixtures plus the exact signed Ultra 20
 ## Answer
 
 Pending.
+
+## Superseded — 2026-09-04
+
+Closed without claiming hardware verification. The approved fixed Serial/JTAG task replaces this active implementation: `.scratch/bwg-worker-serial/issues/01-fixed-serial-worker.md`. Earlier checked evidence remains historical.

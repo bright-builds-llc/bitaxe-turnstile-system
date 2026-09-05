@@ -206,3 +206,7 @@ interface and possession wire profile do not change.
 This child effort supplies the transport and cross-repository evidence required to close
 [BWG Core Ticket 23](../bwg-core/issues/23-real-bitaxe-restoration-evidence.md) without reopening or
 renumbering resolved Tickets 21 and 22.
+
+## Supersession — 2026-09-04
+
+This prototype effort is historical. Active execution moved to [fixed Serial/JTAG migration](../bwg-worker-serial/spec.md) under ADR 0094. No compatibility implementation or package exports are retained.
