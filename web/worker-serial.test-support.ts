@@ -412,6 +412,10 @@ export async function serialHarness(
     controller: createWebSerialWorkerController(input),
     received,
     counts: () => ({ opened, closed, locked, active }),
+    receiveRaw(bytes: Uint8Array) {
+      if (!maybeOutput) throw new Error("fixture_port_not_open");
+      maybeOutput.enqueue(bytes);
+    },
     async advance(milliseconds: number) {
       for (let elapsed = 0; elapsed < milliseconds; elapsed += 100) {
         now += Math.min(100, milliseconds - elapsed);

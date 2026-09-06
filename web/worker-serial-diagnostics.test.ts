@@ -1,8 +1,87 @@
 import { expect, test } from "bun:test";
-import { maybeWorkerDiagnosticPayload, maybeWorkerSerialDiagnostic } from "./worker-serial-diagnostics";
+import { maybeWorkerDiagnosticPayload, maybeWorkerSerialDiagnostic, WorkerSerialDiagnosticHistory } from "./worker-serial-diagnostics";
 import { WorkerSerialFramer, encodeWorkerSerialEnvelope, WORKER_SERIAL_PROFILE } from "./worker-serial";
+import { serialHarness } from "./worker-serial.test-support";
+import { createWebSerialWorkerController, workerSerialQualificationHook, type WorkerSerialQualificationHook } from "./webserial-worker-controller";
+
+test("revoked-session raw controller rejection survives subsequent liveness loss", async () => {
+  // Arrange
+  const harness = await serialHarness();
+  const history = new WorkerSerialDiagnosticHistory();
+  const failures: string[] = [];
+  const hook: WorkerSerialQualificationHook = {
+    suppressHeartbeats: false,
+    maybeObserveDiagnostic: value => history.observe(value),
+    maybeObserveSerialFailure: category => failures.push(category),
+  };
+  const input = { ...harness.input, [workerSerialQualificationHook]: hook };
+  const controller = createWebSerialWorkerController(input);
+  await controller.requestPermission();
+  harness.dropHeartbeats();
+  // Act: the firmware writer emits plain text after epoch revocation.
+  harness.receiveRaw(new TextEncoder().encode("session_"));
+  harness.receiveRaw(new TextEncoder().encode("failed\ninvalid_transition\nsynthetic-secret\n"));
+  await harness.advance(2800);
+  // Assert: diagnostics neither admit a response nor extend heartbeat authority.
+  expect(history.values()).toEqual([{ category: "control_failure", authoritative: false, error: "session_failed" }]);
+  expect(failures).toContain("liveness_lost");
+  expect(harness.counts()).toMatchObject({ closed: 1, locked: false, active: false });
+});
 
 const startup = "usb_startup schema=v1 stage=network state=entered first_failure=none uptime_ms=123 redacted=true";
+// Producer: bitaxe-worker-control/src/controller.rs, WorkerControlError::category.
+const controlErrors = ["invalid_frame", "invalid_request", "admission_required", "invalid_proof", "authentication_failed", "invalid_transition", "persistence_failed", "monotonic_reset", "session_failed", "restoration_pending", "stale_response", "encoding_failed"];
+
+test.each(controlErrors)("controller rejection %s is a non-authoritative closed observation", error => {
+  // Arrange / Act
+  const observed = maybeWorkerDiagnosticPayload({ line: error });
+  // Assert
+  expect(observed).toEqual({ category: "control_failure", authoritative: false, error });
+});
+
+test("controller diagnostics reject unknown categories and attached text", () => {
+  // Arrange
+  const lines = ["unknown_error", "bwg_worker event=restoration_pending", ...controlErrors.flatMap(error => [error + " secret=synthetic", "synthetic " + error, error + "\n", error + "\r", error + "\u2028"])];
+  // Act / Assert
+  for (const line of lines) expect(maybeWorkerSerialDiagnostic(line)).toBeUndefined();
+  expect(maybeWorkerDiagnosticPayload({ line: "session_failed", authoritative: true })).toBeUndefined();
+});
+
+test("diagnostic history retains the first failure of each category", () => {
+  // Arrange
+  const history = new WorkerSerialDiagnosticHistory();
+  const first = { category: "control_failure", authoritative: false, error: "session_failed" };
+  // Act
+  history.observe(first);
+  history.observe({ category: "control_failure", authoritative: false, error: "invalid_transition" });
+  history.observe({ category: "serial_rx_failure", authoritative: false, stage: "heartbeat_timeout" });
+  history.observe({ category: "serial_rx_failure", authoritative: false, stage: "session_revoked" });
+  // Assert
+  expect(history.values()).toEqual([first, { category: "serial_rx_failure", authoritative: false, stage: "heartbeat_timeout" }]);
+});
+
+test("diagnostic history clears earlier failures for a fresh connection", () => {
+  // Arrange
+  const history = new WorkerSerialDiagnosticHistory();
+  history.observe({ category: "control_failure", authoritative: false, error: "session_failed" });
+  // Act
+  history.clear();
+  history.observe({ category: "control_failure", authoritative: false, error: "authentication_failed" });
+  // Assert
+  expect(history.values()).toEqual([{ category: "control_failure", authoritative: false, error: "authentication_failed" }]);
+});
+
+test("diagnostic history updates ordinary observations without exceeding its bound", () => {
+  // Arrange
+  const history = new WorkerSerialDiagnosticHistory();
+  for (let stage = 0; stage < 32; stage++) history.observe({ category: "startup", stage, state: "entered" });
+  // Act
+  history.observe({ category: "startup", stage: 0, state: "complete" });
+  history.observe({ category: "startup", stage: 32, state: "entered" });
+  // Assert
+  expect(history.values()).toHaveLength(32);
+  expect(history.values()[0]?.state).toBe("complete");
+});
 test("fragmented startup observations do not become protocol admission frames", () => {
   // Arrange
   const observations: unknown[] = [];

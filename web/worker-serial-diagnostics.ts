@@ -1,9 +1,31 @@
 /** Local, non-authoritative observations; never identity or Work Lease admission. */
 export type WorkerSerialDiagnostic = Readonly<Record<string, string | number | boolean>>;
+
+/** Bounded connection-local observations; retain the earliest failure per category. */
+export class WorkerSerialDiagnosticHistory {
+  #observations = new Map<string, WorkerSerialDiagnostic>();
+
+  observe(value: WorkerSerialDiagnostic): void {
+    const failure = String(value.category).endsWith("_failure") || value.category === "panic";
+    const key = failure ? String(value.category) : `${value.category}:${value.stage ?? ""}`;
+    if (this.#observations.has(key) && failure) return;
+    if (this.#observations.size >= 32 && !this.#observations.has(key)) return;
+    this.#observations.set(key, value);
+  }
+
+  values(): WorkerSerialDiagnostic[] { return [...this.#observations.values()]; }
+
+  clear(): void { this.#observations.clear(); }
+}
 const stages = "early_identity|usb_install|nvs|hardware|worker_recovery|runtime_services|storage_http|network|worker_control|statistics|runtime_ready";
 const allocationStages = "early_identity|hardware|runtime_services|storage_http|network|usb_install|statistics|runtime_ready";
 type Grammar = { category: string; pattern: RegExp; fields: readonly string[]; numeric: readonly string[] };
 const grammars: readonly Grammar[] = [
+  {
+    // Producer: bitaxe-worker-control/src/controller.rs, WorkerControlError::category.
+    category: "control_failure", pattern: /^(invalid_frame|invalid_request|admission_required|invalid_proof|authentication_failed|invalid_transition|persistence_failed|monotonic_reset|session_failed|restoration_pending|stale_response|encoding_failed)$/u,
+    fields: ["error"], numeric: [],
+  },
   {
     category: "serial_rx_failure", pattern: /^usb_rx_failure schema=v1 stage=(read|framing|envelope|sequence|heartbeat_payload|heartbeat_timeout|control_allocation|control_queue|unexpected_kind|session_revoked) observed_bytes=(\d{1,5}) redacted=true$/u,
     fields: ["stage", "observed_bytes"], numeric: ["observed_bytes"],
@@ -80,7 +102,7 @@ export function maybeWorkerSerialDiagnostic(line: string): WorkerSerialDiagnosti
   if (line.length > 1024) return undefined;
   for (const grammar of grammars) {
     const match = grammar.pattern.exec(line);
-    if (!match) continue;
+    if (!match || match[0].length !== line.length) continue;
     const value: Record<string, string | number | boolean> = { category: grammar.category, authoritative: false };
     for (const [index, key] of grammar.fields.entries()) {
       const text = match[index + 1]; if (text === undefined) return undefined;

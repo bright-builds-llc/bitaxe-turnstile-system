@@ -1,4 +1,4 @@
-import type { WorkerSerialDiagnostic } from "./worker-serial-diagnostics";
+import { WorkerSerialDiagnosticHistory } from "./worker-serial-diagnostics";
 import {
   restoreAcceptanceBaseline,
   acceptanceWindowShouldStop,
@@ -47,15 +47,16 @@ let deviceRestorationConfirmed = false,
 let maybeAdmissionFailureStage: string | undefined;
 let maybeSerialFailureCategory: string | undefined;
 let serialOwnershipReleased = true;
-const localDiagnostics = new Map<string, WorkerSerialDiagnostic>();
+const localDiagnostics = new WorkerSerialDiagnosticHistory();
+function publishDiagnostics() {
+  const output = document.querySelector("#diagnostics");
+  if (output) output.textContent = JSON.stringify(localDiagnostics.values(), null, 2);
+}
 const hook: WorkerSerialQualificationHook = {
   maybeObserveSerialFailure(category) { maybeSerialFailureCategory ??= category; },
   maybeObserveDiagnostic(value) {
-    const key = `${value.category}:${value.stage ?? ""}`;
-    if (localDiagnostics.size >= 32 && !localDiagnostics.has(key)) return;
-    localDiagnostics.set(key, value);
-    const output = document.querySelector("#diagnostics");
-    if (output) output.textContent = JSON.stringify([...localDiagnostics.values()], null, 2);
+    localDiagnostics.observe(value);
+    publishDiagnostics();
   },
   maybeObserveAdmissionFailure(stage) { maybeAdmissionFailureStage ??= stage; },
   maybeObserveSerialOwnership(released) { serialOwnershipReleased = released; publish(); },
@@ -184,6 +185,8 @@ async function connect() {
   hook.suppressHeartbeats = false;
   maybeAdmissionFailureStage = undefined;
   maybeSerialFailureCategory = undefined;
+  localDiagnostics.clear();
+  publishDiagnostics();
   const input: WebSerialWorkerControllerInput & {
     [workerSerialQualificationHook]: WorkerSerialQualificationHook;
   } = {
