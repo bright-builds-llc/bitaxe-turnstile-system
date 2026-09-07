@@ -22,6 +22,10 @@ const allocationStages = "early_identity|hardware|runtime_services|storage_http|
 type Grammar = { category: string; pattern: RegExp; fields: readonly string[]; numeric: readonly string[] };
 const grammars: readonly Grammar[] = [
   {
+    category: "worker_admission", pattern: /^worker_admission schema=v1 stage=(idle|admission|readiness|preparation|pool_activation|active|cleanup|complete) first_failure=(none|admission|readiness|preparation|pool_activation|cleanup) readiness=(\d{1,2}) budget_reserved_ms=(\d{1,6}) budget_complete=(true|false) redacted=true$/u,
+    fields: ["stage", "first_failure", "readiness", "budget_reserved_ms", "budget_complete"], numeric: ["readiness", "budget_reserved_ms"],
+  },
+  {
     // Producer: bitaxe-worker-control/src/controller.rs, WorkerControlError::category.
     category: "control_failure", pattern: /^(invalid_frame|invalid_request|admission_required|invalid_proof|authentication_failed|invalid_transition|persistence_failed|monotonic_reset|session_failed|restoration_pending|stale_response|encoding_failed)$/u,
     fields: ["error"], numeric: [],
@@ -111,6 +115,8 @@ export function maybeWorkerSerialDiagnostic(line: string): WorkerSerialDiagnosti
       if (typeof field === "number" && !["uptime_ms", "boot_ordinal"].includes(key) && field > 0xffffffff) return undefined;
       value[key] = field;
     }
+    if (typeof value.readiness === "number" && value.readiness > 63) return undefined;
+    if (typeof value.budget_reserved_ms === "number" && value.budget_reserved_ms > 240000) return undefined;
     if (typeof value.observed_bytes === "number" && value.observed_bytes > 66560) return undefined;
     if (value.boot_ordinal === 0 || value.requested_bytes === 0 || value.line === 0) return undefined;
     if (value.state === "failed" && value.first_failure === "none") return undefined;

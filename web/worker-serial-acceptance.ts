@@ -1,3 +1,4 @@
+import type { WorkerLeaseAuthorizationContext } from "./worker-lease-authorization";
 import { WorkerSerialDiagnosticHistory } from "./worker-serial-diagnostics";
 import {
   restoreAcceptanceBaseline,
@@ -86,6 +87,7 @@ const hook: WorkerSerialQualificationHook = {
   },
 };
 let maybeConfiguration: Configuration | undefined;
+let maybeReviewedContext: WorkerLeaseAuthorizationContext | undefined;
 let maybeController: WebSerialWorkerController | undefined;
 let maybeWindow: WindowArtifacts | undefined;
 let maybeTimer: ReturnType<typeof setInterval> | undefined;
@@ -179,6 +181,7 @@ function configure(input: Configuration) {
   publish();
 }
 async function connect() {
+  maybeReviewedContext = undefined;
   const config = maybeConfiguration;
   if (!config) throw new Error("configuration_missing");
   if (connected) throw new Error("already_connected");
@@ -218,8 +221,9 @@ async function connect() {
   return state();
 }
 async function prepareStartAuthorization() {
-  const context =
+  const context = maybeReviewedContext ??
     await controller().prepareWorkerLeaseAuthorizationContext("start");
+  maybeReviewedContext = undefined;
   const output = document.querySelector<HTMLTextAreaElement>(
     "#authorization-context",
   );
@@ -355,6 +359,7 @@ async function stop() {
   return state();
 }
 async function close() {
+  maybeReviewedContext = undefined;
   stopTimer();
   const current = maybeController;
   maybeWindow = undefined;
@@ -402,7 +407,38 @@ async function suppressHeartbeats() {
   publish();
 }
 
+async function reviewBudget(campaignId: string) {
+  if (!maybeController || running) throw new Error("budget_review_admission");
+  return maybeController.acceptanceBudgetReview(campaignId);
+}
+
+async function submitBudgetReview() {
+  maybeReviewedContext = undefined;
+  const input = await localJson("/budget-review-context", {});
+  if (!input || Object.keys(input).length !== 2 || typeof input.campaignId !== "string" || typeof input.nonce !== "string") throw new Error("budget_review_context");
+  const context = await controller().prepareWorkerLeaseAuthorizationContext("start");
+  const report = await reviewBudget(input.campaignId);
+  const receipt = await localJson("/budget-review", { nonce: input.nonce, report, controlSessionBindingSha256: context.controlSessionBindingSha256, state: state() });
+  if (receipt?.budget_review_saved !== true) throw new Error("budget_review_receipt");
+  maybeReviewedContext = context;
+  return report;
+}
+async function rejectStartForRecoveryTest() {
+  maybeReviewedContext = undefined;
+  if (!maybeConfiguration || running) throw new Error("rejection_fixture_admission");
+  try {
+    return await controller().rejectStartForRecoveryTest(maybeConfiguration.trust.workLeaseAuthority);
+  } finally {
+    connected = false;
+    status = "closed";
+    publish();
+  }
+}
+
 export const workerAcceptance = {
+  submitBudgetReview,
+  rejectStartForRecoveryTest,
+  reviewBudget,
   configure,
   connect,
   prepareStartAuthorization,

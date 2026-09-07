@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://brightbuilds.dev/schemas/bwg-worker-controller-0.4-fixtures.json",
-  "title": "BWG Worker Controller 0.1 shared fixture contract",
+  "title": "BWG Worker Controller 0.4 shared fixture contract",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -627,6 +627,81 @@
           }
         }
       ]
+    },
+    "acceptanceBudgetReviewRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "command",
+        "payload"
+      ],
+      "properties": {
+        "protocolVersion": {
+          "const": "bwg-worker-controller/0.4"
+        },
+        "requestId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^serial_[A-Za-z0-9_-]+$"
+        },
+        "command": {
+          "const": "acceptance_budget_review"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "campaignId"
+          ],
+          "properties": {
+            "campaignId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{21}[AQgw]$"
+            }
+          }
+        }
+      }
+    },
+    "acceptanceBudgetReviewResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "campaign_match",
+        "reserved_mask",
+        "completed_mask",
+        "charged_ms",
+        "pending"
+      ],
+      "$comment": "Runtime parser additionally requires completed subset reserved, at most one outstanding bit, pending iff masks differ, and charged_ms equals weighted reserved bits 180000/30000/30000.",
+      "properties": {
+        "schema": {
+          "const": "worker-budget-review-v1"
+        },
+        "campaign_match": {
+          "type": "boolean"
+        },
+        "reserved_mask": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        },
+        "completed_mask": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        },
+        "charged_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 240000
+        },
+        "pending": {
+          "type": "boolean"
+        }
+      }
     }
   }
 }

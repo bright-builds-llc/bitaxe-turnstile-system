@@ -29,3 +29,5 @@ export function createWebSerialWorkerController(
     )[workerSerialQualificationHook],
   );
 }
+
+export type { WorkerBudgetReview } from "./worker-budget-review";

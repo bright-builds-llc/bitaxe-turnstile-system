@@ -120,3 +120,56 @@ cancellation, large records near heartbeat boundaries and blocked command
 owners. No corrupt record may reach controller dispatch and no revoked send
 may emit additional bytes. Diagnostics expose closed categories and bounded
 counts only. Real-device timing and four-cycle qualification remain separate.
+
+## Admission diagnostics and budget review
+
+The existing diagnostic record may carry the closed `worker_admission schema=v1`
+line. It reports `stage` (idle, admission, readiness, preparation, pool_activation,
+active, cleanup, complete), `first_failure` (none, admission, readiness,
+preparation, pool_activation, cleanup), `readiness` (0–63),
+`budget_reserved_ms` (0–240000), `budget_complete` (true/false), and
+`redacted=true`, in that exact order. Readiness bits 0 through 5 mean run intent,
+network connected, protocol supported, fresh safety prerequisites, lease
+available, and actuation owners available. These boot-local cached observations
+may span transitions and contain no campaign or session identity. They are
+explicitly nonauthoritative and must never authorize work, budget reuse, or
+restoration. The producer retains the first failed boundary through cleanup;
+only beginning a new admission clears it. The sole writer samples the atomics
+at most once per second, below control, heartbeat, and receive-credit traffic,
+without accessing NVS or waiting for a blocked Start.
+
+Controller 0.4 additionally accepts `acceptance_budget_review` with the exact
+payload `{ "campaignId": "<canonical base64url encoding of 16 bytes>" }`.
+It requires fresh possession, no active lease, and completed restoration. The
+read-only result contains exactly `schema: "worker-budget-review-v1"`,
+`campaign_match` (boolean), `reserved_mask` and `completed_mask` (integers 0–7),
+`charged_ms` (integer 0–240000), and `pending` (boolean). Completed bits must be
+reserved, with at most one outstanding bit, and pending equals whether the masks differ.
+Charged milliseconds equal the reserved mask weighted by 180000, 30000, and
+30000 for windows zero, one, and two. The identifier is never
+echoed or included in diagnostics. This response remains available when no
+mining generation timing exists. It observes the durable ledger and neither
+reserves nor refunds a window; callers must match the original campaign before
+using it to assess remaining acceptance work. The Web Serial adapter exposes
+`acceptanceBudgetReview(campaignId)`; the qualification page exposes
+`reviewBudget(campaignId)` and returns only the validated closed result.
+
+
+The qualification-only `rejectStartForRecoveryTest()` helper uses fresh possession
+and a synthetic non-campaign grant with an all-zero signature, never the signing
+endpoint or operational pool inputs. Success requires the correlated Controller
+rejection `{code: "command_rejected", message: "authentication_failed"}`.
+Timeout, diagnostic-only failure, or any other rejection fails the test. The
+adapter releases the rejected epoch without appending another control record.
+A fresh explicit connection and unchanged durable budget review are separate
+required recovery postconditions. `submitBudgetReview()` keeps the proof binding
+private while recording the closed report with the local supervisor; its next
+Start-authorization preparation reuses that same fresh proof once.
+
+The public Controller serial request codec accepts the same exact budget-review
+payload and rejects missing, extra, noncanonical or incorrectly sized identifiers.
+Shared examples are in `conformance/bwg-worker-controller-0.4/budget-review-vectors.json`;
+`contract.schema.json` defines `acceptanceBudgetReviewRequest` and
+`acceptanceBudgetReviewResult`. Runtime validation enforces the relationships
+between mask bits, charges and pending state. The deterministic generic simulator
+has no possessed durable ledger and rejects this operation explicitly.

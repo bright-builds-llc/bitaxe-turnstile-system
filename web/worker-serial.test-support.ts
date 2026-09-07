@@ -257,6 +257,7 @@ export async function serialHarness(
     if (request.command === "start_lease") {
       const grant = parseWorkerLeaseGrant(request.payload);
       const { authorization, ...unsigned } = grant;
+      try {
       await verifyWorkerLeaseAuthorization(
         authorization,
         {
@@ -267,6 +268,10 @@ export async function serialHarness(
         },
         trust,
       );
+      } catch {
+        await send("control", { protocolVersion: request.protocolVersion, requestId: request.requestId, ok: false, error: { code: "command_rejected", message: "authentication_failed" } });
+        return;
+      }
       maybeLease = grant;
       active = true;
       if (holdStart) return;
@@ -289,6 +294,11 @@ export async function serialHarness(
       );
       maybeLease = { ...maybeLease, ...renewal };
       await reply(request, status());
+      return;
+    }
+    if (request.command === "acceptance_budget_review") {
+      const payload = exactSerialRecord(request.payload, ["campaignId"]);
+      await reply(request, { schema: "worker-budget-review-v1", campaign_match: payload.campaignId === "AAAAAAAAAAAAAAAAAAAAAA", reserved_mask: 1, completed_mask: 1, charged_ms: 180000, pending: false });
       return;
     }
     if (request.command === "transport_probe") {
@@ -423,6 +433,7 @@ export async function serialHarness(
   const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
   return {
     input,
+    trust,
     controller: createWebSerialWorkerController(input),
     received,
     counts: () => ({ opened, closed, locked, active }),

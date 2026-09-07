@@ -69,6 +69,8 @@ async function dispatch(
   request: ReturnType<typeof decodeWorkerControllerSerialRequest>,
 ) {
   switch (request.command) {
+    case "acceptance_budget_review":
+      throw new Error("Budget review requires the possessed firmware ledger");
     case "discover":
       return controller.discover();
     case "status":

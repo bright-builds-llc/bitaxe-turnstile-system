@@ -1,3 +1,5 @@
+import type { WorkLeaseAuthorityTrust } from "./worker-lease-authorization";
+import type { WorkerBudgetReview } from "./worker-budget-review";
 import type { WorkerSerialFailureCategory } from "./worker-serial-errors";
 import type { WorkerSerialDiagnostic } from "./worker-serial-diagnostics";
 import type { WorkerPreservation } from "./worker-preservation";
@@ -41,6 +43,9 @@ export interface WebSerialWorkerController
     listener: (reason: WorkerControllerDisconnectReason) => Promise<void>,
   ): () => void;
   close(reason?: WorkerRestorationReason): Promise<void>;
+  /** Qualification only; requires the explicit qualification hook. */
+  rejectStartForRecoveryTest(trust: WorkLeaseAuthorityTrust): Promise<{ rejected: true; error: "authentication_failed" }>;
+  acceptanceBudgetReview(campaignId: string): Promise<WorkerBudgetReview>;
   transportProbe(maybePaddingBytes?: number): Promise<{
     paddingBytes: number;
     requestPayloadBytes: number;

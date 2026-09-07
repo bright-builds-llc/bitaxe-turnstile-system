@@ -163,3 +163,21 @@ test("USB envelope rejects an overlong request identity", () => {
   // Assert
   expect(decode).toThrow("Worker Controller Serial envelope is invalid");
 });
+
+test("public Controller 0.4 codec accepts the shared possessed budget-review request", async () => {
+  // Arrange
+  const { default: vector } = await import("../conformance/bwg-worker-controller-0.4/budget-review-vectors.json");
+  // Act
+  const request = decodeWorkerControllerSerialRequest(encodeWorkerControllerSerialMessage(vector.request));
+  // Assert
+  expect(request).toEqual({ ...vector.request, protocolVersion: "bwg-worker-controller/0.4", command: "acceptance_budget_review" });
+});
+
+test("public budget-review request rejects missing, extra and noncanonical campaign fields", async () => {
+  // Arrange
+  const { default: vector } = await import("../conformance/bwg-worker-controller-0.4/budget-review-vectors.json");
+  const { payload: _payload, ...withoutPayload } = vector.request;
+  const requests = [withoutPayload, ...vector.invalidPayloads.map(payload => ({ ...vector.request, payload }))];
+  // Act / Assert
+  for (const request of requests) expect(() => decodeWorkerControllerSerialRequest(encodeWorkerControllerSerialMessage(request))).toThrow();
+});
