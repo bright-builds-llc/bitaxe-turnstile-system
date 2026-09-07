@@ -338,3 +338,6 @@ object defined in [Worker mining progress v1](worker-mining-progress-v1.md) and
 application manifest and carries no authority. Legacy qualification records may
 omit it. In particular, zero `nonce_work_correlations` retains its existing
 qualified-candidate-delta meaning and does not prove zero received ASIC nonces.
+
+The current optional mining-progress producer uses [version 2](worker-mining-progress-v2.md)
+for fixed-filter match/miss observations; the parser retains historical version 1.

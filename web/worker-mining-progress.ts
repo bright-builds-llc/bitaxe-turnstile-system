@@ -4,13 +4,18 @@ const discards = ["invalid_length", "invalid_preamble", "invalid_crc", "job_look
 const blocked = ["wrong_session", "job_lookup", "work_stale", "target_mismatch", "other"] as const;
 type Counts<Keys extends readonly string[]> = { [Key in Keys[number]]: string };
 /** Observations only. Counts do not establish ASIC work, pool acceptance, or lease authority. */
-export type WorkerMiningProgress = Counts<typeof counts> & {
-  schema: "worker-mining-progress-v1";
+type CommonProgress = Counts<typeof counts> & {
   generation: number;
   observed_at_ms: string;
   discards: Counts<typeof discards>;
   blocked: Counts<typeof blocked>;
 };
+export const expectedMiningFilter = "bm1366-ticket-256-leading-zero-40-v1";
+export type WorkerMiningProgress = CommonProgress & (
+  { schema: "worker-mining-progress-v1" } |
+  { schema: "worker-mining-progress-v2"; expected_filter: typeof expectedMiningFilter;
+    expected_filter_matches: string; expected_filter_misses: string }
+);
 function decimal(value: unknown): string {
   if (typeof value !== "string" || !/^(0|[1-9][0-9]{0,19})$/u.test(value)
       || BigInt(value) > 18446744073709551615n) throw serialFailure("fields");
@@ -22,10 +27,16 @@ function parseCounts<Keys extends readonly string[]>(input: unknown, keys: Keys)
 }
 /** Strict optional extension; absent historical data stays absent, never synthesized as zero. */
 export function parseWorkerMiningProgress(input: unknown, generation: number): WorkerMiningProgress {
-  const value = exactSerialRecord(input, ["schema", "generation", "observed_at_ms", ...counts, "discards", "blocked"]);
-  if (value.schema !== "worker-mining-progress-v1" || value.generation !== generation
+  const v2 = input !== null && typeof input === "object" && "schema" in input && input.schema === "worker-mining-progress-v2";
+  const value = exactSerialRecord(input, ["schema", "generation", "observed_at_ms", ...counts, "discards", "blocked",
+    ...(v2 ? ["expected_filter", "expected_filter_matches", "expected_filter_misses"] : [])]);
+  if (value.schema !== (v2 ? "worker-mining-progress-v2" : "worker-mining-progress-v1") || value.generation !== generation
       || !Number.isInteger(generation) || generation <= 0 || generation > 0xffffffff) throw serialFailure("fields");
   const projectedCounts = Object.fromEntries(counts.map((key) => [key, decimal(value[key])])) as Counts<typeof counts>;
-  return { schema: "worker-mining-progress-v1", generation, observed_at_ms: decimal(value.observed_at_ms),
+  const common = { generation, observed_at_ms: decimal(value.observed_at_ms),
     ...projectedCounts, discards: parseCounts(value.discards, discards), blocked: parseCounts(value.blocked, blocked) };
+  if (!v2) return { schema: "worker-mining-progress-v1", ...common };
+  if (value.expected_filter !== expectedMiningFilter) throw serialFailure("fields");
+  return { schema: "worker-mining-progress-v2", ...common, expected_filter: expectedMiningFilter,
+    expected_filter_matches: decimal(value.expected_filter_matches), expected_filter_misses: decimal(value.expected_filter_misses) };
 }

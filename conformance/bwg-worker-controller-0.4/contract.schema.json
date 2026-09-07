@@ -972,6 +972,16 @@
       "$comment": "Runtime additionally enforces u64 timestamp bound and equality with enclosing qualification generation; freshness is firmware-owned."
     },
     "miningProgress": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/miningProgressV1"
+        },
+        {
+          "$ref": "#/$defs/miningProgressV2"
+        }
+      ]
+    },
+    "miningProgressV1": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -1114,6 +1124,167 @@
               "pattern": "^(0|[1-9][0-9]{0,19})$"
             }
           }
+        }
+      },
+      "$comment": "Runtime additionally enforces canonical u64 upper bound and enclosing generation equality. Optional observation only; historical absence remains valid."
+    },
+    "miningProgressV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "generation",
+        "observed_at_ms",
+        "poll_requested",
+        "poll_idle",
+        "poll_nonce",
+        "poll_register",
+        "stale_completion",
+        "qualified_candidates",
+        "below_pool_target",
+        "duplicate_candidates",
+        "discards",
+        "blocked",
+        "expected_filter",
+        "expected_filter_matches",
+        "expected_filter_misses"
+      ],
+      "properties": {
+        "schema": {
+          "const": "worker-mining-progress-v2"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "observed_at_ms": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,19})$"
+        },
+        "poll_requested": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,19})$"
+        },
+        "poll_idle": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,19})$"
+        },
+        "poll_nonce": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,19})$"
+        },
+        "poll_register": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,19})$"
+        },
+        "stale_completion": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,19})$"
+        },
+        "qualified_candidates": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,19})$"
+        },
+        "below_pool_target": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,19})$"
+        },
+        "duplicate_candidates": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,19})$"
+        },
+        "discards": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "invalid_length",
+            "invalid_preamble",
+            "invalid_crc",
+            "job_lookup",
+            "core",
+            "address_interval",
+            "register_response",
+            "parser_invariant"
+          ],
+          "properties": {
+            "invalid_length": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,19})$"
+            },
+            "invalid_preamble": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,19})$"
+            },
+            "invalid_crc": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,19})$"
+            },
+            "job_lookup": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,19})$"
+            },
+            "core": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,19})$"
+            },
+            "address_interval": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,19})$"
+            },
+            "register_response": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,19})$"
+            },
+            "parser_invariant": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,19})$"
+            }
+          }
+        },
+        "blocked": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "wrong_session",
+            "job_lookup",
+            "work_stale",
+            "target_mismatch",
+            "other"
+          ],
+          "properties": {
+            "wrong_session": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,19})$"
+            },
+            "job_lookup": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,19})$"
+            },
+            "work_stale": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,19})$"
+            },
+            "target_mismatch": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,19})$"
+            },
+            "other": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,19})$"
+            }
+          }
+        },
+        "expected_filter": {
+          "const": "bm1366-ticket-256-leading-zero-40-v1"
+        },
+        "expected_filter_matches": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,19})$"
+        },
+        "expected_filter_misses": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,19})$"
         }
       },
       "$comment": "Runtime additionally enforces canonical u64 upper bound and enclosing generation equality. Optional observation only; historical absence remains valid."

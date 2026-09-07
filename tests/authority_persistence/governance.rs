@@ -65,13 +65,14 @@ async fn retired_pass_lookup_is_gone_while_active_adapter_acknowledgements_remai
         "{}/v0/challenges/{retired_challenge_id}/gate-pass",
         server.base_url
     );
+    let client = reqwest::Client::new();
     let before_proof = claimant.sign_issuance_proof(
         &public_lookup_url,
         retired_challenge_id,
         "proof_before_pass_retention",
-        now,
+        SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
     )?;
-    let before = reqwest::Client::new()
+    let before = client
         .get(&request_lookup_url)
         .header(CLAIMANT_PROOF_HEADER, before_proof)
         .send()
@@ -123,17 +124,37 @@ async fn retired_pass_lookup_is_gone_while_active_adapter_acknowledgements_remai
     let progress = timeout(Duration::from_secs(2), progress_response.chunk())
         .await??
         .ok_or("progress stream ended before its snapshot")?;
-    let after_proof = claimant.sign_issuance_proof(
-        &public_lookup_url,
-        retired_challenge_id,
-        "proof_after_pass_retention",
-        now,
-    )?;
     let after_request_lookup_url = format!(
         "{}/v0/challenges/{retired_challenge_id}/gate-pass",
         restarted_server.base_url
     );
-    let after = reqwest::Client::new()
+    // Retention's fixed as-of time is not the freshness time of a later HTTP proof.
+    let stale_proof = claimant.sign_issuance_proof(
+        &public_lookup_url,
+        retired_challenge_id,
+        "proof_stale_after_pass_retention",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)?
+            .as_secs()
+            .saturating_sub(61),
+    )?;
+    let stale = client
+        .get(&after_request_lookup_url)
+        .header(CLAIMANT_PROOF_HEADER, stale_proof)
+        .send()
+        .await?;
+    assert_eq!(stale.status(), reqwest::StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        stale.json::<Value>().await?["error"],
+        "invalid_claimant_proof"
+    );
+    let after_proof = claimant.sign_issuance_proof(
+        &public_lookup_url,
+        retired_challenge_id,
+        "proof_after_pass_retention",
+        SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
+    )?;
+    let after = client
         .get(after_request_lookup_url)
         .header(CLAIMANT_PROOF_HEADER, after_proof)
         .send()

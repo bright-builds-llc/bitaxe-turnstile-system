@@ -45,3 +45,16 @@ The codec, conformance definition and [protocol description](../../../docs/proto
 record the new optional field. Hardware acceptance and unresolved parity blockers remain open.
 
 Verification: format, lint, type checking, build, 352 Rust tests, 404 JavaScript tests, headless browser checks, lookup vectors, package and standards checks passed. The browser fixture now builds its exact target before the existing server-readiness timer and inherits the caller's Cargo profile; startup limits are unchanged. Hardware evidence remains pending.
+
+## Fixed-filter discriminator
+
+- [x] Parse closed mining-progress v2 while preserving v1 history and excluding raw candidate and pool data.
+- [x] Verify the fixed-filter extension.
+- [ ] Complete exact published firmware consumption.
+- [ ] Obtain physical accepted-share and outstanding stop evidence; parsed below-target nonces alone do not establish reconstructed-hash quality.
+
+The new counters compare reconstructed hashes against the explicit software
+model in [mining-progress v2](../../../docs/protocol/worker-mining-progress-v2.md).
+They do not change pool settings, target qualification, or safety gates.
+
+Fixed-filter verification: 352 Rust tests, 407 JavaScript tests, type/build, headless browser, lookup vectors, package and standards checks passed. The retention test now timestamps claimant proofs at each lookup and explicitly proves stale-proof rejection; production authentication and retention limits are unchanged.
