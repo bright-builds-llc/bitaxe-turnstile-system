@@ -2,14 +2,17 @@ import { maybePreparationDiagnostic, maybePreparationExport, sameRecord } from "
 /** Local, non-authoritative observations; never identity or Work Lease admission. */
 export type WorkerSerialDiagnostic = Readonly<Record<string, string | number | boolean>>;
 
-/** Bounded connection-local observations; retain the earliest failure per category. */
+/** Bounded normal observations with crash receipts retained across reconnects. */
 export class WorkerSerialDiagnosticHistory {
   #observations = new Map<string, WorkerSerialDiagnostic>();
   #crashReceipts = new Map<string, WorkerSerialDiagnostic>();
 
   observe(value: WorkerSerialDiagnostic): void {
-    if ((value.category === "worker_preparation_receipt" && value.origin === "previous_boot") || value.category === "panic") {
-      const key = `${value.category}:${value.source_hash ?? value.file_hash ?? "none"}:${value.boot_ordinal ?? "none"}:${value.status ?? value.line}`;
+    const allocation = value.category === "allocation_failure" || value.category === "allocation_context";
+    if (allocation || (value.category === "worker_preparation_receipt" && value.origin === "previous_boot") || value.category === "panic") {
+      const key = allocation
+        ? `${value.category}:${value.source_hash ?? ""}:${value.requested_bytes}:${value.capabilities}:${value.stage ?? ""}`
+        : `${value.category}:${value.source_hash ?? value.file_hash ?? "none"}:${value.boot_ordinal ?? "none"}:${value.status ?? value.line}`;
       if (this.#crashReceipts.size < 8 || this.#crashReceipts.has(key)) this.#crashReceipts.set(key, value);
       return;
     }

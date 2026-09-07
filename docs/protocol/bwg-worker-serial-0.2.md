@@ -285,10 +285,17 @@ measure internal 8-bit memory bytes; stack_free is the pinned Xtensa watermark
 in bytes. U64 values remain
 exact decimal strings in browser observations.
 
-Previous-boot receipts and panic observations have separate bounded retention
+Previous-boot receipts, panic observations, allocation failures and allocation
+contexts have separate bounded retention
 that current diagnostics and reconnect resets cannot evict. Explicit
 `exportDiagnostics()` posts `{schema: "worker-diagnostic-export-v1", observations: [...]}` to `/diagnostic-export` only after revalidating every
 observation against the closed producer grammar. Maximum count is 40. Unknown
 fields, altered types, arbitrary strings and raw log material are rejected.
 The public validator is `web/worker-diagnostic-export.ts`; it returns only
 sanitized closed records. The page returns only a validated opaque receipt filename.
+
+Allocation crash receipts share the eight reserved crash slots, separate from
+32 normal diagnostic observations. Their stable keys use category, source hash,
+requested size, capabilities and stage when present; absent boot identity is
+never invented. Reconnect clears normal observations while preserving these
+receipts. Deduplication and saturation retain the 40-observation export bound.

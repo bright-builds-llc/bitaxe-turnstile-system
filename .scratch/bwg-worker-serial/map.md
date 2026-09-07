@@ -26,3 +26,8 @@ separate new individually bounded diagnostic/acceptance attempts from the
 immutable original campaign. Signed purpose/ordinal metadata, manifest support,
 a separate durable ledger review and explicit closed diagnostic export preserve
 authorization, accounting and crash evidence. Firmware still owns physical proof.
+
+[Ticket 12](issues/12-retain-allocation-crash-receipts.md) reserves allocation
+failure/context observations alongside existing crash receipts. Saturation and
+reconnect tests preserve them within the unchanged 40-observation export bound;
+this changes no manifest, signing contract or firmware behavior.
