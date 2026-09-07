@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 
 import controllerFixtures from "../conformance/bwg-worker-controller-0.4/fixtures.json";
-import usbFixtures from "../conformance/bwg-worker-serial-0.1/fixtures.json";
+import usbFixtures from "../conformance/bwg-worker-serial-0.2/fixtures.json";
 import {
   parseWorkerDeploymentTrust,
   signWorkerControllerCapability,

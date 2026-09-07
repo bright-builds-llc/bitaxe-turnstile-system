@@ -92,6 +92,9 @@ export async function serialHarness(
       },
     ],
   };
+  let drained = 0;
+  let helloDrained = false;
+  let dropCredits = false;
   let now = 0,
     opened = 0,
     closed = 0,
@@ -120,13 +123,13 @@ export async function serialHarness(
   const hidden = new Set<() => void>();
   const received: { kind: string; command?: string }[] = [];
   let maybeLease: WorkerLeaseGrant | undefined;
-  const send = (
+  const send = async (
     kind: WorkerSerialEnvelope["kind"],
     payload: Record<string, unknown>,
     ack = false,
   ) => {
     if (!maybeOutput) return;
-    const frame = encodeWorkerSerialEnvelope({
+    const frame = await encodeWorkerSerialEnvelope({
       profile: WORKER_SERIAL_PROFILE,
       kind,
       sessionId: session,
@@ -162,8 +165,8 @@ export async function serialHarness(
         monotonicMilliseconds: now,
         restoration: { status: "confirmed", reason },
       };
-  const reply = (request: Record<string, unknown>, result: unknown) =>
-    send("control", {
+  const reply = async (request: Record<string, unknown>, result: unknown) =>
+    await send("control", {
       protocolVersion: request.protocolVersion,
       requestId: request.requestId,
       ok: true,
@@ -180,7 +183,7 @@ export async function serialHarness(
       session = encodeBase64Url(new Uint8Array(16).fill(opened));
       sequence = 0;
       admitted = false;
-      send(
+      await send(
         "session",
         {
           op: "hello_ack",
@@ -189,6 +192,8 @@ export async function serialHarness(
           serialManifest: WORKER_SERIAL_MANIFEST,
           firmwareSourceCommit: "a".repeat(40),
           appElfSha256: "b".repeat(64),
+          receiveWindowBytes: 2048,
+          receivedBytes: 0,
         },
         true,
       );
@@ -245,7 +250,7 @@ export async function serialHarness(
       return;
     }
     if (request.command === "discover") {
-      reply(request, capabilityFixture);
+      await reply(request, capabilityFixture);
       return;
     }
     if (!admitted) throw new Error("fixture requires possession");
@@ -265,7 +270,7 @@ export async function serialHarness(
       maybeLease = grant;
       active = true;
       if (holdStart) return;
-      reply(request, status());
+      await reply(request, status());
       return;
     }
     if (request.command === "renew_lease") {
@@ -283,14 +288,14 @@ export async function serialHarness(
         trust,
       );
       maybeLease = { ...maybeLease, ...renewal };
-      reply(request, status());
+      await reply(request, status());
       return;
     }
     if (request.command === "transport_probe") {
       if (active) throw new Error("probe during lease");
       const payload = exactSerialRecord(request.payload, ["padding", "responsePaddingBytes"]);
       if (typeof payload.padding !== "string" || !Number.isSafeInteger(payload.responsePaddingBytes)) throw new Error("fixture probe payload");
-      reply(request, { padding: payload.padding.padEnd(Number(payload.responsePaddingBytes), "x"), requestPaddingBytes: payload.padding.length });
+      await reply(request, { padding: payload.padding.padEnd(Number(payload.responsePaddingBytes), "x"), requestPaddingBytes: payload.padding.length });
       return;
     }
     if (["pause", "cancel", "restore"].includes(String(request.command))) {
@@ -306,7 +311,7 @@ export async function serialHarness(
         return;
       }
     }
-    reply(request, status());
+    await reply(request, status());
   }
   const port: WorkerSerialPort = {
     get readable() {
@@ -318,6 +323,8 @@ export async function serialHarness(
     getInfo: () => ({ usbVendorId: 0x303a, usbProductId: 0x1001 }),
     async open() {
       opened++;
+      drained = 0;
+      helloDrained = false;
       const framer = new WorkerSerialFramer();
       maybeReadable = new ReadableStream({
         start(controller) {
@@ -329,7 +336,14 @@ export async function serialHarness(
       });
       maybeWritable = new WritableStream({
         async write(bytes) {
-          for (const frame of framer.push(bytes)) await handle(frame);
+          const credited = helloDrained;
+          if (credited) drained += bytes.length;
+          // Credit after drain, before a potentially blocked command owner.
+          if (credited && !dropCredits) await send("session", { op: "receive_credit", receivedBytes: drained });
+          for (const frame of await framer.push(bytes)) {
+            if (frame.kind === "session" && frame.payload.op === "hello") helloDrained = true;
+            await handle(frame);
+          }
         },
       });
     },
@@ -421,7 +435,7 @@ export async function serialHarness(
         now += Math.min(100, milliseconds - elapsed);
         if (admitted && !dropHeartbeats && now - deviceLastHeartbeat >= 1000) {
           deviceLastHeartbeat = now;
-          send("heartbeat", {});
+          await send("heartbeat", {});
         }
         for (const callback of callbacks) callback();
         for (const deadline of deadlines)
@@ -443,6 +457,7 @@ export async function serialHarness(
     dropHeartbeats() {
       dropHeartbeats = true;
     },
+    dropCredits() { dropCredits = true; },
     alterPreservation(
       field:
         | "settings_sha256"
@@ -457,12 +472,12 @@ export async function serialHarness(
     holdRestore() {
       holdRestore = true;
     },
-    completeRestore() {
+    async completeRestore() {
       if (!maybeDelayedRestore) throw new Error("restore_not_pending");
       const request = maybeDelayedRestore;
       maybeDelayedRestore = undefined;
       holdRestore = false;
-      reply(request, status());
+      await reply(request, status());
     },
     delayPermission() {
       delayedPermission = true;

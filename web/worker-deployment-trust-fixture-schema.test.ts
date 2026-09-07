@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import Ajv2020 from "ajv/dist/2020";
 
 import controllerSchema from "../conformance/bwg-worker-controller-0.4/contract.schema.json";
-import usbSchema from "../conformance/bwg-worker-serial-0.1/contract.schema.json";
+import usbSchema from "../conformance/bwg-worker-serial-0.2/contract.schema.json";
 import schema from "../conformance/bwg-worker-deployment-trust-0.2/contract.schema.json";
 import fixtures from "../conformance/bwg-worker-deployment-trust-0.2/fixtures.json";
 import { parseWorkerDeploymentTrust } from "./worker-deployment-trust";

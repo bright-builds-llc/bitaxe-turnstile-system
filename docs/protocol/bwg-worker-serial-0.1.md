@@ -1,5 +1,9 @@
 # Worker Serial 0.1 and Controller 0.4
 
+Historical specification, superseded by [serial 0.2](bwg-worker-serial-0.2.md)
+and ADR 0096. Retained for earlier-source evidence; it is not an active
+compatibility or hardware path.
+
 ## Canonical manifest
 
 The manifest is this exact object (canonical JSON sorts object keys recursively):

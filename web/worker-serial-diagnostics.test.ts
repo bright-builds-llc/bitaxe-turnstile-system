@@ -82,13 +82,13 @@ test("diagnostic history updates ordinary observations without exceeding its bou
   expect(history.values()).toHaveLength(32);
   expect(history.values()[0]?.state).toBe("complete");
 });
-test("fragmented startup observations do not become protocol admission frames", () => {
+test("fragmented startup observations do not become protocol admission frames", async () => {
   // Arrange
   const observations: unknown[] = [];
   const framer = new WorkerSerialFramer(value => observations.push(value));
   const bytes = new TextEncoder().encode(`arbitrary boot output\r\n${startup}\n`);
   // Act
-  const frames = [...framer.push(bytes.slice(0, 50)), ...framer.push(bytes.slice(50))];
+  const frames = [...await framer.push(bytes.slice(0, 50)), ...await framer.push(bytes.slice(50))];
   // Assert
   expect(frames).toEqual([]);
   expect(observations).toEqual([{ category: "startup", authoritative: false, stage: "network", state: "entered", first_failure: "none", uptime_ms: 123 }]);
@@ -103,13 +103,13 @@ test("diagnostics reject raw secrets, unknown fields, impossible counters, and a
   expect(maybeWorkerDiagnosticPayload({ line: startup })?.category).toBe("startup");
 });
 
-test("control payload text is never routed into diagnostic observations", () => {
+test("control payload text is never routed into diagnostic observations", async () => {
   // Arrange
   const observations: unknown[] = [];
   const framer = new WorkerSerialFramer(value => observations.push(value));
-  const frame = encodeWorkerSerialEnvelope({ profile: WORKER_SERIAL_PROFILE, kind: "control", sessionId: "AAAAAAAAAAAAAAAAAAAAAA", sequence: 1, payload: { line: startup } });
+  const frame = await encodeWorkerSerialEnvelope({ profile: WORKER_SERIAL_PROFILE, kind: "control", sessionId: "AAAAAAAAAAAAAAAAAAAAAA", sequence: 1, payload: { line: startup } });
   // Act
-  const frames = framer.push(frame);
+  const frames = await framer.push(frame);
   // Assert
   expect(frames).toHaveLength(1);
   expect(observations).toEqual([]);

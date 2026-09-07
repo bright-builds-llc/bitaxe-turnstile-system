@@ -1,6 +1,6 @@
 import { workerSerialFailureCategory } from "./worker-serial-errors";
 import { maybeWorkerDiagnosticPayload } from "./worker-serial-diagnostics";
-import { parseWorkerSerialHelloAck } from "./worker-serial-hello";
+import { parseWorkerSerialHelloAck, WorkerSerialHelloExchange } from "./worker-serial-hello";
 import { WorkerSerialPortOwner } from "./worker-serial-port-owner";
 import { publicWorkerSerialStatus } from "./worker-serial-status";
 import { probeWorkerSerialTransport } from "./worker-serial-probe";
@@ -36,11 +36,13 @@ import {
   WorkerSerialPeer,
   exactSerialRecord,
   serialFailure,
+  serialFailureFor,
   type WorkerSerialEnvelope,
 } from "./worker-serial";
 import {
   WorkerSerialChannel,
   boundedSerial,
+  observeSerialOutcome,
   type WorkerSerialBrowserRuntime,
 } from "./webserial-worker-port";
 
@@ -65,9 +67,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
   #maybePossession: VerifiedWorkerPossession | undefined;
   #maybeDeviceKeySha256: string | undefined;
   #maybePending: PendingResponse | undefined;
-  #maybeHello:
-    | { resolve(frame: WorkerSerialEnvelope): void; reject(error: Error): void }
-    | undefined;
+  #maybeHello: WorkerSerialHelloExchange | undefined;
   #maybeOwner: WorkerSerialPortOwner | undefined;
   #maybeStopTimer: (() => void) | undefined;
   #maybeUnsubscribe: (() => void) | undefined;
@@ -177,9 +177,15 @@ export class BrowserSerialController implements WebSerialWorkerController {
         crypto.getRandomValues(new Uint8Array(32)),
       );
       const helloStarted = this.runtime.now();
-      const hello = new Promise<WorkerSerialEnvelope>((resolve, reject) => {
-        this.#maybeHello = { resolve, reject };
-      });
+      this.#maybeHello = new WorkerSerialHelloExchange(
+        frame => { stage = "manifest_identity"; return parseWorkerSerialHelloAck(frame, hostNonce); },
+        ({ ack }) => {
+          this.#maybeAck = ack;
+          this.#maybePeer = new WorkerSerialPeer(ack.sessionId, helloStarted);
+          this.#maybeChannel?.admitReceiveCredit();
+        },
+      );
+      const hello = observeSerialOutcome(this.#maybeHello.result);
       await this.#maybeChannel.send({
         profile: WORKER_SERIAL_PROFILE,
         kind: "session",
@@ -187,12 +193,11 @@ export class BrowserSerialController implements WebSerialWorkerController {
         sequence: 0,
         payload: { op: "hello", hostNonce },
       });
-      const frame = await boundedSerial(hello, 2_800);
+      const received = await boundedSerial(hello, 2_800);
+      if (!received.ok) throw received.error;
+      if (generation !== this.#generation || this.#state !== "admitting") throw serialFailure("admission_lost");
       this.#maybeHello = undefined;
-      stage = "manifest_identity";
-      const { ack, manifest } = parseWorkerSerialHelloAck(frame, hostNonce);
-      this.#maybeAck = ack;
-      this.#maybePeer = new WorkerSerialPeer(ack.sessionId, helloStarted);
+      const { manifest } = received.value;
       this.#maybeStopTimer = this.runtime.every(100, () => this.#tick());
       stage = "capability";
       const capabilities = parseWorkerControllerCapabilities(
@@ -217,7 +222,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
       if (
         !this.runtime.foreground() ||
         generation !== this.#generation ||
-        this.#maybePeer.expired(this.runtime.now())
+        this.#maybePeer?.expired(this.runtime.now()) !== false
       )
         throw serialFailure("admission_lost");
       stage = "continuity";
@@ -322,15 +327,15 @@ export class BrowserSerialController implements WebSerialWorkerController {
     if (this.#activeLease || !this.#maybePossession)
       throw serialFailure("probe_admission");
     try {
-      await this.#heartbeat();
       return await probeWorkerSerialTransport(
         `serial_browser_${this.#requestSequence + 1}`,
         maybePaddingBytes,
         (payload) => this.#request("transport_probe", payload),
       );
-    } catch {
-      this.#lost(serialFailure("probe_failed"));
-      throw serialFailure("probe_failed");
+    } catch (error) {
+      const failure = serialFailureFor(error, "probe_failed");
+      this.#lost(failure);
+      throw failure;
     }
   }
 
@@ -402,16 +407,22 @@ export class BrowserSerialController implements WebSerialWorkerController {
   }
   async #finishClose(reason: WorkerRestorationReason) {
     let maybeError: unknown;
+    const interrupted = this.#maybeChannel?.unfinishedRecord === true || this.#maybePending !== undefined;
+    if (interrupted) {
+      this.#heartbeatAdmitted = false;
+      this.#maybeChannel?.abortRecord();
+    }
     try {
       if (
         this.#activeLease &&
+        !interrupted &&
         !this.#maybePending &&
         !this.#maybeFailure &&
         !this.maybeQualificationHook?.suppressHeartbeats
       )
         await this.#restoreCommand("restore", reason, true);
       this.#heartbeatAdmitted = false;
-      if (this.#maybeChannel && this.#maybeAck)
+      if (!interrupted && !this.#maybeFailure && this.#maybeChannel && this.#maybeAck)
         await this.#send("session", { op: "close", reason });
     } catch (error) {
       maybeError = error;
@@ -453,12 +464,14 @@ export class BrowserSerialController implements WebSerialWorkerController {
     await this.#send("heartbeat", {});
   }
   #receive(frame: WorkerSerialEnvelope) {
-    if (this.#maybeHello) {
-      this.#maybeHello.resolve(frame);
-      return;
-    }
+    if (this.#maybeHello?.receive(frame)) return;
     if (!this.#maybePeer) throw serialFailure("unadmitted_frame");
     this.#maybePeer.receive(frame, this.runtime.now());
+    if (frame.kind === "session" && frame.payload.op === "receive_credit") {
+      const value = exactSerialRecord(frame.payload, ["op", "receivedBytes"]);
+      this.#maybeChannel?.receiveCredit(value.receivedBytes);
+      return;
+    }
     if (frame.kind === "diagnostic") {
       const maybeDiagnostic = maybeWorkerDiagnosticPayload(frame.payload);
       if (maybeDiagnostic) this.maybeQualificationHook?.maybeObserveDiagnostic?.(maybeDiagnostic);
@@ -541,18 +554,21 @@ export class BrowserSerialController implements WebSerialWorkerController {
     const response = new Promise<unknown>((resolve, reject) => {
       this.#maybePending = { requestId: request.requestId, resolve, reject };
     });
+    // A credit timeout can revoke the pending response before native send finishes.
+    const outcome = observeSerialOutcome(response);
     try {
       await this.#send("control", request);
-      const value = await boundedSerial(
-        response,
+      const result = await boundedSerial(
+        outcome,
         timeoutMilliseconds,
         this.runtime.maybeAfter,
       );
+      if (!result.ok) throw result.error;
       if (generation !== this.#generation)
         throw serialFailure("stale_response");
-      return value;
+      return result.value;
     } catch (error) {
-      this.#lost(serialFailure("request_failed"));
+      this.#lost(serialFailureFor(error, "request_failed"));
       throw error;
     } finally {
       this.#clearPending(request.requestId);
@@ -568,6 +584,9 @@ export class BrowserSerialController implements WebSerialWorkerController {
   ) {
     if (!this.#maybeChannel || !this.#maybeAck)
       throw serialFailure("channel_missing");
+    if (kind === "control" && this.#heartbeatAdmitted && !this.maybeQualificationHook?.suppressHeartbeats &&
+      new TextEncoder().encode(JSON.stringify(payload)).length > 1024)
+      await this.#heartbeat();
     await this.#maybeChannel.send({
       profile: WORKER_SERIAL_PROFILE,
       kind,

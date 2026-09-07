@@ -6,6 +6,9 @@ import { canonicalJson } from "../web/headless-values";
 import {
   WORKER_SERIAL_MANIFEST,
   workerSerialManifestSha256,
+  encodeWorkerSerialEnvelope,
+  WORKER_SERIAL_PROFILE,
+  type WorkerSerialEnvelope,
 } from "../web/worker-serial";
 import {
   signWorkerControllerCapability,
@@ -98,7 +101,7 @@ const capabilityInput = {
       miningBaselineRestoration: "supported" as const,
       settingsPreservation: "compatible" as const,
     },
-    transportProfile: "bwg-worker-serial/0.1" as const,
+    transportProfile: "bwg-worker-serial/0.2" as const,
   },
   manifest: WORKER_SERIAL_MANIFEST,
 };
@@ -226,7 +229,7 @@ await json(directory + "renew-authorization.json", {
 });
 await json(directory + "fixtures.json", {
   profile: "bwg-worker-deployment-trust/0.2",
-  classification: "non_production_conformance_only",
+  classification: "development_deployment_public_artifacts",
   maximumCompactJwsBytes: 481,
   controllerAuthorizationLimitBytes: 512,
   authorizationBoundaries: [
@@ -279,3 +282,33 @@ await json("conformance/bwg-worker-controller-0.4/fixtures.json", {
   ),
 });
 console.log("worker_serial_fixtures=generated public_only=true");
+
+const serialDirectory = "conformance/bwg-worker-serial-0.2/";
+const serialFrames: { id: string; frame: WorkerSerialEnvelope }[] = [
+  { id: "hello", frame: { profile: WORKER_SERIAL_PROFILE, kind: "session", sessionId: null, sequence: 0, payload: { op: "hello", hostNonce: "A".repeat(43) } } },
+  { id: "heartbeat", frame: { profile: WORKER_SERIAL_PROFILE, kind: "heartbeat", sessionId: "A".repeat(22), sequence: 1, payload: {} } },
+  { id: "discover", frame: { profile: WORKER_SERIAL_PROFILE, kind: "control", sessionId: "A".repeat(22), sequence: 2, payload: { protocolVersion: "bwg-worker-controller/0.4", requestId: "serial_fixture_discover", command: "discover" } } },
+  { id: "receive_credit", frame: { profile: WORKER_SERIAL_PROFILE, kind: "session", sessionId: "A".repeat(22), sequence: 3, payload: { op: "receive_credit", receivedBytes: 1024 } } },
+];
+const frames = [];
+for (const entry of serialFrames) {
+  const wire = new TextDecoder().decode(await encodeWorkerSerialEnvelope(entry.frame));
+  frames.push({ id: entry.id, frame: JSON.parse(wire), wire });
+}
+await json(serialDirectory + "fixtures.json", { profile: WORKER_SERIAL_PROFILE, manifest: WORKER_SERIAL_MANIFEST, frames });
+await json(serialDirectory + "manifest.json", WORKER_SERIAL_MANIFEST);
+const payloads = [
+  ["empty", "{}"],
+  ["key_order", '{"z":1,"a":2}'],
+  ["whitespace", '{ "z" : 1,\t"a" : 2 }'],
+  ["escaped_key", '{"\\u0061":"\\u0078"}'],
+  ["unicode", '{"value":"π雪🚀"}'],
+  ["nested", '{"value":[{"x":"}\\\"["},true,null,1e2]}'],
+];
+const vectors = [];
+for (const [id, payloadJson] of payloads) {
+  if (id === undefined || payloadJson === undefined) throw new Error("fixture_missing");
+  const bytes = new TextEncoder().encode(payloadJson);
+  vectors.push({ id, payloadJson, payloadBytes: bytes.length, payloadSha256: await sha256Base64UrlBytes(bytes) });
+}
+await json(serialDirectory + "integrity-vectors.json", { profile: WORKER_SERIAL_PROFILE, vectors });

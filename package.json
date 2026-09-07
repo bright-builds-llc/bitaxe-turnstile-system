@@ -19,10 +19,10 @@
     "LICENSE",
     "README.md",
     "conformance/bwg-worker-controller-0.4",
-    "conformance/bwg-worker-serial-0.1",
+    "conformance/bwg-worker-serial-0.2",
     "conformance/bwg-worker-possession-0.2",
     "conformance/bwg-worker-deployment-trust-0.2",
-    "docs/protocol/bwg-worker-serial-0.1.md"
+    "docs/protocol/bwg-worker-serial-0.2.md"
   ],
   "exports": {
     "./headless": {
@@ -76,10 +76,10 @@
       "import": "./dist/bitaxe-onboarding-simulator/bitaxe-onboarding-simulator-entry.js"
     },
     "./worker-serial-conformance/fixtures": {
-      "default": "./conformance/bwg-worker-serial-0.1/fixtures.json"
+      "default": "./conformance/bwg-worker-serial-0.2/fixtures.json"
     },
     "./worker-serial-conformance/schema": {
-      "default": "./conformance/bwg-worker-serial-0.1/contract.schema.json"
+      "default": "./conformance/bwg-worker-serial-0.2/contract.schema.json"
     }
   },
   "scripts": {

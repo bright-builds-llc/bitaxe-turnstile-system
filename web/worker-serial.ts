@@ -1,11 +1,11 @@
 import { serialFailure } from "./worker-serial-errors";
 export { serialFailure, serialFailureFor, workerSerialFailureCategory } from "./worker-serial-errors";
 import { maybeWorkerSerialDiagnostic, type WorkerSerialDiagnostic } from "./worker-serial-diagnostics";
-import { parseWorkerSerialJson } from "./worker-serial-lexeme";
+import { parseWorkerSerialJson, hasMalformedSerialJsonSyntax } from "./worker-serial-lexeme";
 import { canonicalJson } from "./headless-values";
 import { sha256Base64UrlBytes } from "./crypto-bytes";
 
-export const WORKER_SERIAL_PROFILE = "bwg-worker-serial/0.1" as const;
+export const WORKER_SERIAL_PROFILE = "bwg-worker-serial/0.2" as const;
 export const MAXIMUM_SERIAL_CONTROL_PAYLOAD_BYTES = 65_536;
 export const MAXIMUM_SERIAL_WIRE_BYTES = 66_560;
 export const WORKER_SERIAL_MANIFEST = Object.freeze({
@@ -18,6 +18,10 @@ export const WORKER_SERIAL_MANIFEST = Object.freeze({
   heartbeatIntervalMilliseconds: 1_000,
   heartbeatTimeoutMilliseconds: 2_800,
   foregroundOnly: true,
+  hostToDeviceReceiveWindowBytes: 2048,
+  maximumHostWriteChunkBytes: 1024,
+  recordWriteTimeoutMilliseconds: 2000,
+  payloadIntegrity: "sha256_exact_utf8_json",
 } as const);
 export type WorkerSerialManifest = typeof WORKER_SERIAL_MANIFEST;
 export type WorkerSerialKind =
@@ -86,6 +90,8 @@ export function parseWorkerSerialEnvelope(
     "sessionId",
     "sequence",
     "payload",
+    "payloadBytes",
+    "payloadSha256",
   ]);
   if (
     value.profile !== WORKER_SERIAL_PROFILE ||
@@ -98,6 +104,9 @@ export function parseWorkerSerialEnvelope(
   )
     throw serialFailure("envelope");
   const payload = serialRecord(value.payload);
+  if (!Number.isSafeInteger(value.payloadBytes) || Number(value.payloadBytes) < 2 ||
+    Number(value.payloadBytes) > MAXIMUM_SERIAL_WIRE_BYTES || !serialNonce(value.payloadSha256))
+    throw serialFailure("integrity");
   const hello = value.kind === "session" && payload.op === "hello";
   if (
     hello
@@ -121,11 +130,17 @@ export function parseWorkerSerialEnvelope(
     payload,
   };
 }
-export function encodeWorkerSerialEnvelope(
+export async function encodeWorkerSerialEnvelope(
   envelope: WorkerSerialEnvelope,
-): Uint8Array {
+): Promise<Uint8Array> {
+  const payloadJson = JSON.stringify(envelope.payload);
+  const payloadUtf8 = new TextEncoder().encode(payloadJson);
+  const { payload: _payload, ...header } = envelope;
+  const metadata = { ...header, payloadBytes: payloadUtf8.length, payloadSha256: await sha256Base64UrlBytes(payloadUtf8) };
+  const wire = { ...metadata, payload: JSON.parse(payloadJson) };
+  parseWorkerSerialEnvelope(wire);
   const bytes = new TextEncoder().encode(
-    `${JSON.stringify(parseWorkerSerialEnvelope(envelope))}\n`,
+    `${JSON.stringify(metadata).slice(0, -1)},"payload":${payloadJson}}\n`,
   );
   if (bytes.length > MAXIMUM_SERIAL_WIRE_BYTES)
     throw serialFailure("wire_bound");
@@ -133,11 +148,18 @@ export function encodeWorkerSerialEnvelope(
 }
 /** Incremental bounded reader; startup text is discarded without public disclosure. */
 export class WorkerSerialFramer {
-  constructor(private readonly maybeDiagnostic?: (value: WorkerSerialDiagnostic) => void) { }
+  constructor(private readonly maybeDiagnostic?: (value: WorkerSerialDiagnostic) => void, private bootstrap = false) { }
   #bytes = new Uint8Array(MAXIMUM_SERIAL_WIRE_BYTES);
   #length = 0;
   #discarding = false;
-  push(chunk: Uint8Array): WorkerSerialEnvelope[] {
+  #bootstrapPrefixDiscarded = false;
+  finishBootstrap(): void { this.bootstrap = false; }
+  #discardBootstrapPrefix(): boolean {
+    if (!this.bootstrap || this.#bootstrapPrefixDiscarded) return false;
+    this.#bootstrapPrefixDiscarded = true;
+    return true;
+  }
+  async push(chunk: Uint8Array): Promise<WorkerSerialEnvelope[]> {
     const result: WorkerSerialEnvelope[] = [];
     for (const byte of chunk) {
       if (this.#discarding) {
@@ -157,6 +179,7 @@ export class WorkerSerialFramer {
       try {
         text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
       } catch {
+        if (this.#discardBootstrapPrefix()) continue;
         throw serialFailure("utf8");
       }
       if (!text.trimStart().startsWith("{")) {
@@ -165,17 +188,28 @@ export class WorkerSerialFramer {
         continue;
       }
       if (text.includes("\r")) throw serialFailure("line_ending");
-      const parsed = parseWorkerSerialJson(text);
+      let parsed: ReturnType<typeof parseWorkerSerialJson>;
+      try { parsed = parseWorkerSerialJson(text); }
+      catch (error) {
+        if (hasMalformedSerialJsonSyntax(text) && this.#discardBootstrapPrefix()) continue;
+        throw error;
+      }
       const value = parsed.value;
       const record = serialRecord(value);
       if (record.profile !== WORKER_SERIAL_PROFILE)
         throw serialFailure("profile");
+      if (record.payloadBytes !== parsed.payloadBytes ||
+        record.payloadSha256 !== await sha256Base64UrlBytes(parsed.payloadUtf8))
+        throw serialFailure("integrity");
       if (
         record.kind === "control" &&
         parsed.payloadBytes > MAXIMUM_SERIAL_CONTROL_PAYLOAD_BYTES
       )
         throw serialFailure("payload_bound");
-      result.push(parseWorkerSerialEnvelope(record));
+      const frame = parseWorkerSerialEnvelope(record);
+      // End the exception before parsing any following bytes in this same read batch.
+      if (frame.kind === "session" && frame.payload.op === "hello_ack") this.finishBootstrap();
+      result.push(frame);
     }
     return result;
   }

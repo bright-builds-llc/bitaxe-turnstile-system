@@ -1,4 +1,5 @@
 import type { WorkerSerialDiagnostic } from "./worker-serial-diagnostics";
+import { WorkerSerialCredit, SERIAL_RECEIVE_WINDOW } from "./worker-serial-credit";
 import {
   encodeWorkerSerialEnvelope,
   WorkerSerialFramer,
@@ -74,6 +75,14 @@ export function browserSerialRuntime(): WorkerSerialBrowserRuntime {
     },
   };
 }
+/** Attach rejection handling before a concurrent native send can fail or be cancelled. */
+export function observeSerialOutcome<T>(operation: Promise<T>) {
+  return operation.then(
+    value => ({ ok: true as const, value }),
+    (error: unknown) => ({ ok: false as const, error }),
+  );
+}
+
 export function boundedSerial<T>(
   operation: Promise<T>,
   milliseconds: number,
@@ -94,9 +103,9 @@ export function boundedSerial<T>(
         cancel();
         resolve(value);
       },
-      () => {
+      (error) => {
         cancel();
-        reject(serialFailure("io"));
+        reject(serialFailureFor(error, "io"));
       },
     );
   });
@@ -114,6 +123,9 @@ export class WorkerSerialChannel {
   readonly #framer: WorkerSerialFramer;
   readonly #pending: PendingWrite[] = [];
   #writing = false;
+  #recordActive = false;
+  #writeFailed = false;
+  readonly #credit = new WorkerSerialCredit();
   #closed = false;
   #portClosed = false;
   #maybeClosing: Promise<void> | undefined;
@@ -125,7 +137,7 @@ export class WorkerSerialChannel {
     failure: (error: Error) => void,
     maybeDiagnostic?: (value: WorkerSerialDiagnostic) => void,
   ) {
-    this.#framer = new WorkerSerialFramer(maybeDiagnostic);
+    this.#framer = new WorkerSerialFramer(maybeDiagnostic, true);
     if (!port.readable || !port.writable) throw serialFailure("streams");
     this.#reader = port.readable.getReader();
     this.#writer = port.writable.getWriter();
@@ -134,7 +146,7 @@ export class WorkerSerialChannel {
     });
   }
   send(frame: WorkerSerialEnvelope): Promise<void> {
-    if (this.#closed || this.#pending.length >= 3)
+    if (this.#closed || this.#writeFailed || this.#pending.length >= 3)
       return Promise.reject(serialFailure("write_bound"));
     return new Promise((resolve, reject) => {
       const pending = { frame, resolve, reject };
@@ -143,6 +155,10 @@ export class WorkerSerialChannel {
       void this.#drain();
     });
   }
+  admitReceiveCredit(): void { this.#framer.finishBootstrap(); this.#credit.admit(); }
+  receiveCredit(received: unknown): void { this.#credit.acknowledge(received); }
+  get unfinishedRecord(): boolean { return this.#recordActive; }
+  abortRecord(): void { this.#writeFailed = true; this.#credit.cancel(); }
   async #drain(): Promise<void> {
     if (this.#writing || this.#closed) return;
     this.#writing = true;
@@ -151,6 +167,7 @@ export class WorkerSerialChannel {
         const pending = this.#pending.shift();
         if (!pending) break;
         try {
+          this.#recordActive = true;
           const hello =
             pending.frame.kind === "session" &&
             pending.frame.payload.op === "hello";
@@ -161,12 +178,14 @@ export class WorkerSerialChannel {
             sequence: hello ? 0 : ++this.#sequence,
           };
           await boundedSerial(
-            this.#writer.write(encodeWorkerSerialEnvelope(frame)),
+            this.#writeRecord(frame, hello),
             2_000,
           );
+          this.#recordActive = false;
           pending.resolve();
-        } catch {
-          const error = serialFailure("write_failed");
+        } catch (failure) {
+          this.abortRecord();
+          const error = serialFailureFor(failure, "write_failed");
           pending.reject(error);
           for (const queued of this.#pending.splice(0)) queued.reject(error);
           break;
@@ -176,6 +195,20 @@ export class WorkerSerialChannel {
       this.#writing = false;
     }
   }
+  async #writeRecord(frame: WorkerSerialEnvelope, hello: boolean): Promise<void> {
+    const bytes = await encodeWorkerSerialEnvelope(frame);
+    if (hello && bytes.length > SERIAL_RECEIVE_WINDOW) throw serialFailure("hello_bound");
+    let offset = 0;
+    while (offset < bytes.length) {
+      if (this.#closed || this.#writeFailed) throw serialFailure("closed");
+      const count = hello ? Math.min(1024, bytes.length - offset) : await this.#credit.reserve(bytes.length - offset);
+      if (this.#closed || this.#writeFailed) throw serialFailure("closed");
+      await this.#writer.write(bytes.subarray(offset, offset + count));
+      offset += count;
+    }
+    if (!hello) await this.#credit.consumed();
+    if (this.#closed || this.#writeFailed) throw serialFailure("closed");
+  }
   async #read(receive: (frame: WorkerSerialEnvelope) => void): Promise<void> {
     while (!this.#closed) {
       const result = await this.#reader.read();
@@ -183,7 +216,10 @@ export class WorkerSerialChannel {
         if (!this.#closed) throw serialFailure("disconnected");
         return;
       }
-      for (const frame of this.#framer.push(result.value)) receive(frame);
+      for (const frame of await this.#framer.push(result.value)) {
+        if (this.#closed) return;
+        receive(frame);
+      }
     }
   }
   get portClosed(): boolean { return this.#portClosed; }
@@ -192,6 +228,7 @@ export class WorkerSerialChannel {
   }
   async #finishClose(): Promise<void> {
     this.#closed = true;
+    this.abortRecord();
     for (const queued of this.#pending.splice(0))
       queued.reject(serialFailure("closed"));
     const errors: unknown[] = [];

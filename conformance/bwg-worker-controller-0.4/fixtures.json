@@ -17,7 +17,7 @@
       "miningBaselineRestoration": "supported",
       "settingsPreservation": "compatible"
     },
-    "transportProfile": "bwg-worker-serial/0.1",
+    "transportProfile": "bwg-worker-serial/0.2",
     "attestation": {
       "claims": {
         "profile": "bwg-reference-firmware-capability/0.2",
@@ -36,10 +36,10 @@
           "miningBaselineRestoration": "supported",
           "settingsPreservation": "compatible"
         },
-        "transportProfile": "bwg-worker-serial/0.1",
-        "serialManifestSha256": "ff749MMrgnM5q2-PIXvDEZPt3ScoBjbCwOi-XNj1fok"
+        "transportProfile": "bwg-worker-serial/0.2",
+        "serialManifestSha256": "PcDZyHEt43VSeh_GLDmyZJtkMxRrRyh0Vr2xCr-vVUc"
       },
-      "compactJws": "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoiZml4dHVyZS1zZXJpYWwtdXBkYXRlIiwidHlwIjoiYndnLXdvcmtlci1jYXBhYmlsaXR5K2p3cyJ9.eyJib2FyZCI6eyJtb2RlbCI6ImJpdGF4ZS11bHRyYSIsInJldmlzaW9uIjoiMjA1In0sImNvbXBhdGliaWxpdHkiOnsibWluaW5nQmFzZWxpbmVSZXN0b3JhdGlvbiI6InN1cHBvcnRlZCIsInJlZmVyZW5jZUZpcm13YXJlIjp0cnVlLCJzZXR0aW5nc1ByZXNlcnZhdGlvbiI6ImNvbXBhdGlibGUiLCJ3b3JrTGVhc2UiOiJzdXBwb3J0ZWQifSwiZmlybXdhcmUiOnsibmFtZSI6ImJyaWdodC1idWlsZHMtcmVmZXJlbmNlLWZpcm13YXJlIiwidmVyc2lvbiI6IjAuMS4wIn0sInByb2ZpbGUiOiJid2ctcmVmZXJlbmNlLWZpcm13YXJlLWNhcGFiaWxpdHkvMC4yIiwicHJvdG9jb2xWZXJzaW9uIjoiYndnLXdvcmtlci1jb250cm9sbGVyLzAuNCIsInNlcmlhbE1hbmlmZXN0U2hhMjU2IjoiZmY3NDlNTXJnbk01cTItUElYdkRFWlB0M1Njb0JqYkN3T2ktWE5qMWZvayIsInRyYW5zcG9ydFByb2ZpbGUiOiJid2ctd29ya2VyLXNlcmlhbC8wLjEifQ.I6WafPnOCYWPDS8b1I0v7_oYjB1KHSpmexnhchI6S9tyvgDAHHHcJqAzZJsE6BHZpt6xYvkQcMt-zFS3oCbSDg"
+      "compactJws": "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoiZml4dHVyZS1zZXJpYWwtdXBkYXRlIiwidHlwIjoiYndnLXdvcmtlci1jYXBhYmlsaXR5K2p3cyJ9.eyJib2FyZCI6eyJtb2RlbCI6ImJpdGF4ZS11bHRyYSIsInJldmlzaW9uIjoiMjA1In0sImNvbXBhdGliaWxpdHkiOnsibWluaW5nQmFzZWxpbmVSZXN0b3JhdGlvbiI6InN1cHBvcnRlZCIsInJlZmVyZW5jZUZpcm13YXJlIjp0cnVlLCJzZXR0aW5nc1ByZXNlcnZhdGlvbiI6ImNvbXBhdGlibGUiLCJ3b3JrTGVhc2UiOiJzdXBwb3J0ZWQifSwiZmlybXdhcmUiOnsibmFtZSI6ImJyaWdodC1idWlsZHMtcmVmZXJlbmNlLWZpcm13YXJlIiwidmVyc2lvbiI6IjAuMS4wIn0sInByb2ZpbGUiOiJid2ctcmVmZXJlbmNlLWZpcm13YXJlLWNhcGFiaWxpdHkvMC4yIiwicHJvdG9jb2xWZXJzaW9uIjoiYndnLXdvcmtlci1jb250cm9sbGVyLzAuNCIsInNlcmlhbE1hbmlmZXN0U2hhMjU2IjoiUGNEWnlIRXQ0M1ZTZWhfR0xEbXlaSnRrTXhSclJ5aDBWcjJ4Q3ItdlZVYyIsInRyYW5zcG9ydFByb2ZpbGUiOiJid2ctd29ya2VyLXNlcmlhbC8wLjIifQ.g6mFcJhaR-FL16Mm4nC8UeawM8IdYfvB_uxKiYOMj26UnoZhs0cVMAH6q4TVKlgSKMd3bHA9Upv-cGxqYQdfAA"
     }
   },
   "lease": {
@@ -389,7 +389,7 @@
             "miningBaselineRestoration": "supported",
             "settingsPreservation": "compatible"
           },
-          "transportProfile": "bwg-worker-serial/0.1",
+          "transportProfile": "bwg-worker-serial/0.2",
           "attestation": {
             "claims": {
               "profile": "bwg-reference-firmware-capability/0.2",
@@ -408,10 +408,10 @@
                 "miningBaselineRestoration": "supported",
                 "settingsPreservation": "compatible"
               },
-              "transportProfile": "bwg-worker-serial/0.1",
-              "serialManifestSha256": "ff749MMrgnM5q2-PIXvDEZPt3ScoBjbCwOi-XNj1fok"
+              "transportProfile": "bwg-worker-serial/0.2",
+              "serialManifestSha256": "PcDZyHEt43VSeh_GLDmyZJtkMxRrRyh0Vr2xCr-vVUc"
             },
-            "compactJws": "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoiZml4dHVyZS1zZXJpYWwtdXBkYXRlIiwidHlwIjoiYndnLXdvcmtlci1jYXBhYmlsaXR5K2p3cyJ9.eyJib2FyZCI6eyJtb2RlbCI6ImJpdGF4ZS11bHRyYSIsInJldmlzaW9uIjoiMjA1In0sImNvbXBhdGliaWxpdHkiOnsibWluaW5nQmFzZWxpbmVSZXN0b3JhdGlvbiI6InN1cHBvcnRlZCIsInJlZmVyZW5jZUZpcm13YXJlIjp0cnVlLCJzZXR0aW5nc1ByZXNlcnZhdGlvbiI6ImNvbXBhdGlibGUiLCJ3b3JrTGVhc2UiOiJzdXBwb3J0ZWQifSwiZmlybXdhcmUiOnsibmFtZSI6ImJyaWdodC1idWlsZHMtcmVmZXJlbmNlLWZpcm13YXJlIiwidmVyc2lvbiI6IjAuMS4wIn0sInByb2ZpbGUiOiJid2ctcmVmZXJlbmNlLWZpcm13YXJlLWNhcGFiaWxpdHkvMC4yIiwicHJvdG9jb2xWZXJzaW9uIjoiYndnLXdvcmtlci1jb250cm9sbGVyLzAuNCIsInNlcmlhbE1hbmlmZXN0U2hhMjU2IjoiZmY3NDlNTXJnbk01cTItUElYdkRFWlB0M1Njb0JqYkN3T2ktWE5qMWZvayIsInRyYW5zcG9ydFByb2ZpbGUiOiJid2ctd29ya2VyLXNlcmlhbC8wLjEifQ.I6WafPnOCYWPDS8b1I0v7_oYjB1KHSpmexnhchI6S9tyvgDAHHHcJqAzZJsE6BHZpt6xYvkQcMt-zFS3oCbSDg"
+            "compactJws": "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoiZml4dHVyZS1zZXJpYWwtdXBkYXRlIiwidHlwIjoiYndnLXdvcmtlci1jYXBhYmlsaXR5K2p3cyJ9.eyJib2FyZCI6eyJtb2RlbCI6ImJpdGF4ZS11bHRyYSIsInJldmlzaW9uIjoiMjA1In0sImNvbXBhdGliaWxpdHkiOnsibWluaW5nQmFzZWxpbmVSZXN0b3JhdGlvbiI6InN1cHBvcnRlZCIsInJlZmVyZW5jZUZpcm13YXJlIjp0cnVlLCJzZXR0aW5nc1ByZXNlcnZhdGlvbiI6ImNvbXBhdGlibGUiLCJ3b3JrTGVhc2UiOiJzdXBwb3J0ZWQifSwiZmlybXdhcmUiOnsibmFtZSI6ImJyaWdodC1idWlsZHMtcmVmZXJlbmNlLWZpcm13YXJlIiwidmVyc2lvbiI6IjAuMS4wIn0sInByb2ZpbGUiOiJid2ctcmVmZXJlbmNlLWZpcm13YXJlLWNhcGFiaWxpdHkvMC4yIiwicHJvdG9jb2xWZXJzaW9uIjoiYndnLXdvcmtlci1jb250cm9sbGVyLzAuNCIsInNlcmlhbE1hbmlmZXN0U2hhMjU2IjoiUGNEWnlIRXQ0M1ZTZWhfR0xEbXlaSnRrTXhSclJ5aDBWcjJ4Q3ItdlZVYyIsInRyYW5zcG9ydFByb2ZpbGUiOiJid2ctd29ya2VyLXNlcmlhbC8wLjIifQ.g6mFcJhaR-FL16Mm4nC8UeawM8IdYfvB_uxKiYOMj26UnoZhs0cVMAH6q4TVKlgSKMd3bHA9Upv-cGxqYQdfAA"
           }
         }
       }

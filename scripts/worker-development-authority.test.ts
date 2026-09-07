@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import controllerFixtures from "../conformance/bwg-worker-controller-0.4/fixtures.json";
-import usbFixtures from "../conformance/bwg-worker-serial-0.1/fixtures.json";
+import usbFixtures from "../conformance/bwg-worker-serial-0.2/fixtures.json";
 import startInputFixture from "../conformance/bwg-worker-deployment-trust-0.2/start-input.json";
 import { parseWorkerDeploymentTrust } from "../web/worker-deployment-trust";
 import { verifyWorkerControllerCapability } from "../web/worker-controller";

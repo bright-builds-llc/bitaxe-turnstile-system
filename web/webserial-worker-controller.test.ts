@@ -5,6 +5,40 @@ import {
   workerSerialQualificationHook,
 } from "./webserial-worker-controller";
 
+test("credit loss during a partial probe preserves timeout and releases without spliced close", async () => {
+  // Arrange
+  const h = await serialHarness();
+  const failures: string[] = [];
+  const input = { ...h.input, [workerSerialQualificationHook]: { suppressHeartbeats: false, maybeObserveSerialFailure: (category: string) => failures.push(category) } };
+  const controller = createWebSerialWorkerController(input);
+  await controller.requestPermission();
+  h.dropCredits();
+  // Act / Assert
+  await expect(controller.transportProbe()).rejects.toMatchObject({ category: "timeout" });
+  await controller.close();
+  expect(failures[0]).toBe("timeout");
+  expect(h.counts()).toMatchObject({ closed: 1, locked: false, active: false });
+  expect(h.received.filter(frame => frame.kind === "session")).toHaveLength(1);
+});
+
+test("closing while a sent Start awaits response does not append Restore or courtesy Close", async () => {
+  // Arrange
+  const h = await serialHarness();
+  await h.controller.requestPermission();
+  const grant = await h.grant(await h.controller.prepareWorkerLeaseAuthorizationContext("start"));
+  h.holdStart();
+  const starting = h.controller.startLease(grant).then(() => "started", () => "cancelled");
+  await h.advance(500);
+  expect(h.received.some(frame => frame.command === "start_lease")).toBeTrue();
+  const before = h.received.length;
+  // Act
+  await h.controller.close();
+  // Assert
+  expect(await starting).toBe("cancelled");
+  expect(h.received.slice(before)).toEqual([]);
+  expect(h.counts()).toMatchObject({ closed: 1, locked: false });
+});
+
 test("production serial admission binds capability, possession, baseline, and max-size probe", async () => {
   // Arrange
   const h = await serialHarness();

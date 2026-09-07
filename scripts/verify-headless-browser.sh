@@ -108,7 +108,7 @@ fi
 
 : >"$browser_output"
 "$playwright_cli" -s="$session_name" goto \
-  "http://127.0.0.1:$server_port/conformance/bwg-worker-serial-0.1/browser.html" \
+  "http://127.0.0.1:$server_port/conformance/bwg-worker-serial-0.2/browser.html" \
   >"$browser_output"
 "$playwright_cli" -s="$session_name" run-code \
   --filename "$repository_root/scripts/wait-browser-conformance.mjs" \

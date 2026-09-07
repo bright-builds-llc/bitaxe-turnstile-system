@@ -259,7 +259,7 @@
           }
         },
         "transportProfile": {
-          "const": "bwg-worker-serial/0.1"
+          "const": "bwg-worker-serial/0.2"
         },
         "attestation": {
           "type": "object",
@@ -349,7 +349,7 @@
                   "const": "bwg-reference-firmware-capability/0.2"
                 },
                 "transportProfile": {
-                  "const": "bwg-worker-serial/0.1"
+                  "const": "bwg-worker-serial/0.2"
                 },
                 "serialManifestSha256": {
                   "type": "string",

@@ -16,6 +16,12 @@ The Gate repository owns serial/session/possession/controller/signing contracts,
 
 ## Verification
 
+Serial 0.2 succeeds the uncredited 0.1 wire contract under ADR 0096 after
+observed native input loss. Its canonical specification is
+`docs/protocol/bwg-worker-serial-0.2.md`; issue 08 owns implementation and
+verification. Fixed USB ownership, Controller 0.4, possession 0.2 and all
+authorization, lifecycle and campaign limits remain.
+
 - Pure serial parsing covers split/coalesced frames, maximum lengths, malformed UTF-8/JSON, unknown fields, wrong session, sequence reuse/overflow, stale heartbeats, and post-revocation responses.
 - Browser conformance composes real production adapter code with injected serial/browser boundaries: permission, exclusive ownership, manifest/identity admission, signed possession, headless Start/Renew, foreground loss, restoration failure, cleanup, and explicit fresh restart.
 - Cross-repository fixtures publish exact canonical manifest, capability claims, possession transcript/session digest, and full-input lease authorization vectors without private keys or live identity/credential material.

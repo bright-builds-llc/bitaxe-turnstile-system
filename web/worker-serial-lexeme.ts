@@ -2,6 +2,7 @@
 export function parseWorkerSerialJson(text: string): {
   value: unknown;
   payloadBytes: number;
+  payloadUtf8: Uint8Array;
 } {
   let value: unknown;
   try {
@@ -17,6 +18,7 @@ export function parseWorkerSerialJson(text: string): {
   if (text[cursor++] !== "{") throw invalid();
   const keys = new Set<string>();
   let payloadBytes = 0;
+  let payloadUtf8 = new Uint8Array();
   while (text[cursor] !== "}") {
     cursor = whitespace(text, cursor);
     if (text[cursor] === "}") break;
@@ -32,12 +34,14 @@ export function parseWorkerSerialJson(text: string): {
     cursor = valueEnd(text, cursor);
     let end = cursor;
     while (end > start && /\s/u.test(text[end - 1] ?? "")) end--;
-    if (key === "payload")
-      payloadBytes = new TextEncoder().encode(text.slice(start, end)).length;
+    if (key === "payload") {
+      payloadUtf8 = new TextEncoder().encode(text.slice(start, end));
+      payloadBytes = payloadUtf8.length;
+    }
     if (text[cursor] === "}") break;
     if (text[cursor++] !== ",") throw invalid();
   }
-  return { value, payloadBytes };
+  return { value, payloadBytes, payloadUtf8 };
 }
 function whitespace(text: string, cursor: number): number {
   while (cursor < text.length && /\s/u.test(text[cursor] ?? "")) cursor++;
@@ -80,4 +84,10 @@ function wellFormed(value: string): boolean {
 }
 function invalid(): Error {
   return new Error("Worker Serial json");
+}
+
+/** Distinguishes malformed JSON syntax from invalid envelope or Unicode data. */
+export function hasMalformedSerialJsonSyntax(text: string): boolean {
+  try { JSON.parse(text); return false; }
+  catch { return true; }
 }

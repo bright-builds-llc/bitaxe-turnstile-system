@@ -1,7 +1,7 @@
 {
   "operation": "renew",
   "activeChallengeId": "challenge_00000000000000000000000000000001",
-  "controlSessionBindingSha256": "DAykxhwrLi6cew9fbubnHoatl4YgUuYMisUjl3NxDzE",
+  "controlSessionBindingSha256": "ale6owHYgI2vTKsXVH1JJY25j5HC6W9BH-slwQ9rvC8",
   "request": {
     "protocolVersion": "bwg-worker-controller/0.4",
     "leaseId": "lease_fixture_01",

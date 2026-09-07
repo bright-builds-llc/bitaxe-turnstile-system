@@ -3,6 +3,9 @@ const observableCategories = [
   "wire_bound", "payload_bound", "utf8", "line_ending", "profile", "shape", "fields",
   "envelope", "session", "continuity", "heartbeat", "sequence_exhausted", "correlation",
   "command_rejected", "closed", "operation_failed",
+  "integrity", "probe_bound", "probe_mismatch", "operation_active",
+  "credit_invalid", "credit_counter", "credit_closed", "credit_session",
+  "write_bound", "request_failed", "probe_failed",
 ] as const;
 export type WorkerSerialFailureCategory = typeof observableCategories[number];
 

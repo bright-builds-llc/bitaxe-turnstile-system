@@ -27,7 +27,7 @@ const grammars: readonly Grammar[] = [
     fields: ["error"], numeric: [],
   },
   {
-    category: "serial_rx_failure", pattern: /^usb_rx_failure schema=v1 stage=(read|framing|envelope|sequence|heartbeat_payload|heartbeat_timeout|control_allocation|control_queue|unexpected_kind|session_revoked) observed_bytes=(\d{1,5}) redacted=true$/u,
+    category: "serial_rx_failure", pattern: /^usb_rx_failure schema=v1 stage=(read|framing|envelope|sequence|heartbeat_payload|heartbeat_timeout|control_allocation|control_queue|unexpected_kind|session_revoked|integrity|receive_counter) observed_bytes=(\d{1,5}) redacted=true$/u,
     fields: ["stage", "observed_bytes"], numeric: ["observed_bytes"],
   },
   {
@@ -39,7 +39,7 @@ const grammars: readonly Grammar[] = [
     fields: ["spiffs_available", "http_ready"], numeric: [],
   },
   {
-    category: "serial_tx_failure", pattern: /^usb_tx_failure schema=v1 stage=(write|write_timeout|flush_timeout) elapsed_ms=(\d{1,10}) queued_bytes=(\d{1,5}) record_bytes=(\d{1,5}) redacted=true$/u,
+    category: "serial_tx_failure", pattern: /^usb_tx_failure schema=v1 stage=(write|write_timeout|flush_timeout|cancelled) elapsed_ms=(\d{1,10}) queued_bytes=(\d{1,5}) record_bytes=(\d{1,5}) redacted=true$/u,
     fields: ["stage", "elapsed_ms", "queued_bytes", "record_bytes"], numeric: ["elapsed_ms", "queued_bytes", "record_bytes"]
   },
   {

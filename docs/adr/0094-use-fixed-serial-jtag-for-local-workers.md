@@ -9,3 +9,9 @@ Controller 0.4, serial 0.1, possession 0.2, capability 0.2, deployment trust 0.2
 Foreground ownership is explicit. One-second peer heartbeats have a 2.8-second firmware deadline that closes dispatch admission and starts safe stop within three seconds. Heartbeats cannot extend Work Leases. Losing foreground ownership, transport, or session requires a new explicit admission; returning to a page never resumes mining automatically.
 
 The canonical wire and signature details are in `docs/protocol/bwg-worker-serial-0.1.md`. Gate owns those contracts and browser conformance; firmware owns the physical transport, deadline enforcement, and hardware campaign.
+
+## Receive-progress successor
+
+ADR 0096 succeeds only the serial 0.1 wire contract with serial 0.2 receive
+credit and exact payload integrity. This decision's fixed controller,
+authorization, identity and lifecycle requirements remain.

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://brightbuilds.dev/schemas/bwg-worker-serial-0.1-fixtures.json",
+  "$id": "https://brightbuilds.dev/schemas/bwg-worker-serial-0.2-fixtures.json",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -10,7 +10,7 @@
   ],
   "properties": {
     "profile": {
-      "const": "bwg-worker-serial/0.1"
+      "const": "bwg-worker-serial/0.2"
     },
     "manifest": {
       "$ref": "#/$defs/manifest"
@@ -23,7 +23,8 @@
         "additionalProperties": false,
         "required": [
           "id",
-          "frame"
+          "frame",
+          "wire"
         ],
         "properties": {
           "id": {
@@ -32,6 +33,10 @@
           },
           "frame": {
             "$ref": "#/$defs/envelope"
+          },
+          "wire": {
+            "type": "string",
+            "maxLength": 66560
           }
         }
       }
@@ -50,11 +55,15 @@
         "maximumWireFrameBytes",
         "heartbeatIntervalMilliseconds",
         "heartbeatTimeoutMilliseconds",
-        "foregroundOnly"
+        "foregroundOnly",
+        "hostToDeviceReceiveWindowBytes",
+        "maximumHostWriteChunkBytes",
+        "recordWriteTimeoutMilliseconds",
+        "payloadIntegrity"
       ],
       "properties": {
         "profile": {
-          "const": "bwg-worker-serial/0.1"
+          "const": "bwg-worker-serial/0.2"
         },
         "transport": {
           "const": "esp32s3_usb_serial_jtag"
@@ -79,6 +88,18 @@
         },
         "foregroundOnly": {
           "const": true
+        },
+        "hostToDeviceReceiveWindowBytes": {
+          "const": 2048
+        },
+        "maximumHostWriteChunkBytes": {
+          "const": 1024
+        },
+        "recordWriteTimeoutMilliseconds": {
+          "const": 2000
+        },
+        "payloadIntegrity": {
+          "const": "sha256_exact_utf8_json"
         }
       }
     },
@@ -90,11 +111,13 @@
         "kind",
         "sessionId",
         "sequence",
-        "payload"
+        "payload",
+        "payloadBytes",
+        "payloadSha256"
       ],
       "properties": {
         "profile": {
-          "const": "bwg-worker-serial/0.1"
+          "const": "bwg-worker-serial/0.2"
         },
         "kind": {
           "enum": [
@@ -122,6 +145,15 @@
         },
         "payload": {
           "type": "object"
+        },
+        "payloadBytes": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 66560
+        },
+        "payloadSha256": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
         }
       }
     }
