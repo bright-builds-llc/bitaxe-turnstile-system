@@ -173,3 +173,49 @@ Shared examples are in `conformance/bwg-worker-controller-0.4/budget-review-vect
 `acceptanceBudgetReviewResult`. Runtime validation enforces the relationships
 between mask bits, charges and pending state. The deterministic generic simulator
 has no possessed durable ledger and rejects this operation explicitly.
+
+## Fan-only qualification
+
+The qualification-hook-only SDK operation `qualificationCooling(action)` sends
+Controller 0.4 `qualification_cooling` with the exact payload
+`{ "action": "prove_fan" }` or `{ "action": "restore_baseline" }`. It requires
+an admitted connection without an active lease, and obtains fresh possession
+before proving the fan. This operation uses neither a signer nor pool inputs,
+dispatches no ASIC work, and creates no mining-budget reservation.
+
+Proof returns exactly `schema: "worker-cooling-proof-v1"`,
+`fan_duty_percent: 100`, `fan_rpm` (integer 1–65535),
+`post_command_fan_proven: true`, `asic_effects: false`, and
+`budget_reserved: false`. Restoration returns exactly
+`schema: "worker-cooling-baseline-v1"`, `fan_duty_percent: 30`,
+`cooling_proven: true`, `asic_effects: false`, and `budget_reserved: false`.
+Here `budget_reserved: false` means this operation creates no reservation; it
+never means the durable campaign ledger is empty or available for reuse.
+
+Firmware journals the temporary fan effect and uses its qualified cooling and
+regular SafeStop path to restore the baseline, including on connection loss.
+The browser clears cached restoration confirmation before an effect and restores
+that flag only after an actual baseline-confirmed status response. Restoration
+invalidates possession; budget review or subsequent Start preparation requires a
+fresh proof. The outer command bound is the existing 145-second restoration
+bound, with independent heartbeats and device deadlines unchanged. Any failed
+or malformed response closes the connection and leaves restoration unconfirmed.
+
+The qualification page exposes `proveCoolingForQualification()` and
+`restoreCoolingBaseline()`, returning only the closed report and updating public
+state. The public codec and `qualificationCoolingRequest` /
+`qualificationCoolingResult` schema definitions reject arbitrary actions, fields,
+and out-of-range RPM. The generic simulator cannot prove physical fan behavior
+and explicitly rejects this command.
+
+`submitCoolingReview()` coordinates the page with the qualification supervisor.
+It privately obtains the original campaign and a one-time nonce from
+`/cooling-review-context`, obtains fresh possession and the initial budget,
+proves the fan, restores the qualified baseline, obtains fresh possession again,
+and reads the budget again. A mismatched campaign or pending reservation blocks
+the fan effect; any budget change prevents a review receipt. It posts only the
+nonce, closed proof/restoration reports, before/after budgets and public state
+to `/cooling-review`. Its return contains only the saved-receipt filename and
+closed success/equality booleans. Neither campaign identity nor possession
+binding enters the posted evidence or return. It clears any cached authorization
+context throughout; a later signed window requires its own separate budget review.

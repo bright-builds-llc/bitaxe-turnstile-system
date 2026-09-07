@@ -1,13 +1,14 @@
-import { parseWorkerControlRejection, parseWorkerControlResult } from "./worker-control-rejection";
-import { rejectedStartGrant } from "./worker-rejected-start";
-import type { WorkLeaseAuthorityTrust } from "./worker-lease-authorization";
+import { runQualificationCooling, type QualificationCoolingAction } from "./worker-qualification-cooling";
+import { parseWorkerControlResult } from "./worker-control-rejection";
+import { rejectedStartGrant, runRejectedStart } from "./worker-rejected-start";
+import type { WorkLeaseAuthorityTrust, WorkerLeaseAuthorizationOperation } from "./worker-lease-authorization";
 import { parseBudgetCampaignId, parseWorkerBudgetReview } from "./worker-budget-review";
 import { workerSerialFailureCategory } from "./worker-serial-errors";
 import { maybeWorkerDiagnosticPayload } from "./worker-serial-diagnostics";
 import { parseWorkerSerialHelloAck, WorkerSerialHelloExchange } from "./worker-serial-hello";
 import { WorkerSerialPortOwner } from "./worker-serial-port-owner";
 import { publicWorkerSerialStatus } from "./worker-serial-status";
-import { probeWorkerSerialTransport } from "./worker-serial-probe";
+import { observeWorkerSerialProbe } from "./worker-serial-probe";
 import { encodeBase64Url } from "./crypto-bytes";
 import { proveWorkerSerialPossession } from "./worker-serial-possession";
 import {
@@ -34,7 +35,6 @@ import {
   workerMiningStatusMatches,
   workerRestoredStatusMatches,
 } from "./worker-postconditions";
-import type { WorkerLeaseAuthorizationOperation } from "./worker-lease-authorization";
 import {
   WORKER_SERIAL_PROFILE,
   WorkerSerialPeer,
@@ -330,15 +330,18 @@ export class BrowserSerialController implements WebSerialWorkerController {
     if (!this.maybeQualificationHook || this.#activeLease) throw serialFailure("probe_admission");
     const context = await this.prepareWorkerLeaseAuthorizationContext("start");
     const grant = await rejectedStartGrant(this.input.continuityScope.challengeId, context.controlSessionBindingSha256, trust);
-    try {
-      const response = exactSerialRecord(await this.#exchange({ protocolVersion: WORKER_CONTROLLER_PROTOCOL_VERSION, requestId: `serial_browser_${++this.#requestSequence}`, command: "start_lease", payload: grant }), ["protocolVersion", "requestId", "ok", "error"]);
-      if (response.protocolVersion !== WORKER_CONTROLLER_PROTOCOL_VERSION || response.ok !== false || parseWorkerControlRejection(response.error) !== "authentication_failed") throw serialFailure("command_rejected");
-      return { rejected: true, error: "authentication_failed" };
-    } finally {
-      // Firmware retires the epoch after its rejection receipt; append no Close.
+    return runRejectedStart(grant, `serial_browser_${++this.#requestSequence}`, request => this.#exchange(request), async () => {
       this.#maybeFailure ??= serialFailure("command_rejected");
       await this.close("control_failed");
-    }
+    });
+  }
+  async qualificationCooling(action: QualificationCoolingAction) {
+    this.#requireReady();
+    if (!this.maybeQualificationHook || this.#activeLease) throw serialFailure("probe_admission");
+    return runQualificationCooling(action, {
+      prove: () => this.prepareWorkerLeaseAuthorizationContext("start"), request: value => this.#request("qualification_cooling", { action: value }),
+      invalidate: possession => { if (possession) this.#maybePossession = undefined; this.maybeQualificationHook?.observeStatus?.(undefined); }, status: () => this.status(), failed: error => this.#lost(error),
+    });
   }
   async acceptanceBudgetReview(campaignId: string) {
     this.#requireReady();
@@ -349,17 +352,8 @@ export class BrowserSerialController implements WebSerialWorkerController {
     this.#requireReady();
     if (this.#activeLease || !this.#maybePossession)
       throw serialFailure("probe_admission");
-    try {
-      return await probeWorkerSerialTransport(
-        `serial_browser_${this.#requestSequence + 1}`,
-        maybePaddingBytes,
-        (payload) => this.#request("transport_probe", payload),
-      );
-    } catch (error) {
-      const failure = serialFailureFor(error, "probe_failed");
-      this.#lost(failure);
-      throw failure;
-    }
+    return observeWorkerSerialProbe(`serial_browser_${this.#requestSequence + 1}`, maybePaddingBytes,
+      payload => this.#request("transport_probe", payload), error => this.#lost(error));
   }
 
   async status() {
@@ -391,9 +385,10 @@ export class BrowserSerialController implements WebSerialWorkerController {
         this.maybeQualificationHook?.observePreservation,
         this.maybeQualificationHook?.observeStatus,
       );
-    } catch {
-      this.#lost(serialFailure("status_failed"));
-      throw serialFailure("status_failed");
+    } catch (error) {
+      const failure = serialFailureFor(error, "request_failed");
+      this.#lost(failure);
+      throw failure;
     }
   }
   async #restoreCommand(
@@ -550,7 +545,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
         command,
         ...(maybePayload === undefined ? {} : { payload: maybePayload }),
       },
-      ["restore", "pause", "cancel"].includes(command) ? 145_000 : 30_000,
+      ["restore", "pause", "cancel", "qualification_cooling"].includes(command) ? 145_000 : 30_000,
     );
     return parseWorkerControlResult(response, (error) => {
       this.maybeQualificationHook?.maybeObserveDiagnostic?.({ category: "control_failure", authoritative: false, error });

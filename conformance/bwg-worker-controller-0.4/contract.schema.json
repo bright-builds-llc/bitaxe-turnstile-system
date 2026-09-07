@@ -702,6 +702,110 @@
           "type": "boolean"
         }
       }
+    },
+    "qualificationCoolingRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocolVersion",
+        "requestId",
+        "command",
+        "payload"
+      ],
+      "properties": {
+        "protocolVersion": {
+          "const": "bwg-worker-controller/0.4"
+        },
+        "requestId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^serial_[A-Za-z0-9_-]+$"
+        },
+        "command": {
+          "const": "qualification_cooling"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "action"
+          ],
+          "properties": {
+            "action": {
+              "enum": [
+                "prove_fan",
+                "restore_baseline"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "qualificationCoolingResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "asic_effects",
+            "budget_reserved",
+            "schema",
+            "fan_duty_percent",
+            "fan_rpm",
+            "post_command_fan_proven"
+          ],
+          "properties": {
+            "asic_effects": {
+              "const": false
+            },
+            "budget_reserved": {
+              "const": false
+            },
+            "schema": {
+              "const": "worker-cooling-proof-v1"
+            },
+            "fan_duty_percent": {
+              "const": 100
+            },
+            "fan_rpm": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "post_command_fan_proven": {
+              "const": true
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "asic_effects",
+            "budget_reserved",
+            "schema",
+            "fan_duty_percent",
+            "cooling_proven"
+          ],
+          "properties": {
+            "asic_effects": {
+              "const": false
+            },
+            "budget_reserved": {
+              "const": false
+            },
+            "schema": {
+              "const": "worker-cooling-baseline-v1"
+            },
+            "fan_duty_percent": {
+              "const": 30
+            },
+            "cooling_proven": {
+              "const": true
+            }
+          }
+        }
+      ]
     }
   }
 }

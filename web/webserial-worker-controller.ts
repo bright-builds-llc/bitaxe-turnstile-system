@@ -31,3 +31,5 @@ export function createWebSerialWorkerController(
 }
 
 export type { WorkerBudgetReview } from "./worker-budget-review";
+
+export type { QualificationCoolingAction, WorkerCoolingProof, WorkerCoolingBaseline } from "./worker-qualification-cooling";

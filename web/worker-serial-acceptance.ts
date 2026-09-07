@@ -1,3 +1,4 @@
+import { submitWorkerCoolingReview } from "./worker-cooling-review";
 import type { WorkerLeaseAuthorizationContext } from "./worker-lease-authorization";
 import { WorkerSerialDiagnosticHistory } from "./worker-serial-diagnostics";
 import {
@@ -435,7 +436,38 @@ async function rejectStartForRecoveryTest() {
   }
 }
 
+async function proveCoolingForQualification() {
+  maybeReviewedContext = undefined;
+  if (running) throw new Error("cooling_qualification_admission");
+  deviceRestorationConfirmed = false;
+  publish();
+  const report = await controller().qualificationCooling("prove_fan");
+  publish();
+  return report;
+}
+async function restoreCoolingBaseline() {
+  maybeReviewedContext = undefined;
+  if (running) throw new Error("cooling_qualification_admission");
+  const report = await controller().qualificationCooling("restore_baseline");
+  publish();
+  return report;
+}
+
+async function submitCoolingReview() {
+  maybeReviewedContext = undefined;
+  if (running) throw new Error("cooling_qualification_admission");
+  try {
+    return await submitWorkerCoolingReview({
+      local: localJson, possess: () => controller().prepareWorkerLeaseAuthorizationContext("start"),
+      budget: reviewBudget, proveFan: proveCoolingForQualification, restoreFan: restoreCoolingBaseline, state,
+    });
+  } finally { maybeReviewedContext = undefined; }
+}
+
 export const workerAcceptance = {
+  submitCoolingReview,
+  proveCoolingForQualification,
+  restoreCoolingBaseline,
   submitBudgetReview,
   rejectStartForRecoveryTest,
   reviewBudget,

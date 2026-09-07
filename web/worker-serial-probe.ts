@@ -1,5 +1,5 @@
 import { WORKER_CONTROLLER_PROTOCOL_VERSION } from "./worker-controller";
-import { exactSerialRecord, serialFailure } from "./worker-serial";
+import { exactSerialRecord, serialFailure, serialFailureFor } from "./worker-serial";
 
 /** Exercises both exact Controller payload bounds with fixed-pattern request/response bytes. */
 export async function probeWorkerSerialTransport(
@@ -28,4 +28,15 @@ export async function probeWorkerSerialTransport(
   const result = exactSerialRecord(await request({ padding: "x".repeat(paddingBytes), responsePaddingBytes }), ["padding", "requestPaddingBytes"]);
   if (result.requestPaddingBytes !== paddingBytes || result.padding !== "x".repeat(responsePaddingBytes)) throw serialFailure("probe_mismatch");
   return { paddingBytes, requestPayloadBytes: requestOverhead + paddingBytes, responsePayloadBytes: responseOverhead + responsePaddingBytes };
+}
+
+
+/** Preserves the first closed probe failure while the owner revokes its connection. */
+export async function observeWorkerSerialProbe(requestId: string, maybePaddingBytes: number | undefined, request: (payload: { padding: string; responsePaddingBytes: number }) => Promise<unknown>, failed: (error: Error) => void) {
+  try { return await probeWorkerSerialTransport(requestId, maybePaddingBytes, request); }
+  catch (error) {
+    const failure = serialFailureFor(error, "probe_failed");
+    failed(failure);
+    throw failure;
+  }
 }

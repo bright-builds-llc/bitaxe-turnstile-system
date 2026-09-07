@@ -15,3 +15,8 @@ closed admission diagnostics, possessed-session ledger review and an explicitly
 invalid-signature recovery test. A firmware-owned successor may use only the
 original unreserved campaign windows; prior failed windows are never promoted
 or refunded. Gate software is verified; exact-device acceptance remains open.
+
+[Ticket 10](issues/10-final-window-cooling-proof.md) and ADR 0098 add fan-only
+qualification and typed Start rejection preservation. The last-window
+successor requires successful cooling/restoration and unchanged ledger evidence;
+original failed normal and foreground-loss windows remain unverified.

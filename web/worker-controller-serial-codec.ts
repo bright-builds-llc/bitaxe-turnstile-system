@@ -1,3 +1,4 @@
+import { parseQualificationCoolingAction } from "./worker-qualification-cooling";
 import { parseBudgetCampaignId } from "./worker-budget-review";
 import {
   parseWorkerRestorationReason,
@@ -15,6 +16,7 @@ export type WorkerControllerSerialRequestFor<Version extends string, Grant, Rene
     | { command: "start_lease"; payload: Grant }
     | { command: "renew_lease"; payload: Renewal }
     | { command: "restore"; payload: { reason: WorkerRestorationReason } }
+    | { command: "qualification_cooling"; payload: { action: "prove_fan" | "restore_baseline" } }
     | { command: "acceptance_budget_review"; payload: { campaignId: string } }
     | { command: "transport_probe"; payload: { padding: string; responsePaddingBytes: number } }
   );
@@ -61,9 +63,13 @@ export function decodeWorkerControllerSerialRequestFor<Version extends string, G
   const requestId = parseEnvelope(value, profile);
   const command = value.command;
   if (typeof command !== "string") throw invalid(profile.label, "request");
-  const requiresPayload = ["start_lease", "renew_lease", "restore", "transport_probe", "acceptance_budget_review"].includes(command);
+  const requiresPayload = ["start_lease", "renew_lease", "restore", "transport_probe", "acceptance_budget_review", "qualification_cooling"].includes(command);
   if (requiresPayload !== ("payload" in value)) {
     throw invalid(profile.label, "request");
+  }
+  if (command === "qualification_cooling") {
+    const payload = exactRecord(value.payload, ["action"], profile.label);
+    return { protocolVersion: profile.protocolVersion, requestId, command, payload: { action: parseQualificationCoolingAction(payload.action) } };
   }
   if (command === "acceptance_budget_review") {
     const payload = exactRecord(value.payload, ["campaignId"], profile.label);

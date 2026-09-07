@@ -112,6 +112,7 @@ export async function serialHarness(
     holdStart = false,
     holdRestore = false,
     delayedPermission = false;
+  let maybeStartRejection: string | undefined;
   let maybePermission: ((port: WorkerSerialPort) => void) | undefined;
   let maybeOutput: ReadableStreamDefaultController<Uint8Array> | undefined;
   let maybeReadable: ReadableStream<Uint8Array> | null = null;
@@ -272,6 +273,10 @@ export async function serialHarness(
         await send("control", { protocolVersion: request.protocolVersion, requestId: request.requestId, ok: false, error: { code: "command_rejected", message: "authentication_failed" } });
         return;
       }
+      if (maybeStartRejection) {
+        await send("control", { protocolVersion: request.protocolVersion, requestId: request.requestId, ok: false, error: { code: "command_rejected", message: maybeStartRejection } });
+        return;
+      }
       maybeLease = grant;
       active = true;
       if (holdStart) return;
@@ -294,6 +299,16 @@ export async function serialHarness(
       );
       maybeLease = { ...maybeLease, ...renewal };
       await reply(request, status());
+      return;
+    }
+    if (request.command === "qualification_cooling") {
+      if (active) throw new Error("fixture cooling during active lease");
+      const payload = exactSerialRecord(request.payload, ["action"]);
+      if (payload.action === "prove_fan") {
+        await reply(request, { schema: "worker-cooling-proof-v1", fan_duty_percent: 100, fan_rpm: 4200, post_command_fan_proven: true, asic_effects: false, budget_reserved: false });
+      } else if (payload.action === "restore_baseline") {
+        await reply(request, { schema: "worker-cooling-baseline-v1", fan_duty_percent: 30, cooling_proven: true, asic_effects: false, budget_reserved: false });
+      } else throw new Error("fixture cooling action");
       return;
     }
     if (request.command === "acceptance_budget_review") {
@@ -477,6 +492,7 @@ export async function serialHarness(
     ) {
       preservation[field] = "f".repeat(64);
     },
+    rejectStart(category: string) { maybeStartRejection = category; },
     holdStart() {
       holdStart = true;
     },
