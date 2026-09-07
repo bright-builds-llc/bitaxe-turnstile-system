@@ -6,7 +6,7 @@
 
 **Status:** ready-for-agent
 
-- [ ] The firmware repository consumes the shared Controller 0.4, Worker Serial 0.1, Local Device
+- [ ] The firmware repository consumes the shared Controller 0.4, Worker Serial 0.2, Local Device
   Possession, and Work Lease Authorization conformance profiles and fixtures, separate authority
   trust configurations, and exact signed Ultra 205 capability artifact.
 - [ ] Exact-device admission and safe hardware state are proven before each effectful attempt.
@@ -26,7 +26,22 @@
 
 [`bwg-worker-serial`](../../bwg-worker-serial/spec.md) must first publish and compose
 the fixed Serial/JTAG session and typed control/evidence profiles. Ticket 23 consumes that child effort's exact
-Controller 0.4, Worker Serial 0.1, Local Device Possession, and Work Lease Authorization fixtures,
+Controller 0.4, Worker Serial 0.2, Local Device Possession, and Work Lease Authorization fixtures,
 separate authority trust configurations, signed Ultra 205 capability, Reference Client adapter,
 Reference Firmware adapter, and cross-repository hardware evidence. It does not send Work Lease
 commands over the unframed runtime log transport.
+
+
+## Mining progress diagnostics
+
+- [x] Add optional closed `worker-mining-progress-v1` observations, keeping historical absence valid.
+- [x] Separate parsed nonce, below-target, qualified-candidate, discard and blocked-correlation counts without raw job or pool data.
+- [x] Preserve the legacy `nonce_work_correlations` meaning; the new counters authorize no work and add no shutdown requirement.
+- [x] Complete repository verification.
+- [ ] Complete coordinated exact-commit firmware consumption.
+- [ ] Obtain any outstanding physical receive/share evidence within the existing authorized budget; software observations do not establish it.
+
+The codec, conformance definition and [protocol description](../../../docs/protocol/worker-mining-progress-v1.md)
+record the new optional field. Hardware acceptance and unresolved parity blockers remain open.
+
+Verification: format, lint, type checking, build, 352 Rust tests, 404 JavaScript tests, headless browser checks, lookup vectors, package and standards checks passed. The browser fixture now builds its exact target before the existing server-readiness timer and inherits the caller's Cargo profile; startup limits are unchanged. Hardware evidence remains pending.

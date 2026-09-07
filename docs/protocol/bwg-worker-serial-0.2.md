@@ -329,3 +329,12 @@ Diagnostic ordinal 1 observed only 28 bytes remaining on a 16384-byte owner stac
 after one work dispatch and safe stop. That observation does not establish the
 prior panic's cause. The firmware-owned next qualification measures a targeted
 24576-byte stack against the 4096-byte minimum before a longer run.
+
+## Mining progress observations
+
+Controller status may include the closed optional `qualification.mining_progress`
+object defined in [Worker mining progress v1](worker-mining-progress-v1.md) and
+`contract.schema.json#/$defs/miningProgress`. It is not part of the signed serial
+application manifest and carries no authority. Legacy qualification records may
+omit it. In particular, zero `nonce_work_correlations` retains its existing
+qualified-candidate-delta meaning and does not prove zero received ASIC nonces.

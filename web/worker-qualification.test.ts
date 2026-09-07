@@ -125,3 +125,15 @@ test("failed owner resource evidence is retained independently of subsequent obs
   expect(Object.isFrozen(failure.resources)).toBeTrue();
   expect(workerOwnerResourceFailure(undefined)).toEqual({ schema: "worker-owner-resource-failure-v1", generation: null, resources: null });
 });
+
+test("mining progress remains optional and is validated when present", async () => {
+  // Arrange
+  const { progressFixture } = await import("./worker-mining-progress.fixture");
+  // Act
+  const historical = parseWorkerControllerStatus({ ...baseline, qualification }).qualification;
+  // Assert
+  expect(historical?.mining_progress).toBeUndefined();
+  const current = parseWorkerControllerStatus({ ...baseline, qualification: { ...qualification, mining_progress: { ...progressFixture, generation: qualification.generation } } }).qualification;
+  expect(current?.mining_progress?.below_pool_target).toBe("7");
+  expect(current?.nonce_work_correlations).toBe(0);
+});

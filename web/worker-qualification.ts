@@ -1,3 +1,4 @@
+import { parseWorkerMiningProgress, type WorkerMiningProgress } from "./worker-mining-progress";
 import { parseWorkerOwnerResources, type WorkerOwnerResources } from "./worker-owner-resources";
 import { parseWorkerQualificationObservation, type WorkerQualificationObservation } from "./worker-qualification-attempt";
 import { exactSerialRecord, serialFailure } from "./worker-serial";
@@ -7,6 +8,7 @@ export type WorkerQualification = {
   schema: "worker-qualification-v1";
   attempt?: WorkerQualificationObservation;
   owner_resources?: WorkerOwnerResources;
+  mining_progress?: WorkerMiningProgress;
   revocation_reason:
     | "none"
     | "heartbeat_timeout"
@@ -26,6 +28,7 @@ export type WorkerQualification = {
   submitted: number;
   accepted: number;
   rejected: number;
+  /** Legacy qualified-candidate delta; does not count every parsed or correlated nonce. */
   nonce_work_correlations: number;
   work_dispatched: number;
   last_valid_heartbeat_ms: number;
@@ -91,8 +94,10 @@ const samples = [
 /** Requires every known field and rejects arbitrary extensions, NaN, and inconsistent freshness. */
 export function parseWorkerQualification(input: unknown): WorkerQualification {
   const hasAttempt = input !== null && typeof input === "object" && "attempt" in input;
+  const hasProgress = input !== null && typeof input === "object" && "mining_progress" in input;
   const hasResources = input !== null && typeof input === "object" && "owner_resources" in input;
   const value = exactSerialRecord(input, [
+    ...(hasProgress ? ["mining_progress"] : []),
     ...(hasResources ? ["owner_resources"] : []),
     ...(hasAttempt ? ["attempt"] : []),
     "schema",
@@ -166,6 +171,7 @@ export function parseWorkerQualification(input: unknown): WorkerQualification {
     if (attempt.active_ms !== value.active_ms) throw serialFailure("qualification_counter");
   }
   if (hasResources) value.owner_resources = parseWorkerOwnerResources(value.owner_resources, Number(value.generation));
+  if (hasProgress) value.mining_progress = parseWorkerMiningProgress(value.mining_progress, Number(value.generation));
   return value as WorkerQualification;
 }
 function u32(value: unknown): value is number {

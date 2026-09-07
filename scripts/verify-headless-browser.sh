@@ -43,7 +43,9 @@ cleanup() {
 trap cleanup EXIT
 
 cd "$repository_root"
-CARGO_PROFILE_DEV_DEBUG=0 cargo run --quiet --example trusted-consent-browser-fixture \
+# Reuse the caller's build profile instead of forcing a cold fixture rebuild.
+cargo build --quiet --example trusted-consent-browser-fixture
+cargo run --quiet --example trusted-consent-browser-fixture \
   >"$fixture_log" 2>"$fixture_error_log" &
 fixture_pid=$!
 for _ in {1..1800}; do

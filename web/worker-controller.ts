@@ -98,3 +98,5 @@ export { parseWorkerQualification, type WorkerQualification } from "./worker-qua
 export { parseWorkerQualificationAttempt, parseWorkerQualificationLedger, type WorkerQualificationAttempt, type WorkerQualificationObservation, type WorkerQualificationLedger, type QualificationAttemptPurpose } from "./worker-qualification-attempt";
 
 export type { WorkerOwnerResources, WorkerOwnerResourceFailure } from "./worker-owner-resources";
+
+export type { WorkerMiningProgress } from "./worker-mining-progress";
