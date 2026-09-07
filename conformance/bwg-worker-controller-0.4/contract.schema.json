@@ -920,6 +920,56 @@
           "maximum": 4294967295
         }
       }
+    },
+    "ownerResources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "generation",
+        "phase",
+        "observed_at_ms",
+        "heap_free_bytes",
+        "heap_largest_bytes",
+        "stack_free_bytes"
+      ],
+      "properties": {
+        "schema": {
+          "const": "worker-owner-resources-v1"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "phase": {
+          "enum": [
+            "preparation",
+            "active",
+            "shutdown_complete"
+          ]
+        },
+        "observed_at_ms": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,19})$"
+        },
+        "heap_free_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "heap_largest_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "stack_free_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "$comment": "Runtime additionally enforces u64 timestamp bound and equality with enclosing qualification generation; freshness is firmware-owned."
     }
   }
 }

@@ -299,3 +299,33 @@ Allocation crash receipts share the eight reserved crash slots, separate from
 requested size, capabilities and stage when present; absent boot identity is
 never invented. Reconnect clears normal observations while preserving these
 receipts. Deduplication and saturation retain the 40-observation export bound.
+
+## Owner-resource qualification observations
+
+Qualification telemetry may include `owner_resources` containing exactly
+`schema: "worker-owner-resources-v1"`, `generation` (u32, equal to the enclosing
+qualification generation), `phase` (`preparation`, `active`, `shutdown_complete`),
+`observed_at_ms` (canonical decimal u64 string), `heap_free_bytes`,
+`heap_largest_bytes`, and `stack_free_bytes` (u32). Firmware captures these from
+the production owner and exposes the coherent object only for the same generation
+and an age no greater than 1000 ms. The browser cannot compare a device uptime to
+its host clock and does not invent its own freshness calculation. Stack headroom
+is the owner task's lifetime high-water observation, not a phase-local minimum.
+
+For a current iterative grant, actual running observations must include an
+active-phase owner resource observation with at least 4096 bytes of stack
+headroom. Missing or insufficient evidence records `window_control_failed` and
+closes/restores the Worker connection. Initial diagnostic work observations are
+retained before its immediate safe stop. Legacy campaign behavior is unchanged;
+the optional observation does not alter any signing or manifest field.
+
+The public page retains the first resource failure as optional
+`ownerResourceFailure: {schema: "worker-owner-resource-failure-v1", generation, resources}`. Generation or resources can be null when missing; otherwise resources
+is the already validated closed snapshot. Cleanup/reconnect cannot replace this
+snapshot, and a new Start clears it. Version 2 qualification judgments associate
+it with the current attempt and preserve it as failed evidence.
+
+Diagnostic ordinal 1 observed only 28 bytes remaining on a 16384-byte owner stack
+after one work dispatch and safe stop. That observation does not establish the
+prior panic's cause. The firmware-owned next qualification measures a targeted
+24576-byte stack against the 4096-byte minimum before a longer run.

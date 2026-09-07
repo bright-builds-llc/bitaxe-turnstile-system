@@ -1,3 +1,4 @@
+import { parseWorkerOwnerResources, type WorkerOwnerResources } from "./worker-owner-resources";
 import { parseWorkerQualificationObservation, type WorkerQualificationObservation } from "./worker-qualification-attempt";
 import { exactSerialRecord, serialFailure } from "./worker-serial";
 
@@ -5,6 +6,7 @@ import { exactSerialRecord, serialFailure } from "./worker-serial";
 export type WorkerQualification = {
   schema: "worker-qualification-v1";
   attempt?: WorkerQualificationObservation;
+  owner_resources?: WorkerOwnerResources;
   revocation_reason:
     | "none"
     | "heartbeat_timeout"
@@ -89,7 +91,9 @@ const samples = [
 /** Requires every known field and rejects arbitrary extensions, NaN, and inconsistent freshness. */
 export function parseWorkerQualification(input: unknown): WorkerQualification {
   const hasAttempt = input !== null && typeof input === "object" && "attempt" in input;
+  const hasResources = input !== null && typeof input === "object" && "owner_resources" in input;
   const value = exactSerialRecord(input, [
+    ...(hasResources ? ["owner_resources"] : []),
     ...(hasAttempt ? ["attempt"] : []),
     "schema",
     "revocation_reason",
@@ -161,6 +165,7 @@ export function parseWorkerQualification(input: unknown): WorkerQualification {
     value.attempt = attempt;
     if (attempt.active_ms !== value.active_ms) throw serialFailure("qualification_counter");
   }
+  if (hasResources) value.owner_resources = parseWorkerOwnerResources(value.owner_resources, Number(value.generation));
   return value as WorkerQualification;
 }
 function u32(value: unknown): value is number {

@@ -94,3 +94,34 @@ test("attempt telemetry keeps legacy accounting separate and requires exact acti
   expect(() => parseWorkerControllerStatus({ ...baseline, qualification: { ...observation, attempt: { ...attempt, active_ms: 11 } } })).toThrow();
   expect(() => parseWorkerControllerStatus({ ...baseline, qualification: { ...observation, attempt: { ...attempt, id: "private" } } })).toThrow();
 });
+
+test("iterative running requires current active owner resources with at least 4096 stack bytes", async () => {
+  // Arrange
+  const { requireWorkerOwnerHeadroom } = await import("./worker-owner-resources");
+  const { parseWorkerLeaseGrant } = await import("./worker-controller");
+  const { default: vectors } = await import("../conformance/bwg-worker-controller-0.4/qualification-attempt-vectors.json");
+  const grant = parseWorkerLeaseGrant(vectors.vectors[0]!.grant);
+  const owner_resources = { schema: "worker-owner-resources-v1", generation: 1, phase: "active", observed_at_ms: "100", heap_free_bytes: 8000, heap_largest_bytes: 6000, stack_free_bytes: 4096 };
+  const observed = parseWorkerControllerStatus({ ...baseline, qualification: { ...qualification, owner_resources } }).qualification;
+  // Act / Assert
+  expect(() => requireWorkerOwnerHeadroom(grant, observed)).not.toThrow();
+  for (const change of [{ stack_free_bytes: 28 }, { stack_free_bytes: 4095 }, { phase: "preparation" }]) {
+    const changed = parseWorkerControllerStatus({ ...baseline, qualification: { ...qualification, owner_resources: { ...owner_resources, ...change } } }).qualification;
+    expect(() => requireWorkerOwnerHeadroom(grant, changed)).toThrow("window_control_failed");
+  }
+});
+
+test("failed owner resource evidence is retained independently of subsequent observations", async () => {
+  // Arrange
+  const { workerOwnerResourceFailure } = await import("./worker-owner-resources");
+  const owner_resources = { schema: "worker-owner-resources-v1", generation: 1, phase: "active", observed_at_ms: "100", heap_free_bytes: 8000, heap_largest_bytes: 6000, stack_free_bytes: 28 };
+  const observed = parseWorkerControllerStatus({ ...baseline, qualification: { ...qualification, owner_resources } }).qualification;
+  // Act
+  const failure = workerOwnerResourceFailure(observed);
+  if (observed?.owner_resources) observed.owner_resources.stack_free_bytes = 4096;
+  // Assert
+  expect(failure.resources?.stack_free_bytes).toBe(28);
+  expect(Object.isFrozen(failure)).toBeTrue();
+  expect(Object.isFrozen(failure.resources)).toBeTrue();
+  expect(workerOwnerResourceFailure(undefined)).toEqual({ schema: "worker-owner-resource-failure-v1", generation: null, resources: null });
+});

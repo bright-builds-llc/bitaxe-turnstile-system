@@ -31,3 +31,8 @@ authorization, accounting and crash evidence. Firmware still owns physical proof
 failure/context observations alongside existing crash receipts. Saturation and
 reconnect tests preserve them within the unchanged 40-observation export bound;
 this changes no manifest, signing contract or firmware behavior.
+
+[Ticket 13](issues/13-enforce-worker-owner-stack-headroom.md) adds optional
+owner-resource telemetry and the iterative 4096-byte active headroom requirement.
+A failed snapshot survives cleanup; firmware freshness and the targeted stack
+correction require new physical evidence. Legacy campaigns remain unchanged.

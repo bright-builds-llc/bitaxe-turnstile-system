@@ -1,3 +1,4 @@
+import { requireWorkerOwnerHeadroom, workerOwnerResourceFailure, type WorkerOwnerResourceFailure } from "./worker-owner-resources";
 import { acceptancePurposeWindow, acceptanceMaximumActiveMilliseconds } from "./worker-acceptance-purpose";
 import { parseWorkerDiagnosticExport } from "./worker-diagnostic-export";
 import { submitWorkerCoolingReview } from "./worker-cooling-review";
@@ -98,6 +99,7 @@ let polling = false;
 let status = "unconfigured";
 let maybeFailure: string | undefined;
 let maybeQualification: WorkerQualification | undefined;
+let maybeOwnerResourceFailure: WorkerOwnerResourceFailure | undefined;
 let maybeProbe: unknown;
 let connected = false,
   running = false;
@@ -128,6 +130,7 @@ function state() {
       }
       : {}),
     ...(maybeQualification ? { qualification: maybeQualification } : {}),
+    ...(maybeOwnerResourceFailure ? { ownerResourceFailure: maybeOwnerResourceFailure } : {}),
     ...(preservation.maybePublicState()
       ? { preservation: preservation.maybePublicState() }
       : {}),
@@ -291,10 +294,23 @@ async function localJson(path: string, body?: object): Promise<any> {
     throw new Error("local_input_invalid");
   }
 }
+async function enforceRunningHeadroom() {
+  if (!running || !maybeWindow) return true;
+  try { requireWorkerOwnerHeadroom(maybeWindow.grant, maybeQualification); return true; }
+  catch {
+    maybeOwnerResourceFailure ??= workerOwnerResourceFailure(maybeQualification);
+    await fail("window_control_failed");
+    await close().catch(() => { status = "restoration_unconfirmed"; });
+    maybeFailure = "window_control_failed";
+    publish();
+    return false;
+  }
+}
 async function refresh() {
   const observed = await controller().status();
   maybeQualification = observed.qualification;
   publish();
+  await enforceRunningHeadroom();
   return state();
 }
 async function tick() {
@@ -315,6 +331,7 @@ async function tick() {
       nextRenew = performance.now() + renewal.renewAfterMilliseconds;
     }
     await refresh();
+    if (!running || !maybeWindow) return;
     if (maybeWindow.grant.qualificationAttempt?.purpose === "diagnostic" && (maybeQualification?.work_dispatched ?? 0) > 0) { await stop(); return; }
     if (
       acceptanceWindowShouldStop(
@@ -335,6 +352,7 @@ async function tick() {
 async function startWindow() {
   const input = maybeWindow;
   if (!input || running) throw new Error("window_missing_or_active");
+  maybeOwnerResourceFailure = undefined;
   const observed = await controller().startLease(input.grant);
   maybeQualification = observed.qualification;
   renewalProgress.beginWindow();
@@ -342,6 +360,8 @@ async function startWindow() {
   status = "running";
   began = performance.now();
   nextRenew = began + input.grant.renewAfterMilliseconds;
+  publish();
+  if (!await enforceRunningHeadroom()) return state();
   if (input.grant.qualificationAttempt?.purpose === "diagnostic" && (maybeQualification?.work_dispatched ?? 0) > 0) return stop();
   maybeTimer = setInterval(() => {
     void tick();
@@ -399,6 +419,7 @@ async function requirePlannedFault(window: 1 | 2) {
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   await refresh();
+  if (!running) throw new Error("window_control_failed");
   requireAcceptanceFaultHeadroom(maybeQualification?.work_gate_remaining_ms);
 }
 async function armForegroundLoss() {

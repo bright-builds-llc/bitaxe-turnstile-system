@@ -96,3 +96,5 @@ export type { WorkerControllerContract, WorkerControllerDisconnectReason, Worker
 export { parseWorkerQualification, type WorkerQualification } from "./worker-qualification";
 
 export { parseWorkerQualificationAttempt, parseWorkerQualificationLedger, type WorkerQualificationAttempt, type WorkerQualificationObservation, type WorkerQualificationLedger, type QualificationAttemptPurpose } from "./worker-qualification-attempt";
+
+export type { WorkerOwnerResources, WorkerOwnerResourceFailure } from "./worker-owner-resources";
