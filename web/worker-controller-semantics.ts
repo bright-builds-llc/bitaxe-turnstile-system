@@ -1,3 +1,4 @@
+import { parseWorkerQualificationAttempt, type WorkerQualificationAttempt } from "./worker-qualification-attempt";
 import { parseWorkerPreservation, type WorkerPreservation } from "./worker-preservation";
 import { parseWorkerQualification, type WorkerQualification } from "./worker-qualification";
 /** Stable wire/profile identifier for the local Worker Controller contract. */
@@ -32,6 +33,7 @@ export type WorkerLeaseGrant = {
   renewAfterMilliseconds: number;
   stratum: { endpoint: string; username: string; password: string };
   acceptanceCampaign?: WorkerAcceptanceCampaign;
+  qualificationAttempt?: WorkerQualificationAttempt;
 };
 
 /** Authenticated extension for the exact active device lease. */
@@ -189,11 +191,13 @@ export function parseWorkerLeaseGrant(input: unknown): WorkerLeaseGrant {
     "durationMilliseconds",
     "renewAfterMilliseconds",
     "stratum",
-  ], ["acceptanceCampaign"]);
+  ], ["acceptanceCampaign", "qualificationAttempt"]);
+  if (value.acceptanceCampaign !== undefined && value.qualificationAttempt !== undefined) throw new Error("Work Lease qualification modes are mutually exclusive");
   const stratum = exactRecord(value.stratum, ["endpoint", "username", "password"]);
   const window = parseLeaseWindow(value);
   const grant = {
     ...window,
+    ...(value.qualificationAttempt === undefined ? {} : { qualificationAttempt: parseWorkerQualificationAttempt(value.qualificationAttempt) }),
     ...(value.acceptanceCampaign === undefined ? {} : { acceptanceCampaign: parseAcceptanceCampaign(value.acceptanceCampaign) }),
     leaseId: requiredString(value, "leaseId"),
     challengeId: requiredString(value, "challengeId"),

@@ -1,3 +1,4 @@
+import type { WorkerQualificationLedger } from "./worker-qualification-attempt";
 import type { QualificationCoolingAction, WorkerCoolingProof, WorkerCoolingBaseline } from "./worker-qualification-cooling";
 import type { WorkLeaseAuthorityTrust } from "./worker-lease-authorization";
 import type { WorkerBudgetReview } from "./worker-budget-review";
@@ -47,6 +48,7 @@ export interface WebSerialWorkerController
   /** Qualification only; requires the explicit qualification hook. */
   rejectStartForRecoveryTest(trust: WorkLeaseAuthorityTrust): Promise<{ rejected: true; error: "authentication_failed" }>;
   qualificationCooling(action: QualificationCoolingAction): Promise<WorkerCoolingProof | WorkerCoolingBaseline>;
+  qualificationAttemptReview(): Promise<WorkerQualificationLedger>;
   acceptanceBudgetReview(campaignId: string): Promise<WorkerBudgetReview>;
   transportProbe(maybePaddingBytes?: number): Promise<{
     paddingBytes: number;

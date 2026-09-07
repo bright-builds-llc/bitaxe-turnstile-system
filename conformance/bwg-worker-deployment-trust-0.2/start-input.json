@@ -1,7 +1,7 @@
 {
   "operation": "start",
   "activeChallengeId": "challenge_00000000000000000000000000000001",
-  "controlSessionBindingSha256": "ale6owHYgI2vTKsXVH1JJY25j5HC6W9BH-slwQ9rvC8",
+  "controlSessionBindingSha256": "ZYxjmsY7lf_ggfHsVA94pIw2-l_-ntfLCOSoCeVQMkU",
   "request": {
     "protocolVersion": "bwg-worker-controller/0.4",
     "leaseId": "lease_fixture_01",

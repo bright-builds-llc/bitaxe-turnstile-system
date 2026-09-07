@@ -2,6 +2,7 @@
   "profile": "bwg-worker-serial/0.2",
   "manifest": {
     "profile": "bwg-worker-serial/0.2",
+    "qualificationAttemptProfile": "worker-qualification-attempt-v1",
     "transport": "esp32s3_usb_serial_jtag",
     "baudRate": 115200,
     "framing": "utf8_ndjson",

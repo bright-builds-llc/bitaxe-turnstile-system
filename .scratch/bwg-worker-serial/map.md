@@ -20,3 +20,9 @@ or refunded. Gate software is verified; exact-device acceptance remains open.
 qualification and typed Start rejection preservation. The last-window
 successor requires successful cooling/restoration and unchanged ledger evidence;
 original failed normal and foreground-loss windows remain unverified.
+
+[Ticket 11](issues/11-iterative-attempts-and-panic-receipts.md) and ADR 0099
+separate new individually bounded diagnostic/acceptance attempts from the
+immutable original campaign. Signed purpose/ordinal metadata, manifest support,
+a separate durable ledger review and explicit closed diagnostic export preserve
+authorization, accounting and crash evidence. Firmware still owns physical proof.

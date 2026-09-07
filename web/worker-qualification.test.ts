@@ -82,3 +82,15 @@ test("qualification admits only the closed winning revocation attribution", () =
     }),
   ).toThrow();
 });
+
+test("attempt telemetry keeps legacy accounting separate and requires exact active time", () => {
+  // Arrange
+  const attempt = { schema: "worker-qualification-observation-v1", ordinal: 1, purpose: "diagnostic", maximum_active_ms: 30000, reserved_ms: 30000, complete: false, active_ms: 10 };
+  const observation = { ...qualification, budget_reserved_ms: 240000, budget_complete: true, attempt };
+  // Act / Assert
+  const parsed = parseWorkerControllerStatus({ ...baseline, qualification: observation });
+  expect(parsed.qualification?.budget_reserved_ms).toBe(240000);
+  expect(parsed.qualification?.attempt?.reserved_ms).toBe(30000);
+  expect(() => parseWorkerControllerStatus({ ...baseline, qualification: { ...observation, attempt: { ...attempt, active_ms: 11 } } })).toThrow();
+  expect(() => parseWorkerControllerStatus({ ...baseline, qualification: { ...observation, attempt: { ...attempt, id: "private" } } })).toThrow();
+});

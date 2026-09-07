@@ -14,6 +14,7 @@ function fixture() {
       return { cooling_review_saved: true, review_file: "cooling-review-fixture_nonce.json" };
     },
     async possess() { calls.push("possess"); return { controlSessionBindingSha256: "private-binding" }; },
+    async attemptBudget() { return { schema: "worker-qualification-ledger-v1" as const, next_ordinal: 1, total_charged_ms: 0, pending: false, last_completed_ordinal: 0 }; },
     async budget(_campaignId: string) { calls.push("budget"); return { ...budget }; },
     async proveFan() { calls.push("prove"); return { schema: "worker-cooling-proof-v1", fan_duty_percent: 100, fan_rpm: 4200, post_command_fan_proven: true, asic_effects: false, budget_reserved: false }; },
     async restoreFan() { calls.push("restore"); return { schema: "worker-cooling-baseline-v1", fan_duty_percent: 30, cooling_proven: true, asic_effects: false, budget_reserved: false }; },
@@ -44,4 +45,22 @@ test("changed budget after fan restoration cannot produce a receipt", async () =
   h.operations.restoreFan = async () => { h.budget.reserved_mask = 7; h.budget.completed_mask = 7; h.budget.charged_ms = 240000; return { schema: "worker-cooling-baseline-v1", fan_duty_percent: 30, cooling_proven: true, asic_effects: false, budget_reserved: false }; };
   await expect(submitWorkerCoolingReview(h.operations)).rejects.toThrow();
   expect(h.posted).toHaveLength(0);
+});
+
+test("iterative cooling uses the separate ledger and stores no campaign identifier", async () => {
+  // Arrange
+  const h = fixture();
+  h.operations.local = async (path, body) => {
+    h.calls.push(path);
+    if (path === "/cooling-review-context") return { mode: "iterative", nonce: "fixture_nonce" };
+    h.posted.push(body);
+    return { cooling_review_saved: true, review_file: "cooling.json" };
+  };
+  // Act
+  const receipt = await submitWorkerCoolingReview(h.operations);
+  // Assert
+  expect(receipt.review_file).toBe("cooling.json");
+  expect(h.calls).not.toContain("budget");
+  expect(JSON.stringify(h.posted)).toContain("worker-qualification-ledger-v1");
+  expect(JSON.stringify(h.posted)).not.toContain("campaignId");
 });

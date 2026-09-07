@@ -311,6 +311,11 @@ export async function serialHarness(
       } else throw new Error("fixture cooling action");
       return;
     }
+    if (request.command === "qualification_attempt_review") {
+      exactSerialRecord(request.payload, []);
+      await reply(request, { schema: "worker-qualification-ledger-v1", next_ordinal: 1, total_charged_ms: 0, pending: false, last_completed_ordinal: 0 });
+      return;
+    }
     if (request.command === "acceptance_budget_review") {
       const payload = exactSerialRecord(request.payload, ["campaignId"]);
       await reply(request, { schema: "worker-budget-review-v1", campaign_match: payload.campaignId === "AAAAAAAAAAAAAAAAAAAAAA", reserved_mask: 1, completed_mask: 1, charged_ms: 180000, pending: false });

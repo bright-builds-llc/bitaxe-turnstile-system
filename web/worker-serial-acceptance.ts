@@ -1,3 +1,5 @@
+import { acceptancePurposeWindow, acceptanceMaximumActiveMilliseconds } from "./worker-acceptance-purpose";
+import { parseWorkerDiagnosticExport } from "./worker-diagnostic-export";
 import { submitWorkerCoolingReview } from "./worker-cooling-review";
 import type { WorkerLeaseAuthorizationContext } from "./worker-lease-authorization";
 import { WorkerSerialDiagnosticHistory } from "./worker-serial-diagnostics";
@@ -235,7 +237,7 @@ async function prepareStartAuthorization() {
 function loadWindow(input: WindowArtifacts) {
   if (running) throw new Error("window_active");
   const grant = parseWorkerLeaseGrant(input.grant);
-  if (!grant.acceptanceCampaign)
+  if (!grant.acceptanceCampaign && !grant.qualificationAttempt)
     throw new Error("acceptance_campaign_required");
   if (!Array.isArray(input.renewals) || input.renewals.length > 16)
     throw new Error("renewal_bound");
@@ -300,8 +302,7 @@ async function tick() {
   polling = true;
   try {
     const now = performance.now();
-    const duration =
-      maybeWindow.grant.acceptanceCampaign?.maximumActiveMilliseconds;
+    const duration = acceptanceMaximumActiveMilliseconds(maybeWindow.grant);
     if (duration === undefined) throw new Error("campaign_missing");
     if (now - began >= duration) {
       await stop();
@@ -314,9 +315,10 @@ async function tick() {
       nextRenew = performance.now() + renewal.renewAfterMilliseconds;
     }
     await refresh();
+    if (maybeWindow.grant.qualificationAttempt?.purpose === "diagnostic" && (maybeQualification?.work_dispatched ?? 0) > 0) { await stop(); return; }
     if (
       acceptanceWindowShouldStop(
-        maybeWindow.grant.acceptanceCampaign?.window ?? -1,
+        acceptancePurposeWindow(maybeWindow.grant),
         duration,
         performance.now() - began,
         maybeQualification?.work_gate_remaining_ms,
@@ -340,6 +342,7 @@ async function startWindow() {
   status = "running";
   began = performance.now();
   nextRenew = began + input.grant.renewAfterMilliseconds;
+  if (input.grant.qualificationAttempt?.purpose === "diagnostic" && (maybeQualification?.work_dispatched ?? 0) > 0) return stop();
   maybeTimer = setInterval(() => {
     void tick();
   }, 1000);
@@ -386,7 +389,7 @@ async function probe() {
   return maybeProbe;
 }
 async function requirePlannedFault(window: 1 | 2) {
-  if (!running || maybeWindow?.grant.acceptanceCampaign?.window !== window)
+  if (!running || !maybeWindow || acceptancePurposeWindow(maybeWindow.grant) !== window)
     throw new Error("qualification_window_required");
   stopTimer();
   const waitingSince = performance.now();
@@ -416,9 +419,10 @@ async function reviewBudget(campaignId: string) {
 async function submitBudgetReview() {
   maybeReviewedContext = undefined;
   const input = await localJson("/budget-review-context", {});
-  if (!input || Object.keys(input).length !== 2 || typeof input.campaignId !== "string" || typeof input.nonce !== "string") throw new Error("budget_review_context");
+  const iterative = input?.mode === "iterative";
+  if (!input || Object.keys(input).length !== 2 || (!iterative && typeof input.campaignId !== "string") || typeof input.nonce !== "string") throw new Error("budget_review_context");
   const context = await controller().prepareWorkerLeaseAuthorizationContext("start");
-  const report = await reviewBudget(input.campaignId);
+  const report = iterative ? await controller().qualificationAttemptReview() : await reviewBudget(input.campaignId);
   const receipt = await localJson("/budget-review", { nonce: input.nonce, report, controlSessionBindingSha256: context.controlSessionBindingSha256, state: state() });
   if (receipt?.budget_review_saved !== true) throw new Error("budget_review_receipt");
   maybeReviewedContext = context;
@@ -459,12 +463,41 @@ async function submitCoolingReview() {
   try {
     return await submitWorkerCoolingReview({
       local: localJson, possess: () => controller().prepareWorkerLeaseAuthorizationContext("start"),
-      budget: reviewBudget, proveFan: proveCoolingForQualification, restoreFan: restoreCoolingBaseline, state,
+      attemptBudget: () => controller().qualificationAttemptReview(), budget: reviewBudget, proveFan: proveCoolingForQualification, restoreFan: restoreCoolingBaseline, state,
     });
   } finally { maybeReviewedContext = undefined; }
 }
 
+async function reviewQualificationAttempts() {
+  maybeReviewedContext = undefined;
+  await controller().prepareWorkerLeaseAuthorizationContext("start");
+  return controller().qualificationAttemptReview();
+}
+async function exportDiagnostics() {
+  const body = parseWorkerDiagnosticExport({ schema: "worker-diagnostic-export-v1", observations: localDiagnostics.values() });
+  const receipt = await localJson("/diagnostic-export", body);
+  if (!receipt || Object.keys(receipt).length !== 2 || receipt.diagnostic_export_saved !== true || typeof receipt.review_file !== "string" || !/^diagnostic-export-[A-Za-z0-9_-]+\.json$/u.test(receipt.review_file)) throw new Error("diagnostic_export_receipt");
+  return { diagnostic_export_saved: true, review_file: receipt.review_file };
+}
+
+async function submitAttemptCompletion() {
+  maybeReviewedContext = undefined;
+  if (running || !deviceRestorationConfirmed || !deviceLeaseInactive) throw new Error("completion_admission");
+  const input = await localJson("/completion-context", {});
+  if (!input || Object.keys(input).length !== 2 || typeof input.nonce !== "string" || typeof input.campaignId !== "string") throw new Error("completion_context");
+  await controller().prepareWorkerLeaseAuthorizationContext("start");
+  const ledger_after = await controller().qualificationAttemptReview();
+  const original_budget = await reviewBudget(input.campaignId);
+  await close();
+  const receipt = await localJson("/completion-review", { nonce: input.nonce, ledger_after, original_budget, final_state: state() });
+  if (!receipt || !["passed", "unverified"].includes(receipt.result) || !["diagnostic", "normal", "foreground_loss", "heartbeat_loss"].includes(receipt.purpose) || !Number.isSafeInteger(receipt.ordinal) || receipt.ordinal < 1 || receipt.ordinal > 0xffffffff || !Number.isSafeInteger(receipt.cumulative_charged_ms) || receipt.cumulative_charged_ms < 0 || receipt.cleanup_confirmed !== true) throw new Error("completion_receipt");
+  return { result: receipt.result, ordinal: receipt.ordinal, purpose: receipt.purpose, cumulative_charged_ms: receipt.cumulative_charged_ms, cleanup_confirmed: true };
+}
+
 export const workerAcceptance = {
+  submitAttemptCompletion,
+  reviewQualificationAttempts,
+  exportDiagnostics,
   submitCoolingReview,
   proveCoolingForQualification,
   restoreCoolingBaseline,

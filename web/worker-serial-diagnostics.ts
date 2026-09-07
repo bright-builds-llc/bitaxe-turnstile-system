@@ -1,11 +1,18 @@
+import { maybePreparationDiagnostic, maybePreparationExport, sameRecord } from "./worker-preparation-diagnostics";
 /** Local, non-authoritative observations; never identity or Work Lease admission. */
 export type WorkerSerialDiagnostic = Readonly<Record<string, string | number | boolean>>;
 
 /** Bounded connection-local observations; retain the earliest failure per category. */
 export class WorkerSerialDiagnosticHistory {
   #observations = new Map<string, WorkerSerialDiagnostic>();
+  #crashReceipts = new Map<string, WorkerSerialDiagnostic>();
 
   observe(value: WorkerSerialDiagnostic): void {
+    if ((value.category === "worker_preparation_receipt" && value.origin === "previous_boot") || value.category === "panic") {
+      const key = `${value.category}:${value.source_hash ?? value.file_hash ?? "none"}:${value.boot_ordinal ?? "none"}:${value.status ?? value.line}`;
+      if (this.#crashReceipts.size < 8 || this.#crashReceipts.has(key)) this.#crashReceipts.set(key, value);
+      return;
+    }
     const failure = String(value.category).endsWith("_failure") || value.category === "panic";
     const key = failure ? String(value.category) : `${value.category}:${value.stage ?? ""}`;
     if (this.#observations.has(key) && failure) return;
@@ -13,7 +20,7 @@ export class WorkerSerialDiagnosticHistory {
     this.#observations.set(key, value);
   }
 
-  values(): WorkerSerialDiagnostic[] { return [...this.#observations.values()]; }
+  values(): WorkerSerialDiagnostic[] { return [...this.#crashReceipts.values(), ...this.#observations.values()]; }
 
   clear(): void { this.#observations.clear(); }
 }
@@ -104,6 +111,8 @@ const grammars: readonly Grammar[] = [
 /** Parses only producer-owned closed grammars; arbitrary boot/log/request text is dropped. */
 export function maybeWorkerSerialDiagnostic(line: string): WorkerSerialDiagnostic | undefined {
   if (line.length > 1024) return undefined;
+  const preparation = maybePreparationDiagnostic(line);
+  if (preparation) return preparation;
   for (const grammar of grammars) {
     const match = grammar.pattern.exec(line);
     if (!match || match[0].length !== line.length) continue;
@@ -129,4 +138,21 @@ export function maybeWorkerSerialDiagnostic(line: string): WorkerSerialDiagnosti
 export function maybeWorkerDiagnosticPayload(payload: Record<string, unknown>) {
   if (Object.keys(payload).length !== 1 || typeof payload.line !== "string") return undefined;
   return maybeWorkerSerialDiagnostic(payload.line);
+}
+
+
+/** Reconstructs only trusted producer grammars, then reparses to prevent arbitrary export fields. */
+export function maybeValidatedDiagnostic(input: unknown): WorkerSerialDiagnostic | undefined {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const value = input as WorkerSerialDiagnostic;
+  const preparation = maybePreparationExport(value);
+  if (preparation) return preparation;
+  for (const grammar of grammars) {
+    if (grammar.category !== value.category) continue;
+    let field = 0;
+    const line = grammar.pattern.source.replace(/^\^|\$$/gu, "").replace(/\([^()]*\)/gu, () => String(value[grammar.fields[field++] ?? ""]));
+    const parsed = maybeWorkerSerialDiagnostic(line);
+    if (parsed && sameRecord(value, parsed)) return parsed;
+  }
+  return undefined;
 }

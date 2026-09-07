@@ -479,7 +479,23 @@
                   }
                 }
               ]
+            },
+            "qualificationAttempt": {
+              "$ref": "#/$defs/qualificationAttempt"
             }
+          }
+        },
+        {
+          "not": {
+            "type": "object",
+            "properties": {
+              "acceptanceCampaign": true,
+              "qualificationAttempt": true
+            },
+            "required": [
+              "acceptanceCampaign",
+              "qualificationAttempt"
+            ]
           }
         }
       ]
@@ -806,6 +822,104 @@
           }
         }
       ]
+    },
+    "qualificationAttempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "id",
+        "ordinal",
+        "purpose",
+        "maximumActiveMilliseconds"
+      ],
+      "properties": {
+        "schema": {
+          "const": "worker-qualification-attempt-v1"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{21}[AQgw]$"
+        },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "purpose": {
+          "enum": [
+            "diagnostic",
+            "normal",
+            "foreground_loss",
+            "heartbeat_loss"
+          ]
+        },
+        "maximumActiveMilliseconds": {
+          "enum": [
+            180000,
+            30000
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "purpose": {
+                "const": "normal"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "maximumActiveMilliseconds": {
+                "const": 180000
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "maximumActiveMilliseconds": {
+                "const": 30000
+              }
+            }
+          }
+        }
+      ]
+    },
+    "qualificationAttemptLedger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "next_ordinal",
+        "total_charged_ms",
+        "pending",
+        "last_completed_ordinal"
+      ],
+      "properties": {
+        "schema": {
+          "const": "worker-qualification-ledger-v1"
+        },
+        "next_ordinal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967296
+        },
+        "total_charged_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "pending": {
+          "type": "boolean"
+        },
+        "last_completed_ordinal": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      }
     }
   }
 }

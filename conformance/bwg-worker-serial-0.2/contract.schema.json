@@ -59,7 +59,8 @@
         "hostToDeviceReceiveWindowBytes",
         "maximumHostWriteChunkBytes",
         "recordWriteTimeoutMilliseconds",
-        "payloadIntegrity"
+        "payloadIntegrity",
+        "qualificationAttemptProfile"
       ],
       "properties": {
         "profile": {
@@ -100,6 +101,9 @@
         },
         "payloadIntegrity": {
           "const": "sha256_exact_utf8_json"
+        },
+        "qualificationAttemptProfile": {
+          "const": "worker-qualification-attempt-v1"
         }
       }
     },

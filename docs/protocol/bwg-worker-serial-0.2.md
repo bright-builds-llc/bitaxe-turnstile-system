@@ -26,12 +26,12 @@ heartbeats and receive acknowledgements. Never log hashes or payload contents.
 Retain the existing manifest fields and values, changing its profile to 0.2
 and adding these exact fields:
 
-| Field | Value |
-| --- | --- |
-| `hostToDeviceReceiveWindowBytes` | `2048` |
-| `maximumHostWriteChunkBytes` | `1024` |
-| `recordWriteTimeoutMilliseconds` | `2000` |
-| `payloadIntegrity` | `sha256_exact_utf8_json` |
+| Field                            | Value                    |
+| -------------------------------- | ------------------------ |
+| `hostToDeviceReceiveWindowBytes` | `2048`                   |
+| `maximumHostWriteChunkBytes`     | `1024`                   |
+| `recordWriteTimeoutMilliseconds` | `2000`                   |
+| `payloadIntegrity`               | `sha256_exact_utf8_json` |
 
 The complete manifest is signed through the existing capability and bound into
 fresh possession with exact firmware and logical-session identity. Hello
@@ -154,7 +154,6 @@ using it to assess remaining acceptance work. The Web Serial adapter exposes
 `acceptanceBudgetReview(campaignId)`; the qualification page exposes
 `reviewBudget(campaignId)` and returns only the validated closed result.
 
-
 The qualification-only `rejectStartForRecoveryTest()` helper uses fresh possession
 and a synthetic non-campaign grant with an all-zero signature, never the signing
 endpoint or operational pool inputs. Success requires the correlated Controller
@@ -219,3 +218,77 @@ to `/cooling-review`. Its return contains only the saved-receipt filename and
 closed success/equality booleans. Neither campaign identity nor possession
 binding enters the posted evidence or return. It clears any cached authorization
 context throughout; a later signed window requires its own separate budget review.
+
+## Iterative qualification successor
+
+ADR 0099 introduces the optional signed `qualificationAttempt` Start field,
+mutually exclusive with `acceptanceCampaign`. Its exact fields are
+`schema: "worker-qualification-attempt-v1"`, `id` (canonical sixteen-byte
+base64url), `ordinal` (1–4294967295), `purpose` (`diagnostic`, `normal`,
+`foreground_loss`, `heartbeat_loss`) and `maximumActiveMilliseconds` (180000
+for normal, 30000 otherwise). Existing Work Lease Authority signatures cover
+this object, the entire request and fresh possession. The application manifest
+adds `qualificationAttemptProfile: "worker-qualification-attempt-v1"`; its
+signed capability digest changes while fixed serial 0.2 framing remains.
+Legacy requests retain their original signing semantics and ledger meanings.
+
+`qualification_attempt_review` requires exactly `{}` as payload and fresh
+possession with safe idle/no pending effects. Its exact result is
+`schema: "worker-qualification-ledger-v1"`, `next_ordinal` (1–4294967296),
+`total_charged_ms` (0–9007199254740991), `pending` (boolean) and
+`last_completed_ordinal` (u32). Last completed equals next minus one when idle,
+or next minus two when one attempt remains pending. Next 4294967296 denotes
+exhaustion. Review observes the separate durable ledger and changes no budget.
+The original complete 240000-ms campaign remains immutable.
+
+Existing qualification telemetry may include `attempt` with exactly
+`schema: "worker-qualification-observation-v1"`, `ordinal`, `purpose`,
+`maximum_active_ms`, `reserved_ms`, `complete`, and `active_ms`. The purpose
+limits match the grant; reservation and active time are bounded by that limit,
+and active time must equal the enclosing generation's active time. This object
+contains no ID and does not redefine legacy budget fields. Public signed
+cross-language examples live in
+`conformance/bwg-worker-controller-0.4/qualification-attempt-vectors.json`.
+
+The actual acceptance page supports all purposes through ordinary Start and
+Renew calls. Diagnostic purpose stops promptly on its first observed dispatched
+work; normal and fault purposes retain their signed limits and independent
+safe-stop requirements. `reviewQualificationAttempts()` obtains fresh possession
+before querying the separate ledger. Budget/cooling supervisor contexts may use
+`{nonce, mode: "iterative"}` to select this ledger without a campaign ID;
+legacy contexts remain unchanged. `submitAttemptCompletion()` reviews both
+ledgers after confirmed restoration, closes the serial connection and posts
+only closed ledger/public-state observations before returning the bounded result.
+
+## Preparation receipt export
+
+The exact producer prefix is `worker_preparation_receipt schema=v1` followed by
+`origin=current_boot|previous_boot` and `status`. Invalid statuses (`incomplete`,
+`corrupt`, `unavailable`, `wrong_firmware`) permit only `redacted=true` afterward.
+For `status=valid`, fields follow in order: `interrupted=true|false`,
+`source_hash` (16 lowercase hex), `boot_ordinal` (u64), `generation` (u32),
+`sequence` (u32), `uptime_ms` (u64), `last_completed_step` (0–9),
+`current_step` (1–9), `outcome=started|completed|failed`, `failure`, `heap_free`,
+`heap_largest`, `stack_free` (u32 or `unavailable`), and `redacted=true`.
+Failure is exactly `none`, `cancelled`, `safety_unavailable`, `owner_unavailable`,
+`queue_full`, `reply_timeout`, `hardware_write_failed`, `fan_timeout`,
+`unsupported_profile`, `asic_failed`, `asic_plan_invalid`, `cooling_timeout`,
+or `cooling_proof_required`. Started/completed outcomes require none; failed
+requires a non-none category. Started requires last_completed_step < current_step;
+completed requires equality; failed permits last_completed_step \<= current_step
+to preserve a completed step followed by late cancellation. An interrupted
+started record cannot invent a failure.
+Interrupted means the retained previous valid slot survived an interrupted
+new write; on current_boot it can mean a writer is still in progress and is not
+proof of a crash. It never proves the interrupted step completed. Heap fields
+measure internal 8-bit memory bytes; stack_free is the pinned Xtensa watermark
+in bytes. U64 values remain
+exact decimal strings in browser observations.
+
+Previous-boot receipts and panic observations have separate bounded retention
+that current diagnostics and reconnect resets cannot evict. Explicit
+`exportDiagnostics()` posts `{schema: "worker-diagnostic-export-v1", observations: [...]}` to `/diagnostic-export` only after revalidating every
+observation against the closed producer grammar. Maximum count is 40. Unknown
+fields, altered types, arbitrary strings and raw log material are rejected.
+The public validator is `web/worker-diagnostic-export.ts`; it returns only
+sanitized closed records. The page returns only a validated opaque receipt filename.

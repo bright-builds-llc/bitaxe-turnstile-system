@@ -1,8 +1,10 @@
+import { parseWorkerQualificationObservation, type WorkerQualificationObservation } from "./worker-qualification-attempt";
 import { exactSerialRecord, serialFailure } from "./worker-serial";
 
 /** Closed, read-only device evidence; never authority to Start or extend a lease. */
 export type WorkerQualification = {
   schema: "worker-qualification-v1";
+  attempt?: WorkerQualificationObservation;
   revocation_reason:
     | "none"
     | "heartbeat_timeout"
@@ -86,7 +88,9 @@ const samples = [
 ] as const;
 /** Requires every known field and rejects arbitrary extensions, NaN, and inconsistent freshness. */
 export function parseWorkerQualification(input: unknown): WorkerQualification {
+  const hasAttempt = input !== null && typeof input === "object" && "attempt" in input;
   const value = exactSerialRecord(input, [
+    ...(hasAttempt ? ["attempt"] : []),
     "schema",
     "revocation_reason",
     ...counters,
@@ -152,6 +156,11 @@ export function parseWorkerQualification(input: unknown): WorkerQualification {
     ].includes(String(value.safe_stop_stage))
   )
     throw serialFailure("qualification_stage");
+  if (hasAttempt) {
+    const attempt = parseWorkerQualificationObservation(value.attempt);
+    value.attempt = attempt;
+    if (attempt.active_ms !== value.active_ms) throw serialFailure("qualification_counter");
+  }
   return value as WorkerQualification;
 }
 function u32(value: unknown): value is number {

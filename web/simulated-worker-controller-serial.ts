@@ -71,6 +71,7 @@ async function dispatch(
   switch (request.command) {
     case "qualification_cooling":
       throw new Error("Fan proof requires the possessed firmware actuator");
+    case "qualification_attempt_review":
     case "acceptance_budget_review":
       throw new Error("Budget review requires the possessed firmware ledger");
     case "discover":

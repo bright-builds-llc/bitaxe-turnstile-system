@@ -101,3 +101,17 @@ _Avoid_: Cloud backup, support bundle, plaintext export
 **Telemetry History**:
 Bounded, typed operational aggregates retained for an Owner's Worker under a disclosed duration and deletion policy.
 _Avoid_: Raw log archive, credential store, permanent history
+
+**Qualification Attempt**:
+An individually bounded, signed firmware-validation activity identified by a fresh
+opaque ID, a durable ordinal and a diagnostic or acceptance purpose. It uses the
+normal Work Lease Authority and possession path, but its durable accounting is
+separate from the immutable original acceptance campaign. It cannot reset a
+budget, reuse an ordinal, or establish Gate work-credit policy.
+_Avoid_: Budget refund, unsigned diagnostic override, new authority role
+
+**Preparation Receipt**:
+A closed, source- and boot-associated diagnostic observation of preparation steps
+and typed outcomes. Previous-boot receipts survive current diagnostic churn;
+interruption identifies uncertainty and never proves completion or recovery.
+_Avoid_: Hardware completion proof, restoration authority, raw runtime log

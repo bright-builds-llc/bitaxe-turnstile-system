@@ -22,7 +22,7 @@ import {
   parseWorkerControllerCapabilities,
   verifyWorkerControllerCapability,
   parseWorkerLeaseGrant,
-  parseWorkerLeaseRenewal,
+  parseWorkerLeaseRenewal, parseWorkerQualificationLedger,
   parseWorkerRestorationReason,
   type WorkerControllerCapabilities,
   type WorkerControllerStatus,
@@ -342,6 +342,11 @@ export class BrowserSerialController implements WebSerialWorkerController {
       prove: () => this.prepareWorkerLeaseAuthorizationContext("start"), request: value => this.#request("qualification_cooling", { action: value }),
       invalidate: possession => { if (possession) this.#maybePossession = undefined; this.maybeQualificationHook?.observeStatus?.(undefined); }, status: () => this.status(), failed: error => this.#lost(error),
     });
+  }
+  async qualificationAttemptReview() {
+    this.#requireReady();
+    if (this.#activeLease || !this.#maybePossession) throw serialFailure("probe_admission");
+    return parseWorkerQualificationLedger(await this.#request("qualification_attempt_review", {}));
   }
   async acceptanceBudgetReview(campaignId: string) {
     this.#requireReady();

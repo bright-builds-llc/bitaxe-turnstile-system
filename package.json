@@ -80,6 +80,9 @@
     },
     "./worker-serial-conformance/schema": {
       "default": "./conformance/bwg-worker-serial-0.2/contract.schema.json"
+    },
+    "./worker-qualification-attempt-conformance/fixtures": {
+      "default": "./conformance/bwg-worker-controller-0.4/qualification-attempt-vectors.json"
     }
   },
   "scripts": {

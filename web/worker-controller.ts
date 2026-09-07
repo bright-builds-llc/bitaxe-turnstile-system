@@ -15,7 +15,7 @@ import {
 import type { WorkerSerialManifest } from "./worker-serial";
 import { WORKER_SERIAL_PROFILE } from "./worker-serial";
 
-/** Possession-bound production Controller profile over Worker Serial 0.1. */
+/** Possession-bound production Controller profile over Worker Serial 0.2. */
 export const WORKER_CONTROLLER_PROTOCOL_VERSION = "bwg-worker-controller/0.4" as const;
 
 /** Strict signed possession-bound Reference Firmware capability. */
@@ -23,7 +23,7 @@ export type WorkerControllerCapabilities = SignedWorkerControllerCapabilities<
   typeof WORKER_CONTROLLER_PROTOCOL_VERSION,
   typeof WORKER_SERIAL_PROFILE
 >;
-/** Update Authority claims binding Controller 0.4 to Worker Serial 0.1. */
+/** Update Authority claims binding Controller 0.4 to Worker Serial 0.2. */
 export type WorkerControllerCapabilityClaims = SignedCapabilityClaims<
   typeof WORKER_CONTROLLER_PROTOCOL_VERSION,
   typeof WORKER_SERIAL_PROFILE
@@ -94,3 +94,5 @@ export { MAXIMUM_WORK_LEASE_MILLISECONDS, MAXIMUM_RENEW_AFTER_MILLISECONDS, pars
 export type { WorkerControllerContract, WorkerControllerDisconnectReason, WorkerRestorationReason, WorkerAcceptanceCampaign } from "./worker-controller-semantics";
 
 export { parseWorkerQualification, type WorkerQualification } from "./worker-qualification";
+
+export { parseWorkerQualificationAttempt, parseWorkerQualificationLedger, type WorkerQualificationAttempt, type WorkerQualificationObservation, type WorkerQualificationLedger, type QualificationAttemptPurpose } from "./worker-qualification-attempt";
