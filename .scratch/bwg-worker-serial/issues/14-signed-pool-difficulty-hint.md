@@ -1,6 +1,6 @@
 # 14: Bind Worker pool difficulty hints to signed grants
 
-Status: claimed
+Status: resolved
 Blocked by: None
 Type: task
 
@@ -9,9 +9,9 @@ Type: task
 - [x] Regenerate public capability/possession fixtures and add cross-language RFC8032 hint vectors.
 - [x] Test invalid values, signature tampering, old manifest rejection and private stdin signing.
 - [x] Complete repository verification.
-- [ ] Complete coordinated Gate publication / firmware pin.
+- [x] Complete coordinated Gate publication / firmware pin.
 - [x] Re-sign the deployment capability through its existing protected Update Authority.
-- [ ] Obtain any further hardware evidence through the firmware task and existing budget.
+- [x] Record bounded owner-pool hardware acceptance through the firmware-owned qualification workflow.
 
 ## Comments
 
@@ -33,3 +33,35 @@ Full default-profile Rust verification passed: 352 tests, two existing opt-in
 tests ignored. The complete check set is now green across the recorded runs.
 No source or deadline workaround was introduced for host timing or launch
 delays. Firmware publication and fresh bounded hardware evidence remain pending.
+
+
+## Answer
+
+Completed on 2026-09-08. The signed hint was consumed by the exact published
+runtime pair: Gate `2106f1c1587025d0570e058647a29492159e5d20`, firmware
+`f3bbfd6a05abcffa3735a736c87ff0c250ab8e2a`, and ELF SHA-256
+`77ccb176a50f5d973fe99bb3c277ff456a70852f3eb4a0d8d64d02bb23ce9433`.
+Host qualification driver `88ddb8a507477faa9220588d6ecf1f6de27fd754` retained
+those runtime artifacts while handling the unreserved authorization continuation.
+
+The normal run produced five correlated qualified candidates, five submissions
+and five accepted shares, with three acknowledged renewals and 59,069 ms active.
+Foreground loss closed admission in 2,807 ms and initiated shutdown in 2,821 ms;
+heartbeat loss measured 2,805 ms and 2,826 ms respectively. Their active durations
+were 10,510 ms and 14,020 ms; the heartbeat run also recorded one accepted share and one acknowledged renewal.
+These measurements satisfy the bounded acceptance cases, not every restoration
+or hardware-parity requirement in Core Ticket 23.
+
+The iterative ledger ended at 1,140,000 ms charged, next ordinal 14, with no pending
+reservation. Charged allowance is not a measurement of actual mining duration.
+The original 240,000-ms campaign remained unchanged. Final evidence records mining
+on boot disabled, 28°C, 30% fan at 3,178 RPM, 0.44 W at 5.4775 V, and released
+browser, supervisor and USB resources.
+
+A stale complete device-to-host frame can still prevent a fresh Hello; the
+qualified receive-only drain is a bounded recovery step, not proof of seamless
+reconnection. No pool credentials or endpoint details are included here, and no
+unrelated parity or BIP 23 blocker is promoted.
+
+See the [firmware acceptance report](https://github.com/bright-builds-llc/bitaxe-esp-miner/blob/dc68c5ec/docs/parity/evidence/20260908-worker-preparation-live-acceptance.md) for the retained attempts,
+identities, safety observations and cleanup evidence.

@@ -38,8 +38,8 @@ commands over the unframed runtime log transport.
 - [x] Separate parsed nonce, below-target, qualified-candidate, discard and blocked-correlation counts without raw job or pool data.
 - [x] Preserve the legacy `nonce_work_correlations` meaning; the new counters authorize no work and add no shutdown requirement.
 - [x] Complete repository verification.
-- [ ] Complete coordinated exact-commit firmware consumption.
-- [ ] Obtain any outstanding physical receive/share evidence within the existing authorized budget; software observations do not establish it.
+- [x] Complete coordinated exact-commit firmware consumption.
+- [x] Record physical nonce/share and bounded foreground-loss/heartbeat-loss evidence; broader restoration obligations above remain open.
 
 The codec, conformance definition and [protocol description](../../../docs/protocol/worker-mining-progress-v1.md)
 record the new optional field. Hardware acceptance and unresolved parity blockers remain open.
@@ -50,8 +50,8 @@ Verification: format, lint, type checking, build, 352 Rust tests, 404 JavaScript
 
 - [x] Parse closed mining-progress v2 while preserving v1 history and excluding raw candidate and pool data.
 - [x] Verify the fixed-filter extension.
-- [ ] Complete exact published firmware consumption.
-- [ ] Obtain physical accepted-share and outstanding stop evidence; parsed below-target nonces alone do not establish reconstructed-hash quality.
+- [x] Complete exact published firmware consumption.
+- [x] Obtain correlated accepted-share and bounded foreground-loss/heartbeat-loss evidence; no broader parity claim follows from these cases.
 
 The new counters compare reconstructed hashes against the explicit software
 model in [mining-progress v2](../../../docs/protocol/worker-mining-progress-v2.md).
@@ -69,3 +69,35 @@ ignored), 411 JavaScript tests, formatting, lint, type/build, browser conformanc
 lookup vectors, package and standards. Transient PostgreSQL fixture EOF failures
 did not recur in an observed six-test rerun or the full suite. A proposed
 readiness change was disproved and reverted; no fixture workaround remains.
+
+
+## Bounded hardware acceptance — 2026-09-08
+
+The shared mining-progress profiles, fixed-filter discriminator and signed
+pool-difficulty hint were consumed by Gate
+`2106f1c1587025d0570e058647a29492159e5d20`, firmware
+`f3bbfd6a05abcffa3735a736c87ff0c250ab8e2a`, and ELF SHA-256
+`77ccb176a50f5d973fe99bb3c277ff456a70852f3eb4a0d8d64d02bb23ce9433`.
+Qualification driver `88ddb8a507477faa9220588d6ecf1f6de27fd754` changed host
+orchestration while preserving that exact runtime pair.
+
+| Case | Active duration | Recorded outcome |
+| --- | --- | --- |
+| Normal ordinal 11 | 59,069 ms | Five qualified candidates, five submitted/accepted shares, three acknowledged renewals |
+| Foreground ordinal 12 continuation | 10,510 ms | Gate closure 2,807 ms; shutdown initiation 2,821 ms |
+| Heartbeat-loss ordinal 13 | 14,020 ms | Gate closure 2,805 ms; shutdown initiation 2,826 ms; one accepted share and one acknowledged renewal |
+
+The earlier expired-possession delivery for ordinal 12 remained unreserved and
+unverified; its records were preserved by an explicit continuation rather than
+promoted or refunded. The final iterative ledger reports 1,140,000 ms charged,
+next ordinal 14 and no pending reservation; the original 240,000-ms campaign is
+unchanged. Final cleanup records mining on boot disabled, 28°C, 30% fan at
+3,178 RPM, 0.44 W at 5.4775 V, and released browser, supervisor and USB resources.
+
+The [firmware acceptance report](https://github.com/bright-builds-llc/bitaxe-esp-miner/blob/dc68c5ec/docs/parity/evidence/20260908-worker-preparation-live-acceptance.md) owns the physical evidence. This
+closes the narrow consumption/share/timing items in the two diagnostic sections
+above. Ticket 23 remains open: its BIP 23, aggregation/onboarding dependencies and
+full terminal/interruption restoration matrix have not been established by these
+runs. Stale complete device-to-host frames still require a bounded receive-only
+drain before some fresh Hello attempts; seamless recovery is not claimed. No
+unrelated mining, Stratum or hardware-parity blocker is promoted.
