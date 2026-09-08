@@ -58,3 +58,14 @@ model in [mining-progress v2](../../../docs/protocol/worker-mining-progress-v2.m
 They do not change pool settings, target qualification, or safety gates.
 
 Fixed-filter verification: 352 Rust tests, 407 JavaScript tests, type/build, headless browser, lookup vectors, package and standards checks passed. The retention test now timestamps claimant proofs at each lookup and explicitly proves stale-proof rejection; production authentication and retention limits are unchanged.
+
+The version-2 diagnostic harness now stops at the first reconstructed candidate
+classification, retaining the existing 30-second allowance and shutdown reserve.
+It does not wait for an accepted share; missing classification remains missing
+evidence. Normal acceptance and fault-window durations are unchanged.
+
+Diagnostic-stop verification passed: 352 Rust tests (two existing opt-in tests
+ignored), 411 JavaScript tests, formatting, lint, type/build, browser conformance,
+lookup vectors, package and standards. Transient PostgreSQL fixture EOF failures
+did not recur in an observed six-test rerun or the full suite. A proposed
+readiness change was disproved and reverted; no fixture workaround remains.

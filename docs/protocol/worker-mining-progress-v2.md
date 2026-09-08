@@ -27,3 +27,9 @@ qualification decision, submission, difficulty negotiation, lease, work gate,
 or shutdown condition. It exposes no raw hash, header, nonce, job, pool
 difficulty, credentials, endpoint or error text. The observation timestamp
 remains capture time, and generation must match the containing qualification.
+
+For a diagnostic allowance, initial-work collection stops promptly when the
+first reconstructed candidate has either filter classification. It does not
+wait for a pool-qualified or accepted share. Existing active-time limits and
+shutdown reserves still stop the run when no candidate arrives. Empty counts
+remain unverified filter evidence regardless of the generic Start-test result.

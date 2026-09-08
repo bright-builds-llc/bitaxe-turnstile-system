@@ -1,6 +1,7 @@
 import { requireWorkerOwnerHeadroom, workerOwnerResourceFailure, type WorkerOwnerResourceFailure } from "./worker-owner-resources";
 import { acceptancePurposeWindow, acceptanceMaximumActiveMilliseconds } from "./worker-acceptance-purpose";
 import { parseWorkerDiagnosticExport } from "./worker-diagnostic-export";
+import { diagnosticInitialWorkCaptured } from "./worker-diagnostic-work";
 import { submitWorkerCoolingReview } from "./worker-cooling-review";
 import type { WorkerLeaseAuthorizationContext } from "./worker-lease-authorization";
 import { WorkerSerialDiagnosticHistory } from "./worker-serial-diagnostics";
@@ -332,7 +333,7 @@ async function tick() {
     }
     await refresh();
     if (!running || !maybeWindow) return;
-    if (maybeWindow.grant.qualificationAttempt?.purpose === "diagnostic" && (maybeQualification?.work_dispatched ?? 0) > 0) { await stop(); return; }
+    if (maybeWindow.grant.qualificationAttempt?.purpose === "diagnostic" && diagnosticInitialWorkCaptured(maybeQualification)) { await stop(); return; }
     if (
       acceptanceWindowShouldStop(
         acceptancePurposeWindow(maybeWindow.grant),
@@ -362,7 +363,7 @@ async function startWindow() {
   nextRenew = began + input.grant.renewAfterMilliseconds;
   publish();
   if (!await enforceRunningHeadroom()) return state();
-  if (input.grant.qualificationAttempt?.purpose === "diagnostic" && (maybeQualification?.work_dispatched ?? 0) > 0) return stop();
+  if (input.grant.qualificationAttempt?.purpose === "diagnostic" && diagnosticInitialWorkCaptured(maybeQualification)) return stop();
   maybeTimer = setInterval(() => {
     void tick();
   }, 1000);
