@@ -341,3 +341,13 @@ qualified-candidate-delta meaning and does not prove zero received ASIC nonces.
 
 The current optional mining-progress producer uses [version 2](worker-mining-progress-v2.md)
 for fixed-filter match/miss observations; the parser retains historical version 1.
+
+## Signed pool difficulty hint
+
+[ADR 0100](../adr/0100-bind-worker-pool-difficulty-hints.md) adds required manifest
+field `poolDifficultyHintProfile: worker-stratum-difficulty-hint-v1` and optional
+Start field `stratum.suggestedDifficulty` (integer 0–65535). Absence or zero sends
+no Worker hint and never consults NVS. Explicit zero remains present in canonical
+signing input. A positive hint does not change the ASIC filter or the pool's
+chosen target. Public signed vectors are exported as
+`bwg-core/worker-difficulty-hint-conformance/fixtures`.

@@ -422,6 +422,11 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 512
+                },
+                "suggestedDifficulty": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 65535
                 }
               }
             },

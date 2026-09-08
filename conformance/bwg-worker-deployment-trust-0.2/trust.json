@@ -9,7 +9,7 @@
         "kid": "fixture-serial-update",
         "kty": "OKP",
         "crv": "Ed25519",
-        "x": "Q6H5uxiBKxS5pbcmCapXOH689jan0cjxwByv4VNWPjM",
+        "x": "h2FkuS6pe-kbUYWeO5RZt1OBr1FrsnIJU_GxzXiFShA",
         "alg": "Ed25519",
         "use": "sig",
         "key_ops": [
@@ -28,7 +28,7 @@
         "kid": "fixture-serial-lease",
         "kty": "OKP",
         "crv": "Ed25519",
-        "x": "274F_VQOtBRVLrrsdbhIK93OYTpLvg8OxrFTRUCNLlY",
+        "x": "oqVLcb9xO7-KjOQMBCbEVDyi_nZHuAnDoKtx0GMZhak",
         "alg": "Ed25519",
         "use": "sig",
         "key_ops": [

@@ -83,6 +83,9 @@
     },
     "./worker-qualification-attempt-conformance/fixtures": {
       "default": "./conformance/bwg-worker-controller-0.4/qualification-attempt-vectors.json"
+    },
+    "./worker-difficulty-hint-conformance/fixtures": {
+      "default": "./conformance/bwg-worker-controller-0.4/difficulty-hint-vectors.json"
     }
   },
   "scripts": {

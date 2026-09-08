@@ -9,7 +9,7 @@ import {
   type WorkerLeaseAuthorizationInput,
 } from "../web/worker-lease-authorization";
 
-test("streaming Start signing keeps raw pool inputs off disk and stdout", async () => {
+for (const maybeHint of [undefined, 0, 1000]) test(`streaming Start signing keeps raw inputs private with hint ${maybeHint ?? "absent"}`, async () => {
   // Arrange
   const parent = await mkdtemp(
     join(tmpdir(), "bwg-worker-authority-stream-test-"),
@@ -27,7 +27,9 @@ test("streaming Start signing keeps raw pool inputs off disk and stdout", async 
       { cwd: import.meta.dir + "/..", stdout: "pipe", stderr: "pipe" },
     );
     expect(await init.exited).toBe(0);
-    const input = structuredClone(startInputFixture);
+    const input = structuredClone(startInputFixture) as WorkerLeaseAuthorizationInput;
+    if (input.operation !== "start") throw new Error("fixture_operation");
+    if (maybeHint !== undefined) input.request.stratum.suggestedDifficulty = maybeHint;
     const signer = Bun.spawn(
       [
         "bun",

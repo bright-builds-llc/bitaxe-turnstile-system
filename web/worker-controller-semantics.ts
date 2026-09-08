@@ -31,7 +31,7 @@ export type WorkerLeaseGrant = {
   authorization: string;
   durationMilliseconds: number;
   renewAfterMilliseconds: number;
-  stratum: { endpoint: string; username: string; password: string };
+  stratum: { endpoint: string; username: string; password: string; suggestedDifficulty?: number };
   acceptanceCampaign?: WorkerAcceptanceCampaign;
   qualificationAttempt?: WorkerQualificationAttempt;
 };
@@ -193,7 +193,9 @@ export function parseWorkerLeaseGrant(input: unknown): WorkerLeaseGrant {
     "stratum",
   ], ["acceptanceCampaign", "qualificationAttempt"]);
   if (value.acceptanceCampaign !== undefined && value.qualificationAttempt !== undefined) throw new Error("Work Lease qualification modes are mutually exclusive");
-  const stratum = exactRecord(value.stratum, ["endpoint", "username", "password"]);
+  const stratum = exactRecord(value.stratum, ["endpoint", "username", "password"], ["suggestedDifficulty"]);
+  const hasHint = Object.hasOwn(stratum, "suggestedDifficulty");
+  if (hasHint && (typeof stratum.suggestedDifficulty !== "number" || !Number.isInteger(stratum.suggestedDifficulty) || stratum.suggestedDifficulty < 0 || stratum.suggestedDifficulty > 65535)) throw new Error("invalid_suggested_difficulty");
   const window = parseLeaseWindow(value);
   const grant = {
     ...window,
@@ -206,6 +208,7 @@ export function parseWorkerLeaseGrant(input: unknown): WorkerLeaseGrant {
       endpoint: requiredString(stratum, "endpoint"),
       username: requiredString(stratum, "username"),
       password: requiredString(stratum, "password"),
+      ...(hasHint ? { suggestedDifficulty: stratum.suggestedDifficulty as number } : {}),
     },
   };
   if (

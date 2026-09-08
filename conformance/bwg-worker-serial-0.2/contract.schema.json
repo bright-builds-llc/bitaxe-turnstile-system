@@ -60,7 +60,8 @@
         "maximumHostWriteChunkBytes",
         "recordWriteTimeoutMilliseconds",
         "payloadIntegrity",
-        "qualificationAttemptProfile"
+        "qualificationAttemptProfile",
+        "poolDifficultyHintProfile"
       ],
       "properties": {
         "profile": {
@@ -104,6 +105,9 @@
         },
         "qualificationAttemptProfile": {
           "const": "worker-qualification-attempt-v1"
+        },
+        "poolDifficultyHintProfile": {
+          "const": "worker-stratum-difficulty-hint-v1"
         }
       }
     },

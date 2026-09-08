@@ -11,6 +11,7 @@ export const MAXIMUM_SERIAL_WIRE_BYTES = 66_560;
 export const WORKER_SERIAL_MANIFEST = Object.freeze({
   profile: WORKER_SERIAL_PROFILE,
   qualificationAttemptProfile: "worker-qualification-attempt-v1",
+  poolDifficultyHintProfile: "worker-stratum-difficulty-hint-v1",
   transport: "esp32s3_usb_serial_jtag",
   baudRate: 115_200,
   framing: "utf8_ndjson",
