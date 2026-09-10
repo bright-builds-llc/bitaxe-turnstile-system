@@ -1,9 +1,10 @@
+import { createWebSerialWorkerController, workerSerialQualificationHook, type WorkerSerialQualificationHook } from "./webserial-worker-controller";
 import { expect, test } from "bun:test";
 import { serialHarness } from "./worker-serial.test-support";
 import { workerSerialTestRuntime } from "./webserial-worker-port";
 import { encodeWorkerSerialEnvelope, WORKER_SERIAL_PROFILE, WORKER_SERIAL_MANIFEST, WorkerSerialFramer } from "./worker-serial";
 
-async function fixture(prefix: Uint8Array[]) {
+async function fixture(prefix: Uint8Array[], maybeHook?: WorkerSerialQualificationHook) {
   const h = await serialHarness();
   const runtime = h.input[workerSerialTestRuntime].runtime;
   const port = await runtime.serial.requestPort({ filters: [h.input.deviceFilter] });
@@ -22,11 +23,28 @@ async function fixture(prefix: Uint8Array[]) {
     },
     async close() { await port.close(); maybeReadable = null; },
   });
-  return h;
+  if (!maybeHook) return h;
+  const input = { ...h.input, [workerSerialQualificationHook]: maybeHook };
+  return { ...h, controller: createWebSerialWorkerController(input) };
 }
 function credit(sequence: number, payload: Record<string, unknown> = { op: "receive_credit", receivedBytes: 1024 }) {
   return encodeWorkerSerialEnvelope({ profile: WORKER_SERIAL_PROFILE, kind: "session", sessionId: "AAAAAAAAAAAAAAAAAAAAAA", sequence, payload });
 }
+
+test("a queued old control reply does not replace fresh Hello admission", async () => {
+  // Arrange
+  const reply = await encodeWorkerSerialEnvelope({
+    profile: WORKER_SERIAL_PROFILE, kind: "control", sessionId: "AAAAAAAAAAAAAAAAAAAAAA",
+    sequence: 12, payload: { protocolVersion: "bwg-worker-controller/0.4", requestId: "serial_old_request", ok: true, result: { state: "baseline" } },
+  });
+  const h = await fixture([reply]);
+  // Act
+  const admission = await h.controller.requestPermission();
+  await h.controller.close();
+  // Assert
+  expect(admission.status).toBe("ready");
+  expect(h.counts()).toMatchObject({ closed: 1, locked: false, active: false });
+});
 
 test.each([1, 32])("%s queued old credits do not replace the fresh Hello acknowledgement", async count => {
   // Arrange
@@ -152,4 +170,107 @@ test.each([
   await expect(h.controller.requestPermission()).rejects.toThrow();
   await h.controller.close();
   expect(h.counts()).toMatchObject({ closed: 1, locked: false });
+});
+
+async function staleReply() {
+  return encodeWorkerSerialEnvelope({ profile: WORKER_SERIAL_PROFILE, kind: "control", sessionId: "AAAAAAAAAAAAAAAAAAAAAA", sequence: 3,
+    payload: { protocolVersion: "bwg-worker-controller/0.4", requestId: "serial_old_request", ok: true, result: {} } });
+}
+async function staleAck() {
+  return encodeWorkerSerialEnvelope({ profile: WORKER_SERIAL_PROFILE, kind: "session", sessionId: "AAAAAAAAAAAAAAAAAAAAAA", sequence: 0,
+    payload: { op: "hello_ack", hostNonce: "A".repeat(43), deviceNonce: "A".repeat(43), serialManifest: WORKER_SERIAL_MANIFEST,
+      firmwareSourceCommit: "c".repeat(40), appElfSha256: "d".repeat(64), receiveWindowBytes: 2048, receivedBytes: 0 } });
+}
+
+test.each(["coalesced", "fragmented"])("mixed stale device records allow fresh admission when %s", async mode => {
+  // Arrange
+  const frames = [await staleReply(), await credit(4), await staleAck(),
+    await encodeWorkerSerialEnvelope({ profile: WORKER_SERIAL_PROFILE, kind: "heartbeat", sessionId: "AAAAAAAAAAAAAAAAAAAAAA", sequence: 5, payload: {} }),
+    await encodeWorkerSerialEnvelope({ profile: WORKER_SERIAL_PROFILE, kind: "diagnostic", sessionId: "AAAAAAAAAAAAAAAAAAAAAA", sequence: 6, payload: { line: "old diagnostic" } }),
+    new TextEncoder().encode('{"partial":\n')];
+  const bytes = Uint8Array.from(frames.flatMap(frame => [...frame]));
+  const chunks = mode === "coalesced" ? [bytes] : Array.from({ length: Math.ceil(bytes.length / 17) }, (_, index) => bytes.slice(index * 17, (index + 1) * 17));
+  const diagnostics: unknown[] = [];
+  const recoveries: unknown[] = [];
+  const h = await fixture(chunks, { suppressHeartbeats: false, maybeObserveDiagnostic: value => diagnostics.push(value), maybeObserveHelloRecovery: value => recoveries.push(value) });
+  // Act
+  const admission = await h.controller.requestPermission();
+  const probe = await h.controller.transportProbe();
+  await h.controller.close();
+  // Assert
+  expect(admission.status).toBe("ready");
+  expect(probe.requestPayloadBytes).toBe(65536);
+  expect(h.counts()).toMatchObject({ closed: 1, locked: false, active: false });
+  expect(h.received.some(frame => frame.command === "start_lease")).toBeFalse();
+  expect(diagnostics).toEqual([]);
+  expect(recoveries).toEqual([{ discardedRecords: 5, discardedBytes: bytes.length }]);
+});
+
+test.each([32, 33])("bootstrap limits all old records together to 32: %s", async count => {
+  // Arrange
+  const h = await fixture(await Promise.all(Array.from({ length: count }, (_, index) => index % 2 ? credit(index + 1) : staleReply())));
+  // Act
+  const admitted = await h.controller.requestPermission().then(() => true, () => false);
+  await h.controller.close();
+  // Assert
+  expect(admitted).toBe(count === 32);
+  expect(h.counts()).toMatchObject({ closed: 1, locked: false, active: false });
+});
+
+test.each([66560, 66561])("aggregate bootstrap counts original lexical bytes: %s", async total => {
+  // Arrange: outer JSON whitespace changes wire size without changing integrity.
+  const reply = new TextDecoder().decode(await staleReply());
+  const first = reply.slice(0, -1) + " ".repeat(33000 - new TextEncoder().encode(reply).length) + "\n";
+  const second = reply.slice(0, -1) + " ".repeat(total - 33000 - new TextEncoder().encode(reply).length) + "\n";
+  const h = await fixture([new TextEncoder().encode(first + second)]);
+  // Act
+  const admitted = await h.controller.requestPermission().then(() => true, () => false);
+  await h.controller.close();
+  // Assert
+  expect(admitted).toBe(total === 66560);
+  expect(h.counts()).toMatchObject({ closed: 1, locked: false, active: false });
+});
+
+test("partial prefix and boot text consume the same aggregate budget as old replies", async () => {
+  // Arrange
+  const h = await fixture([new TextEncoder().encode("boot\n{" + " ".repeat(66553) + "\n"), await staleReply()]);
+  // Act / Assert
+  await expect(h.controller.requestPermission()).rejects.toThrow();
+  await h.controller.close();
+  expect(h.counts()).toMatchObject({ closed: 1, locked: false });
+});
+
+test.each(["request", "zero_sequence", "bad_ack_nonce", "close", "invalid_id", "long_id"])("invalid stale %s never becomes bootstrap tolerance", async kind => {
+  // Arrange
+  const frame = JSON.parse(new TextDecoder().decode(kind === "bad_ack_nonce" ? await staleAck() : await staleReply()));
+  if (kind === "request") frame.payload = { protocolVersion: "bwg-worker-controller/0.4", requestId: "old", command: "status" };
+  if (kind === "zero_sequence") frame.sequence = 0;
+  if (kind === "invalid_id") frame.payload.requestId = "old";
+  if (kind === "long_id") frame.payload.requestId = "serial_" + "x".repeat(122);
+  if (kind === "bad_ack_nonce") frame.payload.hostNonce = "invalid";
+  if (kind === "close") { frame.kind = "session"; frame.payload = { op: "close" }; }
+  const h = await fixture([await encodeWorkerSerialEnvelope(frame)]);
+  // Act / Assert
+  await expect(h.controller.requestPermission()).rejects.toThrow();
+  await h.controller.close();
+  expect(h.counts()).toMatchObject({ closed: 1, locked: false, active: false });
+});
+
+test("stale acknowledgements alone never authorize discover and time out", async () => {
+  // Arrange
+  const h = await fixture([await staleAck(), await staleReply()]);
+  const runtime = h.input[workerSerialTestRuntime].runtime;
+  const requestPort = runtime.serial.requestPort.bind(runtime.serial);
+  runtime.serial.requestPort = async options => {
+    const port = await requestPort(options);
+    return { getInfo: () => port.getInfo(), get readable() { return port.readable; }, writable: new WritableStream<Uint8Array>(), open: options => port.open(options), close: () => port.close() };
+  };
+  // Act
+  const began = performance.now();
+  await expect(h.controller.requestPermission()).rejects.toThrow();
+  await h.controller.close();
+  // Assert
+  expect(performance.now() - began).toBeLessThan(4000);
+  expect(h.received).toHaveLength(0);
+  expect(h.counts()).toMatchObject({ closed: 1, locked: false, active: false });
 });

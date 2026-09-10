@@ -1,0 +1,43 @@
+# Fresh Hello resynchronization
+
+Type: task
+Status: claimed
+Blocked by: None
+
+## Objective
+
+Firmware task `task-fixed-usb-hello-resynchronization` records complete stale
+device replies left before fresh Hello after abrupt loss. Reproduce this through
+the production browser channel, then admit only a fresh nonce-bound Hello within
+bounded bootstrap input. Preserve strict framing/integrity, exact identity,
+possession, receive counters, deadlines and stream/lock cleanup.
+
+## Plan
+
+- [x] Reproduce a complete stale control reply before fresh Hello.
+- [x] Implement bounded bootstrap handling and adversarial regressions.
+- [x] Run full Gate verification and review the exact consumer source.
+- [ ] Bind firmware-owned no-mining hardware evidence; no mining authority here.
+
+## Comments
+
+2026-09-10: Scope is browser fresh-session recovery. Firmware owns the device
+contract and four-cycle evidence. Historical acceptance results remain unchanged.
+
+The original production-channel test failed with `admission_failed` before the
+fix. The Hello exchange had accepted old receive credits only; a complete old
+Controller reply was misinterpreted as the new acknowledgement. Bootstrap now
+validates and discards bounded old device records, with original lexical byte
+accounting and synchronous admission at the fresh acknowledgement delimiter.
+One 2800-ms Hello deadline includes native send and backlog processing. No
+discarded record updates authority, receive counters, peer history or diagnostics.
+
+The 39 focused tests pass, including mixed fragmentation/coalescing, stale Ack
+followed by partial output, 32/33 records, 66560/66561 lexical bytes, invalid
+reply IDs/shapes, stale-only timeout, and strict post-admission parsing/cleanup.
+Review corrected canonical request-ID validation and cleared recovery counters
+before reconnect. Full Gate verification passed: 352 Rust tests (two existing
+opt-in tests ignored), 434 web/crypto tests, browser conformance, formatting,
+lint, type checking, browser/native builds, package/lookup and standards checks.
+Software is ready for publication; exact-pair hardware evidence remains pending
+in the firmware task. No additional hardware or mining evidence is claimed.

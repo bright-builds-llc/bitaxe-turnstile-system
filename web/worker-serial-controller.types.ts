@@ -62,6 +62,7 @@ export const workerSerialQualificationHook = Symbol(
 );
 export type WorkerSerialAdmissionStage = "ownership" | "permission" | "device_filter" | "scope" | "opening" | "hello" | "manifest_identity" | "capability" | "possession" | "baseline" | "continuity" | "cleanup";
 export type WorkerSerialQualificationHook = {
+  maybeObserveHelloRecovery?: (value: { discardedRecords: number; discardedBytes: number }) => void;
   maybeObserveSerialFailure?: (category: WorkerSerialFailureCategory) => void;
   maybeObserveDiagnostic?: (value: WorkerSerialDiagnostic) => void;
   maybeObserveSerialOwnership?: (released: boolean) => void;

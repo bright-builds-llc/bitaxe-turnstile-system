@@ -52,6 +52,7 @@ let deviceRestorationConfirmed = false,
   deviceLeaseInactive = false;
 let maybeAdmissionFailureStage: string | undefined;
 let maybeSerialFailureCategory: string | undefined;
+let maybeHelloRecovery: { discardedRecords: number; discardedBytes: number } | undefined;
 let serialOwnershipReleased = true;
 const localDiagnostics = new WorkerSerialDiagnosticHistory();
 function publishDiagnostics() {
@@ -59,6 +60,7 @@ function publishDiagnostics() {
   if (output) output.textContent = JSON.stringify(localDiagnostics.values(), null, 2);
 }
 const hook: WorkerSerialQualificationHook = {
+  maybeObserveHelloRecovery(value) { maybeHelloRecovery = value; },
   maybeObserveSerialFailure(category) { maybeSerialFailureCategory ??= category; },
   maybeObserveDiagnostic(value) {
     localDiagnostics.observe(value);
@@ -121,6 +123,7 @@ function state() {
     heartbeatSuppressed: hook.suppressHeartbeats,
     renewalsConfirmed: renewalProgress.confirmed,
     serialOwnershipReleased,
+    ...(maybeHelloRecovery ? { helloRecovery: maybeHelloRecovery } : {}),
     deviceRestorationConfirmed,
     deviceLeaseInactive,
     ...(maybeConfiguration
@@ -192,6 +195,7 @@ async function connect() {
   const config = maybeConfiguration;
   if (!config) throw new Error("configuration_missing");
   if (connected) throw new Error("already_connected");
+  maybeHelloRecovery = undefined;
   hook.suppressHeartbeats = false;
   maybeAdmissionFailureStage = undefined;
   maybeSerialFailureCategory = undefined;

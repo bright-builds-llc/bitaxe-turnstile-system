@@ -84,12 +84,22 @@ Native output admission is rechecked at bounded nonblocking write attempts and
 flush polls. Bytes already admitted to native TX cannot be retracted.
 
 Before the matching fresh Hello acknowledgement, the host may discard at most
-32 integrity-valid, well-formed old receive-credit records without applying
-their counters or resetting any deadline. To resynchronize after an interrupted
-old output record, it may discard one leading malformed UTF-8/JSON protocol
-line, at most 66560 bytes and terminated by LF. Valid JSON with wrong profile,
-fields or integrity still fails. These bootstrap exceptions end immediately
-after Hello validation; ordinary active-session parsing remains strict.
+32 integrity-valid old device records: receive credits, Controller response
+envelopes, heartbeats, diagnostics, and structurally valid Hello acknowledgements
+for a different host nonce. Incoming Hello/Close, invalid response envelopes,
+and sequence-zero non-acknowledgements fail. A matching host nonce is never
+discarded: its acknowledgement must pass all manifest and identity checks.
+Discarded records grant no authority, update no counter or history, publish no
+diagnostic observation, and reset no deadline. No command is replayed.
+
+To resynchronize interrupted output, one malformed UTF-8/JSON protocol line
+terminated by LF may also be discarded. All skipped original wire bytes,
+including delimiters, whitespace, that prefix and boot text, share an aggregate
+66560-byte budget. The fresh acknowledgement has its own normal record bound.
+Valid JSON with wrong profile, fields or integrity still fails. Bootstrap
+exceptions end synchronously at the validated fresh acknowledgement's delimiter,
+before processing subsequent bytes in the same read; active-session parsing
+remains strict. A stale acknowledgement cannot end or renew bootstrap.
 
 ## Deadlines, ordering and cancellation
 

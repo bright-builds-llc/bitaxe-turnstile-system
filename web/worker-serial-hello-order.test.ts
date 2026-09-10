@@ -5,7 +5,7 @@ import { WORKER_SERIAL_PROFILE, parseWorkerSerialEnvelope, encodeWorkerSerialEnv
 import { createWebSerialWorkerController, workerSerialQualificationHook, type WorkerSerialQualificationHook } from "./webserial-worker-controller";
 import type { WorkerSerialDiagnostic } from "./worker-serial-diagnostics";
 
-async function reorderedHello(mode: "stale_credit" | "current_records" | "excess_credit", holdNativeHello = false) {
+async function reorderedHello(mode: "stale_credit" | "current_records" | "excess_credit" | "malformed_tail" | "stale_control", holdNativeHello = false) {
   const h = await serialHarness();
   const runtime = h.input[workerSerialTestRuntime].runtime;
   const port = await runtime.serial.requestPort({ filters: [h.input.deviceFilter] });
@@ -44,9 +44,10 @@ async function reorderedHello(mode: "stale_credit" | "current_records" | "excess
             const extra: WorkerSerialEnvelope[] = mode === "current_records" ? [
               { profile: WORKER_SERIAL_PROFILE, kind: "heartbeat", sessionId: frame.sessionId, sequence: 1, payload: {} },
               { profile: WORKER_SERIAL_PROFILE, kind: "diagnostic", sessionId: frame.sessionId, sequence: 2, payload: { line: "usb_memory_checkpoint stage=usb_install free_bytes=4000 largest_block_bytes=3000 reserve_bytes=1000 redacted=true" } },
-            ] : [{ profile: WORKER_SERIAL_PROFILE, kind: "session", sessionId: mode === "stale_credit" ? "AAAAAAAAAAAAAAAAAAAAAA" : frame.sessionId, sequence: 1, payload: { op: "receive_credit", receivedBytes: 1024 } }];
+            ] : mode === "malformed_tail" ? [] : mode === "stale_control" ? [{ profile: WORKER_SERIAL_PROFILE, kind: "control", sessionId: "AAAAAAAAAAAAAAAAAAAAAA", sequence: 1, payload: { protocolVersion: "bwg-worker-controller/0.4", requestId: "serial_old", ok: true, result: {} } }] : [{ profile: WORKER_SERIAL_PROFILE, kind: "session", sessionId: mode === "stale_credit" ? "AAAAAAAAAAAAAAAAAAAAAA" : frame.sessionId, sequence: 1, payload: { op: "receive_credit", receivedBytes: 1024 } }];
             offset = extra.length;
             const all = [await encodeWorkerSerialEnvelope(frame), ...await Promise.all(extra.map(encodeWorkerSerialEnvelope))];
+            if (mode === "malformed_tail") all.push(new TextEncoder().encode("{\n"));
             ackBeforeWriteSettlement = !helloWriteSettled;
             output.enqueue(Uint8Array.from(all.flatMap(chunk => [...chunk])));
           }
@@ -61,7 +62,7 @@ async function reorderedHello(mode: "stale_credit" | "current_records" | "excess
   return { h: { ...h, controller: createWebSerialWorkerController(input) }, diagnostics, ackBeforeWriteSettlement: () => ackBeforeWriteSettlement };
 }
 
-test.each(["stale_credit", "excess_credit"] as const)("fresh Hello followed by %s in the same read is rejected", async mode => {
+test.each(["stale_credit", "excess_credit", "malformed_tail", "stale_control"] as const)("fresh Hello followed by %s in the same read is rejected", async mode => {
   // Arrange
   const { h } = await reorderedHello(mode);
   // Act / Assert

@@ -37,10 +37,13 @@ owner-resource telemetry and the iterative 4096-byte active headroom requirement
 A failed snapshot survives cleanup; firmware freshness and the targeted stack
 correction require new physical evidence. Legacy campaigns remain unchanged.
 
-
 [Ticket 14](issues/14-signed-pool-difficulty-hint.md) is resolved following exact-pair
 firmware consumption and bounded owner-pool acceptance on 2026-09-08: correlated
 accepted shares, signed renewal, foreground-loss and heartbeat-loss shutdown
 initiation within three seconds. [Core Ticket 23](../bwg-core/issues/23-real-bitaxe-restoration-evidence.md)
 retains its broader BIP 23/restoration blockers; stale-frame recovery remains a
 separate bounded-drain limitation, not seamless reconnection evidence.
+
+[Ticket 15](issues/15-fresh-hello-resynchronization.md) owns bounded fresh-Hello
+resynchronization over complete stale device output. Firmware owns the separate
+no-mining hardware contract and four-cycle qualification for the changed pair.

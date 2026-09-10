@@ -156,6 +156,7 @@ export class WorkerSerialChannel {
     });
   }
   admitReceiveCredit(): void { this.#framer.finishBootstrap(); this.#credit.admit(); }
+  get bootstrapDiscardedBytes(): number { return this.#framer.bootstrapDiscardedBytes; }
   receiveCredit(received: unknown): void { this.#credit.acknowledge(received); }
   get unfinishedRecord(): boolean { return this.#recordActive; }
   abortRecord(): void { this.#writeFailed = true; this.#credit.cancel(); }
@@ -216,10 +217,9 @@ export class WorkerSerialChannel {
         if (!this.#closed) throw serialFailure("disconnected");
         return;
       }
-      for (const frame of await this.#framer.push(result.value)) {
-        if (this.#closed) return;
-        receive(frame);
-      }
+      await this.#framer.push(result.value, frame => {
+        if (!this.#closed) receive(frame);
+      });
     }
   }
   get portClosed(): boolean { return this.#portClosed; }

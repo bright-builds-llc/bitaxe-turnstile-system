@@ -5,7 +5,7 @@ import type { WorkLeaseAuthorityTrust, WorkerLeaseAuthorizationOperation } from 
 import { parseBudgetCampaignId, parseWorkerBudgetReview } from "./worker-budget-review";
 import { workerSerialFailureCategory } from "./worker-serial-errors";
 import { maybeWorkerDiagnosticPayload } from "./worker-serial-diagnostics";
-import { parseWorkerSerialHelloAck, WorkerSerialHelloExchange } from "./worker-serial-hello";
+import { parseWorkerSerialHelloAck, WorkerSerialHelloExchange, exchangeWorkerSerialHello } from "./worker-serial-hello";
 import { WorkerSerialPortOwner } from "./worker-serial-port-owner";
 import { publicWorkerSerialStatus } from "./worker-serial-status";
 import { observeWorkerSerialProbe } from "./worker-serial-probe";
@@ -181,6 +181,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
       );
       const helloStarted = this.runtime.now();
       this.#maybeHello = new WorkerSerialHelloExchange(
+        hostNonce,
         frame => { stage = "manifest_identity"; return parseWorkerSerialHelloAck(frame, hostNonce); },
         ({ ack }) => {
           this.#maybeAck = ack;
@@ -188,19 +189,14 @@ export class BrowserSerialController implements WebSerialWorkerController {
           this.#maybeChannel?.admitReceiveCredit();
         },
       );
-      const hello = observeSerialOutcome(this.#maybeHello.result);
-      await this.#maybeChannel.send({
-        profile: WORKER_SERIAL_PROFILE,
-        kind: "session",
-        sessionId: null,
-        sequence: 0,
-        payload: { op: "hello", hostNonce },
-      });
-      const received = await boundedSerial(hello, 2_800);
-      if (!received.ok) throw received.error;
+      const received = await exchangeWorkerSerialHello(this.#maybeChannel, this.#maybeHello, hostNonce);
       if (generation !== this.#generation || this.#state !== "admitting") throw serialFailure("admission_lost");
+      this.maybeQualificationHook?.maybeObserveHelloRecovery?.({
+        discardedRecords: this.#maybeHello.discardedRecords,
+        discardedBytes: this.#maybeChannel.bootstrapDiscardedBytes,
+      });
       this.#maybeHello = undefined;
-      const { manifest } = received.value;
+      const { manifest } = received;
       this.#maybeStopTimer = this.runtime.every(100, () => this.#tick());
       stage = "capability";
       const capabilities = parseWorkerControllerCapabilities(

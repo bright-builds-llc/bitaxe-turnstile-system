@@ -155,13 +155,20 @@ export class WorkerSerialFramer {
   #length = 0;
   #discarding = false;
   #bootstrapPrefixDiscarded = false;
+  #bootstrapDiscardedBytes = 0;
+  get bootstrapDiscardedBytes(): number { return this.#bootstrapDiscardedBytes; }
   finishBootstrap(): void { this.bootstrap = false; }
-  #discardBootstrapPrefix(): boolean {
+  #countBootstrapBytes(bytes: number): void {
+    this.#bootstrapDiscardedBytes += bytes;
+    if (this.#bootstrapDiscardedBytes > MAXIMUM_SERIAL_WIRE_BYTES) throw serialFailure("wire_bound");
+  }
+  #discardBootstrapPrefix(bytes: number): boolean {
     if (!this.bootstrap || this.#bootstrapPrefixDiscarded) return false;
+    this.#countBootstrapBytes(bytes);
     this.#bootstrapPrefixDiscarded = true;
     return true;
   }
-  async push(chunk: Uint8Array): Promise<WorkerSerialEnvelope[]> {
+  async push(chunk: Uint8Array, maybeReceive?: (frame: WorkerSerialEnvelope) => void): Promise<WorkerSerialEnvelope[]> {
     const result: WorkerSerialEnvelope[] = [];
     for (const byte of chunk) {
       if (this.#discarding) {
@@ -181,10 +188,11 @@ export class WorkerSerialFramer {
       try {
         text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
       } catch {
-        if (this.#discardBootstrapPrefix()) continue;
+        if (this.#discardBootstrapPrefix(bytes.length + 1)) continue;
         throw serialFailure("utf8");
       }
       if (!text.trimStart().startsWith("{")) {
+        if (this.bootstrap) this.#countBootstrapBytes(bytes.length + 1);
         const maybeDiagnostic = maybeWorkerSerialDiagnostic(text);
         if (maybeDiagnostic) this.maybeDiagnostic?.(maybeDiagnostic);
         continue;
@@ -193,7 +201,7 @@ export class WorkerSerialFramer {
       let parsed: ReturnType<typeof parseWorkerSerialJson>;
       try { parsed = parseWorkerSerialJson(text); }
       catch (error) {
-        if (hasMalformedSerialJsonSyntax(text) && this.#discardBootstrapPrefix()) continue;
+        if (hasMalformedSerialJsonSyntax(text) && this.#discardBootstrapPrefix(bytes.length + 1)) continue;
         throw error;
       }
       const value = parsed.value;
@@ -209,9 +217,13 @@ export class WorkerSerialFramer {
       )
         throw serialFailure("payload_bound");
       const frame = parseWorkerSerialEnvelope(record);
-      // End the exception before parsing any following bytes in this same read batch.
-      if (frame.kind === "session" && frame.payload.op === "hello_ack") this.finishBootstrap();
-      result.push(frame);
+      // Admission runs synchronously at this delimiter, before the next record is parsed.
+      if (maybeReceive) maybeReceive(frame);
+      else {
+        if (frame.kind === "session" && frame.payload.op === "hello_ack") this.finishBootstrap();
+        result.push(frame);
+      }
+      if (this.bootstrap) this.#countBootstrapBytes(bytes.length + 1);
     }
     return result;
   }
