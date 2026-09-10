@@ -41,3 +41,15 @@ opt-in tests ignored), 434 web/crypto tests, browser conformance, formatting,
 lint, type checking, browser/native builds, package/lookup and standards checks.
 Software is ready for publication; exact-pair hardware evidence remains pending
 in the firmware task. No additional hardware or mining evidence is claimed.
+
+Pre-hardware follow-up: interrupted possession can leave a response using the
+possession profile and `pos_` request IDs. The published conformance response
+reproduced `admission_failed` against the first fix. Reuse the existing possession
+response/claims parser to validate and discard that old response; never use it
+to establish a fresh possession. New regressions require an actual fresh proof,
+reject malformed old IDs/claims, and accept a well-formed old proof rejection.
+
+Supplemental verification passed: 43 focused reconnect tests, 352 Rust tests
+(two existing opt-in ignores), 438 web/crypto tests and full browser, type,
+build, package, lookup, formatting/lint and standards gates. Independent review
+found no remaining blocker. Hardware remains owned by the firmware task.

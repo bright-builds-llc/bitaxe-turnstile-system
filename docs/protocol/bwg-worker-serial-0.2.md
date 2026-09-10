@@ -85,10 +85,13 @@ flush polls. Bytes already admitted to native TX cannot be retracted.
 
 Before the matching fresh Hello acknowledgement, the host may discard at most
 32 integrity-valid old device records: receive credits, Controller response
-envelopes, heartbeats, diagnostics, and structurally valid Hello acknowledgements
-for a different host nonce. Incoming Hello/Close, invalid response envelopes,
+envelopes, possession response envelopes, heartbeats, diagnostics, and structurally
+valid Hello acknowledgements for a different host nonce. Incoming Hello/Close, invalid response envelopes,
 and sequence-zero non-acknowledgements fail. A matching host nonce is never
 discarded: its acknowledgement must pass all manifest and identity checks.
+Old possession responses use the existing possession response/claims parser for
+structural validation only. They never establish possession or verify a new
+transcript; the new session still requires its own complete fresh proof.
 Discarded records grant no authority, update no counter or history, publish no
 diagnostic observation, and reset no deadline. No command is replayed.
 

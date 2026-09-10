@@ -274,3 +274,35 @@ test("stale acknowledgements alone never authorize discover and time out", async
   expect(h.received).toHaveLength(0);
   expect(h.counts()).toMatchObject({ closed: 1, locked: false, active: false });
 });
+
+test("queued possession proof from interrupted admission is discarded before fresh proof", async () => {
+  // Arrange: the published conformance proof is intentionally for an old transcript.
+  const { default: possession } = await import("../conformance/bwg-worker-possession-0.2/fixtures.json");
+  const bytes = await encodeWorkerSerialEnvelope({ profile: WORKER_SERIAL_PROFILE, kind: "control", sessionId: "AAAAAAAAAAAAAAAAAAAAAA", sequence: 3,
+    payload: possession.initialAdmission.response });
+  const h = await fixture([bytes]);
+  // Act
+  const admission = await h.controller.requestPermission();
+  await h.controller.close();
+  // Assert: fresh possession still occurs after the discarded, unverified proof.
+  expect(admission.status).toBe("ready");
+  expect(h.received.filter(frame => frame.command === "prove_possession")).toHaveLength(1);
+  expect(h.counts()).toMatchObject({ closed: 1, locked: false, active: false });
+});
+
+test.each(["proof_unavailable", "bad_id", "bad_claims"])("stale possession %s obeys the existing response parser", async kind => {
+  // Arrange
+  const { default: possession } = await import("../conformance/bwg-worker-possession-0.2/fixtures.json");
+  const payload: Record<string, unknown> = kind === "proof_unavailable"
+    ? { profile: "bwg-worker-possession/0.2", requestId: "pos_old", ok: false, error: { code: "proof_unavailable", message: "Old proof unavailable" } }
+    : { ...structuredClone(possession.initialAdmission.response) };
+  if (kind === "bad_id") payload.requestId = "serial_old";
+  if (kind === "bad_claims") payload.result = { claims: {}, compactJws: "invalid" };
+  const h = await fixture([await encodeWorkerSerialEnvelope({ profile: WORKER_SERIAL_PROFILE, kind: "control", sessionId: "AAAAAAAAAAAAAAAAAAAAAA", sequence: 3, payload })]);
+  // Act
+  const ready = await h.controller.requestPermission().then(() => true, () => false);
+  await h.controller.close();
+  // Assert
+  expect(ready).toBe(kind === "proof_unavailable");
+  expect(h.counts()).toMatchObject({ closed: 1, locked: false, active: false });
+});

@@ -1,8 +1,8 @@
-import { exactSerialRecord, parseWorkerSerialManifest, serialNonce, serialFailure, type WorkerSerialEnvelope } from "./worker-serial";
+import { WORKER_SERIAL_PROFILE, exactSerialRecord, parseWorkerSerialManifest, serialNonce, serialFailure, type WorkerSerialEnvelope } from "./worker-serial";
 import type { Ack } from "./worker-serial-controller.types";
 import { parseWorkerControlRejection } from "./worker-control-rejection";
 import { boundedSerial, observeSerialOutcome, type WorkerSerialChannel } from "./webserial-worker-port";
-import { WORKER_SERIAL_PROFILE } from "./worker-serial";
+import { parseWorkerPossessionResponse, WORKER_POSSESSION_PROFILE } from "./worker-possession";
 
 /** Native output from a retired session grants no authority during a fresh Hello. */
 export class WorkerSerialHelloBacklog {
@@ -21,7 +21,10 @@ export class WorkerSerialHelloBacklog {
           Number(credit.receivedBytes) <= 0 || Number(credit.receivedBytes) > 0xffffffff)
           throw serialFailure("credit_invalid");
       }
-      if (frame.kind === "control") {
+      if (frame.kind === "control" && frame.payload.profile === WORKER_POSSESSION_PROFILE) {
+        // This validates an old response's shape only; fresh possession is still mandatory.
+        parseWorkerPossessionResponse(frame.payload);
+      } else if (frame.kind === "control") {
         const reply = exactSerialRecord(frame.payload, frame.payload.ok === true
           ? ["protocolVersion", "requestId", "ok", "result"]
           : ["protocolVersion", "requestId", "ok", "error"]);
