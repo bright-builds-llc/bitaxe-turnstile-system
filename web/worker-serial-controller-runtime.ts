@@ -193,6 +193,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
       if (generation !== this.#generation || this.#state !== "admitting") throw serialFailure("admission_lost");
       this.maybeQualificationHook?.maybeObserveHelloRecovery?.({
         discardedRecords: this.#maybeHello.discardedRecords,
+        discardedReplies: this.#maybeHello.discardedReplies,
         discardedBytes: this.#maybeChannel.bootstrapDiscardedBytes,
       });
       this.#maybeHello = undefined;

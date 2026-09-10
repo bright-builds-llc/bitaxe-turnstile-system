@@ -7,7 +7,9 @@ import { parseWorkerPossessionResponse, WORKER_POSSESSION_PROFILE } from "./work
 /** Native output from a retired session grants no authority during a fresh Hello. */
 export class WorkerSerialHelloBacklog {
   #ignored = 0;
+  #replies = 0;
   get discardedRecords(): number { return this.#ignored; }
+  get discardedReplies(): number { return this.#replies; }
   ignore(frame: WorkerSerialEnvelope, hostNonce: string): boolean {
     if (frame.kind === "session" && frame.payload.op === "hello_ack") {
       if (frame.payload.hostNonce === hostNonce) return false;
@@ -35,7 +37,9 @@ export class WorkerSerialHelloBacklog {
         if (!reply.ok) parseWorkerControlRejection(reply.error);
       }
     }
-    if (++this.#ignored > 32) throw serialFailure("wire_bound");
+    if (this.#ignored >= 32) throw serialFailure("wire_bound");
+    this.#ignored += 1;
+    if (frame.kind === "control") this.#replies += 1;
     return true;
   }
 }
@@ -57,6 +61,7 @@ export class WorkerSerialHelloExchange {
   readonly #backlog = new WorkerSerialHelloBacklog();
   #maybeWaiting: { resolve(value: HelloAdmission): void; reject(error: Error): void } | undefined;
   get discardedRecords(): number { return this.#backlog.discardedRecords; }
+  get discardedReplies(): number { return this.#backlog.discardedReplies; }
 
   constructor(
     private readonly hostNonce: string,

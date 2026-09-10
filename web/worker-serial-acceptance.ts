@@ -1,4 +1,5 @@
 import { requireWorkerOwnerHeadroom, workerOwnerResourceFailure, type WorkerOwnerResourceFailure } from "./worker-owner-resources";
+import { workerDeviceBaselineConfirmed } from "./worker-device-baseline";
 import { acceptancePurposeWindow, acceptanceMaximumActiveMilliseconds } from "./worker-acceptance-purpose";
 import { parseWorkerDiagnosticExport } from "./worker-diagnostic-export";
 import { diagnosticInitialWorkCaptured } from "./worker-diagnostic-work";
@@ -50,9 +51,10 @@ const preservation = new WorkerPreservationBaseline();
 const renewalProgress = new AcceptanceRenewalProgress();
 let deviceRestorationConfirmed = false,
   deviceLeaseInactive = false;
+let deviceBaselineConfirmed = false;
 let maybeAdmissionFailureStage: string | undefined;
 let maybeSerialFailureCategory: string | undefined;
-let maybeHelloRecovery: { discardedRecords: number; discardedBytes: number } | undefined;
+let maybeHelloRecovery: { discardedRecords: number; discardedReplies: number; discardedBytes: number } | undefined;
 let serialOwnershipReleased = true;
 const localDiagnostics = new WorkerSerialDiagnosticHistory();
 function publishDiagnostics() {
@@ -69,6 +71,7 @@ const hook: WorkerSerialQualificationHook = {
   maybeObserveAdmissionFailure(stage) { maybeAdmissionFailureStage ??= stage; },
   maybeObserveSerialOwnership(released) { serialOwnershipReleased = released; publish(); },
   observeStatus: (value) => {
+    deviceBaselineConfirmed = workerDeviceBaselineConfirmed(value);
     deviceLeaseInactive = value?.state === "baseline";
     deviceRestorationConfirmed =
       value?.state === "baseline" && value.restoration.status === "confirmed";
@@ -125,6 +128,7 @@ function state() {
     serialOwnershipReleased,
     ...(maybeHelloRecovery ? { helloRecovery: maybeHelloRecovery } : {}),
     deviceRestorationConfirmed,
+    deviceBaselineConfirmed,
     deviceLeaseInactive,
     ...(maybeConfiguration
       ? {
@@ -186,6 +190,7 @@ function configure(input: Configuration) {
     ...input,
     trust: parseWorkerDeploymentTrust(input.trust),
   };
+  deviceBaselineConfirmed = false;
   status = "configured";
   maybeFailure = undefined;
   publish();
@@ -195,6 +200,7 @@ async function connect() {
   const config = maybeConfiguration;
   if (!config) throw new Error("configuration_missing");
   if (connected) throw new Error("already_connected");
+  deviceBaselineConfirmed = false;
   maybeHelloRecovery = undefined;
   hook.suppressHeartbeats = false;
   maybeAdmissionFailureStage = undefined;
@@ -469,6 +475,7 @@ async function rejectStartForRecoveryTest() {
 async function proveCoolingForQualification() {
   maybeReviewedContext = undefined;
   if (running) throw new Error("cooling_qualification_admission");
+  deviceBaselineConfirmed = false;
   deviceRestorationConfirmed = false;
   publish();
   const report = await controller().qualificationCooling("prove_fan");

@@ -53,3 +53,21 @@ Supplemental verification passed: 43 focused reconnect tests, 352 Rust tests
 (two existing opt-in ignores), 438 web/crypto tests and full browser, type,
 build, package, lookup, formatting/lint and standards gates. Independent review
 found no remaining blocker. Hardware remains owned by the firmware task.
+
+First no-mining hardware admission passed on firmware `1b888f44` / Gate `ad961ea`.
+Its new checker required restoration confirmation although the idle cold
+baseline permits `not_required`. The firmware task preserved the attempt and
+all original artifacts without claiming cycles or mining. A distinct
+`deviceBaselineConfirmed` observation now captures the actual supported baseline
+status; the existing restoration flag remains strict. Sixteen focused predicate
+tests cover accepted, missing, invalid and nonbaseline observations.
+
+`helloRecovery.discardedReplies` additionally counts validated old Controller or
+possession responses. Hardware evidence must distinguish this repaired path
+from already-supported old credits. The combined 59 focused browser tests and
+27 no-mining supervisor tests pass. One default
+native test launch stalled at `_dyld_start` before any Rust test frame; its
+trace is retained. Full verification passed with debug information disabled:
+352 Rust tests (two existing opt-in ignores), 454 web/crypto tests, browser
+conformance, format/lint/type/build/package/lookup and standards checks. No test
+or safety deadline was widened. The firmware task owns fresh attempt 002.

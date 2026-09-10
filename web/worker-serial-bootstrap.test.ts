@@ -49,7 +49,8 @@ test("a queued old control reply does not replace fresh Hello admission", async 
 test.each([1, 32])("%s queued old credits do not replace the fresh Hello acknowledgement", async count => {
   // Arrange
   const prefix = await Promise.all(Array.from({ length: count }, (_, index) => credit(index + 1)));
-  const h = await fixture(prefix);
+  const recoveries: unknown[] = [];
+  const h = await fixture(prefix, { suppressHeartbeats: false, maybeObserveHelloRecovery: value => recoveries.push(value) });
   // Act
   const admission = await h.controller.requestPermission();
   const probe = await h.controller.transportProbe();
@@ -58,6 +59,7 @@ test.each([1, 32])("%s queued old credits do not replace the fresh Hello acknowl
   expect(admission.status).toBe("ready");
   expect(probe.requestPayloadBytes).toBe(65536);
   expect(h.counts()).toMatchObject({ closed: 1, locked: false });
+  expect(recoveries).toEqual([{ discardedRecords: count, discardedReplies: 0, discardedBytes: prefix.reduce((total, bytes) => total + bytes.length, 0) }]);
 });
 
 test("the thirty-third pre-Hello credit closes admission", async () => {
@@ -203,7 +205,7 @@ test.each(["coalesced", "fragmented"])("mixed stale device records allow fresh a
   expect(h.counts()).toMatchObject({ closed: 1, locked: false, active: false });
   expect(h.received.some(frame => frame.command === "start_lease")).toBeFalse();
   expect(diagnostics).toEqual([]);
-  expect(recoveries).toEqual([{ discardedRecords: 5, discardedBytes: bytes.length }]);
+  expect(recoveries).toEqual([{ discardedRecords: 5, discardedReplies: 1, discardedBytes: bytes.length }]);
 });
 
 test.each([32, 33])("bootstrap limits all old records together to 32: %s", async count => {
@@ -280,7 +282,8 @@ test("queued possession proof from interrupted admission is discarded before fre
   const { default: possession } = await import("../conformance/bwg-worker-possession-0.2/fixtures.json");
   const bytes = await encodeWorkerSerialEnvelope({ profile: WORKER_SERIAL_PROFILE, kind: "control", sessionId: "AAAAAAAAAAAAAAAAAAAAAA", sequence: 3,
     payload: possession.initialAdmission.response });
-  const h = await fixture([bytes]);
+  const recoveries: unknown[] = [];
+  const h = await fixture([bytes], { suppressHeartbeats: false, maybeObserveHelloRecovery: value => recoveries.push(value) });
   // Act
   const admission = await h.controller.requestPermission();
   await h.controller.close();
@@ -288,6 +291,7 @@ test("queued possession proof from interrupted admission is discarded before fre
   expect(admission.status).toBe("ready");
   expect(h.received.filter(frame => frame.command === "prove_possession")).toHaveLength(1);
   expect(h.counts()).toMatchObject({ closed: 1, locked: false, active: false });
+  expect(recoveries).toEqual([{ discardedRecords: 1, discardedReplies: 1, discardedBytes: bytes.length }]);
 });
 
 test.each(["proof_unavailable", "bad_id", "bad_claims"])("stale possession %s obeys the existing response parser", async kind => {
