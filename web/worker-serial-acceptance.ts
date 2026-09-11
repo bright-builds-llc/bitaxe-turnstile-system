@@ -472,6 +472,20 @@ async function rejectStartForRecoveryTest() {
   }
 }
 
+async function interruptPendingStatusForQualification() {
+  maybeReviewedContext = undefined;
+  if (running || maybeWindow) throw new Error("read_interruption_admission");
+  const receipt = await controller().interruptPendingStatusForQualification();
+  if (receipt.interrupted) {
+    connected = false;
+    running = false;
+    stopTimer();
+    status = "closed";
+    publish();
+  }
+  return receipt;
+}
+
 async function proveCoolingForQualification() {
   maybeReviewedContext = undefined;
   if (running) throw new Error("cooling_qualification_admission");
@@ -528,6 +542,7 @@ async function submitAttemptCompletion() {
 }
 
 export const workerAcceptance = {
+  interruptPendingStatusForQualification,
   submitAttemptCompletion,
   reviewQualificationAttempts,
   exportDiagnostics,

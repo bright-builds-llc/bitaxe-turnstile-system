@@ -1,4 +1,6 @@
 import { runQualificationCooling, type QualificationCoolingAction } from "./worker-qualification-cooling";
+import { WorkerReadInterruptionOwner } from "./worker-read-interruption";
+import { runWorkerSerialExchange } from "./worker-serial-exchange";
 import { parseWorkerControlResult } from "./worker-control-rejection";
 import { rejectedStartGrant, runRejectedStart } from "./worker-rejected-start";
 import type { WorkLeaseAuthorityTrust, WorkerLeaseAuthorizationOperation } from "./worker-lease-authorization";
@@ -45,8 +47,6 @@ import {
 } from "./worker-serial";
 import {
   WorkerSerialChannel,
-  boundedSerial,
-  observeSerialOutcome,
   type WorkerSerialBrowserRuntime,
 } from "./webserial-worker-port";
 
@@ -59,6 +59,7 @@ import {
 } from "./worker-serial-controller.types";
 
 export class BrowserSerialController implements WebSerialWorkerController {
+  readonly #readInterruption = new WorkerReadInterruptionOwner();
   #continuity: WorkerContinuityAccess;
   readonly #listeners = new Set<
     (reason: WorkerControllerDisconnectReason) => Promise<void>
@@ -345,6 +346,20 @@ export class BrowserSerialController implements WebSerialWorkerController {
     if (this.#activeLease || !this.#maybePossession) throw serialFailure("probe_admission");
     return parseWorkerQualificationLedger(await this.#request("qualification_attempt_review", {}));
   }
+  async interruptPendingStatusForQualification() {
+    const generation = this.#generation;
+    return this.#readInterruption.run({
+      admitted: Boolean(this.maybeQualificationHook && !this.#activeLease && !this.#maybePending && this.#maybePossession && !this.#maybeChannel?.unfinishedRecord),
+      check: () => {
+        this.#requireReady(true);
+        if (generation !== this.#generation || this.#activeLease) throw serialFailure("probe_admission");
+      },
+      baseline: () => this.#statusRequest("status", undefined, true),
+      request: afterConsumed => this.#request("status", undefined, true, afterConsumed),
+      close: () => this.close("cancelled"),
+      released: () => this.#maybeOwner?.released === true,
+    });
+  }
   async acceptanceBudgetReview(campaignId: string) {
     this.#requireReady();
     if (this.#activeLease || !this.#maybePossession) throw serialFailure("probe_admission");
@@ -380,6 +395,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
     maybePayload?: unknown,
     closing = false,
   ): Promise<WorkerControllerStatus> {
+    if (!closing) this.#requireReady();
     try {
       return publicWorkerSerialStatus(
         await this.#request(command, maybePayload, closing),
@@ -456,7 +472,8 @@ export class BrowserSerialController implements WebSerialWorkerController {
     }
     if (maybeError) throw maybeError;
   }
-  #requireReady() {
+  #requireReady(qualificationRead = false) {
+    if (this.#readInterruption.active && !qualificationRead) throw serialFailure("operation_active");
     if (
       this.#state !== "ready" ||
       !this.runtime.foreground() ||
@@ -532,6 +549,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
     command: string,
     maybePayload?: unknown,
     admitting = false,
+    maybeAfterConsumed?: (pending: boolean) => Promise<void>,
   ): Promise<unknown> {
     if (!admitting) this.#requireReady();
     if (
@@ -548,6 +566,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
         ...(maybePayload === undefined ? {} : { payload: maybePayload }),
       },
       ["restore", "pause", "cancel", "qualification_cooling"].includes(command) ? 145_000 : 30_000,
+      maybeAfterConsumed,
     );
     return parseWorkerControlResult(response, (error) => {
       this.maybeQualificationHook?.maybeObserveDiagnostic?.({ category: "control_failure", authoritative: false, error });
@@ -556,35 +575,19 @@ export class BrowserSerialController implements WebSerialWorkerController {
   async #exchange(
     request: { requestId: string } & Record<string, unknown>,
     timeoutMilliseconds = 30_000,
+    maybeAfterConsumed?: (pending: boolean) => Promise<void>,
   ): Promise<unknown> {
     if (this.#maybePending) throw serialFailure("operation_active");
     const generation = this.#generation;
     const response = new Promise<unknown>((resolve, reject) => {
       this.#maybePending = { requestId: request.requestId, resolve, reject };
     });
-    // A credit timeout can revoke the pending response before native send finishes.
-    const outcome = observeSerialOutcome(response);
-    try {
-      await this.#send("control", request);
-      const result = await boundedSerial(
-        outcome,
-        timeoutMilliseconds,
-        this.runtime.maybeAfter,
-      );
-      if (!result.ok) throw result.error;
-      if (generation !== this.#generation)
-        throw serialFailure("stale_response");
-      return result.value;
-    } catch (error) {
-      this.#lost(serialFailureFor(error, "request_failed"));
-      throw error;
-    } finally {
-      this.#clearPending(request.requestId);
-    }
-  }
-  #clearPending(requestId: string) {
-    if (this.#maybePending?.requestId === requestId)
-      this.#maybePending = undefined;
+    return runWorkerSerialExchange({
+      response, send: () => this.#send("control", request), timeoutMilliseconds, maybeAfter: this.runtime.maybeAfter,
+      maybeAfterConsumed: maybeAfterConsumed ? () => maybeAfterConsumed(this.#maybePending?.requestId === request.requestId) : undefined,
+      current: () => generation === this.#generation, failed: error => this.#lost(error),
+      clear: () => { if (this.#maybePending?.requestId === request.requestId) this.#maybePending = undefined; },
+    });
   }
   async #send(
     kind: WorkerSerialEnvelope["kind"],

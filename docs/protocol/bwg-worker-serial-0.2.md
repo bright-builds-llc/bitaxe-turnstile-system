@@ -122,6 +122,37 @@ JSON, finish a cancelled command, or restart from a late credit. Use independent
 device-local revocation and fresh-session restoration evidence in that case.
 No automatic command replay or reconnect is permitted.
 
+## Qualification-only read interruption
+
+`interruptPendingStatusForQualification()` is an explicit qualification-hook
+operation, also exposed by the acceptance page. It introduces no new wire
+message. Require a fresh parsed baseline with no lease, then hold exclusive
+operation ownership for the same connection generation. Send one ordinary
+Controller status request and await the normal channel send, including final
+device receive credit under the unchanged write deadline. If its correlated
+response is still pending, revoke that browser generation and close streams,
+port and origin ownership without appending Restore, Close or another request.
+Missing credit, identity/generation loss, unsafe state and cleanup failures
+cannot produce a successful interruption receipt.
+
+The success receipt is exactly:
+
+```json
+{"schema":"worker-read-interruption-v1","interrupted":true,"request_consumed":true,"response_pending":true,"ownership_released":true}
+```
+
+If the response already arrived, return the same schema with
+`request_consumed: true` and the other three booleans `false`; no interruption
+occurred and ownership remains open. This operation cannot sign or grant work,
+change a mining allowance, manufacture device traffic, or reconnect
+automatically. Heartbeat and device safety deadlines remain unchanged.
+
+The receipt proves only the observed consumed-request/pending-response/cleanup
+boundary. It does not prove that firmware queued a complete reply. Fresh-session
+recovery must separately observe `helloRecovery.discardedReplies > 0` for a
+validated old Controller or possession response, with exact runtime identity,
+unchanged accounting/settings and final cleanup under the firmware-owned task.
+
 ## Required verification
 
 Exercise the production channel against a 4,096-byte, 64-byte-packet bounded

@@ -1,4 +1,5 @@
 import type { WorkerQualificationLedger } from "./worker-qualification-attempt";
+import type { WorkerReadInterruption } from "./worker-read-interruption";
 import type { QualificationCoolingAction, WorkerCoolingProof, WorkerCoolingBaseline } from "./worker-qualification-cooling";
 import type { WorkLeaseAuthorityTrust } from "./worker-lease-authorization";
 import type { WorkerBudgetReview } from "./worker-budget-review";
@@ -49,6 +50,8 @@ export interface WebSerialWorkerController
   rejectStartForRecoveryTest(trust: WorkLeaseAuthorityTrust): Promise<{ rejected: true; error: "authentication_failed" }>;
   qualificationCooling(action: QualificationCoolingAction): Promise<WorkerCoolingProof | WorkerCoolingBaseline>;
   qualificationAttemptReview(): Promise<WorkerQualificationLedger>;
+  /** Qualification only: interrupt a consumed no-mining status with a still-pending reply. */
+  interruptPendingStatusForQualification(): Promise<WorkerReadInterruption>;
   acceptanceBudgetReview(campaignId: string): Promise<WorkerBudgetReview>;
   transportProbe(maybePaddingBytes?: number): Promise<{
     paddingBytes: number;
