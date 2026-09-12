@@ -395,3 +395,73 @@ no Worker hint and never consults NVS. Explicit zero remains present in canonica
 signing input. A positive hint does not change the ASIC filter or the pool's
 chosen target. Public signed vectors are exported as
 `bwg-core/worker-difficulty-hint-conformance/fixtures`.
+
+## Correlated recovery diagnostics
+
+`exportBrowserSerialTrace()` explicitly returns the closed
+`worker-browser-serial-trace-v1` metadata ring. Its capacity is 256 events;
+`firstEventOrdinal`, `nextEventOrdinal` and `overwrittenEvents` expose retention
+loss. Each event contains only `ordinal`, `epoch`, `frameOrdinal`,
+`requestOrdinal`, `requestSequence`, `stage`, `atMs`, `wireBytes` and
+`queuedBytes`. Epochs and frame/request ordinals are local counters. The actual
+outgoing serial envelope sequence is recorded once its control frame is formed;
+zero means unknown. Request context is not a claim that an unvalidated received
+frame belongs to that request. `response_delivered` follows strict correlation.
+
+Browser stages distinguish native chunk receipt, complete frame assembly,
+validation start/completion/rejection, delivery or suppression after close,
+request formation/consumption, response delivery, and close start/completion.
+Browser `queuedBytes` is the unprocessed remainder of the current native chunk,
+not the firmware transmit queue. Times are local monotonic observations, not
+synchronized clocks. The ring survives close; the acceptance harness also keeps
+it across new controllers and fresh Hello. Export the loss snapshot before
+reconnection, since later traffic can overwrite the bounded ring.
+
+`deviceSerialTraceReview()` sends the authenticated idle-only Controller command
+`serial_trace_review` with exactly `{}`. Its `worker-serial-trace-v1` result has
+`capacity: 64`, `snapshotAvailable`, `droppedEvents`, and `current`/`previous`
+epoch windows. Previous is null until one exists. Every window contains `epoch`,
+`firstEventOrdinal`, `nextEventOrdinal`, `overwrittenEvents` and at most 64 events.
+Device events contain only `ordinal`, `epoch`, `requestSequence`, `stage`, `atMs`,
+`wireBytes` and `queuedBytes`. The previous window preserves the retired epoch
+through fresh admission. Browser and device epoch counters are independent;
+correlate their windows through fresh admission and observed request sequences,
+not numeric epoch equality. Writer acceptance and queue completion never prove
+browser receipt. Explicit unavailable/loss counters remain qualification gaps.
+Both exports use the closed parsers in `web/worker-serial-trace-export.ts`; neither
+contains raw payloads, credentials, session tokens, request IDs or device IDs.
+
+The prospective `worker-read-interruption-v2` receipt replaces ambiguous
+`response_pending` with `response_promise_pending` and a numeric
+`host_observation` boundary. A complete reply can already be in the native read,
+assembled and awaiting its integrity hash while the correlated promise remains
+pending. The receipt makes no claim that reply bytes remain undelivered. Earlier
+version 1 evidence remains historical and is not relabeled.
+
+For an explicitly configured recovery loss phase, the acceptance harness arms
+one diagnostic-only abrupt disconnect before signing. It triggers after parsed
+actual-work evidence, journals the before state, and rechecks observation age
+(at most 1000 ms) and remaining headroom (strictly above 3000 ms after age).
+The qualification hook revokes local heartbeat activity and releases ownership
+without sending another control, Restore or courtesy Close record. Its
+`worker-mining-interruption-v1` receipt proves only that host boundary. Device
+revocation and safe stop require fresh retained observations after the shutdown
+allowance; admission still requires an immediate confirmed/not-required baseline.
+The resume phase uses ordinary diagnostic stopping. Neither phase creates an
+allowance, signs work, retries automatically, or widens a device deadline.
+
+Signed Start/Renew legitimately advance the persistent authorization high-water
+map. The original preservation baseline remains immutable and can therefore
+report `authorization_high_water_match: false` after authorized work. The loss
+phase separately captures the private post-work digest from that exact verified
+status, with a random sixteen-byte checkpoint ID and the observed generation.
+Only `authorizationRecovery: {schema: "worker-authorization-recovery-v1", checkpointId, generation, matched}` is published. `matched` remains null until
+a fresh connection supplies an authenticated status with the same digest and
+generation; missing metadata or a mismatch becomes a sticky false observation.
+Raw digests never leave the page. The checkpoint clears only on explicit resume
+configuration after the page has received a passed, sealed loss completion.
+An already configured recovery page rejects a downgrade to a phase-less legacy
+configuration, so a legacy diagnostic cannot inherit an earlier loss arm.
+Checkpoint or journal failure also invokes cleanup when initial work is observed
+in the Start response before the polling timer exists; it cannot leave that
+failure path retaining heartbeat authority.

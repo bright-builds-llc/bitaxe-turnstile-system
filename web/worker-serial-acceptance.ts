@@ -3,6 +3,12 @@ import { workerDeviceBaselineConfirmed } from "./worker-device-baseline";
 import { acceptancePurposeWindow, acceptanceMaximumActiveMilliseconds } from "./worker-acceptance-purpose";
 import { parseWorkerDiagnosticExport } from "./worker-diagnostic-export";
 import { diagnosticInitialWorkCaptured } from "./worker-diagnostic-work";
+import { WorkerRecoveryLoss, flushRecoverySupervisor } from "./worker-recovery-loss";
+import { WorkerBrowserSerialTrace } from "./worker-browser-serial-trace";
+import { parseBrowserSerialTrace } from "./worker-serial-trace-export";
+import { reviewDeviceSerialTrace } from "./worker-serial-trace-review";
+import { WorkerAuthorizationRecoveryCheckpoint } from "./worker-authorization-recovery";
+import { parseWorkerSerialAcceptanceConfiguration, type WorkerSerialAcceptanceConfiguration as Configuration } from "./worker-serial-acceptance-config";
 import { submitWorkerCoolingReview } from "./worker-cooling-review";
 import type { WorkerLeaseAuthorizationContext } from "./worker-lease-authorization";
 import { WorkerSerialDiagnosticHistory } from "./worker-serial-diagnostics";
@@ -27,27 +33,20 @@ import {
   type WorkerLeaseRenewal,
   type WorkerQualification,
 } from "./worker-controller";
-import {
-  parseWorkerDeploymentTrust,
-  type WorkerDeploymentTrust,
-} from "./worker-deployment-trust";
 
 declare const BWG_GATE_SOURCE_COMMIT: string;
 const gateCommit =
   typeof BWG_GATE_SOURCE_COMMIT === "string"
     ? BWG_GATE_SOURCE_COMMIT
     : "Unavailable";
-type Configuration = {
-  expectedGateCommit: string;
-  expectedFirmwareSourceCommit: string;
-  expectedAppElfSha256: string;
-  trust: WorkerDeploymentTrust;
-};
 type WindowArtifacts = {
   grant: WorkerLeaseGrant;
   renewals: WorkerLeaseRenewal[];
 };
 const preservation = new WorkerPreservationBaseline();
+const recoveryLoss = new WorkerRecoveryLoss();
+const browserTrace = new WorkerBrowserSerialTrace(() => performance.now());
+const authorizationRecovery = new WorkerAuthorizationRecoveryCheckpoint();
 const renewalProgress = new AcceptanceRenewalProgress();
 let deviceRestorationConfirmed = false,
   deviceLeaseInactive = false;
@@ -62,6 +61,7 @@ function publishDiagnostics() {
   if (output) output.textContent = JSON.stringify(localDiagnostics.values(), null, 2);
 }
 const hook: WorkerSerialQualificationHook = {
+  maybeTraceHistory: browserTrace,
   maybeObserveHelloRecovery(value) { maybeHelloRecovery = value; },
   maybeObserveSerialFailure(category) { maybeSerialFailureCategory ??= category; },
   maybeObserveDiagnostic(value) {
@@ -71,13 +71,14 @@ const hook: WorkerSerialQualificationHook = {
   maybeObserveAdmissionFailure(stage) { maybeAdmissionFailureStage ??= stage; },
   maybeObserveSerialOwnership(released) { serialOwnershipReleased = released; publish(); },
   observeStatus: (value) => {
+    authorizationRecovery.observeStatus(value);
     deviceBaselineConfirmed = workerDeviceBaselineConfirmed(value);
     deviceLeaseInactive = value?.state === "baseline";
     deviceRestorationConfirmed =
       value?.state === "baseline" && value.restoration.status === "confirmed";
     if (value) maybeQualification = value.qualification;
   },
-  observePreservation: (value) => preservation.observe(value),
+  observePreservation: (value) => { preservation.observe(value); authorizationRecovery.observePreservation(value); },
   suppressHeartbeats: false,
   memoryOnlyContinuity: true,
   async prepareScope() {
@@ -138,6 +139,7 @@ function state() {
       }
       : {}),
     ...(maybeQualification ? { qualification: maybeQualification } : {}),
+    ...(authorizationRecovery.maybePublicState() ? { authorizationRecovery: authorizationRecovery.maybePublicState() } : {}),
     ...(maybeOwnerResourceFailure ? { ownerResourceFailure: maybeOwnerResourceFailure } : {}),
     ...(preservation.maybePublicState()
       ? { preservation: preservation.maybePublicState() }
@@ -165,31 +167,11 @@ async function fail(category: string) {
   publish();
 }
 function configure(input: Configuration) {
-  if (connected || running) throw new Error("configuration_while_connected");
-  if (
-    !/^[0-9a-f]{40}$/u.test(input.expectedGateCommit) ||
-    input.expectedGateCommit !== gateCommit
-  )
-    throw new Error("gate_source_mismatch");
-  if (
-    !/^[0-9a-f]{40}$/u.test(input.expectedFirmwareSourceCommit) ||
-    !/^[0-9a-f]{64}$/u.test(input.expectedAppElfSha256) ||
-    Object.keys(input).length !== 4 ||
-    Object.keys(input).some(
-      (key) =>
-        ![
-          "expectedGateCommit",
-          "expectedFirmwareSourceCommit",
-          "expectedAppElfSha256",
-          "trust",
-        ].includes(key),
-    )
-  )
-    throw new Error("configuration_invalid");
-  maybeConfiguration = {
-    ...input,
-    trust: parseWorkerDeploymentTrust(input.trust),
-  };
+  if (connected || running || maybeWindow) throw new Error("configuration_while_connected");
+  const parsed = parseWorkerSerialAcceptanceConfiguration(input, gateCommit);
+  recoveryLoss.configure(parsed.recoveryPhase);
+  if (parsed.recoveryPhase === "resume") authorizationRecovery.clearForResume(recoveryLoss.sealed);
+  maybeConfiguration = parsed;
   deviceBaselineConfirmed = false;
   status = "configured";
   maybeFailure = undefined;
@@ -200,6 +182,7 @@ async function connect() {
   const config = maybeConfiguration;
   if (!config) throw new Error("configuration_missing");
   if (connected) throw new Error("already_connected");
+  authorizationRecovery.beginSession();
   deviceBaselineConfirmed = false;
   maybeHelloRecovery = undefined;
   hook.suppressHeartbeats = false;
@@ -343,7 +326,7 @@ async function tick() {
     }
     await refresh();
     if (!running || !maybeWindow) return;
-    if (maybeWindow.grant.qualificationAttempt?.purpose === "diagnostic" && diagnosticInitialWorkCaptured(maybeQualification)) { await stop(); return; }
+    if (maybeWindow.grant.qualificationAttempt?.purpose === "diagnostic" && diagnosticInitialWorkCaptured(maybeQualification)) { await finishDiagnosticWork(); return; }
     if (
       acceptanceWindowShouldStop(
         acceptancePurposeWindow(maybeWindow.grant),
@@ -373,11 +356,22 @@ async function startWindow() {
   nextRenew = began + input.grant.renewAfterMilliseconds;
   publish();
   if (!await enforceRunningHeadroom()) return state();
-  if (input.grant.qualificationAttempt?.purpose === "diagnostic" && diagnosticInitialWorkCaptured(maybeQualification)) return stop();
+  if (input.grant.qualificationAttempt?.purpose === "diagnostic" && diagnosticInitialWorkCaptured(maybeQualification)) return finishDiagnosticWork();
   maybeTimer = setInterval(() => {
     void tick();
   }, 1000);
   publish();
+  return state();
+}
+async function finishDiagnosticWork() {
+  if (!recoveryLoss.armed) return stop();
+  await recoveryLoss.cut({
+    prepareBoundary: () => { authorizationRecovery.capture(maybeQualification?.generation); publish(); },
+    cleanupAfterFailure: async () => { await fail("recovery_loss_failed"); await close(); },
+    snapshot: state, flush: flushRecoverySupervisor, disconnect: () => controller().qualificationAbruptDisconnect(),
+    publishClosed: () => { maybeReviewedContext = undefined; stopTimer(); maybeWindow = undefined; connected = false; running = false; status = "closed"; publish(); },
+    submit: body => localJson("/recovery-loss", body),
+  });
   return state();
 }
 async function stop() {
@@ -536,12 +530,20 @@ async function submitAttemptCompletion() {
   const ledger_after = await controller().qualificationAttemptReview();
   const original_budget = await reviewBudget(input.campaignId);
   await close();
+  if (maybeConfiguration?.recoveryPhase) await flushRecoverySupervisor();
   const receipt = await localJson("/completion-review", { nonce: input.nonce, ledger_after, original_budget, final_state: state() });
   if (!receipt || !["passed", "unverified"].includes(receipt.result) || !["diagnostic", "normal", "foreground_loss", "heartbeat_loss"].includes(receipt.purpose) || !Number.isSafeInteger(receipt.ordinal) || receipt.ordinal < 1 || receipt.ordinal > 0xffffffff || !Number.isSafeInteger(receipt.cumulative_charged_ms) || receipt.cumulative_charged_ms < 0 || receipt.cleanup_confirmed !== true) throw new Error("completion_receipt");
+  if (maybeConfiguration?.recoveryPhase === "loss" && receipt.result === "passed") recoveryLoss.seal();
   return { result: receipt.result, ordinal: receipt.ordinal, purpose: receipt.purpose, cumulative_charged_ms: receipt.cumulative_charged_ms, cleanup_confirmed: true };
 }
 
 export const workerAcceptance = {
+  exportBrowserSerialTrace: () => parseBrowserSerialTrace(browserTrace.snapshot()),
+  deviceSerialTraceReview: async () => {
+    if (running || maybeWindow) throw new Error("trace_review_admission");
+    maybeReviewedContext = undefined;
+    return reviewDeviceSerialTrace(controller());
+  },
   interruptPendingStatusForQualification,
   submitAttemptCompletion,
   reviewQualificationAttempts,

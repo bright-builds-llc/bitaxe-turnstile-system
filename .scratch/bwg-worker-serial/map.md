@@ -47,3 +47,8 @@ separate bounded-drain limitation, not seamless reconnection evidence.
 [Ticket 15](issues/15-fresh-hello-resynchronization.md) owns bounded fresh-Hello
 resynchronization over complete stale device output. Firmware owns the separate
 no-mining hardware contract and four-cycle qualification for the changed pair.
+
+[Ticket 16](issues/16-correlated-recovery-traces.md) adds bounded browser/device
+trace export, precise pending-promise receipts and a one-use diagnostic loss
+phase without graceful wire writes. Software gates pass; firmware owns the
+separate loss/resume hardware contract, retained shutdown and accounting proof.

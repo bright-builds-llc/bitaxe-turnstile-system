@@ -4,6 +4,7 @@ import { maybeWorkerSerialDiagnostic, type WorkerSerialDiagnostic } from "./work
 import { parseWorkerSerialJson, hasMalformedSerialJsonSyntax } from "./worker-serial-lexeme";
 import { canonicalJson } from "./headless-values";
 import { sha256Base64UrlBytes } from "./crypto-bytes";
+import type { WorkerBrowserSerialTraceEpoch } from "./worker-browser-serial-trace";
 
 export const WORKER_SERIAL_PROFILE = "bwg-worker-serial/0.2" as const;
 export const MAXIMUM_SERIAL_CONTROL_PAYLOAD_BYTES = 65_536;
@@ -150,7 +151,8 @@ export async function encodeWorkerSerialEnvelope(
 }
 /** Incremental bounded reader; startup text is discarded without public disclosure. */
 export class WorkerSerialFramer {
-  constructor(private readonly maybeDiagnostic?: (value: WorkerSerialDiagnostic) => void, private bootstrap = false) { }
+  constructor(private readonly maybeDiagnostic?: (value: WorkerSerialDiagnostic) => void, private bootstrap = false, private readonly maybeTrace?: WorkerBrowserSerialTraceEpoch) { }
+  #frameOrdinal = 0;
   #bytes = new Uint8Array(MAXIMUM_SERIAL_WIRE_BYTES);
   #length = 0;
   #discarding = false;
@@ -168,9 +170,9 @@ export class WorkerSerialFramer {
     this.#bootstrapPrefixDiscarded = true;
     return true;
   }
-  async push(chunk: Uint8Array, maybeReceive?: (frame: WorkerSerialEnvelope) => void): Promise<WorkerSerialEnvelope[]> {
+  async push(chunk: Uint8Array, maybeReceive?: (frame: WorkerSerialEnvelope, frameOrdinal: number) => void): Promise<WorkerSerialEnvelope[]> {
     const result: WorkerSerialEnvelope[] = [];
-    for (const byte of chunk) {
+    for (const [index, byte] of chunk.entries()) {
       if (this.#discarding) {
         if (byte === 10) this.#discarding = false;
         continue;
@@ -184,6 +186,8 @@ export class WorkerSerialFramer {
       if (byte !== 10) continue;
       const bytes = this.#bytes.slice(0, this.#length - 1);
       this.#length = 0;
+      const frameOrdinal = ++this.#frameOrdinal;
+      this.maybeTrace?.record("frame_assembled", bytes.length + 1, chunk.length - index - 1, frameOrdinal);
       let text: string;
       try {
         text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
@@ -208,17 +212,19 @@ export class WorkerSerialFramer {
       const record = serialRecord(value);
       if (record.profile !== WORKER_SERIAL_PROFILE)
         throw serialFailure("profile");
-      if (record.payloadBytes !== parsed.payloadBytes ||
-        record.payloadSha256 !== await sha256Base64UrlBytes(parsed.payloadUtf8))
-        throw serialFailure("integrity");
-      if (
-        record.kind === "control" &&
-        parsed.payloadBytes > MAXIMUM_SERIAL_CONTROL_PAYLOAD_BYTES
-      )
-        throw serialFailure("payload_bound");
-      const frame = parseWorkerSerialEnvelope(record);
+      this.maybeTrace?.record("validation_started", bytes.length + 1, chunk.length - index - 1, frameOrdinal);
+      let frame: WorkerSerialEnvelope;
+      try {
+        if (record.payloadBytes !== parsed.payloadBytes || record.payloadSha256 !== await sha256Base64UrlBytes(parsed.payloadUtf8)) throw serialFailure("integrity");
+        if (record.kind === "control" && parsed.payloadBytes > MAXIMUM_SERIAL_CONTROL_PAYLOAD_BYTES) throw serialFailure("payload_bound");
+        frame = parseWorkerSerialEnvelope(record);
+      } catch (error) {
+        this.maybeTrace?.record("validation_rejected", bytes.length + 1, chunk.length - index - 1, frameOrdinal);
+        throw error;
+      }
+      this.maybeTrace?.record("validation_completed", bytes.length + 1, chunk.length - index - 1, frameOrdinal);
       // Admission runs synchronously at this delimiter, before the next record is parsed.
-      if (maybeReceive) maybeReceive(frame);
+      if (maybeReceive) maybeReceive(frame, frameOrdinal);
       else {
         if (frame.kind === "session" && frame.payload.op === "hello_ack") this.finishBootstrap();
         result.push(frame);

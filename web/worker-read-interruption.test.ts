@@ -13,7 +13,7 @@ test("qualification closes a fully consumed status while its actual response is 
   const writesAfter = h.wireCounts().writes;
   await h.advance(3000);
   // Assert
-  expect(receipt).toEqual({ schema: "worker-read-interruption-v1", interrupted: true, request_consumed: true, response_pending: true, ownership_released: true });
+  expect(receipt).toMatchObject({ schema: "worker-read-interruption-v2", interrupted: true, request_consumed: true, response_promise_pending: true, ownership_released: true });
   expect(h.wireCounts().heldReplies).toBe(1);
   expect(h.wireCounts().credits - creditsBefore).toBe(2);
   expect(h.received.slice(commandsBefore)).toEqual([{ kind: "control", command: "status" }, { kind: "control", command: "status" }]);
@@ -122,7 +122,7 @@ test("an already delivered status returns explicit no-interruption and keeps own
   h.releaseNativeWrite();
   const receipt = await interrupting;
   // Assert
-  expect(receipt).toEqual({ schema: "worker-read-interruption-v1", interrupted: false, request_consumed: true, response_pending: false, ownership_released: false });
+  expect(receipt).toMatchObject({ schema: "worker-read-interruption-v2", interrupted: false, request_consumed: true, response_promise_pending: false, ownership_released: false });
   expect(h.counts()).toMatchObject({ closed: 0, locked: true, active: false });
   expect((await h.controller.status()).state).toBe("baseline");
   await h.controller.close();

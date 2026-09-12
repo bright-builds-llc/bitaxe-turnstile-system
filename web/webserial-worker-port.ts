@@ -1,4 +1,5 @@
 import type { WorkerSerialDiagnostic } from "./worker-serial-diagnostics";
+import type { WorkerBrowserSerialTraceEpoch } from "./worker-browser-serial-trace";
 import { WorkerSerialCredit, SERIAL_RECEIVE_WINDOW } from "./worker-serial-credit";
 import {
   encodeWorkerSerialEnvelope,
@@ -136,8 +137,9 @@ export class WorkerSerialChannel {
     receive: (frame: WorkerSerialEnvelope) => void,
     failure: (error: Error) => void,
     maybeDiagnostic?: (value: WorkerSerialDiagnostic) => void,
+    readonly maybeTrace?: WorkerBrowserSerialTraceEpoch,
   ) {
-    this.#framer = new WorkerSerialFramer(maybeDiagnostic, true);
+    this.#framer = new WorkerSerialFramer(maybeDiagnostic, true, maybeTrace);
     if (!port.readable || !port.writable) throw serialFailure("streams");
     this.#reader = port.readable.getReader();
     this.#writer = port.writable.getWriter();
@@ -178,6 +180,7 @@ export class WorkerSerialChannel {
             ...pending.frame,
             sequence: hello ? 0 : ++this.#sequence,
           };
+          if (frame.kind === "control") this.maybeTrace?.formedRequest(frame.sequence);
           await boundedSerial(
             this.#writeRecord(frame, hello),
             2_000,
@@ -217,8 +220,10 @@ export class WorkerSerialChannel {
         if (!this.#closed) throw serialFailure("disconnected");
         return;
       }
-      await this.#framer.push(result.value, frame => {
-        if (!this.#closed) receive(frame);
+      this.maybeTrace?.record("chunk_received", result.value.length);
+      await this.#framer.push(result.value, (frame, frameOrdinal) => {
+        if (!this.#closed) { receive(frame); this.maybeTrace?.record("frame_delivered", 0, 0, frameOrdinal); }
+        else this.maybeTrace?.record("frame_suppressed", 0, 0, frameOrdinal);
       });
     }
   }
@@ -227,6 +232,7 @@ export class WorkerSerialChannel {
     return this.#maybeClosing ??= this.#finishClose();
   }
   async #finishClose(): Promise<void> {
+    this.maybeTrace?.record("close_started");
     this.#closed = true;
     this.abortRecord();
     for (const queued of this.#pending.splice(0))
@@ -262,5 +268,6 @@ export class WorkerSerialChannel {
     }
     if (errors.length)
       throw new AggregateError(errors, "Worker Serial cleanup failed");
+    this.maybeTrace?.record("close_completed");
   }
 }

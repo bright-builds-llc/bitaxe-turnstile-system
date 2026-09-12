@@ -7,6 +7,7 @@ import { canonicalJson } from "./headless-values";
 import capabilityFixture from "../conformance/bwg-worker-deployment-trust-0.2/signed-capability.json";
 import trustFixture from "../conformance/bwg-worker-deployment-trust-0.2/trust.json";
 import controllerFixture from "../conformance/bwg-worker-controller-0.4/fixtures.json";
+import type { WorkerQualification } from "./worker-qualification";
 import possessionFixture from "../conformance/bwg-worker-possession-0.2/fixtures.json";
 import {
   signWorkerLeaseAuthorization,
@@ -124,6 +125,7 @@ export async function serialHarness(
   const hidden = new Set<() => void>();
   const received: { kind: string; command?: string }[] = [];
   let maybeLease: WorkerLeaseGrant | undefined;
+  let maybeQualification: WorkerQualification | undefined;
   const send = async (
     kind: WorkerSerialEnvelope["kind"],
     payload: Record<string, unknown>,
@@ -147,6 +149,7 @@ export async function serialHarness(
       ? {
         protocolVersion: "bwg-worker-controller/0.4",
         preservation,
+        ...(maybeQualification ? { qualification: maybeQualification } : {}),
         state: "mining",
         monotonicMilliseconds: now,
         lease: {
@@ -162,6 +165,7 @@ export async function serialHarness(
       : {
         protocolVersion: "bwg-worker-controller/0.4",
         preservation,
+        ...(maybeQualification ? { qualification: maybeQualification } : {}),
         state: "baseline",
         monotonicMilliseconds: now,
         restoration: { status: "confirmed", reason },
@@ -316,6 +320,12 @@ export async function serialHarness(
       await reply(request, { schema: "worker-qualification-ledger-v1", next_ordinal: 1, total_charged_ms: 0, pending: false, last_completed_ordinal: 0 });
       return;
     }
+    if (request.command === "serial_trace_review") {
+      if (active) throw new Error("fixture_trace_requires_idle");
+      await reply(request, { schema: "worker-serial-trace-v1", capacity: 64, snapshotAvailable: true, droppedEvents: 0,
+        current: { epoch: opened, firstEventOrdinal: 1, nextEventOrdinal: 1, overwrittenEvents: 0, events: [] }, previous: null });
+      return;
+    }
     if (request.command === "acceptance_budget_review") {
       const payload = exactSerialRecord(request.payload, ["campaignId"]);
       await reply(request, { schema: "worker-budget-review-v1", campaign_match: payload.campaignId === "AAAAAAAAAAAAAAAAAAAAAA", reserved_mask: 1, completed_mask: 1, charged_ms: 180000, pending: false });
@@ -456,6 +466,7 @@ export async function serialHarness(
     trust,
     controller: createWebSerialWorkerController(input),
     received,
+    setQualification(value: WorkerQualification) { maybeQualification = value; },
     counts: () => ({ opened, closed, locked, active }),
     receiveRaw(bytes: Uint8Array) {
       if (!maybeOutput) throw new Error("fixture_port_not_open");

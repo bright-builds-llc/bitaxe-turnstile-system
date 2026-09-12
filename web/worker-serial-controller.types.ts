@@ -1,5 +1,8 @@
 import type { WorkerQualificationLedger } from "./worker-qualification-attempt";
 import type { WorkerReadInterruption } from "./worker-read-interruption";
+import type { BrowserSerialTrace, WorkerBrowserSerialTrace } from "./worker-browser-serial-trace";
+import type { DeviceSerialTrace } from "./worker-serial-trace-export";
+import type { WorkerMiningInterruption } from "./worker-mining-interruption";
 import type { QualificationCoolingAction, WorkerCoolingProof, WorkerCoolingBaseline } from "./worker-qualification-cooling";
 import type { WorkLeaseAuthorityTrust } from "./worker-lease-authorization";
 import type { WorkerBudgetReview } from "./worker-budget-review";
@@ -52,6 +55,9 @@ export interface WebSerialWorkerController
   qualificationAttemptReview(): Promise<WorkerQualificationLedger>;
   /** Qualification only: interrupt a consumed no-mining status with a still-pending reply. */
   interruptPendingStatusForQualification(): Promise<WorkerReadInterruption>;
+  qualificationAbruptDisconnect(): Promise<WorkerMiningInterruption>;
+  exportBrowserSerialTrace(): BrowserSerialTrace;
+  deviceSerialTraceReview(): Promise<DeviceSerialTrace>;
   acceptanceBudgetReview(campaignId: string): Promise<WorkerBudgetReview>;
   transportProbe(maybePaddingBytes?: number): Promise<{
     paddingBytes: number;
@@ -65,6 +71,7 @@ export const workerSerialQualificationHook = Symbol(
 );
 export type WorkerSerialAdmissionStage = "ownership" | "permission" | "device_filter" | "scope" | "opening" | "hello" | "manifest_identity" | "capability" | "possession" | "baseline" | "continuity" | "cleanup";
 export type WorkerSerialQualificationHook = {
+  maybeTraceHistory?: WorkerBrowserSerialTrace;
   maybeObserveHelloRecovery?: (value: { discardedRecords: number; discardedReplies: number; discardedBytes: number }) => void;
   maybeObserveSerialFailure?: (category: WorkerSerialFailureCategory) => void;
   maybeObserveDiagnostic?: (value: WorkerSerialDiagnostic) => void;

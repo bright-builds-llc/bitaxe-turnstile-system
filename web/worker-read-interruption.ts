@@ -2,12 +2,14 @@ import type { WorkerControllerStatus } from "./worker-controller";
 import { workerDeviceBaselineConfirmed } from "./worker-device-baseline";
 import { serialFailure } from "./worker-serial";
 import { workerSerialFailureCategory } from "./worker-serial-errors";
+import type { BrowserTraceBoundary } from "./worker-browser-serial-trace";
 
 export type WorkerReadInterruption = {
-  schema: "worker-read-interruption-v1";
+  schema: "worker-read-interruption-v2";
   request_consumed: true;
-} & ({ interrupted: true; response_pending: true; ownership_released: true } |
-  { interrupted: false; response_pending: false; ownership_released: false });
+  host_observation: BrowserTraceBoundary;
+} & ({ interrupted: true; response_promise_pending: true; ownership_released: true } |
+  { interrupted: false; response_promise_pending: false; ownership_released: false });
 
 /** Holds one no-mining read operation; only consumed, still-pending responses permit interruption. */
 export class WorkerReadInterruptionOwner {
@@ -20,11 +22,13 @@ export class WorkerReadInterruptionOwner {
     request(afterConsumed: (pending: boolean) => Promise<void>): Promise<unknown>;
     close(): Promise<void>;
     released(): boolean;
+    observation(): BrowserTraceBoundary;
   }): Promise<WorkerReadInterruption> {
     if (this.#active) throw serialFailure("operation_active");
     if (!operations.admitted) throw serialFailure("probe_admission");
     this.#active = true;
     let interrupted = false, closed = false;
+    let maybeObservation: BrowserTraceBoundary | undefined;
     try {
       operations.check();
       const baseline = await operations.baseline();
@@ -34,6 +38,7 @@ export class WorkerReadInterruptionOwner {
       try {
         await operations.request(async pending => {
           operations.check();
+          maybeObservation = operations.observation();
           if (!pending) return;
           interrupted = true;
           await operations.close();
@@ -42,11 +47,12 @@ export class WorkerReadInterruptionOwner {
       } catch (error) {
         if (!interrupted || !closed || workerSerialFailureCategory(error) !== "closed") throw error;
       }
-      if (!interrupted) return { schema: "worker-read-interruption-v1", interrupted: false,
-        request_consumed: true, response_pending: false, ownership_released: false };
+      if (!maybeObservation) throw serialFailure("probe_admission");
+      if (!interrupted) return { schema: "worker-read-interruption-v2", interrupted: false,
+        request_consumed: true, response_promise_pending: false, ownership_released: false, host_observation: maybeObservation };
       if (!closed || !operations.released()) throw serialFailure("cleanup_pending");
-      return { schema: "worker-read-interruption-v1", interrupted: true,
-        request_consumed: true, response_pending: true, ownership_released: true };
+      return { schema: "worker-read-interruption-v2", interrupted: true,
+        request_consumed: true, response_promise_pending: true, ownership_released: true, host_observation: maybeObservation };
     } finally {
       this.#active = false;
     }
