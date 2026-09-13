@@ -58,3 +58,8 @@ a private same-proof endpoint handoff and a dedicated normal-attempt cadence
 mode. Sixty seconds of measured mining plus a bounded boundary tail precede
 heartbeat suppression and a post-work preservation checkpoint. The firmware-owned
 supervisor and prospective contract retain all hardware/evidence authority.
+
+[Ticket 18](issues/18-cadence-heartbeat-write-admission.md) corrects cadence
+admission during a normal serialized heartbeat. The existing bounded writer
+waits for heartbeat completion; cancelled controls still require a fresh session.
+Software checks pass, while the failed physical preparation remains unverified.

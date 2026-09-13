@@ -475,8 +475,11 @@ control envelopes and fresh idle possession. Its optional firmware commands are
 with exactly `{}`. They neither authorize mining nor extend heartbeat, possession
 or Work Lease authority. An ordinary browser adapter without the explicit
 qualification hook rejects all three before sending any request. The adapter
-refreshes possession for arm/review and rejects active leases and unfinished
-records, and verifies each response through the ordinary correlated channel.
+refreshes possession for arm/review and rejects active leases and pending
+control requests, then verifies each response through the ordinary correlated
+channel. Normal heartbeat writes remain serialized through the bounded writer;
+a failed or cancelled record still invalidates that channel and requires a
+fresh session.
 
 Arm returns `worker-telemetry-cadence-arm-v1`, phase, `armedAtUs` and generation.
 The mining phase binds that admitted generation; a new Hello between arming and

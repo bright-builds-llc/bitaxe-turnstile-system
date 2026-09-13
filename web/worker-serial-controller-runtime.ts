@@ -367,8 +367,8 @@ export class BrowserSerialController implements WebSerialWorkerController {
   }
   readonly #cadence = new WorkerTelemetryCadenceControl({
     requireIdle: () => {
-      this.#requireReady();
-      if (!this.maybeQualificationHook || this.#activeLease || this.#maybePending || this.#maybeChannel?.unfinishedRecord) throw serialFailure("probe_admission");
+      this.#requireReady(); // Normal heartbeats may be serializing; the writer already bounds their completion.
+      if (!this.maybeQualificationHook || this.#activeLease || this.#maybePending) throw serialFailure("probe_admission");
     },
     prove: () => this.prepareWorkerLeaseAuthorizationContext("start"), request: (command, payload) => this.#request(command, payload),
     maybeBinding: () => this.#maybePossession?.controlSessionBindingSha256,
