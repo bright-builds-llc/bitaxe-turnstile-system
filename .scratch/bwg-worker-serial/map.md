@@ -52,3 +52,9 @@ no-mining hardware contract and four-cycle qualification for the changed pair.
 trace export, precise pending-promise receipts and a one-use diagnostic loss
 phase without graceful wire writes. Software gates pass; firmware owns the
 separate loss/resume hardware contract, retained shutdown and accounting proof.
+
+[Ticket 17](issues/17-cpu0-telemetry-cadence.md) adds closed cadence measurements,
+a private same-proof endpoint handoff and a dedicated normal-attempt cadence
+mode. Sixty seconds of measured mining plus a bounded boundary tail precede
+heartbeat suppression and a post-work preservation checkpoint. The firmware-owned
+supervisor and prospective contract retain all hardware/evidence authority.

@@ -1,3 +1,6 @@
+import { sendWorkerSerialControl } from "./worker-serial-send";
+import type { WorkerCadencePhase } from "./worker-telemetry-cadence";
+import { WorkerTelemetryCadenceControl } from "./worker-telemetry-cadence-control";
 import { runQualificationCooling, type QualificationCoolingAction } from "./worker-qualification-cooling";
 import { WorkerReadInterruptionOwner } from "./worker-read-interruption";
 import { WorkerBrowserSerialTrace, type WorkerBrowserSerialTraceEpoch } from "./worker-browser-serial-trace";
@@ -34,16 +37,14 @@ import {
   workerRestoredStatusMatches,
 } from "./worker-postconditions";
 import {
-  WORKER_SERIAL_PROFILE, WorkerSerialPeer, exactSerialRecord, serialFailure, serialFailureFor,
+  WorkerSerialPeer, exactSerialRecord, serialFailure, serialFailureFor,
   type WorkerSerialEnvelope,
 } from "./worker-serial";
 import { WorkerSerialChannel, type WorkerSerialBrowserRuntime } from "./webserial-worker-port";
-
 import {
   type WorkerSerialQualificationHook, type WebSerialWorkerControllerInput, type WebSerialWorkerController,
   type Ack, type PendingResponse,
 } from "./worker-serial-controller.types";
-
 export class BrowserSerialController implements WebSerialWorkerController {
   readonly #readInterruption = new WorkerReadInterruptionOwner();
   readonly #miningInterruption = new WorkerMiningInterruptionOwner();
@@ -51,9 +52,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
   #maybeTraceEpoch: WorkerBrowserSerialTraceEpoch | undefined;
   #traceRequestOrdinal = 0;
   #continuity: WorkerContinuityAccess;
-  readonly #listeners = new Set<
-    (reason: WorkerControllerDisconnectReason) => Promise<void>
-  >();
+  readonly #listeners = new Set<(reason: WorkerControllerDisconnectReason) => Promise<void>>();
   #maybeChannel: WorkerSerialChannel | undefined;
   #maybePeer: WorkerSerialPeer | undefined;
   #maybeAck: Ack | undefined;
@@ -74,6 +73,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
   #activeLease = false;
   #heartbeatAdmitted = false;
   #lastHeartbeatSent = 0;
+  #lastPossessionAt = -Infinity;
   #generation = 0;
   #admission = 0;
   #maybeFailure: Error | undefined;
@@ -257,6 +257,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
       exchange: (request) => this.#exchange(request),
     });
     this.#maybeDeviceKeySha256 = verified.deviceIdentityKeySha256;
+    this.#lastPossessionAt = this.runtime.now();
     return verified;
   }
 
@@ -364,6 +365,18 @@ export class BrowserSerialController implements WebSerialWorkerController {
     if (this.#activeLease || !this.#maybePossession) throw serialFailure("probe_admission");
     return parseDeviceSerialTrace(await this.#request("serial_trace_review", {}));
   }
+  readonly #cadence = new WorkerTelemetryCadenceControl({
+    requireIdle: () => {
+      this.#requireReady();
+      if (!this.maybeQualificationHook || this.#activeLease || this.#maybePending || this.#maybeChannel?.unfinishedRecord) throw serialFailure("probe_admission");
+    },
+    prove: () => this.prepareWorkerLeaseAuthorizationContext("start"), request: (command, payload) => this.#request(command, payload),
+    maybeBinding: () => this.#maybePossession?.controlSessionBindingSha256,
+    possessionFresh: () => this.runtime.now() >= this.#lastPossessionAt && this.runtime.now() - this.#lastPossessionAt <= 5000,
+  });
+  telemetryCadenceArm(phase: WorkerCadencePhase) { return this.#cadence.arm(phase); }
+  telemetryCadenceReview() { return this.#cadence.review(); }
+  telemetryCadenceEndpoint(maybeBinding?: string) { return this.#cadence.endpoint(maybeBinding); }
   async qualificationAbruptDisconnect() {
     this.#requireReady();
     return this.#miningInterruption.interrupt(this.runtime.now(), Boolean(this.maybeQualificationHook && this.#activeLease && !this.#maybePending && !this.#maybeChannel?.unfinishedRecord), async () => {
@@ -588,22 +601,10 @@ export class BrowserSerialController implements WebSerialWorkerController {
       clear: () => { if (this.#maybePending?.requestId === request.requestId) this.#maybePending = undefined; },
     });
   }
-  async #send(
-    kind: WorkerSerialEnvelope["kind"],
-    payload: Record<string, unknown>,
-  ) {
-    if (!this.#maybeChannel || !this.#maybeAck)
-      throw serialFailure("channel_missing");
-    if (kind === "control" && this.#heartbeatAdmitted && !this.maybeQualificationHook?.suppressHeartbeats &&
-      new TextEncoder().encode(JSON.stringify(payload)).length > 1024)
-      await this.#heartbeat();
-    await this.#maybeChannel.send({
-      profile: WORKER_SERIAL_PROFILE,
-      kind,
-      sessionId: this.#maybeAck.sessionId,
-      sequence: 1,
-      payload,
-    });
+  async #send(kind: WorkerSerialEnvelope["kind"], payload: Record<string, unknown>) {
+    await sendWorkerSerialControl({ maybeChannel: this.#maybeChannel, maybeSessionId: this.#maybeAck?.sessionId,
+      heartbeatAdmitted: this.#heartbeatAdmitted, suppressed: this.maybeQualificationHook?.suppressHeartbeats === true,
+      heartbeat: () => this.#heartbeat() }, kind, payload);
   }
   async #cleanup() {
     this.#state = "closed";

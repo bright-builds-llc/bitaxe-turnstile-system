@@ -1,3 +1,4 @@
+import type { WorkerCadenceArm, WorkerCadencePhase, WorkerCadenceReview, WorkerTelemetryEndpoint } from "./worker-telemetry-cadence";
 import type { WorkerQualificationLedger } from "./worker-qualification-attempt";
 import type { WorkerReadInterruption } from "./worker-read-interruption";
 import type { BrowserSerialTrace, WorkerBrowserSerialTrace } from "./worker-browser-serial-trace";
@@ -58,6 +59,10 @@ export interface WebSerialWorkerController
   qualificationAbruptDisconnect(): Promise<WorkerMiningInterruption>;
   exportBrowserSerialTrace(): BrowserSerialTrace;
   deviceSerialTraceReview(): Promise<DeviceSerialTrace>;
+  telemetryCadenceArm(phase: WorkerCadencePhase): Promise<WorkerCadenceArm>;
+  telemetryCadenceReview(): Promise<WorkerCadenceReview>;
+  /** Private endpoint response; never forwarded to public diagnostic callbacks. */
+  telemetryCadenceEndpoint(maybeControlSessionBindingSha256?: string): Promise<WorkerTelemetryEndpoint & { controlSessionBindingSha256: string }>;
   acceptanceBudgetReview(campaignId: string): Promise<WorkerBudgetReview>;
   transportProbe(maybePaddingBytes?: number): Promise<{
     paddingBytes: number;

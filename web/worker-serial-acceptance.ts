@@ -1,3 +1,5 @@
+import { WorkerCadenceAcceptance } from "./worker-cadence-acceptance";
+import { createWorkerCadencePageOperations } from "./worker-cadence-page";
 import { requireWorkerOwnerHeadroom, workerOwnerResourceFailure, type WorkerOwnerResourceFailure } from "./worker-owner-resources";
 import { workerDeviceBaselineConfirmed } from "./worker-device-baseline";
 import { acceptancePurposeWindow, acceptanceMaximumActiveMilliseconds } from "./worker-acceptance-purpose";
@@ -8,7 +10,7 @@ import { WorkerBrowserSerialTrace } from "./worker-browser-serial-trace";
 import { parseBrowserSerialTrace } from "./worker-serial-trace-export";
 import { reviewDeviceSerialTrace } from "./worker-serial-trace-review";
 import { WorkerAuthorizationRecoveryCheckpoint } from "./worker-authorization-recovery";
-import { parseWorkerSerialAcceptanceConfiguration, type WorkerSerialAcceptanceConfiguration as Configuration } from "./worker-serial-acceptance-config";
+import { requireWorkerAcceptanceModeTransition, parseWorkerSerialAcceptanceConfiguration, type WorkerSerialAcceptanceConfiguration as Configuration } from "./worker-serial-acceptance-config";
 import { submitWorkerCoolingReview } from "./worker-cooling-review";
 import type { WorkerLeaseAuthorizationContext } from "./worker-lease-authorization";
 import { WorkerSerialDiagnosticHistory } from "./worker-serial-diagnostics";
@@ -45,6 +47,7 @@ type WindowArtifacts = {
 };
 const preservation = new WorkerPreservationBaseline();
 const recoveryLoss = new WorkerRecoveryLoss();
+const cadence = new WorkerCadenceAcceptance();
 const browserTrace = new WorkerBrowserSerialTrace(() => performance.now());
 const authorizationRecovery = new WorkerAuthorizationRecoveryCheckpoint();
 const renewalProgress = new AcceptanceRenewalProgress();
@@ -72,6 +75,7 @@ const hook: WorkerSerialQualificationHook = {
   maybeObserveSerialOwnership(released) { serialOwnershipReleased = released; publish(); },
   observeStatus: (value) => {
     authorizationRecovery.observeStatus(value);
+    cadence.observe(value, performance.now());
     deviceBaselineConfirmed = workerDeviceBaselineConfirmed(value);
     deviceLeaseInactive = value?.state === "baseline";
     deviceRestorationConfirmed =
@@ -125,6 +129,7 @@ function state() {
     connected,
     running,
     heartbeatSuppressed: hook.suppressHeartbeats,
+    ...(cadence.enabled ? { cadence: cadence.state() } : {}),
     renewalsConfirmed: renewalProgress.confirmed,
     serialOwnershipReleased,
     ...(maybeHelloRecovery ? { helloRecovery: maybeHelloRecovery } : {}),
@@ -169,6 +174,8 @@ async function fail(category: string) {
 function configure(input: Configuration) {
   if (connected || running || maybeWindow) throw new Error("configuration_while_connected");
   const parsed = parseWorkerSerialAcceptanceConfiguration(input, gateCommit);
+  requireWorkerAcceptanceModeTransition(maybeConfiguration, parsed);
+  cadence.configure(parsed.cadenceQualification);
   recoveryLoss.configure(parsed.recoveryPhase);
   if (parsed.recoveryPhase === "resume") authorizationRecovery.clearForResume(recoveryLoss.sealed);
   maybeConfiguration = parsed;
@@ -234,6 +241,7 @@ async function prepareStartAuthorization() {
 function loadWindow(input: WindowArtifacts) {
   if (running) throw new Error("window_active");
   const grant = parseWorkerLeaseGrant(input.grant);
+  cadence.requireWindow(grant);
   if (!grant.acceptanceCampaign && !grant.qualificationAttempt)
     throw new Error("acceptance_campaign_required");
   if (!Array.isArray(input.renewals) || input.renewals.length > 16)
@@ -326,6 +334,7 @@ async function tick() {
     }
     await refresh();
     if (!running || !maybeWindow) return;
+    if (cadence.shouldSuppress(performance.now())) { await suppressCadenceHeartbeats(); return; }
     if (maybeWindow.grant.qualificationAttempt?.purpose === "diagnostic" && diagnosticInitialWorkCaptured(maybeQualification)) { await finishDiagnosticWork(); return; }
     if (
       acceptanceWindowShouldStop(
@@ -530,14 +539,26 @@ async function submitAttemptCompletion() {
   const ledger_after = await controller().qualificationAttemptReview();
   const original_budget = await reviewBudget(input.campaignId);
   await close();
-  if (maybeConfiguration?.recoveryPhase) await flushRecoverySupervisor();
+  if (maybeConfiguration?.recoveryPhase || cadence.enabled) await flushRecoverySupervisor();
   const receipt = await localJson("/completion-review", { nonce: input.nonce, ledger_after, original_budget, final_state: state() });
   if (!receipt || !["passed", "unverified"].includes(receipt.result) || !["diagnostic", "normal", "foreground_loss", "heartbeat_loss"].includes(receipt.purpose) || !Number.isSafeInteger(receipt.ordinal) || receipt.ordinal < 1 || receipt.ordinal > 0xffffffff || !Number.isSafeInteger(receipt.cumulative_charged_ms) || receipt.cumulative_charged_ms < 0 || receipt.cleanup_confirmed !== true) throw new Error("completion_receipt");
   if (maybeConfiguration?.recoveryPhase === "loss" && receipt.result === "passed") recoveryLoss.seal();
   return { result: receipt.result, ordinal: receipt.ordinal, purpose: receipt.purpose, cumulative_charged_ms: receipt.cumulative_charged_ms, cleanup_confirmed: true };
 }
 
+async function suppressCadenceHeartbeats() {
+  if (!cadence.enabled || !running || !maybeWindow) throw new Error("cadence_suppression_admission");
+  cadence.requireWindow(maybeWindow.grant);
+  requireAcceptanceFaultHeadroom(maybeQualification?.work_gate_remaining_ms);
+  cadence.suppress(performance.now(), () => authorizationRecovery.capture(maybeQualification?.generation));
+  stopTimer();
+  hook.suppressHeartbeats = true;
+  publish();
+}
+
 export const workerAcceptance = {
+  ...createWorkerCadencePageOperations({ cadence, controller, running: () => running, loaded: () => maybeWindow !== undefined,
+    maybeReviewedBinding: () => maybeReviewedContext?.controlSessionBindingSha256, invalidateAuthorization: () => { maybeReviewedContext = undefined; }, publish, local: localJson }),
   exportBrowserSerialTrace: () => parseBrowserSerialTrace(browserTrace.snapshot()),
   deviceSerialTraceReview: async () => {
     if (running || maybeWindow) throw new Error("trace_review_admission");

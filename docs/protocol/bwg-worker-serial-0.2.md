@@ -465,3 +465,59 @@ configuration, so a legacy diagnostic cannot inherit an earlier loss arm.
 Checkpoint or journal failure also invokes cleanup when initial work is observed
 in the Start response before the polling timer exists; it cannot leave that
 failure path retaining heartbeat authority.
+
+## CPU0 cadence qualification diagnostics
+
+The separately task-bound cadence qualification uses the same Controller 0.4
+control envelopes and fresh idle possession. Its optional firmware commands are
+`telemetry_cadence_arm` with exactly `{ "phase": "idle" | "usb" | "mining" }`,
+`telemetry_cadence_review` with exactly `{}`, and `telemetry_cadence_endpoint`
+with exactly `{}`. They neither authorize mining nor extend heartbeat, possession
+or Work Lease authority. An ordinary browser adapter without the explicit
+qualification hook rejects all three before sending any request. The adapter
+refreshes possession for arm/review and rejects active leases and unfinished
+records, and verifies each response through the ordinary correlated channel.
+
+Arm returns `worker-telemetry-cadence-arm-v1`, phase, `armedAtUs` and generation.
+The mining phase binds that admitted generation; a new Hello between arming and
+Start cannot complete it. Review returns `worker-telemetry-cadence-v1` with
+`snapshotAvailable`, `droppedObservations`, `storageBytes`, and exactly three
+ordered phase summaries: idle, USB, mining. Device-local times are microseconds.
+Each summary includes capture state/boundaries, interval counts and four exclusive
+buckets (through 500000, 750000, 1500000, then above 1500000 microseconds), stage
+maxima, CPU/priority/subscriber mismatch counters, publication outcomes, pending
+sends and explicit loss/failure flags. `web/worker-telemetry-cadence.ts` defines
+the closed shape. Each phase also carries `maxProbeCount`, `firstMaxProbeAtUs`
+and `lastMaxProbeAtUs`; only exact maximum exchanges prepared by the controller
+during the USB capture window are counted. Browser probe receipts separately
+prove complete reply delivery. Successful queueing is distinct from asynchronous send
+completion; neither establishes host receipt. The supervisor's prospective
+judge evaluates qualification, independently of the device's `passed` flag.
+
+Endpoint returns `worker-telemetry-endpoint-v1`, current station `ipv4`, actual
+`httpPort`, `observedAtUs`, `bootOrdinal` and generation. The browser adds its
+fresh possession's `controlSessionBindingSha256` only to the private supervisor
+handoff. A page endpoint read reuses the exact proof established by its immediately
+preceding budget review, verifies age at most five seconds and exact binding,
+and consumes that cached authorization context. Refreshing possession changes
+the binding and cannot occur between those two operations. The endpoint and binding never enter public state, serial trace metadata,
+diagnostic callbacks, persistent browser storage or public artifacts. No Wi-Fi
+snapshot, SSID, MAC address, discovery or cached endpoint fallback is admitted.
+A separately authorized passive host observer owns its single `/api/ws/live`
+connection; Web Serial remains the only application control transport.
+
+The acceptance page opts in with `cadenceQualification: true`, mutually exclusive
+with recovery phases and sticky for that page lifetime. It exposes `cadenceArm`,
+`cadenceReview`, `cadenceEndpoint` and `cadenceUsbPhase`. The last method performs
+only twelve awaited maximum-size probes five seconds apart; the supervisor arms
+the phase, records boundaries, awaits its complete duration and collects review.
+Late or overlong probes fail without compressed catch-up traffic. The browser
+retains only typed numeric cadence observations. Mining uses an already signed
+normal 180000-ms attempt; after sixty seconds from first observed successful work
+plus a two-second boundary-iteration tail,
+it captures the private post-work authorization checkpoint and suppresses
+application heartbeats using the existing qualified hook. Fresh reconnection
+must match that checkpoint without resetting the original preservation baseline. This
+conservative host observation is not the device's exact first-dispatch timestamp.
+Existing renewal, resource headroom, fault headroom, disconnect and restoration
+rules still apply. Historical normal and recovery judgments are unchanged.

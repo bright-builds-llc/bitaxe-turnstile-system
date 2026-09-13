@@ -1,3 +1,4 @@
+import { cadenceFixture } from "./worker-telemetry-cadence.fixture";
 import {
   decodeBase64Url,
   encodeBase64Url,
@@ -318,6 +319,16 @@ export async function serialHarness(
     if (request.command === "qualification_attempt_review") {
       exactSerialRecord(request.payload, []);
       await reply(request, { schema: "worker-qualification-ledger-v1", next_ordinal: 1, total_charged_ms: 0, pending: false, last_completed_ordinal: 0 });
+      return;
+    }
+    if (request.command === "telemetry_cadence_arm") {
+      const payload = exactSerialRecord(request.payload, ["phase"]);
+      await reply(request, { schema: "worker-telemetry-cadence-arm-v1", phase: payload.phase, armedAtUs: now * 1000, generation: 7 });
+      return;
+    }
+    if (request.command === "telemetry_cadence_review") { await reply(request, cadenceFixture()); return; }
+    if (request.command === "telemetry_cadence_endpoint") {
+      await reply(request, { schema: "worker-telemetry-endpoint-v1", ipv4: "192.0.2.10", httpPort: 80, observedAtUs: now * 1000, bootOrdinal: 1, generation: 7 });
       return;
     }
     if (request.command === "serial_trace_review") {
