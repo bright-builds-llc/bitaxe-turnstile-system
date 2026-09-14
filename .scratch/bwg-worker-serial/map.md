@@ -63,3 +63,8 @@ supervisor and prospective contract retain all hardware/evidence authority.
 admission during a normal serialized heartbeat. The existing bounded writer
 waits for heartbeat completion; cancelled controls still require a fresh session.
 Software checks pass, while the failed physical preparation remains unverified.
+
+[Ticket 19](issues/19-cadence-stage-diagnostics-v2.md) adds strict v2 stage and
+worst-interval metadata while preserving historical v1 parsing. The firmware
+supervisor owns coherence/acceptance checks and the next guarded qualification;
+Gate diagnostics grant no additional authority.

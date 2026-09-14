@@ -8,10 +8,18 @@ export type WorkerCadenceSummary = Record<typeof counters[number] | typeof times
   phase: WorkerCadencePhase; state: "empty" | "armed" | "capturing" | "complete"; generation: number;
   intervalBuckets: [number, number, number, number]; overflow: boolean; passed: boolean;
 };
-export type WorkerCadenceReview = {
-  schema: "worker-telemetry-cadence-v1"; snapshotAvailable: boolean; droppedObservations: number;
-  storageBytes: number; phases: WorkerCadenceSummary[];
+export const CADENCE_LIVE_STAGES = ["visible_state", "platform", "health_safety", "confirmed_settings", "settings_transaction_wait", "settings_nvs_read", "wifi", "publication_order_wait", "projection_complete", "retention", "serialization_queue"] as const;
+export type WorkerCadenceStageDurations = [number, number, number, number, number, number, number, number, number, number, number];
+export type WorkerCadenceSummaryV2 = WorkerCadenceSummary & {
+  maximumLiveStagesUs: WorkerCadenceStageDurations;
+  worstInterval: { previousExecutionUs: number; previousLiveStagesUs: WorkerCadenceStageDurations; gapUs: number };
 };
+export type WorkerCadenceReview = {
+  snapshotAvailable: boolean; droppedObservations: number; storageBytes: number;
+} & (
+  { schema: "worker-telemetry-cadence-v1"; phases: WorkerCadenceSummary[] } |
+  { schema: "worker-telemetry-cadence-v2"; phases: WorkerCadenceSummaryV2[] }
+);
 export type WorkerCadenceArm = { schema: "worker-telemetry-cadence-arm-v1"; phase: WorkerCadencePhase; armedAtUs: number; generation: number };
 /** Private transport input: never include this type in public state, traces or diagnostics. */
 export type WorkerTelemetryEndpoint = { schema: "worker-telemetry-endpoint-v1"; ipv4: string; httpPort: number; observedAtUs: number; bootOrdinal: number; generation: number };
@@ -29,8 +37,14 @@ export function parseWorkerCadenceArm(input: unknown): WorkerCadenceArm {
   if (value.schema !== "worker-telemetry-cadence-arm-v1") throw serialFailure("fields");
   return { schema: value.schema, phase: parseWorkerCadencePhase(value.phase), armedAtUs: integer(value.armedAtUs), generation: integer(value.generation, 0xffff_ffff) };
 }
-function summary(input: unknown): WorkerCadenceSummary {
-  const value = exactSerialRecord(input, ["phase", "state", "generation", ...counters, ...times, "intervalBuckets", "overflow", "passed"]);
+function stageDurations(input: unknown): WorkerCadenceStageDurations {
+  if (!Array.isArray(input) || input.length !== CADENCE_LIVE_STAGES.length) throw serialFailure("fields");
+  return Array.from(input, value => integer(value)) as WorkerCadenceStageDurations;
+}
+function summary(input: unknown, v2: true): WorkerCadenceSummaryV2;
+function summary(input: unknown, v2: false): WorkerCadenceSummary;
+function summary(input: unknown, v2: boolean): WorkerCadenceSummary | WorkerCadenceSummaryV2 {
+  const value = exactSerialRecord(input, ["phase", "state", "generation", ...counters, ...times, "intervalBuckets", "overflow", "passed", ...(v2 ? ["maximumLiveStagesUs", "worstInterval"] : [])]);
   parseWorkerCadencePhase(value.phase);
   if (!["empty", "armed", "capturing", "complete"].includes(String(value.state)) || typeof value.overflow !== "boolean" || typeof value.passed !== "boolean") throw serialFailure("fields");
   integer(value.generation, 0xffff_ffff);
@@ -40,15 +54,23 @@ function summary(input: unknown): WorkerCadenceSummary {
   for (const count of value.intervalBuckets) integer(count, 0xffff_ffff);
   if (value.intervalBuckets.reduce((sum, count) => sum + Number(count), 0) !== value.intervalCount) throw serialFailure("fields");
   if (value.passed && (value.state !== "complete" || value.overflow)) throw serialFailure("fields");
-  return structuredClone(value) as WorkerCadenceSummary;
+  const base = structuredClone(value) as WorkerCadenceSummary;
+  if (!v2) return base;
+  const worst = exactSerialRecord(value.worstInterval, ["previousExecutionUs", "previousLiveStagesUs", "gapUs"]);
+  return { ...base, maximumLiveStagesUs: stageDurations(value.maximumLiveStagesUs),
+    worstInterval: { previousExecutionUs: integer(worst.previousExecutionUs), previousLiveStagesUs: stageDurations(worst.previousLiveStagesUs), gapUs: integer(worst.gapUs) } };
 }
 /** Validate only the closed observation shape; the prospective supervisor judge owns acceptance. */
 export function parseWorkerCadenceReview(input: unknown): WorkerCadenceReview {
   const value = exactSerialRecord(input, ["schema", "snapshotAvailable", "droppedObservations", "storageBytes", "phases"]);
-  if (value.schema !== "worker-telemetry-cadence-v1" || typeof value.snapshotAvailable !== "boolean" || !Array.isArray(value.phases) || value.phases.length !== 3) throw serialFailure("fields");
-  const phases = value.phases.map(summary);
-  if (phases.some((phase, index) => phase.phase !== CADENCE_PHASES[index])) throw serialFailure("fields");
-  return { schema: value.schema, snapshotAvailable: value.snapshotAvailable, droppedObservations: integer(value.droppedObservations, 0xffff_ffff), storageBytes: integer(value.storageBytes, 0xffff_ffff), phases };
+  if ((value.schema !== "worker-telemetry-cadence-v1" && value.schema !== "worker-telemetry-cadence-v2") || typeof value.snapshotAvailable !== "boolean" || !Array.isArray(value.phases) || value.phases.length !== 3) throw serialFailure("fields");
+  const common = { snapshotAvailable: value.snapshotAvailable, droppedObservations: integer(value.droppedObservations, 0xffff_ffff), storageBytes: integer(value.storageBytes, 0xffff_ffff) };
+  const phaseInputs = value.phases;
+  for (const [index, input] of phaseInputs.entries()) {
+    if (input === null || typeof input !== "object" || input.phase !== CADENCE_PHASES[index]) throw serialFailure("fields");
+  }
+  if (value.schema === "worker-telemetry-cadence-v2") return { ...common, schema: value.schema, phases: phaseInputs.map(input => summary(input, true)) };
+  return { ...common, schema: value.schema, phases: phaseInputs.map(input => summary(input, false)) };
 }
 export function parseWorkerTelemetryEndpoint(input: unknown): WorkerTelemetryEndpoint {
   const value = exactSerialRecord(input, ["schema", "ipv4", "httpPort", "observedAtUs", "bootOrdinal", "generation"]);

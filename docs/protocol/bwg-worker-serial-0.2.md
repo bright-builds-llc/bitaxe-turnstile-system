@@ -524,3 +524,27 @@ must match that checkpoint without resetting the original preservation baseline.
 conservative host observation is not the device's exact first-dispatch timestamp.
 Existing renewal, resource headroom, fault headroom, disconnect and restoration
 rules still apply. Historical normal and recovery judgments are unchanged.
+
+### Cadence stage diagnostics v2
+
+`worker-telemetry-cadence-v2` retains every v1 field and adds two required fields
+per phase: `maximumLiveStagesUs`, an eleven-element timing array, and
+`worstInterval`, containing exactly `previousExecutionUs`, `previousLiveStagesUs`
+(another eleven-element array), and `gapUs`. All durations are nonnegative safe
+integer microseconds. The fixed array order is `visible_state`, `platform`,
+`health_safety`, `confirmed_settings`, `settings_transaction_wait`,
+`settings_nvs_read`, `wifi`, `publication_order_wait`, `projection_complete`,
+`retention`, `serialization_queue`.
+
+The maxima describe independently observed stages; their sum does not describe
+one iteration. The worst-interval detail describes the preceding execution and
+its stage profile separately from the following gap. Empty and armed firmware
+captures use zero-valued detail. Existing clock/loss/overflow fields continue to
+report incomplete or inconsistent measurement; the Gate shape parser preserves
+that diagnostic data for the supervisor to judge.
+
+The browser accepts both closed versions, rejects wrong keys, missing fields,
+incorrect array lengths and invalid numeric values, and never synthesizes v2
+detail for a historical v1 result. New firmware-owned contexts may require v2;
+that context requirement does not rewrite old evidence. Controller, possession,
+heartbeat, lease, hardware safety and cadence acceptance rules are unchanged.

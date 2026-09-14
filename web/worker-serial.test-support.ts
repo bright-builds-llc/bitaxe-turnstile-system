@@ -127,6 +127,7 @@ export async function serialHarness(
   const received: { kind: string; command?: string }[] = [];
   let maybeLease: WorkerLeaseGrant | undefined;
   let maybeQualification: WorkerQualification | undefined;
+  let cadenceReview: unknown = cadenceFixture();
   const send = async (
     kind: WorkerSerialEnvelope["kind"],
     payload: Record<string, unknown>,
@@ -326,7 +327,7 @@ export async function serialHarness(
       await reply(request, { schema: "worker-telemetry-cadence-arm-v1", phase: payload.phase, armedAtUs: now * 1000, generation: 7 });
       return;
     }
-    if (request.command === "telemetry_cadence_review") { await reply(request, cadenceFixture()); return; }
+    if (request.command === "telemetry_cadence_review") { await reply(request, cadenceReview); return; }
     if (request.command === "telemetry_cadence_endpoint") {
       await reply(request, { schema: "worker-telemetry-endpoint-v1", ipv4: "192.0.2.10", httpPort: 80, observedAtUs: now * 1000, bootOrdinal: 1, generation: 7 });
       return;
@@ -478,6 +479,7 @@ export async function serialHarness(
     controller: createWebSerialWorkerController(input),
     received,
     setQualification(value: WorkerQualification) { maybeQualification = value; },
+    setCadenceReview(value: unknown) { cadenceReview = structuredClone(value); },
     counts: () => ({ opened, closed, locked, active }),
     receiveRaw(bytes: Uint8Array) {
       if (!maybeOutput) throw new Error("fixture_port_not_open");

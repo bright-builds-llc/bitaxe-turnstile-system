@@ -14,3 +14,11 @@ export function cadenceFixture(): WorkerCadenceReview {
   return { schema: "worker-telemetry-cadence-v1", snapshotAvailable: true, droppedObservations: 0, storageBytes: 1000,
     phases: [summary("idle"), summary("usb"), summary("mining")] };
 }
+
+export function cadenceV2Fixture(): Extract<WorkerCadenceReview, { schema: "worker-telemetry-cadence-v2" }> {
+  const legacy = cadenceFixture();
+  return { ...legacy, schema: "worker-telemetry-cadence-v2", phases: legacy.phases.map(phase => ({ ...phase,
+    maximumLiveStagesUs: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+    worstInterval: { previousExecutionUs: 1000, previousLiveStagesUs: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], gapUs: 500000 },
+  })) };
+}
