@@ -8,6 +8,7 @@ export class WorkerSerialPortOwner {
   #maybeChannel: WorkerSerialChannel | undefined;
   #maybeClosing: Promise<void> | undefined;
   #released = false;
+  #reopened = false;
   constructor(private readonly release: () => void, private readonly maybeAfter: WorkerSerialBrowserRuntime["maybeAfter"]) { }
   get released() { return this.#released; }
   async open(port: WorkerSerialPort) {
@@ -21,6 +22,19 @@ export class WorkerSerialPortOwner {
   attach(channel: WorkerSerialChannel) {
     if (this.#maybeClosing) throw serialFailure("admission_cancelled");
     this.#maybeChannel = channel;
+  }
+  /** Explicitly retires ended streams and reopens only the already granted port, retaining its WebLock. */
+  async reopenExpectedReset(check: () => void): Promise<WorkerSerialPort> {
+    if (this.#released || this.#maybeClosing || this.#reopened || !this.#maybePort || !this.#maybeChannel) throw serialFailure("restart_reopen");
+    check(); this.#reopened = true;
+    const port = this.#maybePort;
+    await this.#maybeChannel.close();
+    if (!this.#maybeChannel.portClosed) throw serialFailure("cleanup_pending");
+    if (this.#released || this.#maybeClosing) throw serialFailure("admission_cancelled");
+    check(); this.#maybeChannel = undefined; this.#maybeOpening = undefined;
+    await this.open(port);
+    if (this.#released || this.#maybeClosing) throw serialFailure("admission_cancelled");
+    check(); return port;
   }
   async close() {
     this.#maybeClosing ??= this.#finishClose();

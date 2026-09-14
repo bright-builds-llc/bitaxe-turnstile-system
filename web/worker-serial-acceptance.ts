@@ -1,3 +1,5 @@
+import { acceptanceLocalJson as localJson } from "./worker-acceptance-local";
+import { createWorkerRestartPageOperations } from "./worker-restart-page";
 import { WorkerCadenceAcceptance } from "./worker-cadence-acceptance";
 import { createWorkerCadencePageOperations } from "./worker-cadence-page";
 import { requireWorkerOwnerHeadroom, workerOwnerResourceFailure, type WorkerOwnerResourceFailure } from "./worker-owner-resources";
@@ -129,6 +131,7 @@ function state() {
     connected,
     running,
     heartbeatSuppressed: hook.suppressHeartbeats,
+    ...(maybeController?.qualificationRestartSummary() ? { restart: maybeController.qualificationRestartSummary() } : {}),
     ...(cadence.enabled ? { cadence: cadence.state() } : {}),
     renewalsConfirmed: renewalProgress.confirmed,
     serialOwnershipReleased,
@@ -178,6 +181,7 @@ function configure(input: Configuration) {
   cadence.configure(parsed.cadenceQualification);
   recoveryLoss.configure(parsed.recoveryPhase);
   if (parsed.recoveryPhase === "resume") authorizationRecovery.clearForResume(recoveryLoss.sealed);
+  hook.allowQualificationRestart = parsed.restartQualification === true;
   maybeConfiguration = parsed;
   deviceBaselineConfirmed = false;
   status = "configured";
@@ -228,6 +232,7 @@ async function connect() {
   return state();
 }
 async function prepareStartAuthorization() {
+  if (maybeConfiguration?.restartQualification) throw new Error("restart_forbids_work");
   const context = maybeReviewedContext ??
     await controller().prepareWorkerLeaseAuthorizationContext("start");
   maybeReviewedContext = undefined;
@@ -239,6 +244,7 @@ async function prepareStartAuthorization() {
   return context;
 }
 function loadWindow(input: WindowArtifacts) {
+  if (maybeConfiguration?.restartQualification) throw new Error("restart_forbids_work");
   if (running) throw new Error("window_active");
   const grant = parseWorkerLeaseGrant(input.grant);
   cadence.requireWindow(grant);
@@ -254,48 +260,11 @@ function loadWindow(input: WindowArtifacts) {
   publish();
 }
 async function loadSignedWindow() {
+  if (maybeConfiguration?.restartQualification) throw new Error("restart_forbids_work");
   loadWindow(await localJson("/window-artifacts"));
   return state();
 }
-async function localJson(path: string, body?: object): Promise<any> {
-  try {
-    const response = await fetch(path, {
-      method: body === undefined ? "GET" : "POST",
-      cache: "no-store",
-      credentials: "omit",
-      ...(body === undefined
-        ? {}
-        : {
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-        }),
-    });
-    if (!response.ok || !response.body) throw new Error("local_response");
-    const reader = response.body.getReader();
-    const bytes = new Uint8Array(65_536);
-    let length = 0;
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (length + value.length > bytes.length)
-          throw new Error("local_bound");
-        bytes.set(value, length);
-        length += value.length;
-      }
-      return JSON.parse(
-        new TextDecoder("utf-8", { fatal: true }).decode(
-          bytes.subarray(0, length),
-        ),
-      );
-    } finally {
-      bytes.fill(0);
-      reader.releaseLock();
-    }
-  } catch {
-    throw new Error("local_input_invalid");
-  }
-}
+
 async function enforceRunningHeadroom() {
   if (!running || !maybeWindow) return true;
   try { requireWorkerOwnerHeadroom(maybeWindow.grant, maybeQualification); return true; }
@@ -556,7 +525,11 @@ async function suppressCadenceHeartbeats() {
   publish();
 }
 
+
 export const workerAcceptance = {
+  ...createWorkerRestartPageOperations({ enabled: () => maybeConfiguration?.restartQualification === true, idle: () => connected && !running && !maybeWindow,
+    maybeController: () => maybeController, before: () => { maybeReviewedContext = undefined; status = "restarting"; deviceBaselineConfirmed = false; publish(); },
+    succeeded: () => { status = "ready"; publish(); }, failed: () => { connected = false; running = false; stopTimer(); status = "failed"; maybeFailure = "qualification_restart_failed"; publish(); } }),
   ...createWorkerCadencePageOperations({ cadence, controller, running: () => running, loaded: () => maybeWindow !== undefined,
     maybeReviewedBinding: () => maybeReviewedContext?.controlSessionBindingSha256, invalidateAuthorization: () => { maybeReviewedContext = undefined; }, publish, local: localJson }),
   exportBrowserSerialTrace: () => parseBrowserSerialTrace(browserTrace.snapshot()),

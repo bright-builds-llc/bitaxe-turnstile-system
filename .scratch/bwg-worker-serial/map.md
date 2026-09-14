@@ -68,3 +68,11 @@ Software checks pass, while the failed physical preparation remains unverified.
 worst-interval metadata while preserving historical v1 parsing. The firmware
 supervisor owns coherence/acceptance checks and the next guarded qualification;
 Gate diagnostics grant no additional authority.
+
+[Ticket 20](issues/20-controlled-qualification-restart.md) adds one explicitly
+configured, nonce/boot-bound qualification restart with bounded expected-boot
+observation and fresh possession. Coalesced ACK/boot data, one recorded reopen
+of the same granted port and private baseline continuity are software-verified.
+Only post-marker healthy samples count toward new-boot readiness. Firmware owns
+the separate exact-pair installation/restart qualification; no hardware, mining
+or prior-reset-attribution claim is transferred by these SDK checks.

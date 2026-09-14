@@ -1,3 +1,4 @@
+import { restartBootBytes, type RestartFixtureMode } from "./worker-restart.fixture";
 import { cadenceFixture } from "./worker-telemetry-cadence.fixture";
 import {
   decodeBase64Url,
@@ -128,10 +129,13 @@ export async function serialHarness(
   let maybeLease: WorkerLeaseGrant | undefined;
   let maybeQualification: WorkerQualification | undefined;
   let cadenceReview: unknown = cadenceFixture();
+  let maybeRestartMode: RestartFixtureMode | undefined, bootOrdinal = 1, sessions = 0;
+  let incomingFramer = new WorkerSerialFramer();
   const send = async (
     kind: WorkerSerialEnvelope["kind"],
     payload: Record<string, unknown>,
     ack = false,
+    maybeTail?: Uint8Array,
   ) => {
     if (!maybeOutput) return;
     const frame = await encodeWorkerSerialEnvelope({
@@ -144,7 +148,7 @@ export async function serialHarness(
     // Exercise the production incremental reader with boundaries inside JSON strings.
     const split = Math.floor(frame.length / 2);
     maybeOutput.enqueue(frame.slice(0, split));
-    maybeOutput.enqueue(frame.slice(split));
+    maybeOutput.enqueue(maybeTail ? Uint8Array.from([...frame.slice(split), ...maybeTail]) : frame.slice(split));
   };
   const status = () =>
     active && maybeLease
@@ -187,7 +191,7 @@ export async function serialHarness(
         : {}),
     });
     if (frame.kind === "session" && frame.payload.op === "hello") {
-      session = encodeBase64Url(new Uint8Array(16).fill(opened));
+      session = encodeBase64Url(new Uint8Array(16).fill(++sessions));
       sequence = 0;
       admitted = false;
       await send(
@@ -195,7 +199,7 @@ export async function serialHarness(
         {
           op: "hello_ack",
           hostNonce: frame.payload.hostNonce,
-          deviceNonce: encodeBase64Url(new Uint8Array(32).fill(9)),
+          deviceNonce: encodeBase64Url(new Uint8Array(32).fill(8 + sessions)),
           serialManifest: WORKER_SERIAL_MANIFEST,
           firmwareSourceCommit: "a".repeat(40),
           appElfSha256: "b".repeat(64),
@@ -317,6 +321,16 @@ export async function serialHarness(
       } else throw new Error("fixture cooling action");
       return;
     }
+    if (request.command === "qualification_restart" && maybeRestartMode) {
+      const input = exactSerialRecord(request.payload, ["requestNonce", "expectedBootOrdinal"]);
+      if (active || input.expectedBootOrdinal !== bootOrdinal) throw new Error("fixture_restart_admission");
+      await send("control", { protocolVersion: request.protocolVersion, requestId: request.requestId, ok: true,
+        result: { schema: "worker-qualification-restart-v1", requestNonce: input.requestNonce, bootOrdinal, nextBootOrdinal: bootOrdinal + 1 } }, false,
+        maybeRestartMode === "queued_prior_boot" ? restartBootBytes(bootOrdinal, true, 100000) : maybeRestartMode === "missing_boot" ? new Uint8Array() : restartBootBytes(bootOrdinal + 1, ["same_stream", "reopen_complete"].includes(maybeRestartMode)));
+      bootOrdinal++; sequence = 0; admitted = false; helloDrained = false; drained = 0; incomingFramer = new WorkerSerialFramer();
+      if (maybeRestartMode.startsWith("reopen")) maybeOutput?.close();
+      return;
+    }
     if (request.command === "qualification_attempt_review") {
       exactSerialRecord(request.payload, []);
       await reply(request, { schema: "worker-qualification-ledger-v1", next_ordinal: 1, total_charged_ms: 0, pending: false, last_completed_ordinal: 0 });
@@ -377,10 +391,11 @@ export async function serialHarness(
       opened++;
       drained = 0;
       helloDrained = false;
-      const framer = new WorkerSerialFramer();
+      incomingFramer = new WorkerSerialFramer();
       maybeReadable = new ReadableStream({
         start(controller) {
           maybeOutput = controller;
+          if (bootOrdinal > 1 && maybeRestartMode?.startsWith("reopen")) { controller.enqueue(restartBootBytes(bootOrdinal, true, 1000 + (opened - 1) * 1000)); if (maybeRestartMode === "reopen_twice") controller.close(); }
         },
         cancel() {
           maybeOutput = undefined;
@@ -392,7 +407,7 @@ export async function serialHarness(
           if (credited) drained += bytes.length;
           // Credit after drain, before a potentially blocked command owner.
           if (credited && !dropCredits) await send("session", { op: "receive_credit", receivedBytes: drained });
-          for (const frame of await framer.push(bytes)) {
+          for (const frame of await incomingFramer.push(bytes)) {
             if (frame.kind === "session" && frame.payload.op === "hello") helloDrained = true;
             await handle(frame);
           }
@@ -479,6 +494,7 @@ export async function serialHarness(
     controller: createWebSerialWorkerController(input),
     received,
     setQualification(value: WorkerQualification) { maybeQualification = value; },
+    setRestartScenario(mode: RestartFixtureMode) { maybeRestartMode = mode; },
     setCadenceReview(value: unknown) { cadenceReview = structuredClone(value); },
     counts: () => ({ opened, closed, locked, active }),
     receiveRaw(bytes: Uint8Array) {

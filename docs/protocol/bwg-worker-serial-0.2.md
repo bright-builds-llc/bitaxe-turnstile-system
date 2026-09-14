@@ -548,3 +548,54 @@ incorrect array lengths and invalid numeric values, and never synthesizes v2
 detail for a historical v1 result. New firmware-owned contexts may require v2;
 that context requirement does not rewrite old evidence. Controller, possession,
 heartbeat, lease, hardware safety and cadence acceptance rules are unchanged.
+
+## Controlled qualification restart
+
+The explicit `restartQualification: true` acceptance-page mode is exclusive
+with cadence/recovery modes and forbids loading or preparing mining grants.
+Its `qualificationRestart({requestNonce, expectedBootOrdinal})` method invokes
+only the new idle, fresh-possession `qualification_restart` command. The nonce
+is a canonical 128-bit base64url token; the expected boot ordinal is positive
+and strictly below the JavaScript safe-integer maximum. Firmware replies with
+exactly `{schema: "worker-qualification-restart-v1", requestNonce, bootOrdinal, nextBootOrdinal}`; the echoed nonce/current boot must match and the successor
+must be exactly one greater. The firmware owner separately controls the
+once-per-boot latch, successful native reply and final restart commit.
+
+The SDK consumes one invocation and prearms observation before sending the
+request. A matching, integrity-checked current-session ACK switches the existing
+framer synchronously before processing any coalesced boot tail. Ordinary calls
+are blocked during this transition; old heartbeat/possession authority ends,
+and no Restore/Close or second restart request is appended. Existing record-write
+bounds remain. Boot observations do not establish application authority.
+
+The entire path shares 30 seconds, 512 received records and 262144 received
+bytes. Whole read chunks are counted before parsing, and the budget survives
+logical phase changes and reopening. The sole granted port and WebLock remain
+owned. An ended stream permits at most one explicitly recorded close/reopen of
+that same port object, with cancellation checked again before native reopening;
+there is no discovery, chooser, replacement port, DTR/RTS or network reset path.
+After a gap, expected boot/identity/startup evidence must be observed again on
+the reopened stream. Failure to close or reopen remains a cleanup failure.
+
+Require the expected next ordinal with software-reset category, matching runtime
+identity and two `runtime_ready` complete observations with advancing device
+uptime after the first expected new-boot marker. All replay observations remain
+retained, including startup messages that precede that marker, but earlier healthy
+samples cannot advance restart readiness. The same requirement applies after a
+stream is reopened. A fresh
+Hello, capability verification, same Device Identity possession and baseline
+then restore the application session. Admission reuses the physical owner and
+supervisor scope; it never reacquires a lock or invokes `requestPort`. The task
+supervisor independently reviews fresh unchanged accounting.
+
+`qualificationRestart` and `exportRestartEvidence` return protected, closed
+metadata. ACK evidence replaces the nonce with `requestNonceSha256`: lowercase
+hex SHA256 of the canonical nonce text encoded as UTF-8. Observations include
+received-record index, elapsed host milliseconds and only already-closed device
+diagnostic fields. Lifecycle entries carry their received-record index and
+elapsed time. Raw bytes, arbitrary logs and possession/session proofs are never
+retained in this evidence or public state. Public summaries distinguish
+`uninterrupted`, `interrupted` and `same_port_reopened`; the latter is never
+claimed to be contiguous byte capture. Completion/failure snapshots freeze.
+The firmware task's installation, effect, cleanup and evidence contract remains
+mandatory; SDK support alone authorizes no hardware use or parity claim.

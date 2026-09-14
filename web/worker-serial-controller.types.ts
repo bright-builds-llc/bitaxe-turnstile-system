@@ -1,3 +1,5 @@
+import type { WorkerQualificationRestartRequest } from "./worker-qualification-restart";
+import type { WorkerRestartEvidence, WorkerRestartSummary } from "./worker-serial-restart-observer";
 import type { WorkerCadenceArm, WorkerCadencePhase, WorkerCadenceReview, WorkerTelemetryEndpoint } from "./worker-telemetry-cadence";
 import type { WorkerQualificationLedger } from "./worker-qualification-attempt";
 import type { WorkerReadInterruption } from "./worker-read-interruption";
@@ -56,6 +58,10 @@ export interface WebSerialWorkerController
   qualificationAttemptReview(): Promise<WorkerQualificationLedger>;
   /** Qualification only: interrupt a consumed no-mining status with a still-pending reply. */
   interruptPendingStatusForQualification(): Promise<WorkerReadInterruption>;
+  qualificationRestart(input: WorkerQualificationRestartRequest): Promise<WorkerRestartEvidence>;
+  /** Protected restart evidence; acknowledgement nonce never belongs in public state. */
+  qualificationRestartSummary(): WorkerRestartSummary | undefined;
+  qualificationRestartEvidence(): WorkerRestartEvidence | undefined;
   qualificationAbruptDisconnect(): Promise<WorkerMiningInterruption>;
   exportBrowserSerialTrace(): BrowserSerialTrace;
   deviceSerialTraceReview(): Promise<DeviceSerialTrace>;
@@ -76,6 +82,7 @@ export const workerSerialQualificationHook = Symbol(
 );
 export type WorkerSerialAdmissionStage = "ownership" | "permission" | "device_filter" | "scope" | "opening" | "hello" | "manifest_identity" | "capability" | "possession" | "baseline" | "continuity" | "cleanup";
 export type WorkerSerialQualificationHook = {
+  allowQualificationRestart?: boolean;
   maybeTraceHistory?: WorkerBrowserSerialTrace;
   maybeObserveHelloRecovery?: (value: { discardedRecords: number; discardedReplies: number; discardedBytes: number }) => void;
   maybeObserveSerialFailure?: (category: WorkerSerialFailureCategory) => void;

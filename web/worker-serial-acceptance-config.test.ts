@@ -22,3 +22,10 @@ test("sticky mode transitions are rejected before either owner mutates", () => {
   expect(() => requireWorkerAcceptanceModeTransition(previous, cadence)).toThrow("recovery_phase_downgrade");
   expect(() => requireWorkerAcceptanceModeTransition(cadence, previous)).toThrow("cadence_mode_downgrade");
 });
+
+test("restart qualification is explicit, exclusive and sticky", () => {
+  const config = parseWorkerSerialAcceptanceConfiguration({ ...base, restartQualification: true }, base.expectedGateCommit);
+  expect(config.restartQualification).toBeTrue();
+  for (const change of [{ restartQualification: false }, { restartQualification: true, cadenceQualification: true }, { restartQualification: true, recoveryPhase: "loss" }]) expect(() => parseWorkerSerialAcceptanceConfiguration({ ...base, ...change }, base.expectedGateCommit)).toThrow();
+  expect(() => requireWorkerAcceptanceModeTransition(config, parseWorkerSerialAcceptanceConfiguration(base, base.expectedGateCommit))).toThrow("restart_mode_downgrade");
+});

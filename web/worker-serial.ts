@@ -1,3 +1,4 @@
+import type { WorkerSerialRestartObserver } from "./worker-serial-restart-observer";
 import { serialFailure } from "./worker-serial-errors";
 export { serialFailure, serialFailureFor, workerSerialFailureCategory } from "./worker-serial-errors";
 import { maybeWorkerSerialDiagnostic, type WorkerSerialDiagnostic } from "./worker-serial-diagnostics";
@@ -151,7 +152,11 @@ export async function encodeWorkerSerialEnvelope(
 }
 /** Incremental bounded reader; startup text is discarded without public disclosure. */
 export class WorkerSerialFramer {
-  constructor(private readonly maybeDiagnostic?: (value: WorkerSerialDiagnostic) => void, private bootstrap = false, private readonly maybeTrace?: WorkerBrowserSerialTraceEpoch) { }
+  constructor(private readonly maybeDiagnostic?: (value: WorkerSerialDiagnostic) => void, private bootstrap = false, private maybeTrace?: WorkerBrowserSerialTraceEpoch) { }
+  #maybeRestart: WorkerSerialRestartObserver | undefined;
+  observeExpectedRestart(observer: WorkerSerialRestartObserver | undefined): void { this.#maybeRestart = observer; }
+  traceEpoch(epoch: WorkerBrowserSerialTraceEpoch | undefined): void { this.maybeTrace = epoch; }
+  beginBootstrap(): void { this.bootstrap = true; this.#bootstrapPrefixDiscarded = false; this.#bootstrapDiscardedBytes = 0; }
   #frameOrdinal = 0;
   #bytes = new Uint8Array(MAXIMUM_SERIAL_WIRE_BYTES);
   #length = 0;
@@ -171,8 +176,10 @@ export class WorkerSerialFramer {
     return true;
   }
   async push(chunk: Uint8Array, maybeReceive?: (frame: WorkerSerialEnvelope, frameOrdinal: number) => void): Promise<WorkerSerialEnvelope[]> {
+    this.#maybeRestart?.bytesReceived(chunk.length);
     const result: WorkerSerialEnvelope[] = [];
     for (const [index, byte] of chunk.entries()) {
+      this.#maybeRestart?.byte(byte);
       if (this.#discarding) {
         if (byte === 10) this.#discarding = false;
         continue;
@@ -187,6 +194,7 @@ export class WorkerSerialFramer {
       const bytes = this.#bytes.slice(0, this.#length - 1);
       this.#length = 0;
       const frameOrdinal = ++this.#frameOrdinal;
+      if (this.#maybeRestart?.bootMode) { this.#maybeRestart.rawRecord(bytes); continue; }
       this.maybeTrace?.record("frame_assembled", bytes.length + 1, chunk.length - index - 1, frameOrdinal);
       let text: string;
       try {

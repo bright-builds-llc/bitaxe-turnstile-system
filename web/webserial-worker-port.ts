@@ -1,3 +1,5 @@
+import type { WorkerSerialRestartObserver } from "./worker-serial-restart-observer";
+import { workerSerialFailureCategory } from "./worker-serial-errors";
 import type { WorkerSerialDiagnostic } from "./worker-serial-diagnostics";
 import type { WorkerBrowserSerialTraceEpoch } from "./worker-browser-serial-trace";
 import { WorkerSerialCredit, SERIAL_RECEIVE_WINDOW } from "./worker-serial-credit";
@@ -111,6 +113,9 @@ export function boundedSerial<T>(
     );
   });
 }
+class NativeSerialReadFailure extends Error {
+  constructor(readonly failure: Error) { super("Worker Serial native stream interrupted"); }
+}
 type PendingWrite = {
   frame: WorkerSerialEnvelope;
   resolve(): void;
@@ -126,7 +131,9 @@ export class WorkerSerialChannel {
   #writing = false;
   #recordActive = false;
   #writeFailed = false;
-  readonly #credit = new WorkerSerialCredit();
+  #credit = new WorkerSerialCredit();
+  #maybeDraining: Promise<void> | undefined;
+  #maybeRestart: WorkerSerialRestartObserver | undefined;
   #closed = false;
   #portClosed = false;
   #maybeClosing: Promise<void> | undefined;
@@ -137,14 +144,19 @@ export class WorkerSerialChannel {
     receive: (frame: WorkerSerialEnvelope) => void,
     failure: (error: Error) => void,
     maybeDiagnostic?: (value: WorkerSerialDiagnostic) => void,
-    readonly maybeTrace?: WorkerBrowserSerialTraceEpoch,
+    public maybeTrace?: WorkerBrowserSerialTraceEpoch,
   ) {
-    this.#framer = new WorkerSerialFramer(maybeDiagnostic, true, maybeTrace);
+    this.#framer = new WorkerSerialFramer(value => { this.#maybeRestart?.diagnostic(value); maybeDiagnostic?.(value); }, true, maybeTrace);
     if (!port.readable || !port.writable) throw serialFailure("streams");
     this.#reader = port.readable.getReader();
     this.#writer = port.writable.getWriter();
     this.#reading = this.#read(receive).catch((error: unknown) => {
-      if (!this.#closed) failure(serialFailureFor(error, "read_failed"));
+      if (this.#closed) return;
+      const failed = error instanceof NativeSerialReadFailure ? error.failure : serialFailureFor(error, "read_failed");
+      if (error instanceof NativeSerialReadFailure && this.#maybeRestart?.ackMatched && ["disconnected", "read_failed", "io"].includes(workerSerialFailureCategory(failed))) {
+        try { this.#maybeRestart.interrupted(); return; } catch (reopenError) { failure(serialFailureFor(reopenError, "read_failed")); return; }
+      }
+      failure(failed);
     });
   }
   send(frame: WorkerSerialEnvelope): Promise<void> {
@@ -154,8 +166,21 @@ export class WorkerSerialChannel {
       const pending = { frame, resolve, reject };
       if (frame.kind === "heartbeat") this.#pending.unshift(pending);
       else this.#pending.push(pending);
-      void this.#drain();
+      if (!this.#writing) this.#maybeDraining = this.#drain();
     });
+  }
+  traceEpoch(epoch: WorkerBrowserSerialTraceEpoch | undefined): void { this.maybeTrace = epoch; this.#framer.traceEpoch(epoch); }
+  observeExpectedRestart(observer: WorkerSerialRestartObserver | undefined): void {
+    this.#maybeRestart = observer; this.#framer.observeExpectedRestart(observer);
+  }
+  async settleWrites(): Promise<void> {
+    await boundedSerial(this.#maybeDraining ?? Promise.resolve(), 2000);
+    if (this.#closed || this.#writeFailed || this.#recordActive || this.#writing || this.#pending.length) throw serialFailure("closed");
+  }
+  async beginRestartSession(): Promise<void> {
+    await this.settleWrites();
+    if (!this.#maybeRestart?.ackMatched) throw serialFailure("restart_ack");
+    this.#credit.cancel(); this.#credit = new WorkerSerialCredit(); this.#sequence = 0; this.#framer.beginBootstrap();
   }
   admitReceiveCredit(): void { this.#framer.finishBootstrap(); this.#credit.admit(); }
   get bootstrapDiscardedBytes(): number { return this.#framer.bootstrapDiscardedBytes; }
@@ -215,9 +240,11 @@ export class WorkerSerialChannel {
   }
   async #read(receive: (frame: WorkerSerialEnvelope) => void): Promise<void> {
     while (!this.#closed) {
-      const result = await this.#reader.read();
+      let result: Awaited<ReturnType<ReadableStreamDefaultReader<Uint8Array>["read"]>>;
+      try { result = await this.#reader.read(); }
+      catch (error) { throw new NativeSerialReadFailure(serialFailureFor(error, "read_failed")); }
       if (result.done) {
-        if (!this.#closed) throw serialFailure("disconnected");
+        if (!this.#closed) throw new NativeSerialReadFailure(serialFailure("disconnected"));
         return;
       }
       this.maybeTrace?.record("chunk_received", result.value.length);
