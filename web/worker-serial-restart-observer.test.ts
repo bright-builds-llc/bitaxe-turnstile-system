@@ -81,3 +81,64 @@ test("startup failure before the expected boot remains a failure", () => {
   expect(value.evidence().observations).toHaveLength(1);
   expect(value.summary().runtimeReadyObserved).toBeFalse();
 });
+
+const statistics = (state: string) => ({ category: "statistics_startup", authoritative: false, state, errno: "unavailable", stack_bytes: 8192, stack_caps: 2052, before_free_bytes: 40000, before_largest_block_bytes: 20000, after_free_bytes: 30000, after_largest_block_bytes: 16000 });
+const replayBoot = (value: WorkerSerialRestartObserver) => {
+  for (const line of new TextDecoder().decode(restartBootBytes(2)).trim().split("\n")) value.rawRecord(new TextEncoder().encode(line));
+};
+
+test("prepared statistics owner withholds fresh Hello until active", async () => {
+  // Arrange
+  const value = create(); value.acknowledge(ack);
+  value.diagnostic(statistics("prepared"));
+  let ready = false; void value.ready.then(() => { ready = true; });
+  // Act
+  replayBoot(value); await Promise.resolve();
+  // Assert
+  expect(ready).toBeFalse();
+  expect(() => value.helloStarted()).toThrow();
+  value.diagnostic(statistics("active")); await value.ready;
+  expect(() => value.helloStarted()).not.toThrow();
+  value.admitted(); expect(value.complete().summary.stage).toBe("complete");
+});
+
+test("queued old statistics active cannot satisfy the next boot", async () => {
+  // Arrange
+  const value = create(); value.acknowledge(ack);
+  value.diagnostic(statistics("active")); value.diagnostic(statistics("prepared"));
+  let ready = false; void value.ready.then(() => { ready = true; });
+  // Act
+  replayBoot(value); await Promise.resolve();
+  // Assert
+  expect(ready).toBeFalse();
+  value.diagnostic(statistics("active")); await value.ready;
+});
+
+test.each(["spawn_failed", "config_failed", "cancelled"])("statistics %s is retained and rejects restart admission", state => {
+  // Arrange
+  const value = create(); value.acknowledge(ack);
+  const diagnostic = state === "config_failed" ? { ...statistics(state), stack_caps: "unavailable", before_free_bytes: "unavailable", before_largest_block_bytes: "unavailable", after_free_bytes: "unavailable", after_largest_block_bytes: "unavailable" } : statistics(state);
+  // Act / Assert
+  expect(() => value.diagnostic(diagnostic)).toThrow();
+  expect(value.evidence().observations[0]?.diagnostic).toEqual(diagnostic);
+  expect(() => value.helloStarted()).toThrow();
+});
+
+test("statistics export rejects private injected fields before retention", () => {
+  const value = create(); value.acknowledge(ack);
+  expect(() => value.diagnostic({ ...statistics("prepared"), raw_error: "private" })).toThrow();
+  expect(value.evidence().observations).toHaveLength(0);
+});
+
+test("statistics activation must be reobserved after a same-port gap", async () => {
+  // Arrange
+  const value = create(); value.acknowledge(ack);
+  value.diagnostic(statistics("prepared")); replayBoot(value); value.diagnostic(statistics("active")); await value.ready;
+  value.interrupted(); value.reopened();
+  let ready = false; void value.ready.then(() => { ready = true; });
+  // Act
+  replayBoot(value); await Promise.resolve();
+  // Assert
+  expect(ready).toBeFalse(); expect(() => value.helloStarted()).toThrow();
+  value.diagnostic(statistics("active")); await value.ready;
+});

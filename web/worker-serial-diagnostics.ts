@@ -16,7 +16,8 @@ export class WorkerSerialDiagnosticHistory {
       if (this.#crashReceipts.size < 8 || this.#crashReceipts.has(key)) this.#crashReceipts.set(key, value);
       return;
     }
-    const failure = String(value.category).endsWith("_failure") || value.category === "panic";
+    const failure = String(value.category).endsWith("_failure") || value.category === "panic"
+      || (value.category === "statistics_startup" && ["spawn_failed", "config_failed", "cancelled"].includes(String(value.state)));
     const key = failure ? String(value.category) : `${value.category}:${value.stage ?? ""}`;
     if (this.#observations.has(key) && failure) return;
     if (this.#observations.size >= 32 && !this.#observations.has(key)) return;
@@ -31,6 +32,12 @@ const stages = "early_identity|usb_install|nvs|hardware|worker_recovery|runtime_
 const allocationStages = "early_identity|hardware|runtime_services|storage_http|network|usb_install|statistics|runtime_ready";
 type Grammar = { category: string; pattern: RegExp; fields: readonly string[]; numeric: readonly string[] };
 const grammars: readonly Grammar[] = [
+  {
+    category: "statistics_startup",
+    pattern: /^statistics_startup schema=v1 state=(prepared|active|cancelled|spawn_failed|config_failed) errno=(-?\d{1,10}|unavailable) stack_bytes=(8192) stack_caps=(\d{1,10}|unavailable) before_free_bytes=(\d{1,10}|unavailable) before_largest_block_bytes=(\d{1,10}|unavailable) after_free_bytes=(\d{1,10}|unavailable) after_largest_block_bytes=(\d{1,10}|unavailable) redacted=true$/u,
+    fields: ["state", "errno", "stack_bytes", "stack_caps", "before_free_bytes", "before_largest_block_bytes", "after_free_bytes", "after_largest_block_bytes"],
+    numeric: ["errno", "stack_bytes", "stack_caps", "before_free_bytes", "before_largest_block_bytes", "after_free_bytes", "after_largest_block_bytes"],
+  },
   {
     category: "worker_admission", pattern: /^worker_admission schema=v1 stage=(idle|admission|readiness|preparation|pool_activation|active|cleanup|complete) first_failure=(none|admission|readiness|preparation|pool_activation|cleanup) readiness=(\d{1,2}) budget_reserved_ms=(\d{1,6}) budget_complete=(true|false) redacted=true$/u,
     fields: ["stage", "first_failure", "readiness", "budget_reserved_ms", "budget_complete"], numeric: ["readiness", "budget_reserved_ms"],
@@ -122,10 +129,20 @@ export function maybeWorkerSerialDiagnostic(line: string): WorkerSerialDiagnosti
     const value: Record<string, string | number | boolean> = { category: grammar.category, authoritative: false };
     for (const [index, key] of grammar.fields.entries()) {
       const text = match[index + 1]; if (text === undefined) return undefined;
-      const field = grammar.numeric.includes(key) ? Number(text) : text;
+      const field = grammar.numeric.includes(key) && text !== "unavailable" ? Number(text) : text;
+      if (grammar.category === "statistics_startup" && key === "errno") {
+        if (typeof field === "number" && (!Number.isInteger(field) || field < -2147483648 || field > 2147483647)) return undefined;
+        value[key] = field; continue;
+      }
       if (typeof field === "number" && (!Number.isSafeInteger(field) || field < 0)) return undefined;
       if (typeof field === "number" && !["uptime_ms", "boot_ordinal"].includes(key) && field > 0xffffffff) return undefined;
       value[key] = field;
+    }
+    if (value.category === "statistics_startup") {
+      const allocationKeys = ["stack_caps", "before_free_bytes", "before_largest_block_bytes", "after_free_bytes", "after_largest_block_bytes"];
+      const unavailable = value.state === "config_failed";
+      if (allocationKeys.some(key => unavailable ? value[key] !== "unavailable" : typeof value[key] !== "number")) return undefined;
+      if (value.state !== "spawn_failed" && value.errno !== "unavailable") return undefined;
     }
     if (typeof value.readiness === "number" && value.readiness > 63) return undefined;
     if (typeof value.budget_reserved_ms === "number" && value.budget_reserved_ms > 240000) return undefined;

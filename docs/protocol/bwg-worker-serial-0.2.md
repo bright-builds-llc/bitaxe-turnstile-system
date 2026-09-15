@@ -588,6 +588,30 @@ then restore the application session. Admission reuses the physical owner and
 supervisor scope; it never reacquires a lock or invokes `requestPort`. The task
 supervisor independently reviews fresh unchanged accounting.
 
+The optional, retained statistics-thread receipt uses this closed grammar:
+
+```text
+statistics_startup schema=v1 state=prepared|active|cancelled|spawn_failed|config_failed errno=<i32>|unavailable stack_bytes=8192 stack_caps=<u32>|unavailable before_free_bytes=<u32>|unavailable before_largest_block_bytes=<u32>|unavailable after_free_bytes=<u32>|unavailable after_largest_block_bytes=<u32>|unavailable redacted=true
+```
+
+Prepared, active and cancelled states have unavailable errno and numeric
+capabilities and all four heap measurements. Spawn failure retains a signed raw
+OS errno when available and numeric allocation metadata; configuration failure
+has unavailable errno, capabilities and heap measurements. Mixed availability,
+out-of-range integers, other stack sizes and raw error text are rejected. The
+firmware's default capabilities value is 2052 (`INTERNAL | 8BIT`); this grammar
+retains a bounded capabilities value without converting it into authority.
+
+The producer replays the expected boot discriminator, statistics receipt and USB
+startup status in that order. Once prepared is observed, restart readiness,
+fresh Hello and completion wait for active after the expected new-boot marker;
+activation must be observed again after a same-port gap. Failed and cancelled
+receipts remain in the frozen failure evidence and reject restart admission.
+Older firmware without this optional receipt retains its existing behavior;
+a firmware-owned successor qualification may independently require active
+statistics evidence. Diagnostic observation does not change access rules,
+Origin checks, identity, Work Lease authority, stack size or the shared bounds.
+
 `qualificationRestart` and `exportRestartEvidence` return protected, closed
 metadata. ACK evidence replaces the nonce with `requestNonceSha256`: lowercase
 hex SHA256 of the canonical nonce text encoded as UTF-8. Observations include

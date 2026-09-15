@@ -26,6 +26,7 @@ export class WorkerSerialRestartObserver {
   #maybeError: Error | undefined;
   #stage: WorkerRestartSummary["stage"] = "armed";
   #admitted = false;
+  #statisticsRequired = false; #statisticsActive = false;
   #boot = false; #identity = false; #readySamples = 0; #maybeReadyUptime: number | undefined;
   #records = 0; #bytes = 0; #reopens: 0 | 1 = 0; #interrupted = false; #bootMode = false;
   #observations: WorkerRestartEvidence["observations"] = [];
@@ -89,12 +90,19 @@ export class WorkerSerialRestartObserver {
     if (value.category === "boot") {
       if (value.boot_ordinal === this.request.expectedBootOrdinal && !this.#boot) return;
       if (value.boot_ordinal !== this.request.expectedBootOrdinal + 1 || value.reset_reason !== "software_cpu") throw serialFailure("restart_boot");
-      if (!this.#boot) { this.#readySamples = 0; this.#maybeReadyUptime = undefined; }
+      if (!this.#boot) { this.#readySamples = 0; this.#maybeReadyUptime = undefined; this.#statisticsActive = false; }
       this.#boot = true;
     }
     if (value.category === "runtime_identity") {
       if (value.firmware_commit !== this.identity.firmwareSourceCommit || value.app_elf_sha256 !== this.identity.appElfSha256) throw serialFailure("restart_identity");
       this.#identity = true;
+    }
+    if (value.category === "statistics_startup") {
+      if (["spawn_failed", "config_failed", "cancelled"].includes(String(value.state))) {
+        const error = serialFailure("restart_statistics_startup"); this.fail(error); throw error;
+      }
+      if (value.state === "prepared") { this.#statisticsRequired = true; this.#statisticsActive = false; }
+      if (this.#boot && value.state === "active") this.#statisticsActive = true;
     }
     if (value.category === "startup") {
       if (value.first_failure !== "none" || value.state === "failed") throw serialFailure("restart_startup");
@@ -104,7 +112,7 @@ export class WorkerSerialRestartObserver {
         this.#maybeReadyUptime = value.uptime_ms;
       }
     }
-    if (this.#boot && this.#identity && this.#readySamples >= 2) this.#resolveReady();
+    if (this.#boot && this.#identity && this.#readySamples >= 2 && this.statisticsReady()) this.#resolveReady();
   }
   interrupted() {
     if (!this.ackMatched || !this.active || this.#reopens) throw serialFailure("restart_stream_interrupted");
@@ -114,14 +122,15 @@ export class WorkerSerialRestartObserver {
   reopened() {
     this.requireReopen();
     this.#reopens = 1; this.#bootMode = true; this.#stage = "acknowledged";
-    this.#boot = false; this.#identity = false; this.#admitted = false; this.#readySamples = 0; this.#maybeReadyUptime = undefined;
+    this.#boot = false; this.#identity = false; this.#admitted = false; this.#statisticsActive = false; this.#readySamples = 0; this.#maybeReadyUptime = undefined;
     this.ready = new Promise(resolve => { this.#resolveReady = resolve; }); this.event("same_port_reopened");
     this.#streamEnd = new Promise(resolve => { this.#maybeStreamEnd = resolve; });
   }
-  helloStarted() { this.remaining(); this.#bootMode = false; this.#stage = "reacquiring"; this.event("hello_started"); }
+  private statisticsReady() { return !this.#statisticsRequired || this.#statisticsActive; }
+  helloStarted() { this.remaining(); if (!this.statisticsReady()) throw serialFailure("restart_incomplete"); this.#bootMode = false; this.#stage = "reacquiring"; this.event("hello_started"); }
   admitted() { this.check(); this.#admitted = true; }
   complete(): WorkerRestartEvidence {
-    this.check(); if (!this.#maybeAck || !this.#boot || !this.#identity || !this.#admitted || this.#readySamples < 2) throw serialFailure("restart_incomplete");
+    this.check(); if (!this.#maybeAck || !this.#boot || !this.#identity || !this.#admitted || this.#readySamples < 2 || !this.statisticsReady()) throw serialFailure("restart_incomplete");
     this.remaining(); this.#maybeFinishedElapsed = this.elapsed(); this.#stage = "complete"; this.event("complete");
     return this.evidence();
   }

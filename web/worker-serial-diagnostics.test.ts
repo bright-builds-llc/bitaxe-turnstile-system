@@ -142,3 +142,49 @@ test("receive and storage diagnostics retain closed stages without arbitrary err
   expect(maybeWorkerSerialDiagnostic(lines[0]!.replace("4096", "66561"))).toBeUndefined();
   expect(maybeWorkerSerialDiagnostic(lines[1]!.replace("no_memory", "synthetic-secret"))).toBeUndefined();
 });
+
+const statisticsLine = (state = "prepared", errno = "unavailable", caps = "2052", beforeFree = "40000", beforeLargest = "20000", afterFree = "30000", afterLargest = "16000") => `statistics_startup schema=v1 state=${state} errno=${errno} stack_bytes=8192 stack_caps=${caps} before_free_bytes=${beforeFree} before_largest_block_bytes=${beforeLargest} after_free_bytes=${afterFree} after_largest_block_bytes=${afterLargest} redacted=true`;
+
+test("statistics startup retains only closed numeric allocation metadata", () => {
+  // Arrange / Act
+  const observed = maybeWorkerSerialDiagnostic(statisticsLine());
+  // Assert
+  expect(observed).toEqual({ category: "statistics_startup", authoritative: false, state: "prepared", errno: "unavailable", stack_bytes: 8192, stack_caps: 2052, before_free_bytes: 40000, before_largest_block_bytes: 20000, after_free_bytes: 30000, after_largest_block_bytes: 16000 });
+});
+
+test("statistics startup preserves signed raw errno and unavailable configuration failure", () => {
+  // Arrange / Act / Assert
+  expect(maybeWorkerSerialDiagnostic(statisticsLine("spawn_failed", "-2147483648"))?.errno).toBe(-2147483648);
+  expect(maybeWorkerSerialDiagnostic(statisticsLine("spawn_failed", "2147483647"))?.errno).toBe(2147483647);
+  expect(maybeWorkerSerialDiagnostic(statisticsLine("spawn_failed"))?.errno).toBe("unavailable");
+  expect(maybeWorkerSerialDiagnostic(statisticsLine("config_failed", "unavailable", "unavailable", "unavailable", "unavailable", "unavailable", "unavailable"))?.state).toBe("config_failed");
+});
+
+test("statistics startup rejects out-of-range values and mixed unavailable metadata", () => {
+  // Arrange
+  const lines = [statisticsLine("spawn_failed", "-2147483649"), statisticsLine("spawn_failed", "2147483648"), statisticsLine("prepared", "12"), statisticsLine("cancelled", "12"), statisticsLine("config_failed"), statisticsLine("active", "unavailable", "4294967296"), statisticsLine("active", "unavailable", "2052", "unavailable"), statisticsLine("active", "unavailable", "2052", "-1"), statisticsLine().replace("stack_bytes=8192", "stack_bytes=16384")];
+  // Act / Assert
+  for (const line of lines) expect(maybeWorkerSerialDiagnostic(line)).toBeUndefined();
+});
+
+test("statistics startup rejects raw errors and private appended fields", () => {
+  for (const line of [statisticsLine() + " error=private", statisticsLine().replace("redacted=true", "redacted=false"), statisticsLine("spawn_failed", "thread creation failed"), statisticsLine() + "\n"]) expect(maybeWorkerSerialDiagnostic(line)).toBeUndefined();
+});
+
+test("statistics allocation u32 boundaries remain exact", () => {
+  expect(maybeWorkerSerialDiagnostic(statisticsLine("active", "unavailable", "4294967295", "0", "4294967295", "0", "4294967295"))?.stack_caps).toBe(4294967295);
+});
+
+test("statistics failure history survives later ordinary activation observations", () => {
+  // Arrange
+  const history = new WorkerSerialDiagnosticHistory();
+  const failed = maybeWorkerSerialDiagnostic(statisticsLine("spawn_failed", "12"));
+  const active = maybeWorkerSerialDiagnostic(statisticsLine("active"));
+  expect(failed).toBeDefined(); expect(active).toBeDefined();
+  if (!failed || !active) throw new Error("fixture diagnostic missing");
+  // Act
+  history.observe(failed); history.observe(active);
+  // Assert
+  expect(history.values()).toContainEqual(failed);
+  expect(history.values()).toContainEqual(active);
+});
