@@ -4,3 +4,5 @@ export * from "./worker-serial";
 export { createWebSerialWorkerController, type WebSerialWorkerController, type WebSerialWorkerControllerInput, type WorkerBudgetReview, type QualificationCoolingAction, type WorkerCoolingProof, type WorkerCoolingBaseline } from "./webserial-worker-controller";
 
 export { parseWorkerDiagnosticExport, type WorkerDiagnosticExport } from "./worker-diagnostic-export";
+
+export { parseNoiseStartInput, parseNoiseStatus, type NoiseStartInput, type NoiseStatus } from "./worker-noise-diagnostic";

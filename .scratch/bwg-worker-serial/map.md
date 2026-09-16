@@ -84,3 +84,8 @@ and cancellation remain terminal evidence; older firmware without this optional
 receipt keeps its existing behavior. The firmware producer orders boot,
 statistics and USB startup observations, while its successor qualification owns
 the additional requirement for active statistics evidence and exact-device proof.
+
+[Ticket 22](issues/22-noise-serial-readiness.md) adds the prospective closed Noise
+parser and explicitly paired Controller client. Runtime readiness remains blocked
+on bounded firmware crypto cancellation and combined-owner proof; same-page
+workflow integration is unfinished, and no hardware workflow is enabled.

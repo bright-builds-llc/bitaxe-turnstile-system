@@ -129,6 +129,7 @@ export async function serialHarness(
   let maybeLease: WorkerLeaseGrant | undefined;
   let maybeQualification: WorkerQualification | undefined;
   let cadenceReview: unknown = cadenceFixture();
+  let maybeNoiseHandler: ((command: string, payload: unknown) => Promise<unknown>) | undefined;
   let maybeRestartMode: RestartFixtureMode | undefined, bootOrdinal = 1, sessions = 0;
   let incomingFramer = new WorkerSerialFramer();
   const send = async (
@@ -336,6 +337,9 @@ export async function serialHarness(
       await reply(request, { schema: "worker-qualification-ledger-v1", next_ordinal: 1, total_charged_ms: 0, pending: false, last_completed_ordinal: 0 });
       return;
     }
+    if (typeof request.command === "string" && request.command.startsWith("noise_diagnostic_") && maybeNoiseHandler) {
+      await reply(request, await maybeNoiseHandler(request.command, request.payload)); return;
+    }
     if (request.command === "telemetry_cadence_arm") {
       const payload = exactSerialRecord(request.payload, ["phase"]);
       await reply(request, { schema: "worker-telemetry-cadence-arm-v1", phase: payload.phase, armedAtUs: now * 1000, generation: 7 });
@@ -495,6 +499,7 @@ export async function serialHarness(
     received,
     setQualification(value: WorkerQualification) { maybeQualification = value; },
     setRestartScenario(mode: RestartFixtureMode) { maybeRestartMode = mode; },
+    setNoiseHandler(handler: (command: string, payload: unknown) => Promise<unknown>) { maybeNoiseHandler = handler; },
     setCadenceReview(value: unknown) { cadenceReview = structuredClone(value); },
     counts: () => ({ opened, closed, locked, active }),
     receiveRaw(bytes: Uint8Array) {

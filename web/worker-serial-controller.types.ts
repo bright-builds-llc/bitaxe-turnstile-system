@@ -1,3 +1,4 @@
+import type { NoiseStartInput, NoiseStatus } from "./worker-noise-diagnostic";
 import type { WorkerQualificationRestartRequest } from "./worker-qualification-restart";
 import type { WorkerRestartEvidence, WorkerRestartSummary } from "./worker-serial-restart-observer";
 import type { WorkerCadenceArm, WorkerCadencePhase, WorkerCadenceReview, WorkerTelemetryEndpoint } from "./worker-telemetry-cadence";
@@ -65,6 +66,9 @@ export interface WebSerialWorkerController
   qualificationAbruptDisconnect(): Promise<WorkerMiningInterruption>;
   exportBrowserSerialTrace(): BrowserSerialTrace;
   deviceSerialTraceReview(): Promise<DeviceSerialTrace>;
+  noiseDiagnosticStart(input: NoiseStartInput, expectedBinding: string): Promise<NoiseStatus>;
+  noiseDiagnosticStatus(attemptIdOrNull: string | null, expectedBinding: string): Promise<NoiseStatus>;
+  noiseDiagnosticCancel(attemptId: string, expectedBinding: string): Promise<NoiseStatus>;
   telemetryCadenceArm(phase: WorkerCadencePhase): Promise<WorkerCadenceArm>;
   telemetryCadenceReview(): Promise<WorkerCadenceReview>;
   /** Private endpoint response; never forwarded to public diagnostic callbacks. */
@@ -82,6 +86,8 @@ export const workerSerialQualificationHook = Symbol(
 );
 export type WorkerSerialAdmissionStage = "ownership" | "permission" | "device_filter" | "scope" | "opening" | "hello" | "manifest_identity" | "capability" | "possession" | "baseline" | "continuity" | "cleanup";
 export type WorkerSerialQualificationHook = {
+  /** Enabled only by a prospective exact-pair qualification context, never generic Controller support. */
+  noiseDiagnosticPair?: { firmwareSourceCommit: string; appElfSha256: string };
   allowQualificationRestart?: boolean;
   maybeTraceHistory?: WorkerBrowserSerialTrace;
   maybeObserveHelloRecovery?: (value: { discardedRecords: number; discardedReplies: number; discardedBytes: number }) => void;
