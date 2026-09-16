@@ -10,7 +10,7 @@ export class WorkerNoiseDiagnosticControl {
   #cleanupBlocked = false;
   #startConsumed = false;
   #fenced = false;
-  #maybeLive: { attemptId: string; binding: string } | undefined;
+  #maybeBoundJob: { attemptId: string; binding: string } | undefined;
   #maybeIdle: { status: NoiseStatusAny; binding: string } | undefined;
   constructor(readonly operations: {
     requireIdle(): void; maybeBinding(): string | undefined; possessionFresh(): boolean;
@@ -38,7 +38,7 @@ export class WorkerNoiseDiagnosticControl {
     this.#startConsumed = true;
     this.#fenced = true;
     this.#maybeIdle = undefined;
-    this.#maybeLive = { attemptId: payload.attemptId, binding: expectedBinding };
+    this.#maybeBoundJob = { attemptId: payload.attemptId, binding: expectedBinding };
     const inputBytes = new TextEncoder().encode(canonicalJson(payload));
     const hash = await crypto.subtle.digest("SHA-256", inputBytes);
     const digest = Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, "0")).join("");
@@ -50,8 +50,8 @@ export class WorkerNoiseDiagnosticControl {
   async status(maybeAttemptId: string | null, expectedBinding: string): Promise<NoiseStatusAny> {
     if (maybeAttemptId !== null) noiseAttemptId(maybeAttemptId);
     else this.#maybeIdle = undefined;
-    const live = maybeAttemptId !== null && this.#maybeLive?.attemptId === maybeAttemptId && this.#maybeLive.binding === expectedBinding;
-    const result = await this.#request("noise_diagnostic_status", { schema: "worker-noise-diagnostic-query-v1", attemptId: maybeAttemptId }, expectedBinding, !live);
+    const admittedBinding = maybeAttemptId !== null && this.#maybeBoundJob?.attemptId === maybeAttemptId && this.#maybeBoundJob.binding === expectedBinding;
+    const result = await this.#request("noise_diagnostic_status", { schema: "worker-noise-diagnostic-query-v1", attemptId: maybeAttemptId }, expectedBinding, !admittedBinding);
     if (maybeAttemptId === null) {
       if (result.state !== "idle") throw serialFailure("noise_correlation");
       this.#maybeIdle = { status: structuredClone(result), binding: expectedBinding };
@@ -60,8 +60,8 @@ export class WorkerNoiseDiagnosticControl {
   }
   async cancel(attemptId: string, expectedBinding: string): Promise<NoiseStatusAny> {
     noiseAttemptId(attemptId);
-    const live = this.#maybeLive?.attemptId === attemptId && this.#maybeLive.binding === expectedBinding;
-    const result = await this.#request("noise_diagnostic_cancel", { schema: "worker-noise-diagnostic-query-v1", attemptId }, expectedBinding, !live);
+    const admittedBinding = this.#maybeBoundJob?.attemptId === attemptId && this.#maybeBoundJob.binding === expectedBinding;
+    const result = await this.#request("noise_diagnostic_cancel", { schema: "worker-noise-diagnostic-query-v1", attemptId }, expectedBinding, !admittedBinding);
     if (!["cancelling", "terminal"].includes(result.state)) throw serialFailure("noise_cancel_postcondition");
     this.#observe(result, attemptId, expectedBinding);
     return result;
@@ -73,7 +73,6 @@ export class WorkerNoiseDiagnosticControl {
     const resources = status.job.resources;
     this.#cleanupBlocked ||= this.version === "v1" && (status.job.terminal?.outcome === "incomplete" || resources.deadlineMet === false);
     this.#fenced = this.#cleanupBlocked || status.state !== "terminal" || resources.socketState === "open" || resources.workerState === "running" || !resources.volatileInputsDisposed;
-    if (status.state !== "terminal") this.#maybeLive = { attemptId, binding };
-    else this.#maybeLive = undefined;
+    if (status.state !== "terminal") this.#maybeBoundJob = { attemptId, binding };
   }
 }

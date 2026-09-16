@@ -171,3 +171,48 @@ test("caller mutation cannot replace retained idle admission evidence", async ()
   await expect(h.control.start({ ...noiseInput, networkObservedAtUs: idle.observation.observedAtUs }, h.binding())).rejects.toThrow("noise_admission");
   expect(h.calls).toEqual(["noise_diagnostic_status"]);
 });
+
+test("actual controller retains same-session terminal review beyond fresh Start admission age", async () => {
+  // Arrange
+  const h = await serialHarness();
+  Object.assign(h.input, { [workerSerialQualificationHook]: { suppressHeartbeats: false,
+    noiseDiagnosticPair: { firmwareSourceCommit: "a".repeat(40), appElfSha256: "b".repeat(64) } } });
+  const { noiseAcceptedV2 } = await import("./worker-noise-diagnostic.fixture");
+  const admitted = await noiseAdmittedV2(), accepted = noiseAcceptedV2();
+  if (!admitted.job) throw new Error("fixture_job_missing");
+  accepted.job.inputSha256 = admitted.job.inputSha256;
+  let started = false;
+  h.setNoiseHandler(async command => {
+    if (command === "noise_diagnostic_start") { started = true; return admitted; }
+    return started ? accepted : noiseIdleV2();
+  });
+  const controller = createWebSerialWorkerController(h.input); await controller.requestPermission();
+  try {
+    const binding = (await controller.prepareWorkerLeaseAuthorizationContext("start")).controlSessionBindingSha256;
+    await controller.noiseDiagnosticStatus(null, binding); await controller.noiseDiagnosticStart(noiseInputV2, binding);
+    await h.advance(61_000);
+    // Act
+    await controller.noiseDiagnosticStatus(noiseInputV2.attemptId, binding);
+    const retained = await controller.noiseDiagnosticStatus(noiseInputV2.attemptId, binding);
+    const cancelled = await controller.noiseDiagnosticCancel(noiseInputV2.attemptId, binding);
+    // Assert: retained evidence does not refresh possession or revive the consumed slot.
+    expect(retained.job?.terminal?.outcome).toBe("accepted"); expect(cancelled.job?.terminal?.outcome).toBe("accepted");
+    expect(h.received.filter(row => row.command === "prove_possession")).toHaveLength(2);
+    const before = h.received.length;
+    await expect(controller.noiseDiagnosticStart(noiseInputV2, binding)).rejects.toThrow();
+    await expect(controller.noiseDiagnosticStatus(noiseInputV2.attemptId, "different-binding")).rejects.toThrow();
+    expect(h.received).toHaveLength(before);
+  } finally { await controller.close(); }
+});
+test("new terminal-review session still needs a fresh first admission", async () => {
+  const h = controlFixture(); h.result(noiseAccepted()); h.expire();
+  await expect(h.control.status(noiseInput.attemptId, h.binding())).rejects.toThrow("noise_possession");
+  expect(h.calls).toHaveLength(0);
+});
+
+test("fresh-session terminal retrieval does not become original-job admission", async () => {
+  const h = controlFixture(); h.result(noiseAccepted());
+  await h.control.status(noiseInput.attemptId, h.binding()); h.expire();
+  await expect(h.control.status(noiseInput.attemptId, h.binding())).rejects.toThrow("noise_possession");
+  expect(h.calls).toEqual(["noise_diagnostic_status"]);
+});

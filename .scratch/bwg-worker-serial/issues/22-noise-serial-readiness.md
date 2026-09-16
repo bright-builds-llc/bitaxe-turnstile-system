@@ -101,3 +101,19 @@ package checks pass. The prior ordered Rust checks remain applicable: no Rust
 source changed. The actual nine-case Rust serialization corpus also passed both
 Gate parsing and incomplete-to-late-release progression without changing its
 terminal verdict or missed-horizon evidence.
+
+Terminal-collection correction | 2026-09-16: Preserve the admitted job's
+same-session binding after its first terminal observation. Further status/cancel
+reads can collect immutable terminal or late-cleanup evidence after the
+60-second Start-admission window, without refreshing possession, extending
+hardware authority or reopening Start. A new-session terminal reader still
+requires fresh admission and cannot manufacture the original job binding.
+Production-controller regression advances valid heartbeats to 61 seconds and
+checks repeated terminal reads, retained Cancel, unchanged proof count and
+rejection of duplicate Start or a different binding. TypeScript, all 713 browser
+unit tests, browser build and package checks pass. Ordered format, Clippy and
+build pass; the first Rust test run hit an existing SSE deadline timeout, retained
+as failure evidence. Its focused unchanged rerun and the full test-stage retry
+pass (352 tests, two existing ignored), followed by passing headless conformance.
+The new controller regression also reproduces `noise_possession` against the
+published `953fbcf` source before passing on this correction.
