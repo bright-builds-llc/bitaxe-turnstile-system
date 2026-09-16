@@ -1,3 +1,5 @@
+import { isWorkerRestorationPending } from "./worker-control-rejection";
+import { createWorkerNoisePageOperations } from "./worker-noise-page";
 import { acceptanceLocalJson as localJson } from "./worker-acceptance-local";
 import { createWorkerRestartPageOperations } from "./worker-restart-page";
 import { WorkerCadenceAcceptance } from "./worker-cadence-acceptance";
@@ -175,9 +177,15 @@ async function fail(category: string) {
   publish();
 }
 function configure(input: Configuration) {
-  if (connected || running || maybeWindow) throw new Error("configuration_while_connected");
+  if (connected || running || maybeWindow || !serialOwnershipReleased) throw new Error("configuration_while_connected");
   const parsed = parseWorkerSerialAcceptanceConfiguration(input, gateCommit);
   requireWorkerAcceptanceModeTransition(maybeConfiguration, parsed);
+  if (maybeConfiguration?.noiseQualification === "before" && parsed.noiseQualification === "candidate") {
+    const maybeBaseline = preservation.maybePublicState();
+    if (!maybeBaseline || !maybeBaseline.settings_match || !maybeBaseline.authorization_high_water_match || !maybeBaseline.device_identity_match || maybeBaseline.mine_on_boot) throw new Error("noise_before_baseline_required");
+  }
+  if (parsed.noiseQualification === "candidate") hook.noiseDiagnosticPair = { firmwareSourceCommit: parsed.expectedFirmwareSourceCommit, appElfSha256: parsed.expectedAppElfSha256 };
+  else delete hook.noiseDiagnosticPair;
   cadence.configure(parsed.cadenceQualification);
   recoveryLoss.configure(parsed.recoveryPhase);
   if (parsed.recoveryPhase === "resume") authorizationRecovery.clearForResume(recoveryLoss.sealed);
@@ -233,6 +241,7 @@ async function connect() {
 }
 async function prepareStartAuthorization() {
   if (maybeConfiguration?.restartQualification) throw new Error("restart_forbids_work");
+  if (maybeConfiguration?.noiseQualification) throw new Error("noise_forbids_work");
   const context = maybeReviewedContext ??
     await controller().prepareWorkerLeaseAuthorizationContext("start");
   maybeReviewedContext = undefined;
@@ -245,6 +254,7 @@ async function prepareStartAuthorization() {
 }
 function loadWindow(input: WindowArtifacts) {
   if (maybeConfiguration?.restartQualification) throw new Error("restart_forbids_work");
+  if (maybeConfiguration?.noiseQualification) throw new Error("noise_forbids_work");
   if (running) throw new Error("window_active");
   const grant = parseWorkerLeaseGrant(input.grant);
   cadence.requireWindow(grant);
@@ -261,6 +271,7 @@ function loadWindow(input: WindowArtifacts) {
 }
 async function loadSignedWindow() {
   if (maybeConfiguration?.restartQualification) throw new Error("restart_forbids_work");
+  if (maybeConfiguration?.noiseQualification) throw new Error("noise_forbids_work");
   loadWindow(await localJson("/window-artifacts"));
   return state();
 }
@@ -357,7 +368,14 @@ async function stop() {
   running = false;
   status = "stopping";
   publish();
-  const observed = await restoreAcceptanceBaseline(controller());
+  let observed;
+  try { observed = await restoreAcceptanceBaseline(controller()); }
+  catch (error) {
+    if (maybeConfiguration?.noiseQualification && isWorkerRestorationPending(error)) {
+      status = "restoration_pending"; deviceBaselineConfirmed = false; deviceRestorationConfirmed = false; publish();
+    }
+    throw error;
+  }
   maybeQualification = observed.qualification;
   running = false;
   maybeWindow = undefined;
@@ -433,6 +451,7 @@ async function submitBudgetReview() {
   return report;
 }
 async function rejectStartForRecoveryTest() {
+  if (maybeConfiguration?.noiseQualification) throw new Error("noise_forbids_competing_effect");
   maybeReviewedContext = undefined;
   if (!maybeConfiguration || running) throw new Error("rejection_fixture_admission");
   try {
@@ -445,6 +464,7 @@ async function rejectStartForRecoveryTest() {
 }
 
 async function interruptPendingStatusForQualification() {
+  if (maybeConfiguration?.noiseQualification) throw new Error("noise_forbids_competing_effect");
   maybeReviewedContext = undefined;
   if (running || maybeWindow) throw new Error("read_interruption_admission");
   const receipt = await controller().interruptPendingStatusForQualification();
@@ -459,6 +479,7 @@ async function interruptPendingStatusForQualification() {
 }
 
 async function proveCoolingForQualification() {
+  if (maybeConfiguration?.noiseQualification) throw new Error("noise_forbids_competing_effect");
   maybeReviewedContext = undefined;
   if (running) throw new Error("cooling_qualification_admission");
   deviceBaselineConfirmed = false;
@@ -469,6 +490,7 @@ async function proveCoolingForQualification() {
   return report;
 }
 async function restoreCoolingBaseline() {
+  if (maybeConfiguration?.noiseQualification) throw new Error("noise_forbids_competing_effect");
   maybeReviewedContext = undefined;
   if (running) throw new Error("cooling_qualification_admission");
   const report = await controller().qualificationCooling("restore_baseline");
@@ -477,6 +499,7 @@ async function restoreCoolingBaseline() {
 }
 
 async function submitCoolingReview() {
+  if (maybeConfiguration?.noiseQualification) throw new Error("noise_forbids_competing_effect");
   maybeReviewedContext = undefined;
   if (running) throw new Error("cooling_qualification_admission");
   try {
@@ -527,6 +550,7 @@ async function suppressCadenceHeartbeats() {
 
 
 export const workerAcceptance = {
+  ...createWorkerNoisePageOperations({ changed: publish, phase: () => maybeConfiguration?.noiseQualification, idle: () => connected && !running && !maybeWindow, controller, maybePreservation: () => preservation.maybePublicState() }),
   ...createWorkerRestartPageOperations({ enabled: () => maybeConfiguration?.restartQualification === true, idle: () => connected && !running && !maybeWindow,
     maybeController: () => maybeController, before: () => { maybeReviewedContext = undefined; status = "restarting"; deviceBaselineConfirmed = false; publish(); },
     succeeded: () => { status = "ready"; publish(); }, failed: () => { connected = false; running = false; stopTimer(); status = "failed"; maybeFailure = "qualification_restart_failed"; publish(); } }),

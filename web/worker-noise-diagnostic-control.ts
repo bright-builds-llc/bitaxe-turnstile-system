@@ -2,7 +2,7 @@ import { WorkerNoiseDiagnosticHistory } from "./worker-noise-diagnostic-history"
 import { canonicalJson } from "./headless-values";
 import { serialFailure } from "./worker-serial";
 import { noiseAttemptId } from "./worker-noise-diagnostic-values";
-import { parseNoiseStartInput, parseNoiseStatus, type NoiseStartInput, type NoiseStatus } from "./worker-noise-diagnostic";
+import { parseNoiseStartInput, parseNoiseStatus, parseNoiseStartInputV2, parseNoiseStatusV2, type NoiseStartInputAny, type NoiseStatusAny, type NoiseVersion } from "./worker-noise-diagnostic";
 
 /** Private bounded command seam; no implicit proof renewal, retries, or signing authority. */
 export class WorkerNoiseDiagnosticControl {
@@ -11,24 +11,26 @@ export class WorkerNoiseDiagnosticControl {
   #startConsumed = false;
   #fenced = false;
   #maybeLive: { attemptId: string; binding: string } | undefined;
-  #maybeIdle: { status: NoiseStatus; binding: string } | undefined;
+  #maybeIdle: { status: NoiseStatusAny; binding: string } | undefined;
   constructor(readonly operations: {
     requireIdle(): void; maybeBinding(): string | undefined; possessionFresh(): boolean;
     request(command: string, payload: object): Promise<unknown>;
-  }) {}
+  }, readonly version: NoiseVersion) {
+    if (version !== "v1" && version !== "v2") throw serialFailure("noise_schema");
+  }
   get fenced(): boolean { return this.#fenced; }
   #check(binding: string, fresh: boolean): void {
     this.operations.requireIdle();
     if (!binding || this.operations.maybeBinding() !== binding || (fresh && !this.operations.possessionFresh())) throw serialFailure("noise_possession");
   }
-  async #request(command: string, payload: object, binding: string, fresh: boolean): Promise<NoiseStatus> {
+  async #request(command: string, payload: object, binding: string, fresh: boolean): Promise<NoiseStatusAny> {
     this.#check(binding, fresh);
     const result = await this.operations.request(command, payload);
     this.#check(binding, false);
-    return parseNoiseStatus(result);
+    return this.version === "v2" ? parseNoiseStatusV2(result) : parseNoiseStatus(result);
   }
-  async start(input: NoiseStartInput, expectedBinding: string): Promise<NoiseStatus> {
-    const payload = parseNoiseStartInput(input);
+  async start(input: NoiseStartInputAny, expectedBinding: string): Promise<NoiseStatusAny> {
+    const payload = this.version === "v2" ? parseNoiseStartInputV2(input) : parseNoiseStartInput(input);
     this.#check(expectedBinding, true);
     const maybeIdle = this.#maybeIdle;
     if (this.#startConsumed || this.#fenced || !maybeIdle || maybeIdle.binding !== expectedBinding || !maybeIdle.status.observation.wifiConnected || maybeIdle.status.observation.stationIpv4 === null || maybeIdle.status.observation.bootOrdinal !== payload.expectedBootOrdinal || maybeIdle.status.observation.observedAtUs !== payload.networkObservedAtUs) throw serialFailure("noise_admission");
@@ -45,7 +47,7 @@ export class WorkerNoiseDiagnosticControl {
     this.#history.observe(result.job);
     return result;
   }
-  async status(maybeAttemptId: string | null, expectedBinding: string): Promise<NoiseStatus> {
+  async status(maybeAttemptId: string | null, expectedBinding: string): Promise<NoiseStatusAny> {
     if (maybeAttemptId !== null) noiseAttemptId(maybeAttemptId);
     else this.#maybeIdle = undefined;
     const live = maybeAttemptId !== null && this.#maybeLive?.attemptId === maybeAttemptId && this.#maybeLive.binding === expectedBinding;
@@ -56,7 +58,7 @@ export class WorkerNoiseDiagnosticControl {
     } else this.#observe(result, maybeAttemptId, expectedBinding);
     return result;
   }
-  async cancel(attemptId: string, expectedBinding: string): Promise<NoiseStatus> {
+  async cancel(attemptId: string, expectedBinding: string): Promise<NoiseStatusAny> {
     noiseAttemptId(attemptId);
     const live = this.#maybeLive?.attemptId === attemptId && this.#maybeLive.binding === expectedBinding;
     const result = await this.#request("noise_diagnostic_cancel", { schema: "worker-noise-diagnostic-query-v1", attemptId }, expectedBinding, !live);
@@ -64,12 +66,12 @@ export class WorkerNoiseDiagnosticControl {
     this.#observe(result, attemptId, expectedBinding);
     return result;
   }
-  #observe(status: NoiseStatus, attemptId: string, binding: string): void {
+  #observe(status: NoiseStatusAny, attemptId: string, binding: string): void {
     if (!status.job || status.job.attemptId !== attemptId) throw serialFailure("noise_correlation");
     this.#history.observe(status.job);
     this.#startConsumed = true;
     const resources = status.job.resources;
-    this.#cleanupBlocked ||= status.job.terminal?.outcome === "incomplete" || resources.deadlineMet === false;
+    this.#cleanupBlocked ||= this.version === "v1" && (status.job.terminal?.outcome === "incomplete" || resources.deadlineMet === false);
     this.#fenced = this.#cleanupBlocked || status.state !== "terminal" || resources.socketState === "open" || resources.workerState === "running" || !resources.volatileInputsDisposed;
     if (status.state !== "terminal") this.#maybeLive = { attemptId, binding };
     else this.#maybeLive = undefined;

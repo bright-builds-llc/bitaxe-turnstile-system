@@ -6,3 +6,5 @@ export { createWebSerialWorkerController, type WebSerialWorkerController, type W
 export { parseWorkerDiagnosticExport, type WorkerDiagnosticExport } from "./worker-diagnostic-export";
 
 export { parseNoiseStartInput, parseNoiseStatus, type NoiseStartInput, type NoiseStatus } from "./worker-noise-diagnostic";
+
+export { parseNoiseStartInputV2, parseNoiseStatusV2, type NoiseStartInputV2, type NoiseStatusV2 } from "./worker-noise-diagnostic";

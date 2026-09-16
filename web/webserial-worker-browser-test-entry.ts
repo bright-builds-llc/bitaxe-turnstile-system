@@ -1,3 +1,4 @@
+import { runNoisePageSerialConformance } from "./worker-noise-page.fixture";
 import { serialHarness } from "./worker-serial.test-support";
 /** Browser conformance runs the production adapter through real Streams and WebCrypto. */
 export async function runWorkerSerialBrowserConformance(): Promise<void> {
@@ -26,4 +27,5 @@ export async function runWorkerSerialBrowserConformance(): Promise<void> {
   if (!rejected) throw new Error("implicit resume allowed");
   await h.controller.requestPermission();
   await h.controller.close();
+  await runNoisePageSerialConformance();
 }

@@ -1,6 +1,6 @@
 import { validateWorkerSerialControllerInput } from "./worker-serial-controller-input";
 import { WorkerNoiseDiagnosticControl } from "./worker-noise-diagnostic-control";
-import type { NoiseStartInput } from "./worker-noise-diagnostic";
+import { parseNoiseStatusV2, type NoiseStartInputV2 } from "./worker-noise-diagnostic";
 import { admitWorkerSerialSession } from "./worker-serial-admission";
 import { WorkerSerialRestart } from "./worker-serial-restart";
 import type { WorkerSerialRestartObserver } from "./worker-serial-restart-observer";
@@ -15,7 +15,7 @@ import { WorkerMiningInterruptionOwner } from "./worker-mining-interruption";
 import { parseBrowserSerialTrace, parseDeviceSerialTrace } from "./worker-serial-trace-export";
 import { finishWorkerSerialClose } from "./worker-serial-close";
 import { runWorkerSerialExchange } from "./worker-serial-exchange";
-import { parseWorkerControlResult } from "./worker-control-rejection";
+import { parseWorkerControlResult, isWorkerRestorationPending } from "./worker-control-rejection";
 import { rejectedStartGrant, runRejectedStart } from "./worker-rejected-start";
 import type { WorkLeaseAuthorityTrust, WorkerLeaseAuthorizationOperation } from "./worker-lease-authorization";
 import { parseBudgetCampaignId, parseWorkerBudgetReview } from "./worker-budget-review";
@@ -249,7 +249,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
   }
   async startLease(input: WorkerLeaseGrant) {
     this.#requireReady();
-    if (this.#activeLease || !this.#maybePossession)
+    if (this.#activeLease || !this.#maybePossession || this.#noise.fenced)
       throw serialFailure("lease_state");
     const grant = parseWorkerLeaseGrant(input);
     if (grant.challengeId !== this.input.continuityScope.challengeId)
@@ -334,10 +334,10 @@ export class BrowserSerialController implements WebSerialWorkerController {
     maybeBinding: () => this.#maybePossession?.controlSessionBindingSha256,
     possessionFresh: () => this.runtime.now() >= this.#lastPossessionAt && this.runtime.now() - this.#lastPossessionAt < 60_000,
     request: (command, payload) => this.#request(command, payload),
-  });
-  noiseDiagnosticStart(input: NoiseStartInput, expectedBinding: string) { return this.#noise.start(input, expectedBinding); }
-  noiseDiagnosticStatus(attemptIdOrNull: string | null, expectedBinding: string) { return this.#noise.status(attemptIdOrNull, expectedBinding); }
-  noiseDiagnosticCancel(attemptId: string, expectedBinding: string) { return this.#noise.cancel(attemptId, expectedBinding); }
+  }, "v2");
+  async noiseDiagnosticStart(input: NoiseStartInputV2, expectedBinding: string) { return parseNoiseStatusV2(await this.#noise.start(input, expectedBinding)); }
+  async noiseDiagnosticStatus(attemptIdOrNull: string | null, expectedBinding: string) { return parseNoiseStatusV2(await this.#noise.status(attemptIdOrNull, expectedBinding)); }
+  async noiseDiagnosticCancel(attemptId: string, expectedBinding: string) { return parseNoiseStatusV2(await this.#noise.cancel(attemptId, expectedBinding)); }
   readonly #cadence = new WorkerTelemetryCadenceControl({
     requireIdle: () => {
       this.#requireReady(); // Normal heartbeats may be serializing; the writer already bounds their completion.
@@ -392,7 +392,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
   }
   async transportProbe(maybePaddingBytes?: number) {
     this.#requireReady();
-    if (this.#activeLease || !this.#maybePossession)
+    if (this.#activeLease || !this.#maybePossession || this.#noise.fenced)
       throw serialFailure("probe_admission");
     return observeWorkerSerialProbe(`serial_browser_${this.#requestSequence + 1}`, maybePaddingBytes,
       payload => this.#request("transport_probe", payload), error => this.#lost(error));
@@ -425,6 +425,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
       this.#miningInterruption.observe(status, this.runtime.now());
       return status;
     } catch (error) {
+      if (this.#noise.fenced && isWorkerRestorationPending(error)) throw error;
       const failure = serialFailureFor(error, "request_failed");
       if (generation === this.#generation || !this.#restart.active) this.#lost(failure);
       throw failure;
@@ -561,7 +562,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
     if (!admitting) this.#requireReady();
     if (this.#noise.fenced && ["start_lease", "qualification_restart", "qualification_cooling", "telemetry_cadence_arm", "transport_probe"].includes(command)) throw serialFailure("noise_effect_fence");
     if (
-      ["start_lease", "renew_lease", "pause", "cancel", "restore"].includes(
+      ["start_lease", "renew_lease", "pause", "cancel", "restore", "noise_diagnostic_start", "noise_diagnostic_cancel"].includes(
         command,
       )
     )
@@ -577,6 +578,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
       maybeAfterConsumed,
     );
     return parseWorkerControlResult(response, (error) => {
+      if (error === "restoration_pending" && this.#noise.fenced) this.maybeQualificationHook?.observeStatus?.(undefined);
       this.maybeQualificationHook?.maybeObserveDiagnostic?.({ category: "control_failure", authoritative: false, error });
     });
   }

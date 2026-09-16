@@ -9,7 +9,7 @@ const observableCategories = [
 ] as const;
 export type WorkerSerialFailureCategory = typeof observableCategories[number];
 
-class SerialFailure extends Error {
+export class SerialFailure extends Error {
   constructor(readonly category: string) { super(`Worker Serial ${category}`); }
 }
 export function serialFailure(category: string): Error { return new SerialFailure(category); }

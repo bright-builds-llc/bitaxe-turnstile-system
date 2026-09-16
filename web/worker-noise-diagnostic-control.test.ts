@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { WorkerNoiseDiagnosticControl } from "./worker-noise-diagnostic-control";
-import { noiseAdmitted, noiseInput, noiseIdle, noiseAccepted } from "./worker-noise-diagnostic.fixture";
+import { noiseAdmitted, noiseInput, noiseIdle, noiseAccepted, noiseInputV2, noiseIdleV2, noiseAdmittedV2 } from "./worker-noise-diagnostic.fixture";
 import { serialHarness } from "./worker-serial.test-support";
 import { createWebSerialWorkerController, workerSerialQualificationHook } from "./webserial-worker-controller";
 
@@ -10,7 +10,7 @@ function controlFixture() {
   let result: unknown = noiseIdle();
   let maybeAfter: (() => void) | undefined;
   const control = new WorkerNoiseDiagnosticControl({ requireIdle() {}, maybeBinding: () => binding, possessionFresh: () => fresh,
-    async request(command) { calls.push(command); maybeAfter?.(); return result; } });
+    async request(command) { calls.push(command); maybeAfter?.(); return result; } }, "v1");
   return { control, calls, binding: () => binding, expire() { fresh = false; }, replace() { binding = "replacement"; }, result(value: unknown) { result = value; }, after(callback: () => void) { maybeAfter = callback; } };
 }
 test("running Noise status uses live binding without fresh-admission renewal", async () => {
@@ -71,13 +71,13 @@ test("actual serial controller carries private Noise commands without publishing
   // Arrange
   const h = await serialHarness(); const published: unknown[] = [];
   Object.assign(h.input, { [workerSerialQualificationHook]: { suppressHeartbeats: false, allowQualificationRestart: true, noiseDiagnosticPair: { firmwareSourceCommit: "a".repeat(40), appElfSha256: "b".repeat(64) }, observeStatus: (value: unknown) => published.push(value), maybeObserveDiagnostic: (value: unknown) => published.push(value) } });
-  h.setNoiseHandler(async command => command === "noise_diagnostic_status" ? noiseIdle() : noiseAdmitted());
+  h.setNoiseHandler(async command => command === "noise_diagnostic_status" ? noiseIdleV2() : noiseAdmittedV2());
   const controller = createWebSerialWorkerController(h.input); await controller.requestPermission();
   try {
     const context = await controller.prepareWorkerLeaseAuthorizationContext("start");
     // Act
     await controller.noiseDiagnosticStatus(null, context.controlSessionBindingSha256);
-    const admitted = await controller.noiseDiagnosticStart(noiseInput, context.controlSessionBindingSha256);
+    const admitted = await controller.noiseDiagnosticStart(noiseInputV2, context.controlSessionBindingSha256);
     // Assert
     expect(admitted.state).toBe("admitted");
     const serialized = JSON.stringify({ published, trace: controller.exportBrowserSerialTrace() });
@@ -85,7 +85,7 @@ test("actual serial controller carries private Noise commands without publishing
     expect(serialized).not.toContain(noiseInput.authorityPublicKey);
     expect(serialized).not.toContain(context.controlSessionBindingSha256);
     const grant = await h.grant(context), before = h.received.length;
-    await expect(controller.startLease(grant)).rejects.toThrow("noise_effect_fence");
+    await expect(controller.startLease(grant)).rejects.toThrow("lease_state");
     await expect(controller.rejectStartForRecoveryTest(h.trust)).rejects.toThrow();
     await expect(controller.qualificationCooling("prove_fan")).rejects.toThrow();
     await expect(controller.interruptPendingStatusForQualification()).rejects.toThrow();

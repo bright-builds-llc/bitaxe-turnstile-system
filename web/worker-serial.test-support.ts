@@ -129,6 +129,7 @@ export async function serialHarness(
   let maybeLease: WorkerLeaseGrant | undefined;
   let maybeQualification: WorkerQualification | undefined;
   let cadenceReview: unknown = cadenceFixture();
+  let restorationPending = false;
   let maybeNoiseHandler: ((command: string, payload: unknown) => Promise<unknown>) | undefined;
   let maybeRestartMode: RestartFixtureMode | undefined, bootOrdinal = 1, sessions = 0;
   let incomingFramer = new WorkerSerialFramer();
@@ -368,6 +369,9 @@ export async function serialHarness(
       await reply(request, { padding: payload.padding.padEnd(Number(payload.responsePaddingBytes), "x"), requestPaddingBytes: payload.padding.length });
       return;
     }
+    if (restorationPending && ["status", "pause", "cancel", "restore"].includes(String(request.command))) {
+      await send("control", { protocolVersion: request.protocolVersion, requestId: request.requestId, ok: false, error: { code: "command_rejected", message: "restoration_pending" } }); return;
+    }
     if (["pause", "cancel", "restore"].includes(String(request.command))) {
       active = false;
       reason =
@@ -499,6 +503,7 @@ export async function serialHarness(
     received,
     setQualification(value: WorkerQualification) { maybeQualification = value; },
     setRestartScenario(mode: RestartFixtureMode) { maybeRestartMode = mode; },
+    setRestorationPending(value: boolean) { restorationPending = value; },
     setNoiseHandler(handler: (command: string, payload: unknown) => Promise<unknown>) { maybeNoiseHandler = handler; },
     setCadenceReview(value: unknown) { cadenceReview = structuredClone(value); },
     counts: () => ({ opened, closed, locked, active }),

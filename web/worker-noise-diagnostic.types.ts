@@ -29,3 +29,9 @@ export type NoiseStartInput = {
   schema: "worker-noise-diagnostic-start-v1"; attemptId: string; expectedBootOrdinal: number;
   networkObservedAtUs: number; fixtureIpv4: string; fixturePort: number; authorityPublicKey: string;
 };
+
+export type NoiseStartInputV2 = Omit<NoiseStartInput, "schema"> & { schema: "worker-noise-diagnostic-start-v2" };
+export type NoiseStatusV2 = Omit<NoiseStatus, "schema"> & { schema: "worker-noise-diagnostic-status-v2" };
+export type NoiseStartInputAny = NoiseStartInput | NoiseStartInputV2;
+export type NoiseStatusAny = NoiseStatus | NoiseStatusV2;
+export type NoiseVersion = "v1" | "v2";
