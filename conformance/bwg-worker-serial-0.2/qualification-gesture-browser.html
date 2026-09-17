@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Qualification Connect gesture software conformance</title></head>
+<body>
+<button id="connect" type="button">Connect</button>
+<pre id="state">unchanged acceptance state</pre>
+<output id="result">ready</output>
+<script type="module">
+import { bindWorkerQualificationConnect } from "/dist/test-worker-serial/webserial-worker-browser-test-entry.js";
+let calls = 0, failures = 0, synchronous = false;
+const output = document.querySelector("#result");
+// This is an inert software action. It never requests permission or touches hardware.
+bindWorkerQualificationConnect(document.querySelector("#connect"), () => true, () => {
+  calls++;
+  output.textContent = JSON.stringify({ calls, active: navigator.userActivation.isActive, focused: document.hasFocus(), visible: document.visibilityState });
+  return Promise.resolve();
+}, async () => { failures++; });
+document.querySelector("#connect").addEventListener("click", event => {
+  if (event.isTrusted) synchronous = calls > 0;
+});
+window.gestureSnapshot = () => ({ calls, failures, synchronous,
+  state: document.querySelector("#state").textContent,
+  notice: document.querySelector("#qualification-connect-notice")?.textContent ?? "",
+  noticeOutsideState: !document.querySelector("#state").contains(document.querySelector("#qualification-connect-notice")) });
+</script>
+</body>
+</html>

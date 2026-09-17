@@ -1,3 +1,4 @@
+import { bindWorkerQualificationConnect } from "./worker-qualification-gesture";
 import { createWorkerAcceptanceAuthorization } from "./worker-acceptance-authorization";
 import { requireWorkerV2ShareMode } from "./worker-v2-configuration";
 import { drainWorkerAcceptancePoll, captureWorkerV2HeartbeatFault, serializeWorkerAcceptanceRead } from "./worker-acceptance-fault";
@@ -584,8 +585,8 @@ export const workerAcceptance = {
   state,
 };
 Object.assign(window, { workerAcceptance });
+bindWorkerQualificationConnect(document.getElementById("connect"), () => maybeConfiguration?.stratumV2Qualification !== undefined, connect, () => fail("connect_failed"));
 for (const [id, action] of [
-  ["connect", connect],
   ["prepare", prepareStartAuthorization],
   ["start", startWindow],
   ["load", loadSignedWindow],

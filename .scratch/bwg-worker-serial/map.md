@@ -96,3 +96,10 @@ Standard V2 client and closed signed grant profile under the published firmware
 contract and reservation-clock amendment. Parser, signing, possession,
 concurrent polling, terminal reconnect, browser and historical V1 checks pass.
 The firmware repository retains native and hardware qualification ownership.
+
+
+[Ticket 24](issues/24-v2-connect-gesture-guard.md) adds qualification-only Connect
+preconditions with synchronous valid invocation and an unconsumed local notice.
+DOM predicates are supplementary; the operator must verify the actual native
+foreground window. The firmware permission amendment owns closure and a fresh
+successor for the preserved pre-open failure.

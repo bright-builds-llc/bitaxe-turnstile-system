@@ -66,3 +66,10 @@ milliseconds. It requires an active mining state with no prior revocation or
 completed safe stop. The legacy method's behavior remains unchanged.
 Network-worker quiescence does not release the effect fence while physical
 restoration is still pending.
+
+The permission amendment `str005-v2-serial-permission-v1` adds a
+qualification-only Connect precondition: trusted click, visible and focused
+document, and active user activation. Rejection produces only a local notice and
+invokes no controller operation. The operator separately verifies the native
+foreground window and uses the native chooser. DOM focus does not establish OS
+window identity; the ordinary SDK API and permission rules remain unchanged.

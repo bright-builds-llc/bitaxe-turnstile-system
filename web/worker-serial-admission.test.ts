@@ -93,3 +93,25 @@ test("asynchronous reader failure preserves its admission stage after lifecycle 
   expect(f.stages).toContain("hello");
   expect(f.ownership).toEqual([false, true]);
 });
+
+for (const branch of ["selection_rejected", "selected_then_foreground_lost"] as const) {
+  test(`permission metadata for ${branch} proves no open, Hello or scope activation`, async () => {
+    // Arrange.
+    const f = await admissionFixture(), runtime = f.input[workerSerialTestRuntime].runtime;
+    const request = runtime.serial.requestPort.bind(runtime.serial), categories: string[] = [];
+    let foreground = true, selected = false, scopes = 0;
+    runtime.foreground = () => foreground;
+    runtime.serial.requestPort = async options => {
+      if (branch === "selection_rejected") throw new DOMException("synthetic browser rejection", "NotFoundError");
+      const port = await request(options); selected = true; foreground = false; return port;
+    };
+    f.hook.maybeObserveSerialFailure = value => categories.push(value);
+    f.hook.prepareScope = async () => { scopes++; return f.input.continuityScope; };
+    // Act / Assert.
+    await expect(f.controller().requestPermission()).rejects.toThrow();
+    expect(f.stages).toEqual(["permission"]); expect(categories).toEqual(["operation_failed"]);
+    expect(f.ownership).toEqual([false, true]); expect(scopes).toBe(0); expect(f.h.received).toHaveLength(0);
+    expect(f.h.counts()).toMatchObject({ opened: 0, closed: 0, locked: false, active: false });
+    expect(selected).toBe(branch === "selected_then_foreground_lost");
+  });
+}
