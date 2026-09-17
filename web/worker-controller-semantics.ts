@@ -1,3 +1,5 @@
+import { serialRecord } from "./worker-serial";
+import { isWorkerV2Stratum, parseWorkerV2Stratum, type WorkerV2Stratum } from "./worker-v2-stratum";
 import { parseWorkerQualificationAttempt, type WorkerQualificationAttempt } from "./worker-qualification-attempt";
 import { parseWorkerPreservation, type WorkerPreservation } from "./worker-preservation";
 import { parseWorkerQualification, type WorkerQualification } from "./worker-qualification";
@@ -31,7 +33,7 @@ export type WorkerLeaseGrant = {
   authorization: string;
   durationMilliseconds: number;
   renewAfterMilliseconds: number;
-  stratum: { endpoint: string; username: string; password: string; suggestedDifficulty?: number };
+  stratum: { endpoint: string; username: string; password: string; suggestedDifficulty?: number } | WorkerV2Stratum;
   acceptanceCampaign?: WorkerAcceptanceCampaign;
   qualificationAttempt?: WorkerQualificationAttempt;
 };
@@ -193,7 +195,9 @@ export function parseWorkerLeaseGrant(input: unknown): WorkerLeaseGrant {
     "stratum",
   ], ["acceptanceCampaign", "qualificationAttempt"]);
   if (value.acceptanceCampaign !== undefined && value.qualificationAttempt !== undefined) throw new Error("Work Lease qualification modes are mutually exclusive");
-  const stratum = exactRecord(value.stratum, ["endpoint", "username", "password"], ["suggestedDifficulty"]);
+  const rawStratum = serialRecord(value.stratum);
+  const maybeV2 = isWorkerV2Stratum(rawStratum) ? parseWorkerV2Stratum(rawStratum) : undefined;
+  const stratum = maybeV2 ? {} : exactRecord(rawStratum, ["endpoint", "username", "password"], ["suggestedDifficulty"]);
   const hasHint = Object.hasOwn(stratum, "suggestedDifficulty");
   if (hasHint && (typeof stratum.suggestedDifficulty !== "number" || !Number.isInteger(stratum.suggestedDifficulty) || stratum.suggestedDifficulty < 0 || stratum.suggestedDifficulty > 65535)) throw new Error("invalid_suggested_difficulty");
   const window = parseLeaseWindow(value);
@@ -204,7 +208,7 @@ export function parseWorkerLeaseGrant(input: unknown): WorkerLeaseGrant {
     leaseId: requiredString(value, "leaseId"),
     challengeId: requiredString(value, "challengeId"),
     authorization: requiredString(value, "authorization"),
-    stratum: {
+    stratum: maybeV2 ?? {
       endpoint: requiredString(stratum, "endpoint"),
       username: requiredString(stratum, "username"),
       password: requiredString(stratum, "password"),
@@ -215,8 +219,7 @@ export function parseWorkerLeaseGrant(input: unknown): WorkerLeaseGrant {
     !validIdentifier(grant.leaseId) ||
     !validIdentifier(grant.challengeId) ||
     !validSecret(grant.authorization) ||
-    !validSecret(grant.stratum.username) ||
-    !validSecret(grant.stratum.password) ||
+    (!isWorkerV2Stratum(grant.stratum) && (!validSecret(grant.stratum.username) || !validSecret(grant.stratum.password))) ||
     !validStratumEndpoint(grant.stratum.endpoint)
   ) {
     throw new Error("Work Lease grant is invalid");

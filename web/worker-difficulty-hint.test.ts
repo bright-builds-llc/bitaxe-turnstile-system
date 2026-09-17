@@ -14,6 +14,7 @@ test("signed hint vectors preserve absent, explicit zero and u16 values",async()
   // Assert
   expect(verified.sequence).toBeGreaterThan(0n);
   expect(Object.hasOwn(grant.stratum,"suggestedDifficulty")).toBe(vector.id!=="omitted");
+  if (!("username" in grant.stratum)) throw Error("expected_v1_fixture");
   expect(grant.stratum.suggestedDifficulty).toBe((vector.input.request.stratum as {suggestedDifficulty?:number}).suggestedDifficulty);
  }
 });
@@ -23,6 +24,7 @@ test("hint tampering including removal of signed zero invalidates authorization"
  for(const vector of vectors.vectors){
   const input=structuredClone(vector.input) as WorkerLeaseAuthorizationInput;
   if(input.operation!=="start")throw Error("fixture_operation");
+  if (!("username" in input.request.stratum)) throw Error("expected_v1_fixture");
   if(vector.id==="hint_0")delete input.request.stratum.suggestedDifficulty;
   else input.request.stratum.suggestedDifficulty=1;
   // Act / Assert

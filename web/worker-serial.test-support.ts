@@ -129,6 +129,7 @@ export async function serialHarness(
   let maybeLease: WorkerLeaseGrant | undefined;
   let maybeQualification: WorkerQualification | undefined;
   let cadenceReview: unknown = cadenceFixture();
+  let maybeTelemetryEndpoint: unknown;
   let restorationPending = false;
   let maybeNoiseHandler: ((command: string, payload: unknown) => Promise<unknown>) | undefined;
   let maybeRestartMode: RestartFixtureMode | undefined, bootOrdinal = 1, sessions = 0;
@@ -338,7 +339,7 @@ export async function serialHarness(
       await reply(request, { schema: "worker-qualification-ledger-v1", next_ordinal: 1, total_charged_ms: 0, pending: false, last_completed_ordinal: 0 });
       return;
     }
-    if (typeof request.command === "string" && request.command.startsWith("noise_diagnostic_") && maybeNoiseHandler) {
+    if (typeof request.command === "string" && (request.command.startsWith("noise_diagnostic_") || request.command.startsWith("stratum_v2_")) && maybeNoiseHandler) {
       await reply(request, await maybeNoiseHandler(request.command, request.payload)); return;
     }
     if (request.command === "telemetry_cadence_arm") {
@@ -348,7 +349,7 @@ export async function serialHarness(
     }
     if (request.command === "telemetry_cadence_review") { await reply(request, cadenceReview); return; }
     if (request.command === "telemetry_cadence_endpoint") {
-      await reply(request, { schema: "worker-telemetry-endpoint-v1", ipv4: "192.0.2.10", httpPort: 80, observedAtUs: now * 1000, bootOrdinal: 1, generation: 7 });
+      await reply(request, maybeTelemetryEndpoint ?? { schema: "worker-telemetry-endpoint-v1", ipv4: "192.0.2.10", httpPort: 80, observedAtUs: now * 1000, bootOrdinal: 1, generation: 7 });
       return;
     }
     if (request.command === "serial_trace_review") {
@@ -505,6 +506,7 @@ export async function serialHarness(
     setRestartScenario(mode: RestartFixtureMode) { maybeRestartMode = mode; },
     setRestorationPending(value: boolean) { restorationPending = value; },
     setNoiseHandler(handler: (command: string, payload: unknown) => Promise<unknown>) { maybeNoiseHandler = handler; },
+    setTelemetryEndpoint(value: unknown) { maybeTelemetryEndpoint = structuredClone(value); },
     setCadenceReview(value: unknown) { cadenceReview = structuredClone(value); },
     counts: () => ({ opened, closed, locked, active }),
     receiveRaw(bytes: Uint8Array) {
@@ -573,10 +575,12 @@ export async function serialHarness(
     },
     async grant(
       context: WorkerLeaseAuthorizationContext,
+      maybeOverride: Partial<WorkerLeaseGrant> = {},
     ): Promise<WorkerLeaseGrant> {
       const { authorization: _authorization, ...request } =
         parseWorkerLeaseGrant({
           ...controllerFixture.lease,
+          ...maybeOverride,
           challengeId: maybeChallengeId,
         });
       const authorization = await signWorkerLeaseAuthorization({

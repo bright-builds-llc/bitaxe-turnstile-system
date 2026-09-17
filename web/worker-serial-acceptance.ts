@@ -1,3 +1,8 @@
+import { createWorkerAcceptanceAuthorization } from "./worker-acceptance-authorization";
+import { requireWorkerV2ShareMode } from "./worker-v2-configuration";
+import { drainWorkerAcceptancePoll, captureWorkerV2HeartbeatFault, serializeWorkerAcceptanceRead } from "./worker-acceptance-fault";
+import { createWorkerV2PageOperations, WorkerV2ShareStartClaim } from "./worker-v2-page";
+import { isWorkerV2Stratum } from "./worker-v2-stratum";
 import { isWorkerRestorationPending } from "./worker-control-rejection";
 import { createWorkerNoisePageOperations } from "./worker-noise-page";
 import { acceptanceLocalJson as localJson } from "./worker-acceptance-local";
@@ -18,12 +23,7 @@ import { requireWorkerAcceptanceModeTransition, parseWorkerSerialAcceptanceConfi
 import { submitWorkerCoolingReview } from "./worker-cooling-review";
 import type { WorkerLeaseAuthorizationContext } from "./worker-lease-authorization";
 import { WorkerSerialDiagnosticHistory } from "./worker-serial-diagnostics";
-import {
-  restoreAcceptanceBaseline,
-  acceptanceWindowShouldStop,
-  AcceptanceRenewalProgress,
-  requireAcceptanceFaultHeadroom,
-} from "./worker-serial-acceptance-actions";
+import { restoreAcceptanceBaseline, acceptanceWindowShouldStop, AcceptanceRenewalProgress, requireAcceptanceFaultHeadroom } from "./worker-serial-acceptance-actions";
 import { WorkerPreservationBaseline } from "./worker-preservation";
 import {
   createWebSerialWorkerController,
@@ -32,24 +32,16 @@ import {
   type WebSerialWorkerControllerInput,
   type WorkerSerialQualificationHook,
 } from "./webserial-worker-controller";
-import {
-  parseWorkerLeaseGrant,
-  parseWorkerLeaseRenewal,
-  type WorkerLeaseGrant,
-  type WorkerLeaseRenewal,
-  type WorkerQualification,
-} from "./worker-controller";
+import { parseWorkerLeaseGrant, parseWorkerLeaseRenewal, type WorkerLeaseGrant, type WorkerLeaseRenewal, type WorkerQualification } from "./worker-controller";
 
 declare const BWG_GATE_SOURCE_COMMIT: string;
-const gateCommit =
-  typeof BWG_GATE_SOURCE_COMMIT === "string"
-    ? BWG_GATE_SOURCE_COMMIT
-    : "Unavailable";
+const gateCommit = typeof BWG_GATE_SOURCE_COMMIT === "string" ? BWG_GATE_SOURCE_COMMIT : "Unavailable";
 type WindowArtifacts = {
   grant: WorkerLeaseGrant;
   renewals: WorkerLeaseRenewal[];
 };
 const preservation = new WorkerPreservationBaseline();
+const v2ShareStartClaim = new WorkerV2ShareStartClaim();
 const recoveryLoss = new WorkerRecoveryLoss();
 const cadence = new WorkerCadenceAcceptance();
 const browserTrace = new WorkerBrowserSerialTrace(() => performance.now());
@@ -111,13 +103,13 @@ let maybeController: WebSerialWorkerController | undefined;
 let maybeWindow: WindowArtifacts | undefined;
 let maybeTimer: ReturnType<typeof setInterval> | undefined;
 let polling = false;
+const serializeRead = <T>(run: () => Promise<T>) => serializeWorkerAcceptanceRead({ polling: () => polling, claim: value => { polling = value; }, run });
 let status = "unconfigured";
 let maybeFailure: string | undefined;
 let maybeQualification: WorkerQualification | undefined;
 let maybeOwnerResourceFailure: WorkerOwnerResourceFailure | undefined;
 let maybeProbe: unknown;
-let connected = false,
-  running = false;
+let connected = false, running = false;
 let began = 0,
   nextRenew = 0;
 
@@ -180,12 +172,14 @@ function configure(input: Configuration) {
   if (connected || running || maybeWindow || !serialOwnershipReleased) throw new Error("configuration_while_connected");
   const parsed = parseWorkerSerialAcceptanceConfiguration(input, gateCommit);
   requireWorkerAcceptanceModeTransition(maybeConfiguration, parsed);
-  if (maybeConfiguration?.noiseQualification === "before" && parsed.noiseQualification === "candidate") {
+  if ((maybeConfiguration?.noiseQualification === "before" && parsed.noiseQualification === "candidate") || (maybeConfiguration?.stratumV2Qualification === "before" && parsed.stratumV2Qualification === "candidate")) {
     const maybeBaseline = preservation.maybePublicState();
     if (!maybeBaseline || !maybeBaseline.settings_match || !maybeBaseline.authorization_high_water_match || !maybeBaseline.device_identity_match || maybeBaseline.mine_on_boot) throw new Error("noise_before_baseline_required");
   }
   if (parsed.noiseQualification === "candidate") hook.noiseDiagnosticPair = { firmwareSourceCommit: parsed.expectedFirmwareSourceCommit, appElfSha256: parsed.expectedAppElfSha256 };
   else delete hook.noiseDiagnosticPair;
+  if (parsed.stratumV2Qualification === "candidate" && parsed.stratumV2Scope) hook.stratumV2Pair = { firmwareSourceCommit: parsed.expectedFirmwareSourceCommit, appElfSha256: parsed.expectedAppElfSha256, scope: parsed.stratumV2Scope };
+  else delete hook.stratumV2Pair;
   cadence.configure(parsed.cadenceQualification);
   recoveryLoss.configure(parsed.recoveryPhase);
   if (parsed.recoveryPhase === "resume") authorizationRecovery.clearForResume(recoveryLoss.sealed);
@@ -239,30 +233,32 @@ async function connect() {
   publish();
   return state();
 }
-async function prepareStartAuthorization() {
-  if (maybeConfiguration?.restartQualification) throw new Error("restart_forbids_work");
-  if (maybeConfiguration?.noiseQualification) throw new Error("noise_forbids_work");
-  const context = maybeReviewedContext ??
-    await controller().prepareWorkerLeaseAuthorizationContext("start");
-  maybeReviewedContext = undefined;
-  const output = document.querySelector<HTMLTextAreaElement>(
-    "#authorization-context",
-  );
-  if (output) output.value = context.controlSessionBindingSha256;
-  await localJson("/authorization-context", context);
-  return context;
-}
+const { prepareStartAuthorization, submitBudgetReview } = createWorkerAcceptanceAuthorization({
+  requireStartScope() {
+    if (maybeConfiguration?.restartQualification) throw new Error("restart_forbids_work");
+    if (maybeConfiguration?.noiseQualification) throw new Error("noise_forbids_work");
+    requireWorkerV2ShareMode(maybeConfiguration);
+  },
+  maybeReviewedContext: () => maybeReviewedContext, reviewedContext: value => { maybeReviewedContext = value; },
+  prove: () => controller().prepareWorkerLeaseAuthorizationContext("start"),
+  showBinding(binding) { const output = document.querySelector<HTMLTextAreaElement>("#authorization-context"); if (output) output.value = binding; },
+  attemptReview: () => controller().qualificationAttemptReview(), budgetReview: reviewBudget, state, local: localJson,
+});
+
 function loadWindow(input: WindowArtifacts) {
   if (maybeConfiguration?.restartQualification) throw new Error("restart_forbids_work");
   if (maybeConfiguration?.noiseQualification) throw new Error("noise_forbids_work");
+  requireWorkerV2ShareMode(maybeConfiguration);
   if (running) throw new Error("window_active");
   const grant = parseWorkerLeaseGrant(input.grant);
   cadence.requireWindow(grant);
+  if (maybeConfiguration?.stratumV2Qualification && (!isWorkerV2Stratum(grant.stratum) || grant.qualificationAttempt?.purpose !== "normal" || grant.qualificationAttempt.maximumActiveMilliseconds !== 180000 || grant.durationMilliseconds !== 60000 || grant.renewAfterMilliseconds !== 20000)) throw new Error("v2_share_window");
   if (!grant.acceptanceCampaign && !grant.qualificationAttempt)
     throw new Error("acceptance_campaign_required");
   if (!Array.isArray(input.renewals) || input.renewals.length > 16)
     throw new Error("renewal_bound");
   const renewals = input.renewals.map(parseWorkerLeaseRenewal);
+  if (maybeConfiguration?.stratumV2Qualification && renewals.some(value => value.durationMilliseconds !== 60000 || value.renewAfterMilliseconds !== 20000)) throw new Error("v2_renewal_window");
   if (renewals.some((value) => value.leaseId !== grant.leaseId))
     throw new Error("renewal_lease_mismatch");
   maybeWindow = { grant, renewals };
@@ -272,6 +268,7 @@ function loadWindow(input: WindowArtifacts) {
 async function loadSignedWindow() {
   if (maybeConfiguration?.restartQualification) throw new Error("restart_forbids_work");
   if (maybeConfiguration?.noiseQualification) throw new Error("noise_forbids_work");
+  requireWorkerV2ShareMode(maybeConfiguration);
   loadWindow(await localJson("/window-artifacts"));
   return state();
 }
@@ -335,6 +332,7 @@ async function tick() {
 async function startWindow() {
   const input = maybeWindow;
   if (!input || running) throw new Error("window_missing_or_active");
+  if (maybeConfiguration?.stratumV2Qualification) v2ShareStartClaim.consume();
   maybeOwnerResourceFailure = undefined;
   const observed = await controller().startLease(input.grant);
   maybeQualification = observed.qualification;
@@ -371,7 +369,7 @@ async function stop() {
   let observed;
   try { observed = await restoreAcceptanceBaseline(controller()); }
   catch (error) {
-    if (maybeConfiguration?.noiseQualification && isWorkerRestorationPending(error)) {
+    if ((maybeConfiguration?.noiseQualification || maybeConfiguration?.stratumV2Qualification) && isWorkerRestorationPending(error)) {
       status = "restoration_pending"; deviceBaselineConfirmed = false; deviceRestorationConfirmed = false; publish();
     }
     throw error;
@@ -413,12 +411,7 @@ async function requirePlannedFault(window: 1 | 2) {
   if (!running || !maybeWindow || acceptancePurposeWindow(maybeWindow.grant) !== window)
     throw new Error("qualification_window_required");
   stopTimer();
-  const waitingSince = performance.now();
-  while (polling) {
-    if (performance.now() - waitingSince >= 2000)
-      throw new Error("qualification_poll_busy");
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
+  await drainWorkerAcceptancePoll(() => polling);
   await refresh();
   if (!running) throw new Error("window_control_failed");
   requireAcceptanceFaultHeadroom(maybeQualification?.work_gate_remaining_ms);
@@ -428,6 +421,16 @@ async function armForegroundLoss() {
   return state();
 }
 async function suppressHeartbeats() {
+  if (maybeConfiguration?.stratumV2Qualification) {
+    if (maybeConfiguration.stratumV2Scope !== "share" || !running || !maybeWindow) throw new Error("v2_fault_admission");
+    stopTimer();
+    const headroom = await serializeRead(() => captureWorkerV2HeartbeatFault({
+      status: () => controller().status(),
+      observe(fresh) { maybeQualification = fresh.qualification; authorizationRecovery.capture(maybeQualification?.generation); },
+      suppress() { hook.suppressHeartbeats = true; },
+    }));
+    publish(); return headroom;
+  }
   await requirePlannedFault(2);
   hook.suppressHeartbeats = true;
   publish();
@@ -438,20 +441,10 @@ async function reviewBudget(campaignId: string) {
   return maybeController.acceptanceBudgetReview(campaignId);
 }
 
-async function submitBudgetReview() {
-  maybeReviewedContext = undefined;
-  const input = await localJson("/budget-review-context", {});
-  const iterative = input?.mode === "iterative";
-  if (!input || Object.keys(input).length !== 2 || (!iterative && typeof input.campaignId !== "string") || typeof input.nonce !== "string") throw new Error("budget_review_context");
-  const context = await controller().prepareWorkerLeaseAuthorizationContext("start");
-  const report = iterative ? await controller().qualificationAttemptReview() : await reviewBudget(input.campaignId);
-  const receipt = await localJson("/budget-review", { nonce: input.nonce, report, controlSessionBindingSha256: context.controlSessionBindingSha256, state: state() });
-  if (receipt?.budget_review_saved !== true) throw new Error("budget_review_receipt");
-  maybeReviewedContext = context;
-  return report;
-}
+
 async function rejectStartForRecoveryTest() {
   if (maybeConfiguration?.noiseQualification) throw new Error("noise_forbids_competing_effect");
+  if (maybeConfiguration?.stratumV2Qualification) throw new Error("v2_forbids_competing_effect");
   maybeReviewedContext = undefined;
   if (!maybeConfiguration || running) throw new Error("rejection_fixture_admission");
   try {
@@ -465,6 +458,7 @@ async function rejectStartForRecoveryTest() {
 
 async function interruptPendingStatusForQualification() {
   if (maybeConfiguration?.noiseQualification) throw new Error("noise_forbids_competing_effect");
+  if (maybeConfiguration?.stratumV2Qualification) throw new Error("v2_forbids_competing_effect");
   maybeReviewedContext = undefined;
   if (running || maybeWindow) throw new Error("read_interruption_admission");
   const receipt = await controller().interruptPendingStatusForQualification();
@@ -480,6 +474,7 @@ async function interruptPendingStatusForQualification() {
 
 async function proveCoolingForQualification() {
   if (maybeConfiguration?.noiseQualification) throw new Error("noise_forbids_competing_effect");
+  requireWorkerV2ShareMode(maybeConfiguration);
   maybeReviewedContext = undefined;
   if (running) throw new Error("cooling_qualification_admission");
   deviceBaselineConfirmed = false;
@@ -491,6 +486,7 @@ async function proveCoolingForQualification() {
 }
 async function restoreCoolingBaseline() {
   if (maybeConfiguration?.noiseQualification) throw new Error("noise_forbids_competing_effect");
+  requireWorkerV2ShareMode(maybeConfiguration);
   maybeReviewedContext = undefined;
   if (running) throw new Error("cooling_qualification_admission");
   const report = await controller().qualificationCooling("restore_baseline");
@@ -500,6 +496,7 @@ async function restoreCoolingBaseline() {
 
 async function submitCoolingReview() {
   if (maybeConfiguration?.noiseQualification) throw new Error("noise_forbids_competing_effect");
+  requireWorkerV2ShareMode(maybeConfiguration);
   maybeReviewedContext = undefined;
   if (running) throw new Error("cooling_qualification_admission");
   try {
@@ -548,8 +545,8 @@ async function suppressCadenceHeartbeats() {
   publish();
 }
 
-
 export const workerAcceptance = {
+  ...createWorkerV2PageOperations({ maybeReviewedBinding: () => maybeReviewedContext?.controlSessionBindingSha256, serializeRead, changed: publish, phase: () => maybeConfiguration?.stratumV2Qualification, scope: () => maybeConfiguration?.stratumV2Scope, connected: () => connected, idle: () => connected && !running && !maybeWindow, controller, maybePreservation: () => preservation.maybePublicState() }),
   ...createWorkerNoisePageOperations({ changed: publish, phase: () => maybeConfiguration?.noiseQualification, idle: () => connected && !running && !maybeWindow, controller, maybePreservation: () => preservation.maybePublicState() }),
   ...createWorkerRestartPageOperations({ enabled: () => maybeConfiguration?.restartQualification === true, idle: () => connected && !running && !maybeWindow,
     maybeController: () => maybeController, before: () => { maybeReviewedContext = undefined; status = "restarting"; deviceBaselineConfirmed = false; publish(); },
@@ -580,7 +577,7 @@ export const workerAcceptance = {
   startWindow,
   stop,
   close,
-  refresh,
+  refresh: () => maybeConfiguration?.stratumV2Qualification ? serializeRead(refresh) : refresh(),
   probe,
   suppressHeartbeats,
   armForegroundLoss,

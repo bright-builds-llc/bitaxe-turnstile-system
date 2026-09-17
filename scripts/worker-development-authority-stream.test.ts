@@ -1,3 +1,4 @@
+import { v2Stratum } from "../web/worker-v2-serial.fixture";
 import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,7 +10,7 @@ import {
   type WorkerLeaseAuthorizationInput,
 } from "../web/worker-lease-authorization";
 
-for (const maybeHint of [undefined, 0, 1000]) test(`streaming Start signing keeps raw inputs private with hint ${maybeHint ?? "absent"}`, async () => {
+for (const maybeHint of [undefined, 0, 1000, "v2"]) test(`streaming Start signing keeps raw inputs private with hint ${maybeHint ?? "absent"}`, async () => {
   // Arrange
   const parent = await mkdtemp(
     join(tmpdir(), "bwg-worker-authority-stream-test-"),
@@ -29,7 +30,8 @@ for (const maybeHint of [undefined, 0, 1000]) test(`streaming Start signing keep
     expect(await init.exited).toBe(0);
     const input = structuredClone(startInputFixture) as WorkerLeaseAuthorizationInput;
     if (input.operation !== "start") throw new Error("fixture_operation");
-    if (maybeHint !== undefined) input.request.stratum.suggestedDifficulty = maybeHint;
+    if (maybeHint === "v2") input.request.stratum = v2Stratum;
+    else if (maybeHint !== undefined && "username" in input.request.stratum) input.request.stratum.suggestedDifficulty = Number(maybeHint);
     const signer = Bun.spawn(
       [
         "bun",
@@ -57,7 +59,8 @@ for (const maybeHint of [undefined, 0, 1000]) test(`streaming Start signing keep
     ]);
     // Assert
     expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
-    expect(stdout).not.toContain(input.request.stratum.password);
+    if ("password" in input.request.stratum) expect(stdout).not.toContain(input.request.stratum.password);
+    else { expect(stdout).not.toContain(input.request.stratum.userIdentity); expect(stdout).not.toContain(input.request.stratum.endpoint); }
     const artifact = JSON.parse(stdout);
     expect(artifact.sequence).toBe("1");
     const trust = parseWorkerDeploymentTrust(

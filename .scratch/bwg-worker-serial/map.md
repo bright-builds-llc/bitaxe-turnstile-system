@@ -89,3 +89,10 @@ the additional requirement for active statistics evidence and exact-device proof
 parser and explicitly paired Controller client. Runtime readiness remains blocked
 on bounded firmware crypto cancellation and combined-owner proof; same-page
 workflow integration is unfinished, and no hardware workflow is enabled.
+
+
+[Ticket 23](issues/23-v2-channel-share-qualification.md) implements the scoped
+Standard V2 client and closed signed grant profile under the published firmware
+contract and reservation-clock amendment. Parser, signing, possession,
+concurrent polling, terminal reconnect, browser and historical V1 checks pass.
+The firmware repository retains native and hardware qualification ownership.

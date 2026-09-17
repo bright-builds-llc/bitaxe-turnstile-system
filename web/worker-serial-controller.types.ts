@@ -1,3 +1,4 @@
+import type { ChannelStart, V2Scope, V2Status } from "./worker-v2-serial";
 import type { NoiseStartInputV2, NoiseStatusV2 } from "./worker-noise-diagnostic";
 import type { WorkerQualificationRestartRequest } from "./worker-qualification-restart";
 import type { WorkerRestartEvidence, WorkerRestartSummary } from "./worker-serial-restart-observer";
@@ -66,6 +67,9 @@ export interface WebSerialWorkerController
   qualificationAbruptDisconnect(): Promise<WorkerMiningInterruption>;
   exportBrowserSerialTrace(): BrowserSerialTrace;
   deviceSerialTraceReview(): Promise<DeviceSerialTrace>;
+  stratumV2ChannelStart(input: ChannelStart, binding: string): Promise<V2Status>;
+  stratumV2Status(scope: V2Scope, attemptIdOrNull: string | null, binding: string): Promise<V2Status>;
+  stratumV2ChannelCancel(attemptId: string, binding: string): Promise<V2Status>;
   noiseDiagnosticStart(input: NoiseStartInputV2, expectedBinding: string): Promise<NoiseStatusV2>;
   noiseDiagnosticStatus(attemptIdOrNull: string | null, expectedBinding: string): Promise<NoiseStatusV2>;
   noiseDiagnosticCancel(attemptId: string, expectedBinding: string): Promise<NoiseStatusV2>;
@@ -87,6 +91,7 @@ export const workerSerialQualificationHook = Symbol(
 export type WorkerSerialAdmissionStage = "ownership" | "permission" | "device_filter" | "scope" | "opening" | "hello" | "manifest_identity" | "capability" | "possession" | "baseline" | "continuity" | "cleanup";
 export type WorkerSerialQualificationHook = {
   /** Enabled only by a prospective exact-pair qualification context, never generic Controller support. */
+  stratumV2Pair?: { firmwareSourceCommit: string; appElfSha256: string; scope: V2Scope };
   noiseDiagnosticPair?: { firmwareSourceCommit: string; appElfSha256: string };
   allowQualificationRestart?: boolean;
   maybeTraceHistory?: WorkerBrowserSerialTrace;

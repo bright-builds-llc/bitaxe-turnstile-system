@@ -330,6 +330,7 @@ describe("Worker Controller restoration and negative contract", () => {
 
     // Assert
     expect(diagnostic).not.toContain(lease.authorization);
+    if (!("username" in lease.stratum)) throw new Error("expected_v1_fixture");
     expect(diagnostic).not.toContain(lease.stratum.username);
     expect(diagnostic).not.toContain(lease.stratum.password);
     expect(diagnostic).not.toMatch(/wifi|ssid|private|payout|pool[_-]?setting/i);

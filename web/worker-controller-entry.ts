@@ -8,3 +8,6 @@ export { parseWorkerDiagnosticExport, type WorkerDiagnosticExport } from "./work
 export { parseNoiseStartInput, parseNoiseStatus, type NoiseStartInput, type NoiseStatus } from "./worker-noise-diagnostic";
 
 export { parseNoiseStartInputV2, parseNoiseStatusV2, type NoiseStartInputV2, type NoiseStatusV2 } from "./worker-noise-diagnostic";
+
+export * from "./worker-v2-stratum";
+export * from "./worker-v2-serial";

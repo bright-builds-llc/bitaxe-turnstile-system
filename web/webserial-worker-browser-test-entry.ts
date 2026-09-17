@@ -1,3 +1,4 @@
+import { runV2PageSerialConformance } from "./worker-v2-page.fixture";
 import { runNoisePageSerialConformance } from "./worker-noise-page.fixture";
 import { serialHarness } from "./worker-serial.test-support";
 /** Browser conformance runs the production adapter through real Streams and WebCrypto. */
@@ -28,4 +29,5 @@ export async function runWorkerSerialBrowserConformance(): Promise<void> {
   await h.controller.requestPermission();
   await h.controller.close();
   await runNoisePageSerialConformance();
+  await runV2PageSerialConformance();
 }

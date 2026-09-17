@@ -38,7 +38,7 @@ async function verifyPoolOfferSet(signed, challenge, trust) {
   if (typeof header.kid !== "string" || header.kid.length === 0) {
     throw new Error("invalid Pool Offer key ID");
   }
-  const matchingKeys = trust.trustedKeys.filter((key2) => key2.kid === header.kid);
+  const matchingKeys = trust.trustedKeys.filter((key) => key.kid === header.kid);
   if (matchingKeys.length !== 1)
     throw new Error("Pool Offer key is not uniquely trusted");
   const key = matchingKeys[0];
