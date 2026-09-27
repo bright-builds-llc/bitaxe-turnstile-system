@@ -60,6 +60,7 @@ export interface WebSerialWorkerController
   qualificationAttemptReview(): Promise<WorkerQualificationLedger>;
   /** Qualification only: interrupt a consumed no-mining status with a still-pending reply. */
   interruptPendingStatusForQualification(): Promise<WorkerReadInterruption>;
+  coreDumpSelfTest(input: WorkerQualificationRestartRequest): Promise<WorkerRestartEvidence>;
   qualificationRestart(input: WorkerQualificationRestartRequest): Promise<WorkerRestartEvidence>;
   /** Protected restart evidence; acknowledgement nonce never belongs in public state. */
   qualificationRestartSummary(): WorkerRestartSummary | undefined;
@@ -91,9 +92,10 @@ export const workerSerialQualificationHook = Symbol(
 export type WorkerSerialAdmissionStage = "ownership" | "permission" | "device_filter" | "scope" | "opening" | "hello" | "manifest_identity" | "capability" | "possession" | "baseline" | "continuity" | "cleanup";
 export type WorkerSerialQualificationHook = {
   /** Enabled only by a prospective exact-pair qualification context, never generic Controller support. */
-  stratumV2Pair?: { firmwareSourceCommit: string; appElfSha256: string; scope: V2Scope };
+  stratumV2Pair?: { firmwareSourceCommit: string; appElfSha256: string; scope: V2Scope; maybeReadOnly?: true };
   noiseDiagnosticPair?: { firmwareSourceCommit: string; appElfSha256: string };
   allowQualificationRestart?: boolean;
+  allowCoreDumpSelfTest?: boolean;
   maybeTraceHistory?: WorkerBrowserSerialTrace;
   maybeObserveHelloRecovery?: (value: { discardedRecords: number; discardedReplies: number; discardedBytes: number }) => void;
   maybeObserveSerialFailure?: (category: WorkerSerialFailureCategory) => void;

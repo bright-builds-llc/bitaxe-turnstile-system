@@ -6,6 +6,7 @@ import type { WorkerPreservationContinuity } from "./worker-preservation";
 export function createWorkerV2PageOperations(operations: {
   serializeRead<T>(run: () => Promise<T>): Promise<T>;
   changed(): void; phase(): "before" | "candidate" | undefined; scope(): V2Scope | undefined;
+  maybeBeforeReadEnabled?(): boolean;
   connected(): boolean; idle(): boolean;
   controller(): Pick<WebSerialWorkerController, "prepareWorkerLeaseAuthorizationContext" | "stratumV2ChannelStart" | "stratumV2Status" | "stratumV2ChannelCancel" | "telemetryCadenceEndpoint">;
   maybeReviewedBinding(): string | undefined;
@@ -13,13 +14,14 @@ export function createWorkerV2PageOperations(operations: {
 }) {
   const history = new WorkerV2SerialHistory(); let consumed = false;
   const requireCandidate = () => { if (!operations.connected() || operations.phase() !== "candidate") throw new Error("v2_page_admission"); };
+  const requireRead = () => { if (operations.connected() && operations.phase() === "before" && operations.maybeBeforeReadEnabled?.()) return; requireCandidate(); };
   const requireChannel = () => { requireCandidate(); if (operations.scope() !== "channel" || !operations.idle()) throw new Error("v2_channel_admission"); };
   const observe = (status: V2Status) => { history.observe(status); return status; };
   return {
     async stratumV2Possession() {
-      requireCandidate(); if (!operations.idle()) throw new Error("v2_possession_idle_required");
+      requireRead(); if (!operations.idle()) throw new Error("v2_possession_idle_required");
       const context = await operations.controller().prepareWorkerLeaseAuthorizationContext("start");
-      requireCandidate(); return context.controlSessionBindingSha256;
+      requireRead(); return context.controlSessionBindingSha256;
     },
     async stratumV2TelemetryEndpoint(maybeBinding?: string) {
       requireCandidate();
@@ -43,9 +45,9 @@ export function createWorkerV2PageOperations(operations: {
       try { return observe(await operations.controller().stratumV2ChannelStart(input, binding)); } finally { operations.changed(); }
     },
     async stratumV2Status(scope: V2Scope, attemptIdOrNull: string | null, binding: string) {
-      requireCandidate(); if (scope !== operations.scope()) throw new Error("v2_scope_mismatch");
+      requireRead(); if (scope !== operations.scope()) throw new Error("v2_scope_mismatch");
       return operations.serializeRead(async () => {
-        requireCandidate();
+        requireRead();
         return observe(await operations.controller().stratumV2Status(scope, attemptIdOrNull, binding));
       });
     },

@@ -3,9 +3,9 @@ import { serialFailure } from "./worker-serial";
 import { parseQualificationRestartAck, type WorkerQualificationRestartAck, type WorkerQualificationRestartRequest } from "./worker-qualification-restart";
 
 export type WorkerRestartSummary = {
-  schema: "worker-qualification-restart-observation-v1"; stage: "armed" | "acknowledged" | "reacquiring" | "complete" | "failed";
+  schema: "worker-qualification-restart-observation-v1" | "worker-qualification-core-dump-self-test-observation-v1"; stage: "armed" | "acknowledged" | "reacquiring" | "complete" | "failed";
   ackMatched: boolean; expectedBootOrdinal: number; nextBootOrdinal: number; bootObserved: boolean; runtimeReadyObserved: boolean;
-  softwareResetObserved: boolean; identityObserved: boolean; identityMatched: boolean; records: number; bytes: number; durationMs: number; portReopens: 0 | 1; streamInterrupted: boolean;
+  softwareResetObserved: boolean; panicResetObserved?: boolean; identityObserved: boolean; identityMatched: boolean; records: number; bytes: number; durationMs: number; portReopens: 0 | 1; streamInterrupted: boolean;
   continuity: "uninterrupted" | "interrupted" | "same_port_reopened";
 };
 export type WorkerRestartEvidence = { summary: WorkerRestartSummary; ack: (Omit<WorkerQualificationRestartAck, "requestNonce"> & { requestNonceSha256: string }) | null;
@@ -33,7 +33,7 @@ export class WorkerSerialRestartObserver {
   #lifecycle: WorkerRestartEvidence["lifecycle"] = [];
   #maybeStreamEnd: (() => void) | undefined;
   #streamEnd: Promise<void>;
-  constructor(readonly request: WorkerQualificationRestartRequest, readonly identity: { firmwareSourceCommit: string; appElfSha256: string }, readonly now: () => number, maybeNonceDigest?: string) {
+  constructor(readonly request: WorkerQualificationRestartRequest, readonly identity: { firmwareSourceCommit: string; appElfSha256: string }, readonly now: () => number, maybeNonceDigest?: string, readonly kind: "restart" | "core_dump_self_test" = "restart") {
     this.startedAt = now();
     if (maybeNonceDigest !== undefined) this.setNonceDigest(maybeNonceDigest);
     if (!Number.isFinite(this.startedAt) || this.startedAt < 0) throw serialFailure("restart_clock");
@@ -70,7 +70,7 @@ export class WorkerSerialRestartObserver {
   }
   acknowledge(input: unknown) {
     if (this.#maybeAck || !this.#maybeNonceDigest || this.#stage !== "armed") throw serialFailure("restart_ack");
-    this.#maybeAck = parseQualificationRestartAck(input, this.request);
+    this.#maybeAck = parseQualificationRestartAck(input, this.request, this.kind === "restart" ? "worker-qualification-restart-v1" : "worker-qualification-core-dump-self-test-v1");
     this.#stage = "acknowledged"; this.#bootMode = true; this.event("acknowledged");
   }
   rawRecord(bytes: Uint8Array) {
@@ -89,7 +89,7 @@ export class WorkerSerialRestartObserver {
     if (!this.ackMatched) return;
     if (value.category === "boot") {
       if (value.boot_ordinal === this.request.expectedBootOrdinal && !this.#boot) return;
-      if (value.boot_ordinal !== this.request.expectedBootOrdinal + 1 || value.reset_reason !== "software_cpu") throw serialFailure("restart_boot");
+      if (value.boot_ordinal !== this.request.expectedBootOrdinal + 1 || value.reset_reason !== (this.kind === "restart" ? "software_cpu" : "panic")) throw serialFailure("restart_boot");
       if (!this.#boot) { this.#readySamples = 0; this.#maybeReadyUptime = undefined; this.#statisticsActive = false; }
       this.#boot = true;
     }
@@ -142,9 +142,9 @@ export class WorkerSerialRestartObserver {
     this.#maybeFinishedElapsed = this.#lastElapsed; this.#maybeError = error; this.#stage = "failed"; this.event("failed"); this.#resolveFailure(error);
   }
   summary(): WorkerRestartSummary {
-    return { schema: "worker-qualification-restart-observation-v1", stage: this.#stage, ackMatched: this.ackMatched,
+    return { schema: this.kind === "restart" ? "worker-qualification-restart-observation-v1" : "worker-qualification-core-dump-self-test-observation-v1", stage: this.#stage, ackMatched: this.ackMatched,
       expectedBootOrdinal: this.request.expectedBootOrdinal, nextBootOrdinal: this.request.expectedBootOrdinal + 1,
-      bootObserved: this.#boot, softwareResetObserved: this.#boot, identityMatched: this.#admitted, identityObserved: this.#identity, runtimeReadyObserved: this.#readySamples >= 2,
+      bootObserved: this.#boot, softwareResetObserved: this.#boot && this.kind === "restart", ...(this.kind === "core_dump_self_test" ? { panicResetObserved: this.#boot } : {}), identityMatched: this.#admitted, identityObserved: this.#identity, runtimeReadyObserved: this.#readySamples >= 2,
       records: this.#records, bytes: this.#bytes, durationMs: this.#maybeFinishedElapsed ?? this.elapsed(), portReopens: this.#reopens,
       streamInterrupted: this.#interrupted, continuity: this.#reopens ? "same_port_reopened" : this.#interrupted ? "interrupted" : "uninterrupted" };
   }

@@ -182,3 +182,21 @@ test("fresh-session terminal collection binds retained reads beyond possession S
   await expect(h.control.start(v2Input, h.binding())).rejects.toThrow("v2_possession");
   h.replace(); await expect(h.control.status("channel", v2Input.attemptId, h.binding())).rejects.toThrow("v2_possession");
 });
+
+test("readonly exact-pair controller sends status but rejects channel effects", async () => {
+  // Arrange
+  const h = await serialHarness();
+  Object.assign(h.input, { [workerSerialQualificationHook]: { suppressHeartbeats: false, stratumV2Pair: { firmwareSourceCommit: "a".repeat(40), appElfSha256: "b".repeat(64), scope: "channel", maybeReadOnly: true } } });
+  h.setNoiseHandler(async () => v2Idle());
+  const controller = createWebSerialWorkerController(h.input); await controller.requestPermission();
+  try {
+    const { controlSessionBindingSha256: binding } = await controller.prepareWorkerLeaseAuthorizationContext("start");
+    // Act
+    expect((await controller.stratumV2Status("channel", null, binding)).state).toBe("idle");
+    const before = h.received.length;
+    await expect(controller.stratumV2ChannelStart(v2Input, binding)).rejects.toThrow();
+    await expect(controller.stratumV2ChannelCancel(v2Input.attemptId, binding)).rejects.toThrow();
+    // Assert
+    expect(h.received.length).toBe(before);
+  } finally { await controller.close(); }
+});

@@ -29,3 +29,10 @@ test("restart qualification is explicit, exclusive and sticky", () => {
   for (const change of [{ restartQualification: false }, { restartQualification: true, cadenceQualification: true }, { restartQualification: true, recoveryPhase: "loss" }]) expect(() => parseWorkerSerialAcceptanceConfiguration({ ...base, ...change }, base.expectedGateCommit)).toThrow();
   expect(() => requireWorkerAcceptanceModeTransition(config, parseWorkerSerialAcceptanceConfiguration(base, base.expectedGateCommit))).toThrow("restart_mode_downgrade");
 });
+
+test("core dump self-test capability is explicit, sticky and exclusive with other reset modes", () => {
+  const config = parseWorkerSerialAcceptanceConfiguration({ ...base, coreDumpSelfTestQualification: true }, base.expectedGateCommit);
+  expect(config.coreDumpSelfTestQualification).toBeTrue();
+  for (const change of [{ coreDumpSelfTestQualification: false }, { restartQualification: true }, { cadenceQualification: true }, { recoveryPhase: "loss" }]) expect(() => parseWorkerSerialAcceptanceConfiguration({ ...base, coreDumpSelfTestQualification: true, ...change }, base.expectedGateCommit)).toThrow();
+  expect(() => requireWorkerAcceptanceModeTransition(config, parseWorkerSerialAcceptanceConfiguration(base, base.expectedGateCommit))).toThrow("core_dump_self_test_mode_changed");
+});

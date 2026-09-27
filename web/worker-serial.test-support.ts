@@ -324,12 +324,12 @@ export async function serialHarness(
       } else throw new Error("fixture cooling action");
       return;
     }
-    if (request.command === "qualification_restart" && maybeRestartMode) {
+    if (["qualification_restart", "qualification_core_dump_self_test"].includes(String(request.command)) && maybeRestartMode) {
       const input = exactSerialRecord(request.payload, ["requestNonce", "expectedBootOrdinal"]);
       if (active || input.expectedBootOrdinal !== bootOrdinal) throw new Error("fixture_restart_admission");
       await send("control", { protocolVersion: request.protocolVersion, requestId: request.requestId, ok: true,
-        result: { schema: "worker-qualification-restart-v1", requestNonce: input.requestNonce, bootOrdinal, nextBootOrdinal: bootOrdinal + 1 } }, false,
-        maybeRestartMode === "queued_prior_boot" ? restartBootBytes(bootOrdinal, true, 100000) : maybeRestartMode === "missing_boot" ? new Uint8Array() : restartBootBytes(bootOrdinal + 1, ["same_stream", "reopen_complete"].includes(maybeRestartMode)));
+        result: { schema: request.command === "qualification_restart" ? "worker-qualification-restart-v1" : "worker-qualification-core-dump-self-test-v1", requestNonce: input.requestNonce, bootOrdinal, nextBootOrdinal: bootOrdinal + 1 } }, false,
+        maybeRestartMode === "queued_prior_boot" ? restartBootBytes(bootOrdinal, true, 100000) : maybeRestartMode === "missing_boot" ? new Uint8Array() : restartBootBytes(bootOrdinal + 1, ["same_stream", "reopen_complete"].includes(maybeRestartMode), 1000, request.command === "qualification_restart" ? "software_cpu" : "panic"));
       bootOrdinal++; sequence = 0; admitted = false; helloDrained = false; drained = 0; incomingFramer = new WorkerSerialFramer();
       if (maybeRestartMode.startsWith("reopen")) maybeOutput?.close();
       return;

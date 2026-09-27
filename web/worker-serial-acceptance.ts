@@ -7,7 +7,7 @@ import { isWorkerV2Stratum } from "./worker-v2-stratum";
 import { isWorkerRestorationPending } from "./worker-control-rejection";
 import { createWorkerNoisePageOperations } from "./worker-noise-page";
 import { acceptanceLocalJson as localJson } from "./worker-acceptance-local";
-import { createWorkerRestartPageOperations } from "./worker-restart-page";
+import { createWorkerCoreDumpPageOperations, createWorkerRestartPageOperations } from "./worker-restart-page";
 import { WorkerCadenceAcceptance } from "./worker-cadence-acceptance";
 import { createWorkerCadencePageOperations } from "./worker-cadence-page";
 import { requireWorkerOwnerHeadroom, workerOwnerResourceFailure, type WorkerOwnerResourceFailure } from "./worker-owner-resources";
@@ -179,11 +179,12 @@ function configure(input: Configuration) {
   }
   if (parsed.noiseQualification === "candidate") hook.noiseDiagnosticPair = { firmwareSourceCommit: parsed.expectedFirmwareSourceCommit, appElfSha256: parsed.expectedAppElfSha256 };
   else delete hook.noiseDiagnosticPair;
-  if (parsed.stratumV2Qualification === "candidate" && parsed.stratumV2Scope) hook.stratumV2Pair = { firmwareSourceCommit: parsed.expectedFirmwareSourceCommit, appElfSha256: parsed.expectedAppElfSha256, scope: parsed.stratumV2Scope };
+  if ((parsed.stratumV2Qualification === "candidate" || (parsed.stratumV2Qualification === "before" && parsed.coreDumpSelfTestQualification)) && parsed.stratumV2Scope) hook.stratumV2Pair = { firmwareSourceCommit: parsed.expectedFirmwareSourceCommit, appElfSha256: parsed.expectedAppElfSha256, scope: parsed.stratumV2Scope, ...(parsed.stratumV2Qualification === "before" ? { maybeReadOnly: true as const } : {}) };
   else delete hook.stratumV2Pair;
   cadence.configure(parsed.cadenceQualification);
   recoveryLoss.configure(parsed.recoveryPhase);
   if (parsed.recoveryPhase === "resume") authorizationRecovery.clearForResume(recoveryLoss.sealed);
+  hook.allowCoreDumpSelfTest = parsed.coreDumpSelfTestQualification === true && parsed.stratumV2Qualification !== "before";
   hook.allowQualificationRestart = parsed.restartQualification === true;
   maybeConfiguration = parsed;
   deviceBaselineConfirmed = false;
@@ -547,7 +548,10 @@ async function suppressCadenceHeartbeats() {
 }
 
 export const workerAcceptance = {
-  ...createWorkerV2PageOperations({ maybeReviewedBinding: () => maybeReviewedContext?.controlSessionBindingSha256, serializeRead, changed: publish, phase: () => maybeConfiguration?.stratumV2Qualification, scope: () => maybeConfiguration?.stratumV2Scope, connected: () => connected, idle: () => connected && !running && !maybeWindow, controller, maybePreservation: () => preservation.maybePublicState() }),
+  ...createWorkerCoreDumpPageOperations({ enabled: () => maybeConfiguration?.coreDumpSelfTestQualification === true && maybeConfiguration.stratumV2Qualification !== "before", idle: () => connected && !running && !maybeWindow,
+    maybeController: () => maybeController, before: () => { maybeReviewedContext = undefined; status = "restarting"; deviceBaselineConfirmed = false; publish(); },
+    succeeded: () => { status = "ready"; publish(); }, failed: () => { connected = false; running = false; stopTimer(); status = "failed"; maybeFailure = "core_dump_self_test_failed"; publish(); } }),
+  ...createWorkerV2PageOperations({ maybeBeforeReadEnabled: () => maybeConfiguration?.coreDumpSelfTestQualification === true, maybeReviewedBinding: () => maybeReviewedContext?.controlSessionBindingSha256, serializeRead, changed: publish, phase: () => maybeConfiguration?.stratumV2Qualification, scope: () => maybeConfiguration?.stratumV2Scope, connected: () => connected, idle: () => connected && !running && !maybeWindow, controller, maybePreservation: () => preservation.maybePublicState() }),
   ...createWorkerNoisePageOperations({ changed: publish, phase: () => maybeConfiguration?.noiseQualification, idle: () => connected && !running && !maybeWindow, controller, maybePreservation: () => preservation.maybePublicState() }),
   ...createWorkerRestartPageOperations({ enabled: () => maybeConfiguration?.restartQualification === true, idle: () => connected && !running && !maybeWindow,
     maybeController: () => maybeController, before: () => { maybeReviewedContext = undefined; status = "restarting"; deviceBaselineConfirmed = false; publish(); },

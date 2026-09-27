@@ -54,3 +54,10 @@ test("before phase and Channel scope cannot enter existing signed work or coolin
   expect(() => requireWorkerV2ShareMode({ stratumV2Qualification: "candidate", stratumV2Scope: "share" })).not.toThrow();
   expect(() => requireWorkerV2ShareMode(undefined)).not.toThrow();
 });
+
+test("explicit core dump before mode permits only possession and scoped status", async () => {
+  const page = createWorkerV2PageOperations({ maybeBeforeReadEnabled: () => true, maybeReviewedBinding: () => undefined, serializeRead: run => run(), changed() {}, phase: () => "before", scope: () => "channel", connected: () => true, idle: () => true, maybePreservation: () => undefined, controller: () => ({ async prepareWorkerLeaseAuthorizationContext() { return { controlSessionBindingSha256: "fresh" }; }, async telemetryCadenceEndpoint() { throw Error("unexpected"); }, async stratumV2ChannelStart() { throw Error("unexpected"); }, async stratumV2Status() { return v2Idle(); }, async stratumV2ChannelCancel() { throw Error("unexpected"); } }) });
+  expect(await page.stratumV2Possession()).toBe("fresh"); expect((await page.stratumV2Status("channel", null, "fresh")).state).toBe("idle");
+  await expect(page.stratumV2ChannelStart(v2Input, "fresh")).rejects.toThrow("v2_page_admission");
+  await expect(page.stratumV2ChannelCancel(v2Input.attemptId, "fresh")).rejects.toThrow("v2_page_admission");
+});

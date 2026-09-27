@@ -32,11 +32,11 @@ export class WorkerSerialRestart {
     freezeWrites(): Promise<void>; request(value: WorkerQualificationRestartRequest): Promise<unknown>;
     acknowledged(): void; reopen(observer: WorkerSerialRestartObserver): Promise<void>;
     fresh(observer: WorkerSerialRestartObserver): Promise<void>; finish(): void; cleanup(): Promise<void>;
-  }): Promise<WorkerRestartEvidence> {
+  }, kind: "restart" | "core_dump_self_test" = "restart"): Promise<WorkerRestartEvidence> {
     const request = parseQualificationRestartRequest(input); operations.ready();
     if (this.#consumed) throw serialFailure("restart_consumed"); this.#consumed = true;
     const prior = operations.identity(); this.#maybePriorAck = prior;
-    const observer = new WorkerSerialRestartObserver(request, { firmwareSourceCommit: prior.firmwareSourceCommit, appElfSha256: prior.appElfSha256 }, operations.now);
+    const observer = new WorkerSerialRestartObserver(request, { firmwareSourceCommit: prior.firmwareSourceCommit, appElfSha256: prior.appElfSha256 }, operations.now, undefined, kind);
     this.#maybeObserver = observer; this.#maybeAcknowledged = operations.acknowledged;
     const limit = <T>(operation: () => Promise<T>) => {
       const remaining = observer.remaining();
