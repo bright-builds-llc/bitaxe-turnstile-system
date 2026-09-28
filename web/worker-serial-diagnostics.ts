@@ -1,3 +1,4 @@
+import { maybeCoreDumpDiagnostic, maybeCoreDumpExport, coreDumpHistoryKey } from "./worker-core-dump-diagnostics";
 import { maybePreparationDiagnostic, maybePreparationExport, sameRecord } from "./worker-preparation-diagnostics";
 /** Local, non-authoritative observations; never identity or Work Lease admission. */
 export type WorkerSerialDiagnostic = Readonly<Record<string, string | number | boolean>>;
@@ -8,9 +9,10 @@ export class WorkerSerialDiagnosticHistory {
   #crashReceipts = new Map<string, WorkerSerialDiagnostic>();
 
   observe(value: WorkerSerialDiagnostic): void {
+    const coreDump = value.category === "core_dump_store_receipt";
     const allocation = value.category === "allocation_failure" || value.category === "allocation_context";
-    if (allocation || (value.category === "worker_preparation_receipt" && value.origin === "previous_boot") || value.category === "panic") {
-      const key = allocation
+    if ((coreDump && value.origin === "previous_boot") || allocation || (value.category === "worker_preparation_receipt" && value.origin === "previous_boot") || value.category === "panic") {
+      const key = coreDump ? coreDumpHistoryKey(value) : allocation
         ? `${value.category}:${value.source_hash ?? ""}:${value.requested_bytes}:${value.capabilities}:${value.stage ?? ""}`
         : `${value.category}:${value.source_hash ?? value.file_hash ?? "none"}:${value.boot_ordinal ?? "none"}:${value.status ?? value.line}`;
       if (this.#crashReceipts.size < 8 || this.#crashReceipts.has(key)) this.#crashReceipts.set(key, value);
@@ -18,7 +20,7 @@ export class WorkerSerialDiagnosticHistory {
     }
     const failure = String(value.category).endsWith("_failure") || value.category === "panic"
       || (value.category === "statistics_startup" && ["spawn_failed", "config_failed", "cancelled"].includes(String(value.state)));
-    const key = failure ? String(value.category) : `${value.category}:${value.stage ?? ""}`;
+    const key = coreDump ? coreDumpHistoryKey(value) : failure ? String(value.category) : `${value.category}:${value.stage ?? ""}`;
     if (this.#observations.has(key) && failure) return;
     if (this.#observations.size >= 32 && !this.#observations.has(key)) return;
     this.#observations.set(key, value);
@@ -121,6 +123,8 @@ const grammars: readonly Grammar[] = [
 /** Parses only producer-owned closed grammars; arbitrary boot/log/request text is dropped. */
 export function maybeWorkerSerialDiagnostic(line: string): WorkerSerialDiagnostic | undefined {
   if (line.length > 1024) return undefined;
+  const maybeCoreDump = maybeCoreDumpDiagnostic(line);
+  if (maybeCoreDump) return maybeCoreDump;
   const preparation = maybePreparationDiagnostic(line);
   if (preparation) return preparation;
   for (const grammar of grammars) {
@@ -165,6 +169,8 @@ export function maybeWorkerDiagnosticPayload(payload: Record<string, unknown>) {
 export function maybeValidatedDiagnostic(input: unknown): WorkerSerialDiagnostic | undefined {
   if (input === null || typeof input !== "object" || Array.isArray(input)) return undefined;
   const value = input as WorkerSerialDiagnostic;
+  const maybeCoreDump = maybeCoreDumpExport(value);
+  if (maybeCoreDump) return maybeCoreDump;
   const preparation = maybePreparationExport(value);
   if (preparation) return preparation;
   for (const grammar of grammars) {
