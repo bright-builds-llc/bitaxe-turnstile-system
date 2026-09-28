@@ -1,3 +1,4 @@
+import { runWorkerNormalAuthorization } from "./worker-normal-authorization";
 import { bindWorkerQualificationConnect } from "./worker-qualification-gesture";
 import { createWorkerAcceptanceAuthorization } from "./worker-acceptance-authorization";
 import { requireWorkerV2ShareMode } from "./worker-v2-configuration";
@@ -308,7 +309,7 @@ async function tick() {
     if (now >= nextRenew) {
       const renewal = maybeWindow.renewals.shift();
       if (!renewal) throw new Error("renewal_exhausted");
-      await renewalProgress.renew(controller(), renewal);
+      await runWorkerNormalAuthorization(authorizationRecovery, Boolean(maybeConfiguration?.stratumV2Qualification), () => renewalProgress.renew(controller(), renewal), close);
       nextRenew = performance.now() + renewal.renewAfterMilliseconds;
     }
     await refresh();
@@ -336,7 +337,7 @@ async function startWindow() {
   if (!input || running) throw new Error("window_missing_or_active");
   if (maybeConfiguration?.stratumV2Qualification) v2ShareStartClaim.consume();
   maybeOwnerResourceFailure = undefined;
-  const observed = await controller().startLease(input.grant);
+  const observed = await runWorkerNormalAuthorization(authorizationRecovery, Boolean(maybeConfiguration?.stratumV2Qualification), () => controller().startLease(input.grant), close);
   maybeQualification = observed.qualification;
   renewalProgress.beginWindow();
   running = true;
@@ -377,6 +378,7 @@ async function stop() {
     throw error;
   }
   maybeQualification = observed.qualification;
+  authorizationRecovery.captureNormalStop();
   running = false;
   maybeWindow = undefined;
   status = "baseline_confirmed";

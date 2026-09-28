@@ -95,6 +95,7 @@ export async function serialHarness(
       },
     ],
   };
+  let omitPreservation = false;
   let drained = 0;
   let helloDrained = false;
   let dropCredits = false;
@@ -157,7 +158,7 @@ export async function serialHarness(
     active && maybeLease
       ? {
         protocolVersion: "bwg-worker-controller/0.4",
-        preservation,
+        ...(omitPreservation ? {} : { preservation }),
         ...(maybeQualification ? { qualification: maybeQualification } : {}),
         state: "mining",
         monotonicMilliseconds: now,
@@ -173,7 +174,7 @@ export async function serialHarness(
       }
       : {
         protocolVersion: "bwg-worker-controller/0.4",
-        preservation,
+        ...(omitPreservation ? {} : { preservation }),
         ...(maybeQualification ? { qualification: maybeQualification } : {}),
         state: "baseline",
         monotonicMilliseconds: now,
@@ -502,6 +503,8 @@ export async function serialHarness(
     trust,
     controller: createWebSerialWorkerController(input),
     received,
+    omitPreservation() { omitPreservation = true; },
+    expireWork() { active = false; reason = "connectivity_lost"; },
     setQualification(value: WorkerQualification) { maybeQualification = value; },
     setRestartScenario(mode: RestartFixtureMode) { maybeRestartMode = mode; },
     setRestorationPending(value: boolean) { restorationPending = value; },
@@ -546,8 +549,9 @@ export async function serialHarness(
         | "settings_sha256"
         | "authorization_high_water_sha256"
         | "device_identity_sha256",
+      maybeDigest = "f".repeat(64),
     ) {
-      preservation[field] = "f".repeat(64);
+      preservation[field] = maybeDigest;
     },
     rejectStart(category: string) { maybeStartRejection = category; },
     holdStart() {
