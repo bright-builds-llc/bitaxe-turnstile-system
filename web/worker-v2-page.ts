@@ -1,4 +1,4 @@
-import { WorkerV2SerialHistory } from "./worker-v2-serial-history";
+import { WorkerV2ImageHistory, type WorkerV2ObservedImage } from "./worker-v2-image-history";
 import type { ChannelStart, V2Scope, V2Status } from "./worker-v2-serial";
 import type { WebSerialWorkerController } from "./webserial-worker-controller";
 import type { WorkerPreservationContinuity } from "./worker-preservation";
@@ -7,16 +7,18 @@ export function createWorkerV2PageOperations(operations: {
   serializeRead<T>(run: () => Promise<T>): Promise<T>;
   changed(): void; phase(): "before" | "candidate" | undefined; scope(): V2Scope | undefined;
   maybeBeforeReadEnabled?(): boolean;
+  /** Only expose the configured pair after exact controller identity and possession admission. */
+  maybeAdmittedImage?(): WorkerV2ObservedImage | undefined;
   connected(): boolean; idle(): boolean;
   controller(): Pick<WebSerialWorkerController, "prepareWorkerLeaseAuthorizationContext" | "stratumV2ChannelStart" | "stratumV2Status" | "stratumV2ChannelCancel" | "telemetryCadenceEndpoint">;
   maybeReviewedBinding(): string | undefined;
   maybePreservation(): WorkerPreservationContinuity | undefined;
 }) {
-  const history = new WorkerV2SerialHistory(); let consumed = false;
+  const history = new WorkerV2ImageHistory(); let consumed = false;
   const requireCandidate = () => { if (!operations.connected() || operations.phase() !== "candidate") throw new Error("v2_page_admission"); };
   const requireRead = () => { if (operations.connected() && operations.phase() === "before" && operations.maybeBeforeReadEnabled?.()) return; requireCandidate(); };
   const requireChannel = () => { requireCandidate(); if (operations.scope() !== "channel" || !operations.idle()) throw new Error("v2_channel_admission"); };
-  const observe = (status: V2Status) => { history.observe(status); return status; };
+  const observe = (status: V2Status) => { history.observe(status, operations.maybeAdmittedImage?.(), operations.maybePreservation()); return status; };
   return {
     async stratumV2Possession() {
       requireRead(); if (!operations.idle()) throw new Error("v2_possession_idle_required");

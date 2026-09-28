@@ -1,3 +1,4 @@
+import { fixtureIdentityKey } from "./worker-serial-identity.fixture";
 import { restartBootBytes, type RestartFixtureMode } from "./worker-restart.fixture";
 import { cadenceFixture } from "./worker-telemetry-cadence.fixture";
 import {
@@ -42,15 +43,6 @@ import {
   type WorkerSerialInternalOptions,
 } from "./webserial-worker-controller";
 
-/** Public RFC 8032 vector identity; fixture-only signer, never production deployment material. */
-async function fixtureIdentityKey() {
-  const hex =
-    "302e020100300506032b6570042204209d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60";
-  const bytes = Uint8Array.from(hex.match(/../gu) ?? [], (pair) =>
-    Number.parseInt(pair, 16),
-  );
-  return crypto.subtle.importKey("pkcs8", bytes, "Ed25519", false, ["sign"]);
-}
 export async function serialHarness(
   maybeChallengeId: string = controllerFixture.lease.challengeId,
 ) {
@@ -95,6 +87,8 @@ export async function serialHarness(
       },
     ],
   };
+  let firmwareSourceCommit = "a".repeat(40), appElfSha256 = "b".repeat(64);
+  const fixtureBootBytes = (boot: number, complete = true, ready = 1000, reason: "software_cpu" | "panic" = "software_cpu") => restartBootBytes(boot, complete, ready, reason, { firmwareSourceCommit, appElfSha256 });
   let omitPreservation = false;
   let drained = 0;
   let helloDrained = false;
@@ -205,8 +199,8 @@ export async function serialHarness(
           hostNonce: frame.payload.hostNonce,
           deviceNonce: encodeBase64Url(new Uint8Array(32).fill(8 + sessions)),
           serialManifest: WORKER_SERIAL_MANIFEST,
-          firmwareSourceCommit: "a".repeat(40),
-          appElfSha256: "b".repeat(64),
+          firmwareSourceCommit,
+          appElfSha256,
           receiveWindowBytes: 2048,
           receivedBytes: 0,
         },
@@ -225,8 +219,8 @@ export async function serialHarness(
       const claims = {
         ...(request.payload as object),
         profile: "bwg-worker-possession-proof/0.2",
-        firmwareSourceCommit: "a".repeat(40),
-        appElfSha256: "b".repeat(64),
+        firmwareSourceCommit,
+        appElfSha256,
         deviceIdentityJwk: possessionFixture.fixtureIdentity.publicJwk,
       };
       const header = encodeBase64Url(
@@ -330,7 +324,7 @@ export async function serialHarness(
       if (active || input.expectedBootOrdinal !== bootOrdinal) throw new Error("fixture_restart_admission");
       await send("control", { protocolVersion: request.protocolVersion, requestId: request.requestId, ok: true,
         result: { schema: request.command === "qualification_restart" ? "worker-qualification-restart-v1" : "worker-qualification-core-dump-self-test-v1", requestNonce: input.requestNonce, bootOrdinal, nextBootOrdinal: bootOrdinal + 1 } }, false,
-        maybeRestartMode === "queued_prior_boot" ? restartBootBytes(bootOrdinal, true, 100000) : maybeRestartMode === "missing_boot" ? new Uint8Array() : restartBootBytes(bootOrdinal + 1, ["same_stream", "reopen_complete"].includes(maybeRestartMode), 1000, request.command === "qualification_restart" ? "software_cpu" : "panic"));
+        maybeRestartMode === "queued_prior_boot" ? fixtureBootBytes(bootOrdinal, true, 100000) : maybeRestartMode === "missing_boot" ? new Uint8Array() : fixtureBootBytes(bootOrdinal + 1, ["same_stream", "reopen_complete"].includes(maybeRestartMode), 1000, request.command === "qualification_restart" ? "software_cpu" : "panic"));
       bootOrdinal++; sequence = 0; admitted = false; helloDrained = false; drained = 0; incomingFramer = new WorkerSerialFramer();
       if (maybeRestartMode.startsWith("reopen")) maybeOutput?.close();
       return;
@@ -405,7 +399,7 @@ export async function serialHarness(
       maybeReadable = new ReadableStream({
         start(controller) {
           maybeOutput = controller;
-          if (bootOrdinal > 1 && maybeRestartMode?.startsWith("reopen")) { controller.enqueue(restartBootBytes(bootOrdinal, true, 1000 + (opened - 1) * 1000)); if (maybeRestartMode === "reopen_twice") controller.close(); }
+          if (bootOrdinal > 1 && maybeRestartMode?.startsWith("reopen")) { controller.enqueue(fixtureBootBytes(bootOrdinal, true, 1000 + (opened - 1) * 1000)); if (maybeRestartMode === "reopen_twice") controller.close(); }
         },
         cancel() {
           maybeOutput = undefined;
@@ -505,7 +499,9 @@ export async function serialHarness(
     received,
     omitPreservation() { omitPreservation = true; },
     expireWork() { active = false; reason = "connectivity_lost"; },
+    setImageIdentity(source: string, elf: string) { firmwareSourceCommit = source; appElfSha256 = elf; },
     setQualification(value: WorkerQualification) { maybeQualification = value; },
+    setBootOrdinal(value: number) { bootOrdinal = value; },
     setRestartScenario(mode: RestartFixtureMode) { maybeRestartMode = mode; },
     setRestorationPending(value: boolean) { restorationPending = value; },
     setNoiseHandler(handler: (command: string, payload: unknown) => Promise<unknown>) { maybeNoiseHandler = handler; },
