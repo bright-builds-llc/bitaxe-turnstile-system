@@ -47,7 +47,7 @@ import {
   WorkerSerialPeer, exactSerialRecord, serialFailure, serialFailureFor,
   type WorkerSerialEnvelope,
 } from "./worker-serial";
-import { WorkerSerialChannel, type WorkerSerialBrowserRuntime } from "./webserial-worker-port";
+import { WorkerSerialChannel, selectWorkerPort, type WorkerSerialBrowserRuntime } from "./webserial-worker-port";
 import {
   type WorkerSerialQualificationHook, type WebSerialWorkerControllerInput, type WebSerialWorkerController,
   type Ack, type PendingResponse,
@@ -114,9 +114,9 @@ export class BrowserSerialController implements WebSerialWorkerController {
     this.#maybeFailure = undefined;
     const generation = this.#generation;
     const admission = ++this.#admission;
-    // requestPort must be called in the original user-activation task.
-    const selection = this.runtime.serial.requestPort({ filters: [this.input.deviceFilter] })
-      .then(port => ({ port }), () => ({ port: undefined }));
+    // Selection starts in the original user-activation task; a chooser fallback stays
+    // within that transient activation. Reuse grants nothing: checks below still apply.
+    const selection = selectWorkerPort(this.runtime.serial, this.input.deviceFilter);
     let maybeOwner: WorkerSerialPortOwner | undefined;
     let stage: import("./worker-serial-controller.types").WorkerSerialAdmissionStage = "ownership";
     try {

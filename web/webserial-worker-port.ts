@@ -15,6 +15,8 @@ import {
 export interface WorkerSerialPort {
   readonly readable: ReadableStream<Uint8Array> | null;
   readonly writable: WritableStream<Uint8Array> | null;
+  /** Chrome reports false for a granted device that is not currently attached. */
+  readonly connected?: boolean;
   getInfo(): { usbVendorId?: number; usbProductId?: number };
   open(options: {
     baudRate: number;
@@ -27,6 +29,33 @@ export interface WorkerSerialAccess {
   requestPort(options: {
     filters: { usbVendorId: number; usbProductId: number }[];
   }): Promise<WorkerSerialPort>;
+  /** Ports this origin was already granted; optional so adapters may omit reuse. */
+  getPorts?(): Promise<WorkerSerialPort[]>;
+}
+
+type WorkerDeviceFilter = { usbVendorId: number; usbProductId: number };
+
+/**
+ * Reuses exactly one already granted, attached port matching the Worker filter, so a
+ * reconnect needs no chooser. Selection is never authority: the caller still checks
+ * the device filter, takes the Web Lock and requires fresh Hello and possession.
+ * No grant, several grants or an unavailable listing fall back to the chooser.
+ */
+export async function selectWorkerPort(
+  serial: WorkerSerialAccess,
+  filter: WorkerDeviceFilter,
+): Promise<{ port: WorkerSerialPort | undefined; reused: boolean }> {
+  const granted = serial.getPorts ? await serial.getPorts().catch(() => []) : [];
+  const matching = granted.filter((port) => {
+    const info = port.getInfo();
+    return port.connected !== false && info.usbVendorId === filter.usbVendorId &&
+      info.usbProductId === filter.usbProductId;
+  });
+  if (matching.length === 1) return { port: matching[0], reused: true };
+  return serial.requestPort({ filters: [filter] }).then(
+    (port) => ({ port, reused: false }),
+    () => ({ port: undefined, reused: false }),
+  );
 }
 export type WorkerSerialBrowserRuntime = {
   serial: WorkerSerialAccess;
