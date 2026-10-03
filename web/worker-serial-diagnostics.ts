@@ -113,6 +113,13 @@ const grammars: readonly Grammar[] = [
     numeric: ["requested_bytes"],
   },
   {
+    // Producer: bitaxe-runtime revocation/unsafe_detail.rs, UnsafeObservationDetail::marker.
+    category: "worker_revocation_detail",
+    pattern: /^worker_revocation_detail schema=v1 generation=(\d{1,10}) reason=(unsafe_observation) trigger=(unsafe_sample|zero_fan|no_safe_sample) fact=(none|power|bus_voltage|current|chip_temperature|fan_rpm) state=(none|expired|stale|unavailable|fault|out_of_range) value_milli=(-?\d{1,10}|unavailable) age_ms=(\d{1,10}|unavailable) since_safe_ms=(\d{1,10}) closed_ms=(\d{1,10}) redacted=true$/u,
+    fields: ["generation", "reason", "trigger", "fact", "state", "value_milli", "age_ms", "since_safe_ms", "closed_ms"],
+    numeric: ["generation", "value_milli", "age_ms", "since_safe_ms", "closed_ms"],
+  },
+  {
     category: "panic",
     pattern: /^rust_panic_receipt schema=v1 file_hash=([0-9a-f]{8}) line=(\d{1,10}) redacted=true$/u,
     fields: ["file_hash", "line"],
@@ -134,7 +141,7 @@ export function maybeWorkerSerialDiagnostic(line: string): WorkerSerialDiagnosti
     for (const [index, key] of grammar.fields.entries()) {
       const text = match[index + 1]; if (text === undefined) return undefined;
       const field = grammar.numeric.includes(key) && text !== "unavailable" ? Number(text) : text;
-      if (grammar.category === "statistics_startup" && key === "errno") {
+      if ((grammar.category === "statistics_startup" && key === "errno") || key === "value_milli") {
         if (typeof field === "number" && (!Number.isInteger(field) || field < -2147483648 || field > 2147483647)) return undefined;
         value[key] = field; continue;
       }
@@ -148,6 +155,7 @@ export function maybeWorkerSerialDiagnostic(line: string): WorkerSerialDiagnosti
       if (allocationKeys.some(key => unavailable ? value[key] !== "unavailable" : typeof value[key] !== "number")) return undefined;
       if (value.state !== "spawn_failed" && value.errno !== "unavailable") return undefined;
     }
+    if (value.category === "worker_revocation_detail" && !revocationDetailConsistent(value)) return undefined;
     if (typeof value.readiness === "number" && value.readiness > 63) return undefined;
     if (typeof value.budget_reserved_ms === "number" && value.budget_reserved_ms > 240000) return undefined;
     if (typeof value.observed_bytes === "number" && value.observed_bytes > 66560) return undefined;
@@ -157,6 +165,14 @@ export function maybeWorkerSerialDiagnostic(line: string): WorkerSerialDiagnosti
     return Object.freeze(value);
   }
   return undefined;
+}
+
+/** A fact and its state are named together; a detail without a fact carries no value or age. */
+function revocationDetailConsistent(value: Record<string, string | number | boolean>): boolean {
+  if ((value.fact === "none") !== (value.state === "none")) return false;
+  if (value.fact === "none" && (value.value_milli !== "unavailable" || value.age_ms !== "unavailable")) return false;
+  if (value.trigger !== "unsafe_sample" && value.fact !== "none") return false;
+  return value.state !== "unavailable" || (value.value_milli === "unavailable" && value.age_ms === "unavailable");
 }
 
 export function maybeWorkerDiagnosticPayload(payload: Record<string, unknown>) {
