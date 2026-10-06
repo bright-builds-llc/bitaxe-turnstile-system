@@ -3,8 +3,10 @@ import { maximumWindowRenewals } from "./worker-serial-acceptance-actions";
 import type { WorkerSerialAcceptanceConfiguration } from "./worker-serial-acceptance-config";
 import { isWorkerV2Stratum } from "./worker-v2-stratum";
 
-const exactSixtyTwenty = (value: { durationMilliseconds: number; renewAfterMilliseconds: number }) =>
-  value.durationMilliseconds === 60000 && value.renewAfterMilliseconds === 20000;
+// Declared as a function so host compatibility harnesses can extract and execute it with the parser.
+function exactSixtyTwenty(value: { durationMilliseconds: number; renewAfterMilliseconds: number }): boolean {
+  return value.durationMilliseconds === 60000 && value.renewAfterMilliseconds === 20000;
+}
 
 /** Parse one signed window completely before any page state changes; the active mode decides which windows load. */
 export function parseAcceptanceWindow(
