@@ -4,7 +4,6 @@ import { createWorkerAcceptanceAuthorization } from "./worker-acceptance-authori
 import { requireWorkerV2ShareMode } from "./worker-v2-configuration";
 import { drainWorkerAcceptancePoll, captureWorkerV2HeartbeatFault, serializeWorkerAcceptanceRead } from "./worker-acceptance-fault";
 import { createWorkerV2PageOperations, WorkerV2ShareStartClaim } from "./worker-v2-page";
-import { isWorkerV2Stratum } from "./worker-v2-stratum";
 import { isWorkerRestorationPending } from "./worker-control-rejection";
 import { createWorkerNoisePageOperations } from "./worker-noise-page";
 import { acceptanceLocalJson as localJson } from "./worker-acceptance-local";
@@ -26,7 +25,8 @@ import { requireWorkerAcceptanceModeTransition, parseWorkerSerialAcceptanceConfi
 import { submitWorkerCoolingReview } from "./worker-cooling-review";
 import type { WorkerLeaseAuthorizationContext } from "./worker-lease-authorization";
 import { WorkerSerialDiagnosticHistory } from "./worker-serial-diagnostics";
-import { restoreAcceptanceBaseline, acceptanceWindowShouldStop, AcceptanceRenewalProgress, requireAcceptanceFaultHeadroom } from "./worker-serial-acceptance-actions";
+import { restoreAcceptanceBaseline, acceptanceWindowShouldStop, AcceptanceRenewalProgress, requireAcceptanceFaultHeadroom, maximumWindowRenewals, soakTickDecision } from "./worker-serial-acceptance-actions";
+import { parseAcceptanceWindow } from "./worker-acceptance-window";
 import { WorkerPreservationBaseline } from "./worker-preservation";
 import {
   createWebSerialWorkerController,
@@ -35,7 +35,7 @@ import {
   type WebSerialWorkerControllerInput,
   type WorkerSerialQualificationHook,
 } from "./webserial-worker-controller";
-import { parseWorkerLeaseGrant, parseWorkerLeaseRenewal, type WorkerLeaseGrant, type WorkerLeaseRenewal, type WorkerQualification } from "./worker-controller";
+import type { WorkerLeaseGrant, WorkerLeaseRenewal, WorkerQualification } from "./worker-controller";
 
 declare const BWG_GATE_SOURCE_COMMIT: string;
 const gateCommit = typeof BWG_GATE_SOURCE_COMMIT === "string" ? BWG_GATE_SOURCE_COMMIT : "Unavailable";
@@ -254,20 +254,8 @@ function loadWindow(input: WindowArtifacts) {
   if (maybeConfiguration?.noiseQualification) throw new Error("noise_forbids_work");
   requireWorkerV2ShareMode(maybeConfiguration);
   if (running) throw new Error("window_active");
-  const grant = parseWorkerLeaseGrant(input.grant);
-  cadence.requireWindow(grant);
-  if (maybeConfiguration?.stratumV2Qualification && (!isWorkerV2Stratum(grant.stratum) || grant.qualificationAttempt?.purpose !== "normal" || grant.qualificationAttempt.maximumActiveMilliseconds !== 180000 || grant.durationMilliseconds !== 60000 || grant.renewAfterMilliseconds !== 20000)) throw new Error("v2_share_window");
-  if (!grant.acceptanceCampaign && !grant.qualificationAttempt)
-    throw new Error("acceptance_campaign_required");
-  if (!Array.isArray(input.renewals) || input.renewals.length > 16)
-    throw new Error("renewal_bound");
-  const renewals = input.renewals.map(parseWorkerLeaseRenewal);
-  if (maybeConfiguration?.stratumV2Qualification && renewals.some(value => value.durationMilliseconds !== 60000 || value.renewAfterMilliseconds !== 20000)) throw new Error("v2_renewal_window");
-  if (renewals.some((value) => value.leaseId !== grant.leaseId))
-    throw new Error("renewal_lease_mismatch");
-  maybeWindow = { grant, renewals };
-  status = "window_loaded";
-  publish();
+  maybeWindow = parseAcceptanceWindow(input, maybeConfiguration, grant => cadence.requireWindow(grant));
+  status = "window_loaded"; publish();
 }
 async function loadSignedWindow() {
   if (maybeConfiguration?.restartQualification) throw new Error("restart_forbids_work");
@@ -296,10 +284,26 @@ async function refresh() {
   await enforceRunningHeadroom();
   return state();
 }
+async function renewNext(window: { renewals: WorkerLeaseRenewal[] }) {
+  const renewal = window.renewals.shift();
+  if (!renewal) throw new Error("renewal_exhausted");
+  await runWorkerNormalAuthorization(authorizationRecovery, Boolean(maybeConfiguration?.stratumV2Qualification), () => renewalProgress.renew(controller(), renewal), close);
+  nextRenew = performance.now() + renewal.renewAfterMilliseconds;
+}
+/** Soak: refresh before deciding, so no renewal is sent after the device has closed its work gate. */
+async function soakTick(window: { renewals: WorkerLeaseRenewal[] }) {
+  await refresh();
+  if (!running || !maybeWindow) return;
+  const decision = soakTickDecision({ browserElapsedMs: performance.now() - began, nowMs: performance.now(), nextRenewMs: nextRenew, maybeQualification });
+  if (decision === "fail") throw new Error("soak_window_failed");
+  if (decision === "stop") { await stop(); return; }
+  if (decision === "renew") await renewNext(window);
+}
 async function tick() {
   if (polling || !running || !maybeWindow) return;
   polling = true;
   try {
+    if (maybeWindow.grant.soakAllowance) { await soakTick(maybeWindow); return; }
     const now = performance.now();
     const duration = acceptanceMaximumActiveMilliseconds(maybeWindow.grant);
     if (duration === undefined) throw new Error("campaign_missing");
@@ -307,12 +311,7 @@ async function tick() {
       await stop();
       return;
     }
-    if (now >= nextRenew) {
-      const renewal = maybeWindow.renewals.shift();
-      if (!renewal) throw new Error("renewal_exhausted");
-      await runWorkerNormalAuthorization(authorizationRecovery, Boolean(maybeConfiguration?.stratumV2Qualification), () => renewalProgress.renew(controller(), renewal), close);
-      nextRenew = performance.now() + renewal.renewAfterMilliseconds;
-    }
+    if (now >= nextRenew) await renewNext(maybeWindow);
     await refresh();
     if (!running || !maybeWindow) return;
     if (cadence.shouldSuppress(performance.now())) { await suppressCadenceHeartbeats(); return; }
@@ -340,7 +339,7 @@ async function startWindow() {
   maybeOwnerResourceFailure = undefined;
   const observed = await runWorkerNormalAuthorization(authorizationRecovery, Boolean(maybeConfiguration?.stratumV2Qualification), () => controller().startLease(input.grant), close);
   maybeQualification = observed.qualification;
-  renewalProgress.beginWindow();
+  renewalProgress.beginWindow(maximumWindowRenewals(input.grant));
   running = true;
   status = "running";
   began = performance.now();
@@ -559,7 +558,7 @@ export const workerAcceptance = {
   ...createWorkerRestartPageOperations({ enabled: () => maybeConfiguration?.restartQualification === true, idle: () => connected && !running && !maybeWindow,
     maybeController: () => maybeController, before: () => { maybeReviewedContext = undefined; status = "restarting"; deviceBaselineConfirmed = false; publish(); },
     succeeded: () => { status = "ready"; publish(); }, failed: () => { connected = false; running = false; stopTimer(); status = "failed"; maybeFailure = "qualification_restart_failed"; publish(); } }),
-  ...createWorkerEndpointPageOperations({ enabled: () => maybeConfiguration?.stationEndpointHandoff === true, idle: () => connected && !running && !maybeWindow,
+  ...createWorkerEndpointPageOperations({ enabled: () => maybeConfiguration?.stationEndpointHandoff === true || maybeConfiguration?.soakQualification === true, idle: () => connected && !running && !maybeWindow,
     maybeController: () => maybeController, invalidateAuthorization: () => { maybeReviewedContext = undefined; } }),
   ...createWorkerCadencePageOperations({ cadence, controller, running: () => running, loaded: () => maybeWindow !== undefined,
     maybeReviewedBinding: () => maybeReviewedContext?.controlSessionBindingSha256, invalidateAuthorization: () => { maybeReviewedContext = undefined; }, publish, local: localJson }),

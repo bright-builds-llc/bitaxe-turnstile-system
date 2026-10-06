@@ -1,3 +1,4 @@
+import type { WorkerSoakLedger } from "./worker-soak-allowance";
 import type { ChannelStart, V2Scope, V2Status } from "./worker-v2-serial";
 import type { NoiseStartInputV2, NoiseStatusV2 } from "./worker-noise-diagnostic";
 import type { WorkerQualificationRestartRequest } from "./worker-qualification-restart";
@@ -58,6 +59,7 @@ export interface WebSerialWorkerController
   rejectStartForRecoveryTest(trust: WorkLeaseAuthorityTrust): Promise<{ rejected: true; error: "authentication_failed" }>;
   qualificationCooling(action: QualificationCoolingAction): Promise<WorkerCoolingProof | WorkerCoolingBaseline>;
   qualificationAttemptReview(): Promise<WorkerQualificationLedger>;
+  soakAllowanceReview(): Promise<WorkerSoakLedger>;
   /** Qualification only: interrupt a consumed no-mining status with a still-pending reply. */
   interruptPendingStatusForQualification(): Promise<WorkerReadInterruption>;
   coreDumpSelfTest(input: WorkerQualificationRestartRequest): Promise<WorkerRestartEvidence>;

@@ -42,6 +42,7 @@ import {
   type WorkerControllerCapabilities, type WorkerControllerStatus, type WorkerControllerDisconnectReason,
   type WorkerRestorationReason, type WorkerLeaseGrant, type WorkerLeaseRenewal,
 } from "./worker-controller";
+import { parseWorkerSoakLedger } from "./worker-soak-allowance";
 import { workerMiningStatusMatches, workerRestoredStatusMatches } from "./worker-postconditions";
 import {
   WorkerSerialPeer, exactSerialRecord, serialFailure, serialFailureFor,
@@ -307,6 +308,11 @@ export class BrowserSerialController implements WebSerialWorkerController {
     this.#requireReady();
     if (this.#activeLease || !this.#maybePossession) throw serialFailure("probe_admission");
     return parseWorkerQualificationLedger(await this.#request("qualification_attempt_review", {}));
+  }
+  async soakAllowanceReview() {
+    this.#requireReady();
+    if (this.#activeLease || !this.#maybePossession) throw serialFailure("probe_admission");
+    return parseWorkerSoakLedger(await this.#request("soak_allowance_review", {}));
   }
   async interruptPendingStatusForQualification() {
     const generation = this.#generation;

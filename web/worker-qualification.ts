@@ -2,11 +2,13 @@ import { parseWorkerMiningProgress, type WorkerMiningProgress } from "./worker-m
 import { parseWorkerOwnerResources, type WorkerOwnerResources } from "./worker-owner-resources";
 import { parseWorkerQualificationObservation, type WorkerQualificationObservation } from "./worker-qualification-attempt";
 import { exactSerialRecord, serialFailure } from "./worker-serial";
+import { parseWorkerSoakObservation, SOAK_MAXIMUM_ACTIVE_MILLISECONDS, type WorkerSoakObservation } from "./worker-soak-allowance";
 
 /** Closed, read-only device evidence; never authority to Start or extend a lease. */
 export type WorkerQualification = {
   schema: "worker-qualification-v1";
   attempt?: WorkerQualificationObservation;
+  soak?: WorkerSoakObservation;
   owner_resources?: WorkerOwnerResources;
   mining_progress?: WorkerMiningProgress;
   revocation_reason:
@@ -96,10 +98,12 @@ export function parseWorkerQualification(input: unknown): WorkerQualification {
   const hasAttempt = input !== null && typeof input === "object" && "attempt" in input;
   const hasProgress = input !== null && typeof input === "object" && "mining_progress" in input;
   const hasResources = input !== null && typeof input === "object" && "owner_resources" in input;
+  const hasSoak = input !== null && typeof input === "object" && "soak" in input;
   const value = exactSerialRecord(input, [
     ...(hasProgress ? ["mining_progress"] : []),
     ...(hasResources ? ["owner_resources"] : []),
     ...(hasAttempt ? ["attempt"] : []),
+    ...(hasSoak ? ["soak"] : []),
     "schema",
     "revocation_reason",
     ...counters,
@@ -124,7 +128,8 @@ export function parseWorkerQualification(input: unknown): WorkerQualification {
     throw serialFailure("qualification_revocation_reason");
   for (const field of counters)
     if (!u32(value[field])) throw serialFailure("qualification_counter");
-  if (Number(value.budget_reserved_ms) > 240000)
+  if (hasAttempt && hasSoak) throw serialFailure("qualification_budget");
+  if (Number(value.budget_reserved_ms) > (hasSoak ? SOAK_MAXIMUM_ACTIVE_MILLISECONDS : 240000))
     throw serialFailure("qualification_budget");
   for (const field of timestamps)
     if (value[field] !== null && !u32(value[field]))
@@ -169,6 +174,11 @@ export function parseWorkerQualification(input: unknown): WorkerQualification {
     const attempt = parseWorkerQualificationObservation(value.attempt);
     value.attempt = attempt;
     if (attempt.active_ms !== value.active_ms) throw serialFailure("qualification_counter");
+  }
+  if (hasSoak) {
+    const soak = parseWorkerSoakObservation(value.soak);
+    value.soak = soak;
+    if (soak.active_ms !== value.active_ms) throw serialFailure("qualification_counter");
   }
   if (hasResources) value.owner_resources = parseWorkerOwnerResources(value.owner_resources, Number(value.generation));
   if (hasProgress) value.mining_progress = parseWorkerMiningProgress(value.mining_progress, Number(value.generation));

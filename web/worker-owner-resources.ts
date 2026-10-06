@@ -1,3 +1,4 @@
+import { soakWorkGateClosed } from "./worker-serial-acceptance-actions";
 import { exactSerialRecord, serialFailure } from "./worker-serial";
 import type { WorkerQualification } from "./worker-qualification";
 import type { WorkerLeaseGrant } from "./worker-controller";
@@ -21,9 +22,13 @@ export function parseWorkerOwnerResources(input: unknown, generation: number): W
   }
   return value as WorkerOwnerResources;
 }
-/** Applies only to the new iterative campaign, never the immutable legacy campaign. */
+/**
+ * Applies to iterative and soak allowances, never the immutable legacy campaign. A soak keeps
+ * polling through device-closed safe-stop, when the owner is no longer active.
+ */
 export function requireWorkerOwnerHeadroom(grant: WorkerLeaseGrant, maybeQualification: WorkerQualification | undefined): void {
-  if (!grant.qualificationAttempt) return;
+  if (!grant.qualificationAttempt && !grant.soakAllowance) return;
+  if (grant.soakAllowance && soakWorkGateClosed(maybeQualification)) return;
   const maybeResources = maybeQualification?.owner_resources;
   if (!maybeResources || maybeResources.generation !== maybeQualification.generation || maybeResources.phase !== "active" || maybeResources.stack_free_bytes < 4096) throw new Error("window_control_failed");
 }

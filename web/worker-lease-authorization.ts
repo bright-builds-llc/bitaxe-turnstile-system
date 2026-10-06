@@ -316,7 +316,7 @@ function authorizationlessGrant(input: unknown): AuthorizationlessWorkerLeaseGra
     "durationMilliseconds",
     "renewAfterMilliseconds",
     "stratum",
-  ], ["acceptanceCampaign", "qualificationAttempt"]);
+  ], ["acceptanceCampaign", "qualificationAttempt", "hardwareProfile", "soakAllowance"]);
   const parsed = parseWorkerLeaseGrant({
     ...value,
     authorization: "authorization-is-verified-separately",
