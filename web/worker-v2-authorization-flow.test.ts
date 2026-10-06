@@ -19,7 +19,7 @@ test("reviewed possession reaches observer, fixture, signing and Start without a
   const authorization = createWorkerAcceptanceAuthorization({
     requireStartScope() {}, maybeReviewedContext: () => maybeReviewed, reviewedContext: value => { maybeReviewed = value; },
     prove: () => controller.prepareWorkerLeaseAuthorizationContext("start"), showBinding() {}, state: () => ({}),
-    attemptReview: () => controller.qualificationAttemptReview(), budgetReview: id => controller.acceptanceBudgetReview(id),
+    attemptReview: () => controller.qualificationAttemptReview(), soakReview: () => controller.soakAllowanceReview(), budgetReview: id => controller.acceptanceBudgetReview(id),
     async local(path, body) {
       order.push(path);
       if (path === "/budget-review-context") return { mode: "iterative", nonce: "review-nonce" };

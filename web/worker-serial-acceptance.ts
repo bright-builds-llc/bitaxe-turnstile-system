@@ -11,6 +11,7 @@ import { createWorkerCoreDumpPageOperations, createWorkerRestartPageOperations }
 import { WorkerCadenceAcceptance } from "./worker-cadence-acceptance";
 import { createWorkerCadencePageOperations } from "./worker-cadence-page";
 import { createWorkerEndpointPageOperations } from "./worker-endpoint-page";
+import { createWorkerSoakPageOperations } from "./worker-soak-page";
 import { requireWorkerOwnerHeadroom, workerOwnerResourceFailure, type WorkerOwnerResourceFailure } from "./worker-owner-resources";
 import { workerDeviceBaselineConfirmed } from "./worker-device-baseline";
 import { acceptancePurposeWindow, acceptanceMaximumActiveMilliseconds } from "./worker-acceptance-purpose";
@@ -50,8 +51,7 @@ const cadence = new WorkerCadenceAcceptance();
 const browserTrace = new WorkerBrowserSerialTrace(() => performance.now());
 const authorizationRecovery = new WorkerAuthorizationRecoveryCheckpoint();
 const renewalProgress = new AcceptanceRenewalProgress();
-let deviceRestorationConfirmed = false,
-  deviceLeaseInactive = false;
+let deviceRestorationConfirmed = false, deviceLeaseInactive = false;
 let deviceBaselineConfirmed = false;
 let maybeAdmissionFailureStage: string | undefined;
 let maybeSerialFailureCategory: string | undefined;
@@ -246,7 +246,7 @@ const { prepareStartAuthorization, submitBudgetReview } = createWorkerAcceptance
   maybeReviewedContext: () => maybeReviewedContext, reviewedContext: value => { maybeReviewedContext = value; },
   prove: () => controller().prepareWorkerLeaseAuthorizationContext("start"),
   showBinding(binding) { const output = document.querySelector<HTMLTextAreaElement>("#authorization-context"); if (output) output.value = binding; },
-  attemptReview: () => controller().qualificationAttemptReview(), budgetReview: reviewBudget, state, local: localJson,
+  attemptReview: () => controller().qualificationAttemptReview(), soakReview: () => controller().soakAllowanceReview(), budgetReview: reviewBudget, state, local: localJson,
 });
 
 function loadWindow(input: WindowArtifacts) {
@@ -558,6 +558,7 @@ export const workerAcceptance = {
   ...createWorkerRestartPageOperations({ enabled: () => maybeConfiguration?.restartQualification === true, idle: () => connected && !running && !maybeWindow,
     maybeController: () => maybeController, before: () => { maybeReviewedContext = undefined; status = "restarting"; deviceBaselineConfirmed = false; publish(); },
     succeeded: () => { status = "ready"; publish(); }, failed: () => { connected = false; running = false; stopTimer(); status = "failed"; maybeFailure = "qualification_restart_failed"; publish(); } }),
+  ...createWorkerSoakPageOperations({ enabled: () => maybeConfiguration?.soakQualification === true, released: () => connected && !running && deviceRestorationConfirmed && deviceLeaseInactive, controller, invalidateAuthorization: () => { maybeReviewedContext = undefined; }, close, flush: flushRecoverySupervisor, local: localJson, state }),
   ...createWorkerEndpointPageOperations({ enabled: () => maybeConfiguration?.stationEndpointHandoff === true || maybeConfiguration?.soakQualification === true, idle: () => connected && !running && !maybeWindow,
     maybeController: () => maybeController, invalidateAuthorization: () => { maybeReviewedContext = undefined; } }),
   ...createWorkerCadencePageOperations({ cadence, controller, running: () => running, loaded: () => maybeWindow !== undefined,
