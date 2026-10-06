@@ -11,6 +11,7 @@ import { acceptanceLocalJson as localJson } from "./worker-acceptance-local";
 import { createWorkerCoreDumpPageOperations, createWorkerRestartPageOperations } from "./worker-restart-page";
 import { WorkerCadenceAcceptance } from "./worker-cadence-acceptance";
 import { createWorkerCadencePageOperations } from "./worker-cadence-page";
+import { createWorkerEndpointPageOperations } from "./worker-endpoint-page";
 import { requireWorkerOwnerHeadroom, workerOwnerResourceFailure, type WorkerOwnerResourceFailure } from "./worker-owner-resources";
 import { workerDeviceBaselineConfirmed } from "./worker-device-baseline";
 import { acceptancePurposeWindow, acceptanceMaximumActiveMilliseconds } from "./worker-acceptance-purpose";
@@ -558,6 +559,8 @@ export const workerAcceptance = {
   ...createWorkerRestartPageOperations({ enabled: () => maybeConfiguration?.restartQualification === true, idle: () => connected && !running && !maybeWindow,
     maybeController: () => maybeController, before: () => { maybeReviewedContext = undefined; status = "restarting"; deviceBaselineConfirmed = false; publish(); },
     succeeded: () => { status = "ready"; publish(); }, failed: () => { connected = false; running = false; stopTimer(); status = "failed"; maybeFailure = "qualification_restart_failed"; publish(); } }),
+  ...createWorkerEndpointPageOperations({ enabled: () => maybeConfiguration?.stationEndpointHandoff === true, idle: () => connected && !running && !maybeWindow,
+    maybeController: () => maybeController, invalidateAuthorization: () => { maybeReviewedContext = undefined; } }),
   ...createWorkerCadencePageOperations({ cadence, controller, running: () => running, loaded: () => maybeWindow !== undefined,
     maybeReviewedBinding: () => maybeReviewedContext?.controlSessionBindingSha256, invalidateAuthorization: () => { maybeReviewedContext = undefined; }, publish, local: localJson }),
   exportBrowserSerialTrace: () => parseBrowserSerialTrace(browserTrace.snapshot()),
