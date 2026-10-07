@@ -56,11 +56,7 @@ function parseCompletion(input: unknown): WorkerRestorationCompletion {
   return { result: input.result, scenario: input.scenario as WorkerRestorationScenario, cleanup_confirmed: true };
 }
 
-/**
- * Host-driven restoration scenarios (BWG-007). Nothing here schedules work: no timer renews, stops or
- * polls. Every lease, renewal and replay comes from the local supervisor's server-signed artifacts.
- */
-export function createWorkerRestorationOperations(deps: {
+export type WorkerRestorationDependencies = {
   enabled(): boolean;
   createController(): WorkerRestorationController;
   local(path: string, body?: object): Promise<unknown>;
@@ -68,177 +64,207 @@ export function createWorkerRestorationOperations(deps: {
   highWater: WorkerRestorationHighWater;
   identity(): object;
   publish(): void;
-}) {
-  const journal = new WorkerRestorationJournal();
-  let maybeController: WorkerRestorationController | undefined;
-  let maybeWindow: RestorationWindow | undefined;
-  let maybeDevice: WorkerRestorationDevice | undefined;
-  let maybeFailure: string | undefined;
-  let connected = false, leaseActive = false, stimulusUsed = false, ownStop = false;
-  let status = "unconfigured";
+};
 
-  function state() {
-    return { schema: "worker-restoration-page-v1", ...deps.identity(), status, connected, leaseActive, leaseLoaded: maybeWindow !== undefined,
-      renewalsRemaining: maybeWindow?.renewals.length ?? 0, stimulusUsed, highWaterEpoch: deps.highWater.epoch,
-      ...(maybeDevice ? { device: { ...maybeDevice } } : {}), ...(maybeFailure ? { failure: maybeFailure } : {}), journal: journal.values() };
+/** One page lifetime's restoration state and its admission guards. */
+class RestorationSession {
+  readonly journal = new WorkerRestorationJournal();
+  maybeController: WorkerRestorationController | undefined;
+  maybeWindow: RestorationWindow | undefined;
+  maybeDevice: WorkerRestorationDevice | undefined;
+  maybeFailure: string | undefined;
+  connected = false;
+  leaseActive = false;
+  stimulusUsed = false;
+  ownStop = false;
+  status = "unconfigured";
+  constructor(readonly deps: WorkerRestorationDependencies) {}
+  state() {
+    return { schema: "worker-restoration-page-v1", ...this.deps.identity(), status: this.status, connected: this.connected, leaseActive: this.leaseActive,
+      leaseLoaded: this.maybeWindow !== undefined, renewalsRemaining: this.maybeWindow?.renewals.length ?? 0, stimulusUsed: this.stimulusUsed,
+      highWaterEpoch: this.deps.highWater.epoch, ...(this.maybeDevice ? { device: { ...this.maybeDevice } } : {}),
+      ...(this.maybeFailure ? { failure: this.maybeFailure } : {}), journal: this.journal.values() };
   }
-  function changed(maybeNext?: string) { if (maybeNext) status = maybeNext; deps.publish(); }
-  function endLease() { leaseActive = false; maybeWindow = undefined; }
-  function controller(): WorkerRestorationController {
-    if (!deps.enabled()) throw new Error("restoration_mode_required");
-    if (!maybeController || !connected) throw new Error("controller_not_connected");
-    return maybeController;
+  changed(maybeNext?: string) { if (maybeNext) this.status = maybeNext; this.deps.publish(); }
+  endLease() { this.leaseActive = false; this.maybeWindow = undefined; }
+  requireEnabled() { if (!this.deps.enabled()) throw new Error("restoration_mode_required"); }
+  controller(): WorkerRestorationController {
+    this.requireEnabled();
+    if (!this.maybeController || !this.connected) throw new Error("controller_not_connected");
+    return this.maybeController;
   }
-  function idle() { const value = controller(); if (leaseActive) throw new Error("lease_active"); return value; }
-  function leased() { const value = controller(); if (!leaseActive) throw new Error("lease_inactive"); return value; }
-  async function observed<T>(failure: WorkerRestorationJournalEvent, run: () => Promise<T>): Promise<T> {
+  idle() { const value = this.controller(); if (this.leaseActive) throw new Error("lease_active"); return value; }
+  leased() { const value = this.controller(); if (!this.leaseActive) throw new Error("lease_inactive"); return value; }
+  async observed<T>(failure: WorkerRestorationJournalEvent, run: () => Promise<T>): Promise<T> {
     try { return await run(); }
-    catch (error) { journal.record(failure, categoryOf(error)); maybeFailure ??= failure; changed("failed"); throw new Error(failure); }
+    catch (error) { this.journal.record(failure, categoryOf(error)); this.maybeFailure ??= failure; this.changed("failed"); throw new Error(failure); }
   }
+}
 
-  async function connect() {
-    if (!deps.enabled()) throw new Error("restoration_mode_required");
-    if (connected) throw new Error("already_connected");
-    const created = deps.createController();
-    maybeController = created; maybeDevice = undefined; maybeFailure = undefined; endLease();
-    created.subscribeDisconnect(async () => {
-      if (maybeController !== created || !connected) return;
-      connected = false; endLease(); journal.record("disconnected"); changed("disconnected");
-    });
-    await observed("connect_failed", () => created.requestPermission());
-    connected = true; journal.record("connected"); changed("ready");
-    await created.status();
-    changed();
-    return state();
-  }
-  async function stopLease(event: "paused" | "cancelled" | "restored", run: (value: WorkerRestorationController) => Promise<WorkerControllerStatus>) {
-    const value = leased(); ownStop = true;
-    try { await observed("stop_failed", () => run(value)); } finally { ownStop = false; }
-    endLease(); journal.record(event); changed("baseline_confirmed");
-    return state();
-  }
-  async function reviewStimulus() {
-    const review = await observed("review_failed", () => idle().clockDiscontinuityStimulusReview());
-    journal.record("stimulus_reviewed", review.state); changed();
-    return review;
-  }
-  async function reviewRejections() {
-    const review = await observed("review_failed", () => idle().authorizationRejectionReview());
-    journal.record("rejection_reviewed", review.last?.context ?? "none"); changed();
-    return projectAuthorizationRejectionReview(review, deps.highWater);
-  }
-  async function physicalWindow(event: "begin" | "arm") {
-    // Re-arming may happen while the device is unplugged or rebooting; beginning needs the active lease.
-    if (event === "begin") leased(); else if (!deps.enabled()) throw new Error("restoration_mode_required");
-    const result = parseCheckpoint(await deps.local("/physical-window", { event }));
-    journal.record(event === "begin" ? "physical_window_begun" : "physical_window_armed", result.checkpoint); changed();
-    return result;
-  }
-  async function replayArtifact(): Promise<WorkerRestorationReplayOutcome> {
-    const value = controller();
-    const artifact = parseRestorationReplayArtifact(await deps.local("/replay-artifact"));
-    const operation = artifact.operation;
-    if ((operation === "start") === leaseActive) throw new Error("replay_admission");
-    const outcome = await deliverReplay(value, artifact);
-    if (outcome.outcome === "accepted") { if (operation === "start") leaseActive = true; journal.record("replay_accepted", operation); changed("running"); return outcome; }
-    journal.record(outcome.outcome === "rejected" ? "replay_rejected" : "replay_failed", outcome.category);
-    // A device rejection revokes the transport epoch; wait for the controller's own fail-safe close to settle.
-    if (outcome.outcome === "rejected") {
-      connected = false; endLease();
-      await value.close("control_failed").catch((error: unknown) => { journal.record("close_failed", categoryOf(error)); maybeFailure ??= "close_failed"; });
-    }
-    changed(outcome.outcome === "rejected" ? "replay_rejected" : "failed");
-    return outcome;
-  }
-  async function close() {
-    const maybeCurrent = maybeController;
-    // Read status first so a lease the device already ended is never overwritten with `tab_closed`.
-    if (maybeCurrent && connected && leaseActive) await maybeCurrent.status().catch((error: unknown) => journal.record("status_failed", categoryOf(error)));
-    connected = false; endLease(); changed("closing");
-    try { if (maybeCurrent) await maybeCurrent.close("tab_closed"); }
-    catch (error) { journal.record("close_failed", categoryOf(error)); maybeFailure ??= "close_failed"; changed("restoration_unconfirmed"); throw new Error("close_failed"); }
-    journal.record("closed"); changed("closed");
-    return state();
-  }
+async function connect(s: RestorationSession) {
+  s.requireEnabled();
+  if (s.connected) throw new Error("already_connected");
+  const created = s.deps.createController();
+  s.maybeController = created; s.maybeDevice = undefined; s.maybeFailure = undefined; s.endLease();
+  created.subscribeDisconnect(async () => {
+    if (s.maybeController !== created || !s.connected) return;
+    s.connected = false; s.endLease(); s.journal.record("disconnected"); s.changed("disconnected");
+  });
+  await s.observed("connect_failed", () => created.requestPermission());
+  s.connected = true; s.journal.record("connected"); s.changed("ready");
+  await created.status();
+  s.changed();
+  return s.state();
+}
 
+function observeStatus(s: RestorationSession, maybeValue: WorkerControllerStatus | undefined) {
+  if (!maybeValue) { s.maybeDevice = undefined; return; }
+  s.maybeDevice = { state: maybeValue.state, restoration: maybeValue.restoration.status, ...(maybeValue.restoration.reason ? { reason: maybeValue.restoration.reason } : {}) };
+  if (maybeValue.state !== "baseline" || !s.leaseActive) return;
+  s.endLease();
+  if (!s.ownStop) { s.journal.record("device_baseline_observed", maybeValue.restoration.reason ?? "not_required"); s.changed("device_baseline"); }
+}
+
+async function stopLease(s: RestorationSession, event: "paused" | "cancelled" | "restored", run: (value: WorkerRestorationController) => Promise<WorkerControllerStatus>) {
+  const value = s.leased(); s.ownStop = true;
+  try { await s.observed("stop_failed", () => run(value)); } finally { s.ownStop = false; }
+  s.endLease(); s.journal.record(event); s.changed("baseline_confirmed");
+  return s.state();
+}
+
+/** Scenario lease steps; every artifact comes from the local supervisor and nothing renews on its own. */
+function leaseOperations(s: RestorationSession) {
   return {
-    state,
-    configured() { journal.record("configured"); changed("configured"); },
-    observeStatus(maybeValue: WorkerControllerStatus | undefined) {
-      if (!maybeValue) { maybeDevice = undefined; return; }
-      maybeDevice = { state: maybeValue.state, restoration: maybeValue.restoration.status, ...(maybeValue.restoration.reason ? { reason: maybeValue.restoration.reason } : {}) };
-      if (maybeValue.state !== "baseline" || !leaseActive) return;
-      endLease();
-      if (!ownStop) { journal.record("device_baseline_observed", maybeValue.restoration.reason ?? "not_required"); changed("device_baseline"); }
-    },
-    observeAdmissionFailure(stage: WorkerSerialAdmissionStage) { journal.record("admission_failed", stage); },
-    observeSerialFailure(category: WorkerSerialFailureCategory) { journal.record("serial_failure", category); },
-    connect,
-    reconnect: connect,
     async prepareStart() {
-      const context = await idle().prepareWorkerLeaseAuthorizationContext("start");
-      await deps.local("/authorization-context", context);
-      journal.record("start_prepared"); changed();
-      return state();
+      const context = await s.idle().prepareWorkerLeaseAuthorizationContext("start");
+      await s.deps.local("/authorization-context", context);
+      s.journal.record("start_prepared"); s.changed();
+      return s.state();
     },
     async loadScenarioLease() {
-      if (!deps.enabled()) throw new Error("restoration_mode_required");
-      if (leaseActive) throw new Error("lease_active");
-      maybeWindow = parseRestorationWindow(await deps.local("/scenario-artifacts"));
-      journal.record("lease_loaded", maybeWindow.renewals.length === 0 ? "no_renewal" : "one_renewal"); changed("lease_loaded");
-      return state();
+      s.requireEnabled();
+      if (s.leaseActive) throw new Error("lease_active");
+      const window = parseRestorationWindow(await s.deps.local("/scenario-artifacts"));
+      s.maybeWindow = window;
+      s.journal.record("lease_loaded", window.renewals.length === 0 ? "no_renewal" : "one_renewal"); s.changed("lease_loaded");
+      return s.state();
     },
     async startScenarioLease() {
-      const value = idle(), window = maybeWindow;
+      const value = s.idle(), window = s.maybeWindow;
       if (!window) throw new Error("lease_missing");
-      try { await observed("lease_start_failed", () => value.startLease(window.grant)); } catch (error) { maybeWindow = undefined; throw error; }
-      leaseActive = true; journal.record("lease_started"); changed("running");
-      return state();
+      try { await s.observed("lease_start_failed", () => value.startLease(window.grant)); } catch (error) { s.maybeWindow = undefined; throw error; }
+      s.leaseActive = true; s.journal.record("lease_started"); s.changed("running");
+      return s.state();
     },
     async renewOnce() {
-      const value = leased(), maybeRenewal = maybeWindow?.renewals.shift();
+      const value = s.leased(), maybeRenewal = s.maybeWindow?.renewals.shift();
       if (!maybeRenewal) throw new Error("renewal_exhausted");
-      await observed("renew_failed", () => value.renewLease(maybeRenewal));
-      journal.record("renewed"); changed();
-      return state();
+      await s.observed("renew_failed", () => value.renewLease(maybeRenewal));
+      s.journal.record("renewed"); s.changed();
+      return s.state();
     },
-    pause: () => stopLease("paused", value => value.pause()),
-    cancel: () => stopLease("cancelled", value => value.cancel()),
-    restoreChallengeSatisfied: () => stopLease("restored", value => value.restore("challenge_satisfied")),
+    pause: () => stopLease(s, "paused", value => value.pause()),
+    cancel: () => stopLease(s, "cancelled", value => value.cancel()),
+    restoreChallengeSatisfied: () => stopLease(s, "restored", value => value.restore("challenge_satisfied")),
     /** One use per page lifetime, consumed even when the device refuses it. */
     async triggerClockDiscontinuity() {
-      if (stimulusUsed) throw new Error("stimulus_consumed");
-      const value = leased();
-      stimulusUsed = true; maybeWindow?.renewals.splice(0);
-      const ack = await observed("stimulus_failed", () => value.clockDiscontinuityStimulus());
-      journal.record("stimulus_acknowledged"); changed("stimulus_armed");
+      if (s.stimulusUsed) throw new Error("stimulus_consumed");
+      const value = s.leased();
+      s.stimulusUsed = true; s.maybeWindow?.renewals.splice(0);
+      const ack = await s.observed("stimulus_failed", () => value.clockDiscontinuityStimulus());
+      s.journal.record("stimulus_acknowledged"); s.changed("stimulus_armed");
       return { schema: ack.schema, offsetMilliseconds: ack.offsetMilliseconds, armedForMilliseconds: ack.armedForMilliseconds };
     },
-    clockDiscontinuityStimulusReview: reviewStimulus,
-    authorizationRejectionReview: reviewRejections,
-    async statusReview() {
-      await observed("review_failed", () => controller().status());
-      journal.record("status_reviewed", maybeDevice?.reason ?? maybeDevice?.state ?? "unknown"); changed();
-      return maybeDevice ? { ...maybeDevice } : undefined;
-    },
-    replayArtifact,
-    beginPhysicalWindow: () => physicalWindow("begin"),
-    armPhysicalWindow: () => physicalWindow("arm"),
-    async physicalWindowState() {
-      if (!deps.enabled()) throw new Error("restoration_mode_required");
-      return parseCheckpoint(await deps.local("/physical-window"));
-    },
-    close,
-    async submitCompletion(): Promise<WorkerRestorationCompletion> {
-      idle();
-      if (maybeDevice?.state !== "baseline") throw new Error("completion_admission");
-      const nonce = parseCompletionNonce(await deps.local("/completion-context", {}));
-      const reviews = { stimulus: await reviewStimulus(), rejection: await reviewRejections() };
-      await close();
-      await deps.flush();
-      const receipt = parseCompletion(await observed("completion_failed", () => deps.local("/completion-review", { nonce, reviews, final_state: state() })));
-      journal.record("completion_submitted", receipt.result); changed("completed");
-      return receipt;
-    },
+  };
+}
+
+async function reviewStimulus(s: RestorationSession) {
+  const review = await s.observed("review_failed", () => s.idle().clockDiscontinuityStimulusReview());
+  s.journal.record("stimulus_reviewed", review.state); s.changed();
+  return review;
+}
+async function reviewRejections(s: RestorationSession) {
+  const review = await s.observed("review_failed", () => s.idle().authorizationRejectionReview());
+  s.journal.record("rejection_reviewed", review.last?.context ?? "none"); s.changed();
+  return projectAuthorizationRejectionReview(review, s.deps.highWater);
+}
+async function reviewStatus(s: RestorationSession) {
+  await s.observed("review_failed", () => s.controller().status());
+  s.journal.record("status_reviewed", s.maybeDevice?.reason ?? s.maybeDevice?.state ?? "unknown"); s.changed();
+  return s.maybeDevice ? { ...s.maybeDevice } : undefined;
+}
+
+async function physicalWindow(s: RestorationSession, event: "begin" | "arm") {
+  // Re-arming may happen while the device is unplugged or rebooting; beginning needs the active lease.
+  if (event === "begin") s.leased(); else s.requireEnabled();
+  const result = parseCheckpoint(await s.deps.local("/physical-window", { event }));
+  s.journal.record(event === "begin" ? "physical_window_begun" : "physical_window_armed", result.checkpoint); s.changed();
+  return result;
+}
+
+async function replayArtifact(s: RestorationSession): Promise<WorkerRestorationReplayOutcome> {
+  const value = s.controller();
+  const artifact = parseRestorationReplayArtifact(await s.deps.local("/replay-artifact"));
+  const operation = artifact.operation;
+  if ((operation === "start") === s.leaseActive) throw new Error("replay_admission");
+  const outcome = await deliverReplay(value, artifact);
+  if (outcome.outcome === "accepted") { if (operation === "start") s.leaseActive = true; s.journal.record("replay_accepted", operation); s.changed("running"); return outcome; }
+  s.journal.record(outcome.outcome === "rejected" ? "replay_rejected" : "replay_failed", outcome.category);
+  // A device rejection revokes the transport epoch; wait for the controller's own fail-safe close to settle.
+  if (outcome.outcome === "rejected") {
+    s.connected = false; s.endLease();
+    await value.close("control_failed").catch((error: unknown) => { s.journal.record("close_failed", categoryOf(error)); s.maybeFailure ??= "close_failed"; });
+  }
+  s.changed(outcome.outcome === "rejected" ? "replay_rejected" : "failed");
+  return outcome;
+}
+
+async function close(s: RestorationSession) {
+  const maybeCurrent = s.maybeController;
+  // Read status first so a lease the device already ended is never overwritten with `tab_closed`.
+  if (maybeCurrent && s.connected && s.leaseActive) await maybeCurrent.status().catch((error: unknown) => s.journal.record("status_failed", categoryOf(error)));
+  s.connected = false; s.endLease(); s.changed("closing");
+  try { if (maybeCurrent) await maybeCurrent.close("tab_closed"); }
+  catch (error) { s.journal.record("close_failed", categoryOf(error)); s.maybeFailure ??= "close_failed"; s.changed("restoration_unconfirmed"); throw new Error("close_failed"); }
+  s.journal.record("closed"); s.changed("closed");
+  return s.state();
+}
+
+async function submitCompletion(s: RestorationSession): Promise<WorkerRestorationCompletion> {
+  s.idle();
+  if (s.maybeDevice?.state !== "baseline") throw new Error("completion_admission");
+  const nonce = parseCompletionNonce(await s.deps.local("/completion-context", {}));
+  const reviews = { stimulus: await reviewStimulus(s), rejection: await reviewRejections(s) };
+  await close(s);
+  await s.deps.flush();
+  const receipt = parseCompletion(await s.observed("completion_failed", () => s.deps.local("/completion-review", { nonce, reviews, final_state: s.state() })));
+  s.journal.record("completion_submitted", receipt.result); s.changed("completed");
+  return receipt;
+}
+
+/**
+ * Host-driven restoration scenarios (BWG-007). Nothing here schedules work: no timer renews, stops or
+ * polls. Every lease, renewal and replay comes from the local supervisor's server-signed artifacts.
+ */
+export function createWorkerRestorationOperations(deps: WorkerRestorationDependencies) {
+  const s = new RestorationSession(deps);
+  return {
+    state: () => s.state(),
+    configured() { s.journal.record("configured"); s.changed("configured"); },
+    observeStatus: (maybeValue: WorkerControllerStatus | undefined) => observeStatus(s, maybeValue),
+    observeAdmissionFailure(stage: WorkerSerialAdmissionStage) { s.journal.record("admission_failed", stage); },
+    observeSerialFailure(category: WorkerSerialFailureCategory) { s.journal.record("serial_failure", category); },
+    connect: () => connect(s),
+    reconnect: () => connect(s),
+    ...leaseOperations(s),
+    clockDiscontinuityStimulusReview: () => reviewStimulus(s),
+    authorizationRejectionReview: () => reviewRejections(s),
+    statusReview: () => reviewStatus(s),
+    replayArtifact: () => replayArtifact(s),
+    beginPhysicalWindow: () => physicalWindow(s, "begin"),
+    armPhysicalWindow: () => physicalWindow(s, "arm"),
+    async physicalWindowState() { s.requireEnabled(); return parseCheckpoint(await deps.local("/physical-window")); },
+    close: () => close(s),
+    submitCompletion: () => submitCompletion(s),
   };
 }
