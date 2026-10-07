@@ -623,3 +623,13 @@ retained in this evidence or public state. Public summaries distinguish
 claimed to be contiguous byte capture. Completion/failure snapshots freeze.
 The firmware task's installation, effect, cleanup and evidence contract remains
 mandatory; SDK support alone authorizes no hardware use or parity claim.
+
+## Restoration qualification
+
+The separately task-bound BWG-007 restoration page adds three optional
+Controller 0.4 commands: `clock_discontinuity_stimulus`,
+`clock_discontinuity_stimulus_review` and `authorization_rejection_review`.
+Only an explicit `restorationQualification` configuration enables them. A
+status showing baseline marks the adapter's lease inactive, so close never
+overwrites a device-ended lease's stored reason. See
+[worker-restoration-qualification.md](worker-restoration-qualification.md).
