@@ -498,7 +498,7 @@ export async function serialHarness(
     controller: createWebSerialWorkerController(input),
     received,
     omitPreservation() { omitPreservation = true; },
-    expireWork() { active = false; reason = "connectivity_lost"; },
+    expireWork(maybeReason = "connectivity_lost") { active = false; reason = maybeReason; },
     setImageIdentity(source: string, elf: string) { firmwareSourceCommit = source; appElfSha256 = elf; },
     setQualification(value: WorkerQualification) { maybeQualification = value; },
     setBootOrdinal(value: number) { bootOrdinal = value; },

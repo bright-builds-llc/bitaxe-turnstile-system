@@ -452,6 +452,8 @@ export class BrowserSerialController implements WebSerialWorkerController {
         this.maybeQualificationHook?.observeStatus,
       );
       this.#miningInterruption.observe(status, this.runtime.now());
+      // A device-ended lease (expiry, clock reset, control failure, reboot) already stored its reason; close must not overwrite it.
+      if (status.state === "baseline") this.#activeLease = false;
       return status;
     } catch (error) {
       if (this.#diagnosticFenced && isWorkerRestorationPending(error)) throw error;
