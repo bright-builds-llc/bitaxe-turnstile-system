@@ -35,7 +35,7 @@
             "schema": "worker-soak-allowance-v1",
             "id": "AAAAAAAAAAAAAAAAAAAAAA",
             "ordinal": 1,
-            "maximumActiveMilliseconds": 615550
+            "maximumActiveMilliseconds": 619050
           },
           "leaseId": "lease_fixture_01",
           "challengeId": "challenge_00000000000000000000000000000001",
@@ -55,7 +55,7 @@
           "schema": "worker-soak-allowance-v1",
           "id": "AAAAAAAAAAAAAAAAAAAAAA",
           "ordinal": 1,
-          "maximumActiveMilliseconds": 615550
+          "maximumActiveMilliseconds": 619050
         },
         "leaseId": "lease_fixture_01",
         "challengeId": "challenge_00000000000000000000000000000001",
@@ -64,7 +64,7 @@
           "username": "fixture-session-user",
           "password": "fixture-session-password"
         },
-        "authorization": "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoicmZjODAzMiIsInR5cCI6ImJ3Zy13b3JrZXItbGVhc2UtYXV0aG9yaXphdGlvbitqd3MifQ.eyJjb250cm9sU2Vzc2lvbkJpbmRpbmdTaGEyNTYiOiJBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBIiwib3BlcmF0aW9uIjoic3RhcnQiLCJyZXF1ZXN0U2hhMjU2IjoiejlUQV9McEp3czNHenBBSExyU0d1SlpDWE5NMzJNM2RaSTVMRGNTd3JmWSIsInNlcXVlbmNlIjoiMSJ9.1zKWryt33gVzUMi9cTKjsg1Malj-qqTIHiE8s1mZduBzmeMHijmmzHcMC3ugoQmyftKFtFJAkw2v2VYqwf-LDQ"
+        "authorization": "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoicmZjODAzMiIsInR5cCI6ImJ3Zy13b3JrZXItbGVhc2UtYXV0aG9yaXphdGlvbitqd3MifQ.eyJjb250cm9sU2Vzc2lvbkJpbmRpbmdTaGEyNTYiOiJBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBIiwib3BlcmF0aW9uIjoic3RhcnQiLCJyZXF1ZXN0U2hhMjU2IjoibTNEdGhhWXlKWEk1ZTZ4Und6MnlwUDZ0NXJUOFVDNnNveTVTcDJNUnhNZyIsInNlcXVlbmNlIjoiMSJ9.Cb9rz4BVwtc8wZKVYQRbCoP5_QkC3DKkQG4o1IsLQvWKIeI7b45ZV4s4yg9V-zLyFEEzyquz9ADV1fDQI4duCg"
       }
     },
     {
@@ -82,7 +82,7 @@
             "schema": "worker-soak-allowance-v1",
             "id": "AAAAAAAAAAAAAAAAAAAAAA",
             "ordinal": 1,
-            "maximumActiveMilliseconds": 615550
+            "maximumActiveMilliseconds": 619050
           },
           "leaseId": "lease_fixture_01",
           "challengeId": "challenge_00000000000000000000000000000001",
@@ -102,7 +102,7 @@
           "schema": "worker-soak-allowance-v1",
           "id": "AAAAAAAAAAAAAAAAAAAAAA",
           "ordinal": 1,
-          "maximumActiveMilliseconds": 615550
+          "maximumActiveMilliseconds": 619050
         },
         "leaseId": "lease_fixture_01",
         "challengeId": "challenge_00000000000000000000000000000001",
@@ -111,7 +111,7 @@
           "username": "fixture-session-user",
           "password": "fixture-session-password"
         },
-        "authorization": "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoicmZjODAzMiIsInR5cCI6ImJ3Zy13b3JrZXItbGVhc2UtYXV0aG9yaXphdGlvbitqd3MifQ.eyJjb250cm9sU2Vzc2lvbkJpbmRpbmdTaGEyNTYiOiJBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBIiwib3BlcmF0aW9uIjoic3RhcnQiLCJyZXF1ZXN0U2hhMjU2IjoicnFGWXNza1FNWDZJVGFvMV93VkM4Y1BPbmtOSmpZbVIzY1RBV0VUSVNEMCIsInNlcXVlbmNlIjoiMiJ9.Q05gCduoxIoxz9bF0U-9n2r8K2GG7IsX3ZAZugzHhXbRK3v4EAfxUcV_ZYQQc0a5d0xzvIKg3IURjwlotA5zAw"
+        "authorization": "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoicmZjODAzMiIsInR5cCI6ImJ3Zy13b3JrZXItbGVhc2UtYXV0aG9yaXphdGlvbitqd3MifQ.eyJjb250cm9sU2Vzc2lvbkJpbmRpbmdTaGEyNTYiOiJBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBIiwib3BlcmF0aW9uIjoic3RhcnQiLCJyZXF1ZXN0U2hhMjU2IjoiQVByeFFsOExoRlh0VGd3VjlvQl9qa0NoZW14THZMYi10TndrWnFFN1d0cyIsInNlcXVlbmNlIjoiMiJ9.4pik1czdnPoXfwY3qErjdSU6QGTghc4wNA5ta-xw4gzVCGOzBacrFoEORwUHrU7GusaI7bombe3ytGYjU5DcDw"
       }
     }
   ]

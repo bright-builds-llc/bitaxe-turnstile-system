@@ -5,7 +5,7 @@ import { AcceptanceRenewalProgress, maximumWindowRenewals, soakTickDecision, SOA
 import { parseWorkerSerialAcceptanceConfiguration, requireWorkerAcceptanceModeTransition } from "./worker-serial-acceptance-config";
 import { parseWorkerSoakLedger, SOAK_MAXIMUM_ACTIVE_MILLISECONDS } from "./worker-soak-allowance";
 
-const soakAllowance = { schema: "worker-soak-allowance-v1", id: "AwMDAwMDAwMDAwMDAwMDAw", ordinal: 1, maximumActiveMilliseconds: 615550 };
+const soakAllowance = { schema: "worker-soak-allowance-v1", id: "AwMDAwMDAwMDAwMDAwMDAw", ordinal: 1, maximumActiveMilliseconds: 619050 };
 const v1 = { protocolVersion: "bwg-worker-controller/0.4", leaseId: "lease", challengeId: "challenge", authorization: "synthetic",
   durationMilliseconds: 60000, renewAfterMilliseconds: 20000, stratum: { endpoint: "stratum+tcp://192.168.1.3:3333/", username: "synthetic", password: "x" } };
 const soak = { ...v1, hardwareProfile: "upstream-default", soakAllowance };
@@ -39,7 +39,7 @@ test("a grant without the new fields is unchanged", () => {
 
 test("the soak ledger total must equal its charged ordinals", () => {
   // Arrange
-  const ledger = { schema: "worker-soak-ledger-v1", next_ordinal: 2, total_charged_ms: 615550, pending: false, last_completed_ordinal: 1 };
+  const ledger = { schema: "worker-soak-ledger-v1", next_ordinal: 2, total_charged_ms: 619050, pending: false, last_completed_ordinal: 1 };
   // Act / Assert
   expect(parseWorkerSoakLedger(ledger).next_ordinal).toBe(2);
   expect(() => parseWorkerSoakLedger({ ...ledger, total_charged_ms: 600000 })).toThrow();
@@ -47,12 +47,12 @@ test("the soak ledger total must equal its charged ordinals", () => {
 
 test("status admits a soak observation and its larger reservation, but not with a qualification attempt", () => {
   // Arrange
-  const qualification = { schema: "worker-qualification-v1", revocation_reason: "none", active_limit_ms: 615550, shutdown_budget_ms: 15550,
-    work_gate_remaining_ms: 500000, generation: 1, active_ms: 100000, generation_elapsed_ms: 101000, budget_reserved_ms: 615550, budget_complete: false,
+  const qualification = { schema: "worker-qualification-v1", revocation_reason: "none", active_limit_ms: 619050, shutdown_budget_ms: 15550,
+    work_gate_remaining_ms: 500000, generation: 1, active_ms: 100000, generation_elapsed_ms: 101000, budget_reserved_ms: 619050, budget_complete: false,
     submitted: 0, accepted: 0, rejected: 0, nonce_work_correlations: 0, work_dispatched: 0, last_valid_heartbeat_ms: 0, gate_closed_ms: null,
     shutdown_started_ms: null, safe_stop_stage: "not_started", safe_stop_complete: false, voltage_volts: null, power_watts: null, chip_temp_celsius: null,
     fan_rpm: null, voltage_fresh: false, power_fresh: false, temperature_fresh: false, fan_fresh: false, watchdog_alive: true, mine_on_boot: false,
-    soak: { schema: "worker-soak-observation-v1", ordinal: 1, maximum_active_ms: 615550, reserved_ms: 615550, complete: false, active_ms: 100000 } };
+    soak: { schema: "worker-soak-observation-v1", ordinal: 1, maximum_active_ms: 619050, reserved_ms: 619050, complete: false, active_ms: 100000 } };
   const status = { protocolVersion: "bwg-worker-controller/0.4", state: "baseline", monotonicMilliseconds: 100, restoration: { status: "confirmed", reason: "paused" } };
   // Act
   const parsed = parseWorkerControllerStatus({ ...status, qualification });
@@ -101,7 +101,7 @@ test("after the device closes the gate the soak never renews and stops only afte
 
 test("browser time alone never stops a soak before its backstop, and the backstop fails it", () => {
   // Arrange / Act
-  const decisions = [soakTickDecision({ browserElapsedMs: 615550, nowMs: 0, nextRenewMs: 1, maybeQualification: open }),
+  const decisions = [soakTickDecision({ browserElapsedMs: 619050, nowMs: 0, nextRenewMs: 1, maybeQualification: open }),
     soakTickDecision({ browserElapsedMs: SOAK_BROWSER_BACKSTOP_MILLISECONDS, nowMs: 0, nextRenewMs: 1, maybeQualification: open })];
   // Assert
   expect(decisions).toEqual(["continue", "fail"]);
@@ -123,4 +123,20 @@ test("soak mode is explicit, exclusive and sticky", () => {
   for (const change of [{ soakQualification: false }, { soakQualification: true, cadenceQualification: true }, { soakQualification: true, stationEndpointHandoff: true }, { soakQualification: true, recoveryPhase: "loss" }])
     expect(() => parseWorkerSerialAcceptanceConfiguration({ ...base, ...change }, base.expectedGateCommit)).toThrow();
   expect(() => requireWorkerAcceptanceModeTransition(config, parseWorkerSerialAcceptanceConfiguration(base, base.expectedGateCommit))).toThrow("soak_mode_changed");
+});
+
+test("no renewal is sent within the last five seconds before the device closes its gate", () => {
+  // Arrange / Act
+  const decision = soakTickDecision({ browserElapsedMs: 600000, nowMs: 9e9, nextRenewMs: 0, maybeQualification: { ...open, work_gate_remaining_ms: 4000 } });
+  // Assert
+  expect(decision).toBe("continue");
+});
+
+test("a completed safe-stop ends the soak even after the browser backstop", () => {
+  // Arrange
+  const done = { revocation_reason: "lease_or_budget_expired", work_gate_remaining_ms: 0, safe_stop_complete: true } as const;
+  // Act
+  const decision = soakTickDecision({ browserElapsedMs: SOAK_BROWSER_BACKSTOP_MILLISECONDS + 1, nowMs: 0, nextRenewMs: 1, maybeQualification: done });
+  // Assert
+  expect(decision).toBe("stop");
 });

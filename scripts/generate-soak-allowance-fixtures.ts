@@ -8,7 +8,7 @@ const seed = Buffer.from("302e020100300506032b6570042204209d61b19deffd5a60ba844a
 const privateKey = await crypto.subtle.importKey("pkcs8", seed, "Ed25519", false, ["sign"]);
 const trust: WorkLeaseAuthorityTrust = { profile: "bwg-worker-deployment-trust/0.2", issuer: "fixture-soak-allowance", audience: "bwg-worker-controller/0.4", role: "work_lease_authority", keys: [{ kid: "rfc8032", kty: "OKP", crv: "Ed25519", x: "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo", alg: "Ed25519", use: "sig", key_ops: ["verify"] }] };
 const binding = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-const soakAllowance = { schema: "worker-soak-allowance-v1", id: "AAAAAAAAAAAAAAAAAAAAAA", ordinal: 1, maximumActiveMilliseconds: 615550 };
+const soakAllowance = { schema: "worker-soak-allowance-v1", id: "AAAAAAAAAAAAAAAAAAAAAA", ordinal: 1, maximumActiveMilliseconds: 619050 };
 const vectors = [];
 for (const [index, hardwareProfile] of (["upstream-default", "conservative"] as const).entries()) {
   const { authorization: _authorization, ...request } = parseWorkerLeaseGrant({ ...controller.lease, durationMilliseconds: 60000, renewAfterMilliseconds: 20000, hardwareProfile, soakAllowance });

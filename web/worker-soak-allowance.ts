@@ -6,8 +6,8 @@ import { exactSerialRecord, serialFailure } from "./worker-serial";
  * with a soak allowance; firmware enforces this and the Gate refuses the same grants before delivery.
  */
 export type WorkerHardwareProfile = "conservative" | "upstream-default";
-/** 600,000 ms of admitted work plus the firmware's 15,550 ms pre-reset shutdown tail. */
-export const SOAK_MAXIMUM_ACTIVE_MILLISECONDS = 615550;
+/** 600,000 ms of admitted work plus the firmware's 19,050 ms upstream-default pre-reset shutdown tail. */
+export const SOAK_MAXIMUM_ACTIVE_MILLISECONDS = 619050;
 export const SOAK_WORK_GATE_MILLISECONDS = 600000;
 /** Soak leases may pre-sign more renewals than the general 16-artifact bound. */
 export const SOAK_MAXIMUM_RENEWALS = 36;

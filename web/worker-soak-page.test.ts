@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { createWorkerAcceptanceAuthorization } from "./worker-acceptance-authorization";
 import { createWorkerSoakPageOperations } from "./worker-soak-page";
 
-const ledger = { schema: "worker-soak-ledger-v1", next_ordinal: 2, total_charged_ms: 615550, pending: false, last_completed_ordinal: 1 } as const;
+const ledger = { schema: "worker-soak-ledger-v1", next_ordinal: 2, total_charged_ms: 619050, pending: false, last_completed_ordinal: 1 } as const;
 const binding = "B".repeat(43);
 
 function soakOperations(overrides: Partial<Parameters<typeof createWorkerSoakPageOperations>[0]> = {}) {
@@ -11,7 +11,7 @@ function soakOperations(overrides: Partial<Parameters<typeof createWorkerSoakPag
     enabled: () => true, released: () => true, invalidateAuthorization: () => calls.push("invalidate"),
     controller: () => ({ prepareWorkerLeaseAuthorizationContext: async () => { calls.push("possess"); return { controlSessionBindingSha256: binding }; }, soakAllowanceReview: async () => { calls.push("ledger"); return ledger; } }) as never,
     close: async () => calls.push("close"), flush: async () => calls.push("flush"), state: () => ({ status: "closed" }),
-    local: async (path: string) => { calls.push(path); return path === "/completion-context" ? { nonce: "n" } : { result: "passed", ordinal: 1, cumulative_charged_ms: 615550, cleanup_confirmed: true }; },
+    local: async (path: string) => { calls.push(path); return path === "/completion-context" ? { nonce: "n" } : { result: "passed", ordinal: 1, cumulative_charged_ms: 619050, cleanup_confirmed: true }; },
     ...overrides,
   };
   return { calls, operations: createWorkerSoakPageOperations(operations) };

@@ -38,8 +38,13 @@ export function soakWorkGateClosed(maybeQualification: Pick<WorkerQualification,
   return maybeQualification?.revocation_reason === "lease_or_budget_expired" || maybeQualification?.work_gate_remaining_ms === 0;
 }
 
-/** Bound on a soak's browser time: the full budget, a preparation allowance and a safe-stop margin. */
-export const SOAK_BROWSER_BACKSTOP_MILLISECONDS = SOAK_MAXIMUM_ACTIVE_MILLISECONDS + 60_000 + 20_000;
+/**
+ * Bound on a soak's browser time from Start: the full budget, up to 120 s of preparation before first
+ * dispatch, and 150 s for the ordered safe-stop including its up-to-120-s cooling proof.
+ */
+export const SOAK_BROWSER_BACKSTOP_MILLISECONDS = SOAK_MAXIMUM_ACTIVE_MILLISECONDS + 120_000 + 150_000;
+/** Renewing this close to the device's gate close races it; the current lease already outlives the close. */
+export const SOAK_RENEWAL_CUTOFF_MILLISECONDS = 5_000;
 
 export type SoakTickDecision = "fail" | "stop" | "await_safe_stop" | "renew" | "continue";
 
@@ -53,10 +58,14 @@ export function soakTickDecision(input: {
   nextRenewMs: number;
   maybeQualification: Pick<WorkerQualification, "revocation_reason" | "work_gate_remaining_ms" | "safe_stop_complete"> | undefined;
 }): SoakTickDecision {
-  if (input.browserElapsedMs >= SOAK_BROWSER_BACKSTOP_MILLISECONDS) return "fail";
   const maybeQualification = input.maybeQualification;
   if (maybeQualification && maybeQualification.revocation_reason !== "none" && maybeQualification.revocation_reason !== "lease_or_budget_expired") return "fail";
-  if (soakWorkGateClosed(maybeQualification)) return maybeQualification?.safe_stop_complete ? "stop" : "await_safe_stop";
+  // A completed device-local stop always ends the window, even after a long preparation.
+  if (soakWorkGateClosed(maybeQualification) && maybeQualification?.safe_stop_complete) return "stop";
+  if (input.browserElapsedMs >= SOAK_BROWSER_BACKSTOP_MILLISECONDS) return "fail";
+  if (soakWorkGateClosed(maybeQualification)) return "await_safe_stop";
+  const remaining = maybeQualification?.work_gate_remaining_ms;
+  if (typeof remaining === "number" && remaining <= SOAK_RENEWAL_CUTOFF_MILLISECONDS) return "continue";
   return input.nowMs >= input.nextRenewMs ? "renew" : "continue";
 }
 
