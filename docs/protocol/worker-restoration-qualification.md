@@ -116,8 +116,9 @@ refuses every renewal of that lease, and the page discards its remaining
 renewals. A mismatched nonce or any other field fails the session.
 
 `clock_discontinuity_stimulus_review` and `authorization_rejection_review`
-carry no `payload` key at all. Each requires an idle channel without an active
-lease and is preceded by a fresh possession proof. Responses:
+take exactly `{}` as their payload, like the existing review commands. Each
+requires an idle channel without an active lease and is preceded by a fresh
+possession proof. Responses:
 
 ```json
 { "schema": "worker-clock-discontinuity-stimulus-review-v1", "state": "idle|armed|consumed|expired", "offsetMilliseconds": 1000, "discontinuitiesDetected": 0 }

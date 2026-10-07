@@ -22,7 +22,7 @@ export type WorkerControllerSerialRequestFor<Version extends string, Grant, Rene
     | { command: "acceptance_budget_review"; payload: { campaignId: string } }
     | { command: "transport_probe"; payload: { padding: string; responsePaddingBytes: number } }
     | { command: "clock_discontinuity_stimulus"; payload: { requestNonce: string } }
-    | { command: "clock_discontinuity_stimulus_review" | "authorization_rejection_review" }
+    | { command: "clock_discontinuity_stimulus_review" | "authorization_rejection_review"; payload: Record<string, never> }
   );
 
 export type WorkerControllerSerialResponseFor<Version extends string> =
@@ -67,11 +67,11 @@ export function decodeWorkerControllerSerialRequestFor<Version extends string, G
   const requestId = parseEnvelope(value, profile);
   const command = value.command;
   if (typeof command !== "string") throw invalid(profile.label, "request");
-  const requiresPayload = ["start_lease", "renew_lease", "restore", "transport_probe", "acceptance_budget_review", "qualification_cooling", "qualification_attempt_review", "soak_allowance_review", "clock_discontinuity_stimulus"].includes(command);
+  const requiresPayload = ["start_lease", "renew_lease", "restore", "transport_probe", "acceptance_budget_review", "qualification_cooling", "qualification_attempt_review", "soak_allowance_review", "clock_discontinuity_stimulus", "clock_discontinuity_stimulus_review", "authorization_rejection_review"].includes(command);
   if (requiresPayload !== ("payload" in value)) {
     throw invalid(profile.label, "request");
   }
-  if (command === "qualification_attempt_review" || command === "soak_allowance_review") {
+  if (command === "qualification_attempt_review" || command === "soak_allowance_review" || command === "clock_discontinuity_stimulus_review" || command === "authorization_rejection_review") {
     exactRecord(value.payload, [], profile.label);
     return { protocolVersion: profile.protocolVersion, requestId, command, payload: {} };
   }
@@ -119,11 +119,11 @@ export function decodeWorkerControllerSerialRequestFor<Version extends string, G
       payload: { reason: parseWorkerRestorationReason(payload.reason) },
     };
   }
-  if (["discover", "status", "pause", "cancel", "clock_discontinuity_stimulus_review", "authorization_rejection_review"].includes(command)) {
+  if (["discover", "status", "pause", "cancel"].includes(command)) {
     return {
       protocolVersion: profile.protocolVersion,
       requestId,
-      command: command as "discover" | "status" | "pause" | "cancel" | "clock_discontinuity_stimulus_review" | "authorization_rejection_review",
+      command: command as "discover" | "status" | "pause" | "cancel",
     };
   }
   throw invalid(profile.label, "request");

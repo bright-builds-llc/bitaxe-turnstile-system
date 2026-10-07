@@ -15,19 +15,21 @@
         }
       },
       {
-        "name": "stimulus review without payload",
+        "name": "stimulus review with an empty payload",
         "request": {
           "protocolVersion": "bwg-worker-controller/0.4",
           "requestId": "serial_browser_1",
-          "command": "clock_discontinuity_stimulus_review"
+          "command": "clock_discontinuity_stimulus_review",
+          "payload": {}
         }
       },
       {
-        "name": "rejection review without payload",
+        "name": "rejection review with an empty payload",
         "request": {
           "protocolVersion": "bwg-worker-controller/0.4",
           "requestId": "serial_browser_1",
-          "command": "authorization_rejection_review"
+          "command": "authorization_rejection_review",
+          "payload": {}
         }
       }
     ],
@@ -75,25 +77,34 @@
         }
       },
       {
-        "name": "stimulus review with an empty payload",
+        "name": "stimulus review without payload",
+        "request": {
+          "protocolVersion": "bwg-worker-controller/0.4",
+          "requestId": "serial_browser_1",
+          "command": "clock_discontinuity_stimulus_review"
+        }
+      },
+      {
+        "name": "rejection review without payload",
+        "request": {
+          "protocolVersion": "bwg-worker-controller/0.4",
+          "requestId": "serial_browser_1",
+          "command": "authorization_rejection_review"
+        }
+      },
+      {
+        "name": "stimulus review with a field",
         "request": {
           "protocolVersion": "bwg-worker-controller/0.4",
           "requestId": "serial_browser_1",
           "command": "clock_discontinuity_stimulus_review",
-          "payload": {}
+          "payload": {
+            "state": "armed"
+          }
         }
       },
       {
-        "name": "rejection review with an empty payload",
-        "request": {
-          "protocolVersion": "bwg-worker-controller/0.4",
-          "requestId": "serial_browser_1",
-          "command": "authorization_rejection_review",
-          "payload": {}
-        }
-      },
-      {
-        "name": "rejection review with a payload",
+        "name": "rejection review with a field",
         "request": {
           "protocolVersion": "bwg-worker-controller/0.4",
           "requestId": "serial_browser_1",

@@ -85,7 +85,7 @@ test("after a stimulus the active lease is never renewed by the Gate", async () 
   } finally { await f.controller.close(); }
 });
 
-test.each(["clockDiscontinuityStimulusReview", "authorizationRejectionReview"] as const)("%s proves fresh possession and sends no payload", async method => {
+test.each(["clockDiscontinuityStimulusReview", "authorizationRejectionReview"] as const)("%s proves fresh possession and sends exactly an empty payload", async method => {
   // Arrange
   const f = await fixture();
   try {
@@ -94,7 +94,7 @@ test.each(["clockDiscontinuityStimulusReview", "authorizationRejectionReview"] a
     const review = await f.controller[method]();
     // Assert
     expect(f.h.received.slice(before).map(value => value.command)).toEqual(["prove_possession", method === "authorizationRejectionReview" ? "authorization_rejection_review" : "clock_discontinuity_stimulus_review"]);
-    expect("payload" in (f.requests[0] ?? {})).toBeFalse();
+    expect(f.requests[0]?.payload).toEqual({});
     expect(review.schema).toMatch(/review-v1$/u);
   } finally { await f.controller.close(); }
 });

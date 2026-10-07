@@ -6,7 +6,8 @@ import { serialFailure } from "./worker-serial";
 
 /**
  * Restoration-qualification commands over the admitted serial session. The stimulus needs the explicit hook
- * flag and an active lease; both reviews are read-only and take a fresh idle possession proof first.
+ * flag and an active lease; both reviews are read-only, send exactly `{}` like the existing reviews and take a
+ * fresh idle possession proof first.
  */
 export class WorkerRestorationControl {
   #renewalsStopped = false;
@@ -16,7 +17,7 @@ export class WorkerRestorationControl {
     requireIdleChannel(): void;
     activeLease(): boolean;
     prove(): Promise<unknown>;
-    request(command: string, maybePayload?: object): Promise<unknown>;
+    request(command: string, payload: object): Promise<unknown>;
   }) {}
   /** After a stimulus request leaves the browser, the lease it targets is never renewed. */
   get renewalsStopped(): boolean { return this.#renewalsStopped; }
@@ -38,7 +39,7 @@ export class WorkerRestorationControl {
     this.#requireIdle();
     await this.operations.prove();
     this.#requireIdle();
-    return this.operations.request(command);
+    return this.operations.request(command, {});
   }
   #requireIdle(): void {
     this.operations.requireIdleChannel();
