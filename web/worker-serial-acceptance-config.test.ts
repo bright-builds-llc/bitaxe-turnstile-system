@@ -36,3 +36,23 @@ test("core dump self-test capability is explicit, sticky and exclusive with othe
   for (const change of [{ coreDumpSelfTestQualification: false }, { restartQualification: true }, { cadenceQualification: true }, { recoveryPhase: "loss" }]) expect(() => parseWorkerSerialAcceptanceConfiguration({ ...base, coreDumpSelfTestQualification: true, ...change }, base.expectedGateCommit)).toThrow();
   expect(() => requireWorkerAcceptanceModeTransition(config, parseWorkerSerialAcceptanceConfiguration(base, base.expectedGateCommit))).toThrow("core_dump_self_test_mode_changed");
 });
+
+test("restoration qualification is explicit and admits no other mode", () => {
+  // Arrange
+  const others = [{ restorationQualification: false }, { recoveryPhase: "loss" }, { cadenceQualification: true }, { restartQualification: true }, { coreDumpSelfTestQualification: true },
+    { stationEndpointHandoff: true }, { soakQualification: true }, { noiseQualification: "before" }, { stratumV2Qualification: "before" }, { stratumV2Scope: "share" }];
+  // Act
+  const config = parseWorkerSerialAcceptanceConfiguration({ ...base, restorationQualification: true }, base.expectedGateCommit);
+  // Assert
+  expect(config.restorationQualification).toBeTrue();
+  for (const change of others) expect(() => parseWorkerSerialAcceptanceConfiguration({ ...base, restorationQualification: true, ...change }, base.expectedGateCommit)).toThrow("configuration_invalid");
+});
+
+test("restoration qualification is sticky in both directions", () => {
+  // Arrange
+  const restoration = parseWorkerSerialAcceptanceConfiguration({ ...base, restorationQualification: true }, base.expectedGateCommit);
+  const ordinary = parseWorkerSerialAcceptanceConfiguration(base, base.expectedGateCommit);
+  // Act / Assert
+  expect(() => requireWorkerAcceptanceModeTransition(restoration, ordinary)).toThrow("restoration_mode_changed");
+  expect(() => requireWorkerAcceptanceModeTransition(ordinary, restoration)).toThrow("restoration_mode_changed");
+});
