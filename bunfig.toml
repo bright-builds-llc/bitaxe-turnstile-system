@@ -1,0 +1,4 @@
+# A bare `bun test` must match the scripted suite: generated and protected local evidence under these
+# gitignored roots (for example historical offline discriminators in artifacts/) is never a repository test.
+[test]
+pathIgnorePatterns = ["artifacts/**", "dist/**", "target/**"]
