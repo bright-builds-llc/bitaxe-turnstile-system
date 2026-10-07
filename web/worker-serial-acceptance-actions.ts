@@ -1,7 +1,7 @@
 import type { WebSerialWorkerController } from "./webserial-worker-controller";
 import type { WorkerLeaseGrant } from "./worker-controller";
 import type { WorkerQualification } from "./worker-qualification";
-import { SOAK_MAXIMUM_ACTIVE_MILLISECONDS, SOAK_MAXIMUM_RENEWALS } from "./worker-soak-allowance";
+import { SOAK_MAXIMUM_ACTIVE_MILLISECONDS, SOAK_MAXIMUM_RENEWALS, SOAK_WORK_GATE_MILLISECONDS } from "./worker-soak-allowance";
 
 /** Bounded qualification windows end terminally; ordinary resumable Pause remains a separate API. */
 export function restoreAcceptanceBaseline(
@@ -56,10 +56,12 @@ export function soakTickDecision(input: {
   browserElapsedMs: number;
   nowMs: number;
   nextRenewMs: number;
-  maybeQualification: Pick<WorkerQualification, "revocation_reason" | "work_gate_remaining_ms" | "safe_stop_complete"> | undefined;
+  maybeQualification: Pick<WorkerQualification, "revocation_reason" | "work_gate_remaining_ms" | "safe_stop_complete" | "active_ms"> | undefined;
 }): SoakTickDecision {
   const maybeQualification = input.maybeQualification;
   if (maybeQualification && maybeQualification.revocation_reason !== "none" && maybeQualification.revocation_reason !== "lease_or_budget_expired") return "fail";
+  // A lease expiry reports the same reason as the budget close; only a full 600 s of work is a normal end.
+  if (soakWorkGateClosed(maybeQualification) && (maybeQualification?.active_ms ?? 0) < SOAK_WORK_GATE_MILLISECONDS) return "fail";
   // A completed device-local stop always ends the window, even after a long preparation.
   if (soakWorkGateClosed(maybeQualification) && maybeQualification?.safe_stop_complete) return "stop";
   if (input.browserElapsedMs >= SOAK_BROWSER_BACKSTOP_MILLISECONDS) return "fail";

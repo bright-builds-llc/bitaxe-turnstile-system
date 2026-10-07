@@ -80,7 +80,7 @@ test("renewal progress enforces the limit chosen for its window", async () => {
   await expect(progress.renew(controller, {} as never)).rejects.toThrow("acceptance_renewal_bound");
 });
 
-const open = { revocation_reason: "none", work_gate_remaining_ms: 300000, safe_stop_complete: false } as const;
+const open = { revocation_reason: "none", work_gate_remaining_ms: 300000, safe_stop_complete: false, active_ms: 300000 } as const;
 test("a soak renews only while the device's work gate is open and the renewal is due", () => {
   // Arrange / Act
   const decisions = [soakTickDecision({ browserElapsedMs: 1000, nowMs: 5000, nextRenewMs: 4000, maybeQualification: open }),
@@ -91,7 +91,7 @@ test("a soak renews only while the device's work gate is open and the renewal is
 
 test("after the device closes the gate the soak never renews and stops only after safe-stop", () => {
   // Arrange
-  const closed = { revocation_reason: "lease_or_budget_expired", work_gate_remaining_ms: 0, safe_stop_complete: false } as const;
+  const closed = { revocation_reason: "lease_or_budget_expired", work_gate_remaining_ms: 0, safe_stop_complete: false, active_ms: 600010 } as const;
   // Act
   const decisions = [soakTickDecision({ browserElapsedMs: 601000, nowMs: 9e9, nextRenewMs: 0, maybeQualification: closed }),
     soakTickDecision({ browserElapsedMs: 615000, nowMs: 9e9, nextRenewMs: 0, maybeQualification: { ...closed, safe_stop_complete: true } })];
@@ -134,9 +134,18 @@ test("no renewal is sent within the last five seconds before the device closes i
 
 test("a completed safe-stop ends the soak even after the browser backstop", () => {
   // Arrange
-  const done = { revocation_reason: "lease_or_budget_expired", work_gate_remaining_ms: 0, safe_stop_complete: true } as const;
+  const done = { revocation_reason: "lease_or_budget_expired", work_gate_remaining_ms: 0, safe_stop_complete: true, active_ms: 600010 } as const;
   // Act
   const decision = soakTickDecision({ browserElapsedMs: SOAK_BROWSER_BACKSTOP_MILLISECONDS + 1, nowMs: 0, nextRenewMs: 1, maybeQualification: done });
   // Assert
   expect(decision).toBe("stop");
+});
+
+test("a lease expiry before 600 s of work fails the soak instead of ending it normally", () => {
+  // Arrange
+  const expired = { revocation_reason: "lease_or_budget_expired", work_gate_remaining_ms: 0, safe_stop_complete: true, active_ms: 250000 } as const;
+  // Act
+  const decision = soakTickDecision({ browserElapsedMs: 300000, nowMs: 0, nextRenewMs: 1, maybeQualification: expired });
+  // Assert
+  expect(decision).toBe("fail");
 });
