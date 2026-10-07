@@ -1,3 +1,3 @@
 # check-id	repo-relative-file-or-directory/	reason
 file-lengths	src/authority_persistence/postgres.rs	Single async-trait repository implementation; domain behavior is delegated to focused PostgreSQL modules and query files.
-file-lengths	web/worker-serial-controller-runtime.ts	Central serial ownership adapter binds private session state to extracted command, restart, admission and diagnostic modules; keep the small self-test dispatch beside ordinary restart so one shared one-use owner remains auditable.
+file-lengths	web/worker-serial-controller-runtime.ts	Central serial ownership adapter binds private session state to extracted command, restart, admission and diagnostic modules; keep the small self-test dispatch beside ordinary restart so one shared one-use owner remains auditable; restoration-qualification commands delegate to WorkerRestorationControl in one-line methods.

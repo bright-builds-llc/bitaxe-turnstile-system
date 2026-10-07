@@ -1,4 +1,5 @@
 import type { WorkerSoakLedger } from "./worker-soak-allowance";
+import type { AuthorizationRejectionReview, ClockDiscontinuityStimulusAck, ClockDiscontinuityStimulusReview } from "./worker-restoration-qualification";
 import type { ChannelStart, V2Scope, V2Status } from "./worker-v2-serial";
 import type { NoiseStartInputV2, NoiseStatusV2 } from "./worker-noise-diagnostic";
 import type { WorkerQualificationRestartRequest } from "./worker-qualification-restart";
@@ -81,6 +82,10 @@ export interface WebSerialWorkerController
   /** Private endpoint response; never forwarded to public diagnostic callbacks. */
   telemetryCadenceEndpoint(maybeControlSessionBindingSha256?: string): Promise<WorkerTelemetryEndpoint & { controlSessionBindingSha256: string }>;
   acceptanceBudgetReview(campaignId: string): Promise<WorkerBudgetReview>;
+  /** Restoration qualification only: one bounded in-process clock decrease; stops renewals of the active lease. */
+  clockDiscontinuityStimulus(): Promise<ClockDiscontinuityStimulusAck>;
+  clockDiscontinuityStimulusReview(): Promise<ClockDiscontinuityStimulusReview>;
+  authorizationRejectionReview(): Promise<AuthorizationRejectionReview>;
   transportProbe(maybePaddingBytes?: number): Promise<{
     paddingBytes: number;
     requestPayloadBytes: number;
@@ -98,6 +103,8 @@ export type WorkerSerialQualificationHook = {
   noiseDiagnosticPair?: { firmwareSourceCommit: string; appElfSha256: string };
   allowQualificationRestart?: boolean;
   allowCoreDumpSelfTest?: boolean;
+  /** Set only by an explicit `restorationQualification` configuration. */
+  allowClockDiscontinuityStimulus?: boolean;
   maybeTraceHistory?: WorkerBrowserSerialTrace;
   maybeObserveHelloRecovery?: (value: { discardedRecords: number; discardedReplies: number; discardedBytes: number }) => void;
   maybeObserveSerialFailure?: (category: WorkerSerialFailureCategory) => void;

@@ -21,6 +21,8 @@ export type WorkerControllerSerialRequestFor<Version extends string, Grant, Rene
     | { command: "qualification_cooling"; payload: { action: "prove_fan" | "restore_baseline" } }
     | { command: "acceptance_budget_review"; payload: { campaignId: string } }
     | { command: "transport_probe"; payload: { padding: string; responsePaddingBytes: number } }
+    | { command: "clock_discontinuity_stimulus"; payload: { requestNonce: string } }
+    | { command: "clock_discontinuity_stimulus_review" | "authorization_rejection_review" }
   );
 
 export type WorkerControllerSerialResponseFor<Version extends string> =
@@ -65,13 +67,18 @@ export function decodeWorkerControllerSerialRequestFor<Version extends string, G
   const requestId = parseEnvelope(value, profile);
   const command = value.command;
   if (typeof command !== "string") throw invalid(profile.label, "request");
-  const requiresPayload = ["start_lease", "renew_lease", "restore", "transport_probe", "acceptance_budget_review", "qualification_cooling", "qualification_attempt_review", "soak_allowance_review"].includes(command);
+  const requiresPayload = ["start_lease", "renew_lease", "restore", "transport_probe", "acceptance_budget_review", "qualification_cooling", "qualification_attempt_review", "soak_allowance_review", "clock_discontinuity_stimulus"].includes(command);
   if (requiresPayload !== ("payload" in value)) {
     throw invalid(profile.label, "request");
   }
   if (command === "qualification_attempt_review" || command === "soak_allowance_review") {
     exactRecord(value.payload, [], profile.label);
     return { protocolVersion: profile.protocolVersion, requestId, command, payload: {} };
+  }
+  if (command === "clock_discontinuity_stimulus") {
+    const payload = exactRecord(value.payload, ["requestNonce"], profile.label);
+    if (typeof payload.requestNonce !== "string" || !/^[A-Za-z0-9_-]{21}[AQgw]$/u.test(payload.requestNonce)) throw invalid(profile.label, "request");
+    return { protocolVersion: profile.protocolVersion, requestId, command, payload: { requestNonce: payload.requestNonce } };
   }
   if (command === "qualification_cooling") {
     const payload = exactRecord(value.payload, ["action"], profile.label);
@@ -112,11 +119,11 @@ export function decodeWorkerControllerSerialRequestFor<Version extends string, G
       payload: { reason: parseWorkerRestorationReason(payload.reason) },
     };
   }
-  if (["discover", "status", "pause", "cancel"].includes(command)) {
+  if (["discover", "status", "pause", "cancel", "clock_discontinuity_stimulus_review", "authorization_rejection_review"].includes(command)) {
     return {
       protocolVersion: profile.protocolVersion,
       requestId,
-      command: command as "discover" | "status" | "pause" | "cancel",
+      command: command as "discover" | "status" | "pause" | "cancel" | "clock_discontinuity_stimulus_review" | "authorization_rejection_review",
     };
   }
   throw invalid(profile.label, "request");

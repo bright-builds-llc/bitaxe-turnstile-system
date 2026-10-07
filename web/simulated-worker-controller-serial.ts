@@ -75,6 +75,10 @@ async function dispatch(
     case "soak_allowance_review":
     case "acceptance_budget_review":
       throw new Error("Budget review requires the possessed firmware ledger");
+    case "clock_discontinuity_stimulus":
+    case "clock_discontinuity_stimulus_review":
+    case "authorization_rejection_review":
+      throw new Error("Restoration qualification requires the possessed firmware controller");
     case "discover":
       return controller.discover();
     case "status":

@@ -13,6 +13,10 @@ class WorkerControlRejection extends SerialFailure {
 export function isWorkerRestorationPending(error: unknown): boolean {
   return error instanceof WorkerControlRejection && error.rejection === "restoration_pending";
 }
+/** The closed firmware rejection category, only when the device itself answered the command. */
+export function maybeWorkerControlRejectionCategory(error: unknown): string | undefined {
+  return error instanceof WorkerControlRejection ? error.rejection : undefined;
+}
 /** Only firmware's closed rejection vocabulary can become an observation. */
 export function parseWorkerControlRejection(input: unknown): string {
   const error = exactSerialRecord(input, ["code", "message"]);

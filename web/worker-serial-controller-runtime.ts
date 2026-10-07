@@ -43,6 +43,7 @@ import {
   type WorkerRestorationReason, type WorkerLeaseGrant, type WorkerLeaseRenewal,
 } from "./worker-controller";
 import { parseWorkerSoakLedger } from "./worker-soak-allowance";
+import { WorkerRestorationControl } from "./worker-restoration-control";
 import { workerMiningStatusMatches, workerRestoredStatusMatches } from "./worker-postconditions";
 import {
   WorkerSerialPeer, exactSerialRecord, serialFailure, serialFailureFor,
@@ -266,13 +267,13 @@ export class BrowserSerialController implements WebSerialWorkerController {
       this.#lost(serialFailure("start_postcondition"));
       throw serialFailure("start_postcondition");
     }
-    this.#activeLease = true;
+    this.#activeLease = true; this.#restoration.leaseStarted();
     if (isWorkerV2Stratum(grant.stratum)) this.#v2.shareActivated();
     return result;
   }
   async renewLease(input: WorkerLeaseRenewal) {
     this.#requireReady();
-    if (!this.#activeLease) throw serialFailure("lease_inactive");
+    if (!this.#activeLease || this.#restoration.renewalsStopped) throw serialFailure("lease_inactive");
     const renewal = parseWorkerLeaseRenewal(input);
     const result = await this.#statusRequest("renew_lease", renewal);
     if (
@@ -414,6 +415,14 @@ export class BrowserSerialController implements WebSerialWorkerController {
       await this.close("cancelled");
     }, () => this.#maybeOwner?.released === true);
   }
+  readonly #restoration = new WorkerRestorationControl({
+    stimulusAllowed: () => this.maybeQualificationHook?.allowClockDiscontinuityStimulus === true, qualification: () => this.maybeQualificationHook !== undefined,
+    requireIdleChannel: () => { this.#requireReady(); if (this.#maybePending || this.#diagnosticFenced) throw serialFailure("probe_admission"); },
+    activeLease: () => this.#activeLease, prove: () => this.prepareWorkerLeaseAuthorizationContext("start"), request: (command, payload) => this.#request(command, payload),
+  });
+  clockDiscontinuityStimulus() { return this.#restoration.stimulus(); }
+  clockDiscontinuityStimulusReview() { return this.#restoration.stimulusReview(); }
+  authorizationRejectionReview() { return this.#restoration.rejectionReview(); }
   async acceptanceBudgetReview(campaignId: string) {
     this.#requireReady();
     if (this.#activeLease || !this.#maybePossession) throw serialFailure("probe_admission");

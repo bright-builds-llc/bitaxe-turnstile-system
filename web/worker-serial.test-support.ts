@@ -126,7 +126,7 @@ export async function serialHarness(
   let cadenceReview: unknown = cadenceFixture();
   let maybeTelemetryEndpoint: unknown;
   let restorationPending = false;
-  let maybeNoiseHandler: ((command: string, payload: unknown) => Promise<unknown>) | undefined;
+  let maybeNoiseHandler: ((command: string, payload: unknown) => Promise<unknown>) | undefined, maybeCommandHandler: ((request: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>) | undefined;
   let maybeRestartMode: RestartFixtureMode | undefined, bootOrdinal = 1, sessions = 0;
   let incomingFramer = new WorkerSerialFramer();
   const send = async (
@@ -263,6 +263,8 @@ export async function serialHarness(
       return;
     }
     if (!admitted) throw new Error("fixture requires possession");
+    const maybeCustom = await maybeCommandHandler?.(request);
+    if (maybeCustom) { await send("control", { protocolVersion: request.protocolVersion, requestId: request.requestId, ...maybeCustom }); return; }
     if (request.command === "start_lease") {
       const grant = parseWorkerLeaseGrant(request.payload);
       const { authorization, ...unsigned } = grant;
@@ -505,6 +507,8 @@ export async function serialHarness(
     setRestartScenario(mode: RestartFixtureMode) { maybeRestartMode = mode; },
     setRestorationPending(value: boolean) { restorationPending = value; },
     setNoiseHandler(handler: (command: string, payload: unknown) => Promise<unknown>) { maybeNoiseHandler = handler; },
+    /** Answers any admitted command with `{ok, result}` or `{ok, error}`; `undefined` falls through to the defaults. */
+    setCommandHandler(handler: (request: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>) { maybeCommandHandler = handler; },
     setTelemetryEndpoint(value: unknown) { maybeTelemetryEndpoint = structuredClone(value); },
     setCadenceReview(value: unknown) { cadenceReview = structuredClone(value); },
     counts: () => ({ opened, closed, locked, active }),
