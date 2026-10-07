@@ -7,6 +7,7 @@ import { createWorkerV2PageOperations, WorkerV2ShareStartClaim } from "./worker-
 import { isWorkerRestorationPending } from "./worker-control-rejection";
 import { createWorkerNoisePageOperations } from "./worker-noise-page";
 import { acceptanceLocalJson as localJson } from "./worker-acceptance-local";
+import { parseWorkerAcceptanceActivation } from "./worker-acceptance-activation";
 import { createWorkerCoreDumpPageOperations, createWorkerRestartPageOperations } from "./worker-restart-page";
 import { WorkerCadenceAcceptance } from "./worker-cadence-acceptance";
 import { createWorkerCadencePageOperations } from "./worker-cadence-page";
@@ -84,21 +85,7 @@ const hook: WorkerSerialQualificationHook = {
   observePreservation: (value) => { preservation.observe(value); authorizationRecovery.observePreservation(value); },
   suppressHeartbeats: false,
   memoryOnlyContinuity: true,
-  async prepareScope() {
-    const value = await localJson("/activate", {});
-    if (
-      !value ||
-      typeof value !== "object" ||
-      Object.keys(value).length !== 2 ||
-      typeof value.challengeId !== "string" ||
-      !Number.isSafeInteger(value.retentionExpiryUnixSeconds)
-    )
-      throw new Error("activation_invalid");
-    return {
-      challengeId: value.challengeId,
-      retentionExpiryUnixSeconds: value.retentionExpiryUnixSeconds,
-    };
-  },
+  async prepareScope() { return parseWorkerAcceptanceActivation(await localJson("/activate", {})); },
 };
 let maybeConfiguration: Configuration | undefined;
 let maybeReviewedContext: WorkerLeaseAuthorizationContext | undefined;
