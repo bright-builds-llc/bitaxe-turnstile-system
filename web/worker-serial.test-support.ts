@@ -513,6 +513,7 @@ export async function serialHarness(
     setCadenceReview(value: unknown) { cadenceReview = structuredClone(value); },
     counts: () => ({ opened, closed, locked, active }),
     sendDiagnostic: (line: string) => send("diagnostic", { line }),
+    setPreservationField(key: "schema" | "pool_configuration_unchanged_since_boot", value: string | boolean) { (preservation as Record<string, unknown>)[key] = value; },
     receiveRaw(bytes: Uint8Array) {
       if (!maybeOutput) throw new Error("fixture_port_not_open");
       maybeOutput.enqueue(bytes);

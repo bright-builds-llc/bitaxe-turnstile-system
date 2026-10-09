@@ -1,0 +1,146 @@
+{
+  "classification": "public-conformance-only",
+  "description": "Status preservation objects. Version 1 is the original exact field set; version 2 adds only pool_configuration_unchanged_since_boot, a device-local comparison of the stored pool configuration against its boot snapshot. Every mode accepts both versions with exact field sets per version.",
+  "valid": [
+    {
+      "name": "version 1",
+      "preservation": {
+        "schema": "worker-preservation-v1",
+        "settings_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "authorization_high_water_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "device_identity_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "mine_on_boot": false
+      }
+    },
+    {
+      "name": "version 2 unchanged pool configuration",
+      "preservation": {
+        "schema": "worker-preservation-v2",
+        "settings_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "authorization_high_water_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "device_identity_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "mine_on_boot": false,
+        "pool_configuration_unchanged_since_boot": true
+      }
+    },
+    {
+      "name": "version 2 changed pool configuration",
+      "preservation": {
+        "schema": "worker-preservation-v2",
+        "settings_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "authorization_high_water_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "device_identity_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "mine_on_boot": true,
+        "pool_configuration_unchanged_since_boot": false
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "version 1 with the version 2 field",
+      "preservation": {
+        "schema": "worker-preservation-v1",
+        "settings_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "authorization_high_water_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "device_identity_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "mine_on_boot": false,
+        "pool_configuration_unchanged_since_boot": true
+      }
+    },
+    {
+      "name": "version 2 without its pool field",
+      "preservation": {
+        "schema": "worker-preservation-v2",
+        "settings_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "authorization_high_water_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "device_identity_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "mine_on_boot": false
+      }
+    },
+    {
+      "name": "version 2 with a non-boolean pool field",
+      "preservation": {
+        "schema": "worker-preservation-v2",
+        "settings_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "authorization_high_water_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "device_identity_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "mine_on_boot": false,
+        "pool_configuration_unchanged_since_boot": "true"
+      }
+    },
+    {
+      "name": "version 2 with a pool digest",
+      "preservation": {
+        "schema": "worker-preservation-v2",
+        "settings_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "authorization_high_water_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "device_identity_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "mine_on_boot": false,
+        "pool_configuration_unchanged_since_boot": true,
+        "pool_configuration_sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+      }
+    },
+    {
+      "name": "version 1 with an unknown field",
+      "preservation": {
+        "schema": "worker-preservation-v1",
+        "settings_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "authorization_high_water_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "device_identity_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "mine_on_boot": false,
+        "extra": "secret"
+      }
+    },
+    {
+      "name": "version 2 missing a digest",
+      "preservation": {
+        "schema": "worker-preservation-v2",
+        "authorization_high_water_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "device_identity_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "mine_on_boot": false,
+        "pool_configuration_unchanged_since_boot": true
+      }
+    },
+    {
+      "name": "version 2 uppercase digest",
+      "preservation": {
+        "schema": "worker-preservation-v2",
+        "settings_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "authorization_high_water_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "device_identity_sha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "mine_on_boot": false,
+        "pool_configuration_unchanged_since_boot": true
+      }
+    },
+    {
+      "name": "version 1 non-boolean mine_on_boot",
+      "preservation": {
+        "schema": "worker-preservation-v1",
+        "settings_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "authorization_high_water_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "device_identity_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "mine_on_boot": 0
+      }
+    },
+    {
+      "name": "unknown version",
+      "preservation": {
+        "schema": "worker-preservation-v3",
+        "settings_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "authorization_high_water_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "device_identity_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "mine_on_boot": false,
+        "pool_configuration_unchanged_since_boot": true
+      }
+    },
+    {
+      "name": "missing schema",
+      "preservation": {
+        "settings_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "authorization_high_water_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "device_identity_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "mine_on_boot": false
+      }
+    }
+  ]
+}
