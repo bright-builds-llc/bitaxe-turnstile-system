@@ -31,6 +31,15 @@
           "command": "authorization_rejection_review",
           "payload": {}
         }
+      },
+      {
+        "name": "boot review with an empty payload",
+        "request": {
+          "protocolVersion": "bwg-worker-controller/0.4",
+          "requestId": "serial_browser_1",
+          "command": "boot_review",
+          "payload": {}
+        }
       }
     ],
     "invalid": [
@@ -111,6 +120,25 @@
           "command": "authorization_rejection_review",
           "payload": {
             "keyId": "k"
+          }
+        }
+      },
+      {
+        "name": "boot review without payload",
+        "request": {
+          "protocolVersion": "bwg-worker-controller/0.4",
+          "requestId": "serial_browser_1",
+          "command": "boot_review"
+        }
+      },
+      {
+        "name": "boot review with a field",
+        "request": {
+          "protocolVersion": "bwg-worker-controller/0.4",
+          "requestId": "serial_browser_1",
+          "command": "boot_review",
+          "payload": {
+            "bootOrdinal": 1
           }
         }
       }
@@ -613,6 +641,297 @@
             "fingerprintSha256": "2222222222222222222222222222222222222222222222222222222222222222"
           },
           "challengeId": "challenge"
+        }
+      }
+    ]
+  },
+  "bootReview": {
+    "valid": [
+      {
+        "schema": "worker-boot-review-v1",
+        "resetCause": "power_on"
+      },
+      {
+        "schema": "worker-boot-review-v1",
+        "resetCause": "software_cpu"
+      },
+      {
+        "schema": "worker-boot-review-v1",
+        "resetCause": "watchdog"
+      },
+      {
+        "schema": "worker-boot-review-v1",
+        "resetCause": "panic"
+      },
+      {
+        "schema": "worker-boot-review-v1",
+        "resetCause": "brownout"
+      },
+      {
+        "schema": "worker-boot-review-v1",
+        "resetCause": "other"
+      }
+    ],
+    "invalid": [
+      {
+        "name": "unknown cause",
+        "response": {
+          "schema": "worker-boot-review-v1",
+          "resetCause": "deep_sleep"
+        }
+      },
+      {
+        "name": "wrong schema",
+        "response": {
+          "schema": "worker-boot-review-v2",
+          "resetCause": "power_on"
+        }
+      },
+      {
+        "name": "boot ordinal field",
+        "response": {
+          "schema": "worker-boot-review-v1",
+          "resetCause": "power_on",
+          "bootOrdinal": 3
+        }
+      },
+      {
+        "name": "missing cause",
+        "response": {
+          "schema": "worker-boot-review-v1"
+        }
+      }
+    ]
+  },
+  "rejectionReviewV2": {
+    "valid": [
+      {
+        "name": "no rejection this boot",
+        "response": {
+          "schema": "worker-authorization-rejection-review-v2",
+          "bootRejections": 0,
+          "last": null,
+          "highWater": {
+            "advancedThisBoot": false,
+            "fingerprintSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        }
+      },
+      {
+        "name": "N1 durable replay after reboot",
+        "response": {
+          "schema": "worker-authorization-rejection-review-v2",
+          "bootRejections": 1,
+          "last": {
+            "ordinal": 1,
+            "operation": "start",
+            "signature": "valid",
+            "context": "mismatch",
+            "replayGuard": "at_or_below_durable_high_water",
+            "safeStop": "none"
+          },
+          "highWater": {
+            "advancedThisBoot": false,
+            "fingerprintSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        }
+      },
+      {
+        "name": "N2 expired possession",
+        "response": {
+          "schema": "worker-authorization-rejection-review-v2",
+          "bootRejections": 2,
+          "last": {
+            "ordinal": 2,
+            "operation": "start",
+            "signature": "not_evaluated",
+            "context": "expired",
+            "replayGuard": "not_evaluated",
+            "safeStop": "none"
+          },
+          "highWater": {
+            "advancedThisBoot": false,
+            "fingerprintSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        }
+      },
+      {
+        "name": "N3 cross-context Start",
+        "response": {
+          "schema": "worker-authorization-rejection-review-v2",
+          "bootRejections": 3,
+          "last": {
+            "ordinal": 3,
+            "operation": "start",
+            "signature": "valid",
+            "context": "mismatch",
+            "replayGuard": "fresh",
+            "safeStop": "none"
+          },
+          "highWater": {
+            "advancedThisBoot": false,
+            "fingerprintSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        }
+      },
+      {
+        "name": "N4 renewal replay",
+        "response": {
+          "schema": "worker-authorization-rejection-review-v2",
+          "bootRejections": 4,
+          "last": {
+            "ordinal": 4,
+            "operation": "renew",
+            "signature": "valid",
+            "context": "current",
+            "replayGuard": "at_or_below_durable_high_water",
+            "safeStop": "control_failed"
+          },
+          "highWater": {
+            "advancedThisBoot": true,
+            "fingerprintSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        }
+      },
+      {
+        "name": "another known restoration reason",
+        "response": {
+          "schema": "worker-authorization-rejection-review-v2",
+          "bootRejections": 1,
+          "last": {
+            "ordinal": 1,
+            "operation": "renew",
+            "signature": "valid",
+            "context": "current",
+            "replayGuard": "fresh",
+            "safeStop": "lost_continuity"
+          },
+          "highWater": {
+            "advancedThisBoot": false,
+            "fingerprintSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        }
+      }
+    ],
+    "invalid": [
+      {
+        "name": "version 2 record without safeStop",
+        "response": {
+          "schema": "worker-authorization-rejection-review-v2",
+          "bootRejections": 1,
+          "last": {
+            "ordinal": 1,
+            "operation": "start",
+            "signature": "valid",
+            "context": "current",
+            "replayGuard": "fresh"
+          },
+          "highWater": {
+            "advancedThisBoot": false,
+            "fingerprintSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        }
+      },
+      {
+        "name": "unknown safeStop",
+        "response": {
+          "schema": "worker-authorization-rejection-review-v2",
+          "bootRejections": 1,
+          "last": {
+            "ordinal": 1,
+            "operation": "start",
+            "signature": "valid",
+            "context": "current",
+            "replayGuard": "fresh",
+            "safeStop": "heartbeat_timeout"
+          },
+          "highWater": {
+            "advancedThisBoot": false,
+            "fingerprintSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        }
+      },
+      {
+        "name": "non-string safeStop",
+        "response": {
+          "schema": "worker-authorization-rejection-review-v2",
+          "bootRejections": 1,
+          "last": {
+            "ordinal": 1,
+            "operation": "start",
+            "signature": "valid",
+            "context": "current",
+            "replayGuard": "fresh",
+            "safeStop": null
+          },
+          "highWater": {
+            "advancedThisBoot": false,
+            "fingerprintSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        }
+      },
+      {
+        "name": "version 1 record with safeStop",
+        "response": {
+          "schema": "worker-authorization-rejection-review-v1",
+          "bootRejections": 1,
+          "last": {
+            "ordinal": 1,
+            "operation": "start",
+            "signature": "valid",
+            "context": "current",
+            "replayGuard": "fresh",
+            "safeStop": "none"
+          },
+          "highWater": {
+            "advancedThisBoot": false,
+            "fingerprintSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        }
+      },
+      {
+        "name": "safeStop beside a null record",
+        "response": {
+          "schema": "worker-authorization-rejection-review-v2",
+          "bootRejections": 0,
+          "last": null,
+          "highWater": {
+            "advancedThisBoot": false,
+            "fingerprintSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          },
+          "safeStop": "none"
+        }
+      },
+      {
+        "name": "unknown version",
+        "response": {
+          "schema": "worker-authorization-rejection-review-v3",
+          "bootRejections": 0,
+          "last": null,
+          "highWater": {
+            "advancedThisBoot": false,
+            "fingerprintSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        }
+      },
+      {
+        "name": "key id in version 2 record",
+        "response": {
+          "schema": "worker-authorization-rejection-review-v2",
+          "bootRejections": 1,
+          "last": {
+            "ordinal": 1,
+            "operation": "start",
+            "signature": "valid",
+            "context": "current",
+            "replayGuard": "fresh",
+            "safeStop": "none",
+            "keyId": "k"
+          },
+          "highWater": {
+            "advancedThisBoot": false,
+            "fingerprintSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          }
         }
       }
     ]

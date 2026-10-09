@@ -1,5 +1,6 @@
 import { encodeBase64Url } from "./crypto-bytes";
-import { parseWorkerLeaseGrant, parseWorkerLeaseRenewal, type WorkerLeaseGrant, type WorkerLeaseRenewal } from "./worker-controller";
+import { parseWorkerLeaseGrant, parseWorkerLeaseRenewal, type WorkerLeaseGrant, type WorkerLeaseRenewal, type WorkerRestorationReason } from "./worker-controller";
+import { WORKER_RESTORATION_REASONS } from "./worker-controller-semantics";
 import type { WorkerPreservation } from "./worker-preservation";
 import { exactSerialRecord, serialFailure, serialToken } from "./worker-serial";
 import { isWorkerV2Stratum } from "./worker-v2-stratum";
@@ -26,10 +27,14 @@ export type AuthorizationRejectionRecord = {
   ordinal: number; operation: "start" | "renew"; signature: "valid" | "invalid" | "not_evaluated";
   context: "current" | "mismatch" | "expired" | "absent"; replayGuard: "fresh" | "at_or_below_durable_high_water" | "unavailable" | "not_evaluated";
 };
-export type AuthorizationRejectionReview = {
-  schema: "worker-authorization-rejection-review-v1"; bootRejections: number; last: AuthorizationRejectionRecord | null;
-  highWater: { advancedThisBoot: boolean; fingerprintSha256: string };
-};
+/** Version 2 records the safe-stop reason the rejection itself triggered, captured with the rejection. */
+export type AuthorizationRejectionSafeStop = "none" | WorkerRestorationReason;
+type RejectionHighWater = { advancedThisBoot: boolean; fingerprintSha256: string };
+export type AuthorizationRejectionReview =
+  | { schema: "worker-authorization-rejection-review-v1"; bootRejections: number; last: AuthorizationRejectionRecord | null; highWater: RejectionHighWater }
+  | { schema: "worker-authorization-rejection-review-v2"; bootRejections: number; last: (AuthorizationRejectionRecord & { safeStop: AuthorizationRejectionSafeStop }) | null; highWater: RejectionHighWater };
+export const WORKER_BOOT_RESET_CAUSES = ["power_on", "software_cpu", "watchdog", "panic", "brownout", "other"] as const;
+export type WorkerBootReview = { schema: "worker-boot-review-v1"; resetCause: typeof WORKER_BOOT_RESET_CAUSES[number] };
 
 function u32(value: unknown, minimum = 0): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < minimum || value > 0xffffffff) throw serialFailure("fields");
@@ -60,8 +65,8 @@ export function parseClockDiscontinuityStimulusReview(input: unknown): ClockDisc
     offsetMilliseconds: CLOCK_DISCONTINUITY_OFFSET_MILLISECONDS, discontinuitiesDetected: u32(value.discontinuitiesDetected) };
 }
 
-function parseRejectionRecord(input: unknown, bootRejections: number): AuthorizationRejectionRecord {
-  const value = exactSerialRecord(input, ["ordinal", "operation", "signature", "context", "replayGuard"]);
+function parseRejectionRecord(input: unknown, bootRejections: number, fields: readonly string[] = []): AuthorizationRejectionRecord {
+  const value = exactSerialRecord(input, ["ordinal", "operation", "signature", "context", "replayGuard", ...fields]);
   const ordinal = u32(value.ordinal, 1);
   if (ordinal > bootRejections) throw serialFailure("fields");
   return { ordinal, operation: closed(value.operation, ["start", "renew"] as const), signature: closed(value.signature, ["valid", "invalid", "not_evaluated"] as const),
@@ -69,15 +74,28 @@ function parseRejectionRecord(input: unknown, bootRejections: number): Authoriza
     replayGuard: closed(value.replayGuard, ["fresh", "at_or_below_durable_high_water", "unavailable", "not_evaluated"] as const) };
 }
 
+/** Accepts version 1 unchanged and version 2, whose non-null `last` additionally carries exactly `safeStop`. */
 export function parseAuthorizationRejectionReview(input: unknown): AuthorizationRejectionReview {
   const value = exactSerialRecord(input, ["schema", "bootRejections", "last", "highWater"]);
-  if (value.schema !== "worker-authorization-rejection-review-v1") throw serialFailure("fields");
+  if (value.schema !== "worker-authorization-rejection-review-v1" && value.schema !== "worker-authorization-rejection-review-v2") throw serialFailure("fields");
   const bootRejections = u32(value.bootRejections);
   if ((bootRejections === 0) !== (value.last === null)) throw serialFailure("fields");
-  const highWater = exactSerialRecord(value.highWater, ["advancedThisBoot", "fingerprintSha256"]);
-  if (typeof highWater.advancedThisBoot !== "boolean" || typeof highWater.fingerprintSha256 !== "string" || !/^[0-9a-f]{64}$/u.test(highWater.fingerprintSha256)) throw serialFailure("fields");
-  return { schema: "worker-authorization-rejection-review-v1", bootRejections, last: value.last === null ? null : parseRejectionRecord(value.last, bootRejections),
-    highWater: { advancedThisBoot: highWater.advancedThisBoot, fingerprintSha256: highWater.fingerprintSha256 } };
+  const parsedHighWater = exactSerialRecord(value.highWater, ["advancedThisBoot", "fingerprintSha256"]);
+  if (typeof parsedHighWater.advancedThisBoot !== "boolean" || typeof parsedHighWater.fingerprintSha256 !== "string" || !/^[0-9a-f]{64}$/u.test(parsedHighWater.fingerprintSha256)) throw serialFailure("fields");
+  const highWater = { advancedThisBoot: parsedHighWater.advancedThisBoot, fingerprintSha256: parsedHighWater.fingerprintSha256 };
+  if (value.schema === "worker-authorization-rejection-review-v1")
+    return { schema: value.schema, bootRejections, last: value.last === null ? null : parseRejectionRecord(value.last, bootRejections), highWater };
+  if (value.last === null) return { schema: value.schema, bootRejections, last: null, highWater };
+  const last = parseRejectionRecord(value.last, bootRejections, ["safeStop"]);
+  const safeStop = closed((value.last as Record<string, unknown>).safeStop, ["none", ...WORKER_RESTORATION_REASONS] as const);
+  return { schema: value.schema, bootRejections, last: { ...last, safeStop }, highWater };
+}
+
+/** This boot's closed reset cause; read-only and never a reset or restoration proof by itself. */
+export function parseWorkerBootReview(input: unknown): WorkerBootReview {
+  const value = exactSerialRecord(input, ["schema", "resetCause"]);
+  if (value.schema !== "worker-boot-review-v1") throw serialFailure("fields");
+  return { schema: "worker-boot-review-v1", resetCause: closed(value.resetCause, WORKER_BOOT_RESET_CAUSES) };
 }
 
 /** Restoration lease windows (decision D1); only the 60,000/20,000 ms window may carry its one renewal. */

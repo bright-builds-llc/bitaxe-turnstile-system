@@ -78,6 +78,7 @@ async function dispatch(
     case "clock_discontinuity_stimulus":
     case "clock_discontinuity_stimulus_review":
     case "authorization_rejection_review":
+    case "boot_review":
       throw new Error("Restoration qualification requires the possessed firmware controller");
     case "discover":
       return controller.discover();

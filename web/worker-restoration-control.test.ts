@@ -15,6 +15,7 @@ async function fixture(hook: Partial<WorkerSerialQualificationHook> | null = { a
     }
     if (request.command === "clock_discontinuity_stimulus_review") { requests.push(request); return { ok: true, result: vectors.stimulusReview.valid[2] }; }
     if (request.command === "authorization_rejection_review") { requests.push(request); return { ok: true, result: vectors.rejectionReview.valid[1]?.response }; }
+    if (request.command === "boot_review") { requests.push(request); return { ok: true, result: vectors.bootReview.valid[0] }; }
     return undefined;
   });
   const input = { ...h.input, [workerSerialQualificationHook]: { suppressHeartbeats: false, ...hook } };
@@ -85,7 +86,8 @@ test("after a stimulus the active lease is never renewed by the Gate", async () 
   } finally { await f.controller.close(); }
 });
 
-test.each(["clockDiscontinuityStimulusReview", "authorizationRejectionReview"] as const)("%s proves fresh possession and sends exactly an empty payload", async method => {
+const reviewCommands = { clockDiscontinuityStimulusReview: "clock_discontinuity_stimulus_review", authorizationRejectionReview: "authorization_rejection_review", bootReview: "boot_review" } as const;
+test.each(["clockDiscontinuityStimulusReview", "authorizationRejectionReview", "bootReview"] as const)("%s proves fresh possession and sends exactly an empty payload", async method => {
   // Arrange
   const f = await fixture();
   try {
@@ -93,13 +95,13 @@ test.each(["clockDiscontinuityStimulusReview", "authorizationRejectionReview"] a
     // Act
     const review = await f.controller[method]();
     // Assert
-    expect(f.h.received.slice(before).map(value => value.command)).toEqual(["prove_possession", method === "authorizationRejectionReview" ? "authorization_rejection_review" : "clock_discontinuity_stimulus_review"]);
+    expect(f.h.received.slice(before).map(value => value.command)).toEqual(["prove_possession", reviewCommands[method]]);
     expect(f.requests[0]?.payload).toEqual({});
     expect(review.schema).toMatch(/review-v1$/u);
   } finally { await f.controller.close(); }
 });
 
-test.each(["clockDiscontinuityStimulusReview", "authorizationRejectionReview"] as const)("%s is refused during an active lease", async method => {
+test.each(["clockDiscontinuityStimulusReview", "authorizationRejectionReview", "bootReview"] as const)("%s is refused during an active lease", async method => {
   // Arrange
   const f = await fixture();
   try {
@@ -119,4 +121,17 @@ test("an unknown review field fails closed", async () => {
     // Act / Assert
     await expect(f.controller.authorizationRejectionReview()).rejects.toThrow();
   } finally { await f.controller.close().catch(() => undefined); }
+});
+
+test("a version 2 rejection review reaches the caller with its safe-stop reason", async () => {
+  // Arrange
+  const f = await fixture();
+  const response = vectors.rejectionReviewV2.valid[4]?.response;
+  f.h.setCommandHandler(async request => request.command === "authorization_rejection_review" ? { ok: true, result: response } : undefined);
+  try {
+    // Act
+    const review = await f.controller.authorizationRejectionReview();
+    // Assert
+    expect(review).toEqual(response as never);
+  } finally { await f.controller.close(); }
 });

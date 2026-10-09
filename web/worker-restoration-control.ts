@@ -1,12 +1,12 @@
 import {
-  createClockDiscontinuityNonce, parseAuthorizationRejectionReview, parseClockDiscontinuityStimulusAck, parseClockDiscontinuityStimulusReview,
-  type AuthorizationRejectionReview, type ClockDiscontinuityStimulusAck, type ClockDiscontinuityStimulusReview,
+  createClockDiscontinuityNonce, parseAuthorizationRejectionReview, parseClockDiscontinuityStimulusAck, parseClockDiscontinuityStimulusReview, parseWorkerBootReview,
+  type AuthorizationRejectionReview, type ClockDiscontinuityStimulusAck, type ClockDiscontinuityStimulusReview, type WorkerBootReview,
 } from "./worker-restoration-qualification";
 import { serialFailure } from "./worker-serial";
 
 /**
  * Restoration-qualification commands over the admitted serial session. The stimulus needs the explicit hook
- * flag and an active lease; both reviews are read-only, send exactly `{}` like the existing reviews and take a
+ * flag and an active lease; the reviews are read-only, send exactly `{}` like the existing reviews and take a
  * fresh idle possession proof first.
  */
 export class WorkerRestorationControl {
@@ -34,6 +34,9 @@ export class WorkerRestorationControl {
   }
   async rejectionReview(): Promise<AuthorizationRejectionReview> {
     return parseAuthorizationRejectionReview(await this.#review("authorization_rejection_review"));
+  }
+  async bootReview(): Promise<WorkerBootReview> {
+    return parseWorkerBootReview(await this.#review("boot_review"));
   }
   async #review(command: string): Promise<unknown> {
     this.#requireIdle();

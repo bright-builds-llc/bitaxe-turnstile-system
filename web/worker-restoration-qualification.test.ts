@@ -3,7 +3,7 @@ import vectors from "../conformance/bwg-worker-controller-0.4/restoration-qualif
 import { decodeWorkerControllerSerialRequestFor } from "./worker-controller-serial-codec";
 import { parseWorkerLeaseGrant, parseWorkerLeaseRenewal, WORKER_CONTROLLER_PROTOCOL_VERSION } from "./worker-controller";
 import {
-  createClockDiscontinuityNonce, parseAuthorizationRejectionReview, parseClockDiscontinuityStimulusAck, parseClockDiscontinuityStimulusReview,
+  createClockDiscontinuityNonce, parseAuthorizationRejectionReview, parseWorkerBootReview, parseClockDiscontinuityStimulusAck, parseClockDiscontinuityStimulusReview,
   parseRestorationReplayArtifact, parseRestorationWindow, WorkerRestorationDeviceIdentity, WorkerRestorationHighWater, WorkerRestorationPoolConfiguration,
 } from "./worker-restoration-qualification";
 import { serialToken } from "./worker-serial";
@@ -169,4 +169,24 @@ test("version 1 observations never count toward the pool configuration", () => {
   // Assert
   expect(before).toBeNull();
   expect(pool.publicState()).toEqual({ observations: 1, changed: false });
+});
+
+test.each(vectors.rejectionReviewV2.valid)("the version 2 rejection review for $name parses exactly", ({ response }) => {
+  // Arrange / Act / Assert
+  expect(parseAuthorizationRejectionReview(response)).toEqual(response as never);
+});
+
+test.each(vectors.rejectionReviewV2.invalid)("a rejection review with $name is rejected", ({ response }) => {
+  // Arrange / Act / Assert
+  expect(() => parseAuthorizationRejectionReview(response)).toThrow();
+});
+
+test.each(vectors.bootReview.valid)("boot review reset cause $resetCause parses exactly", response => {
+  // Arrange / Act / Assert
+  expect(parseWorkerBootReview(response)).toEqual(response as never);
+});
+
+test.each(vectors.bootReview.invalid)("a boot review with $name is rejected", ({ response }) => {
+  // Arrange / Act / Assert
+  expect(() => parseWorkerBootReview(response)).toThrow();
 });

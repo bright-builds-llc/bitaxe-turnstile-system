@@ -1,5 +1,5 @@
 import type { WorkerSoakLedger } from "./worker-soak-allowance";
-import type { AuthorizationRejectionReview, ClockDiscontinuityStimulusAck, ClockDiscontinuityStimulusReview } from "./worker-restoration-qualification";
+import type { AuthorizationRejectionReview, ClockDiscontinuityStimulusAck, ClockDiscontinuityStimulusReview, WorkerBootReview } from "./worker-restoration-qualification";
 import type { ChannelStart, V2Scope, V2Status } from "./worker-v2-serial";
 import type { NoiseStartInputV2, NoiseStatusV2 } from "./worker-noise-diagnostic";
 import type { WorkerQualificationRestartRequest } from "./worker-qualification-restart";
@@ -86,6 +86,7 @@ export interface WebSerialWorkerController
   clockDiscontinuityStimulus(): Promise<ClockDiscontinuityStimulusAck>;
   clockDiscontinuityStimulusReview(): Promise<ClockDiscontinuityStimulusReview>;
   authorizationRejectionReview(): Promise<AuthorizationRejectionReview>;
+  bootReview(): Promise<WorkerBootReview>;
   transportProbe(maybePaddingBytes?: number): Promise<{
     paddingBytes: number;
     requestPayloadBytes: number;

@@ -423,6 +423,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
   clockDiscontinuityStimulus() { return this.#restoration.stimulus(); }
   clockDiscontinuityStimulusReview() { return this.#restoration.stimulusReview(); }
   authorizationRejectionReview() { return this.#restoration.rejectionReview(); }
+  bootReview() { return this.#restoration.bootReview(); }
   async acceptanceBudgetReview(campaignId: string) {
     this.#requireReady();
     if (this.#activeLease || !this.#maybePossession) throw serialFailure("probe_admission");

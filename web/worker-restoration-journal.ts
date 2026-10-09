@@ -3,7 +3,7 @@ export const WORKER_RESTORATION_JOURNAL_EVENTS = [
   "configured", "admission_failed", "serial_failure", "connect_failed", "connected", "disconnected",
   "start_prepared", "lease_loaded", "lease_started", "lease_start_failed", "renewed", "renew_failed",
   "paused", "cancelled", "restored", "stop_failed", "device_baseline_observed",
-  "stimulus_acknowledged", "stimulus_failed", "stimulus_reviewed", "rejection_reviewed", "status_reviewed", "review_failed",
+  "stimulus_acknowledged", "stimulus_failed", "stimulus_reviewed", "rejection_reviewed", "status_reviewed", "boot_reviewed", "review_failed",
   "replay_accepted", "replay_rejected", "replay_failed",
   "physical_window_begun", "physical_window_armed", "admission_observed",
   "device_identity_changed", "pool_configuration_changed",

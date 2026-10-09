@@ -4,7 +4,7 @@ import { parseWorkerControlResult } from "./worker-control-rejection";
 import type { WorkerControllerStatus } from "./worker-controller";
 import { createWorkerRestorationOperations, type WorkerRestorationController } from "./worker-restoration-operations";
 import { WorkerRestorationJournal } from "./worker-restoration-journal";
-import { WorkerRestorationHighWater, parseAuthorizationRejectionReview, parseClockDiscontinuityStimulusReview } from "./worker-restoration-qualification";
+import { WorkerRestorationHighWater, parseAuthorizationRejectionReview, parseClockDiscontinuityStimulusReview, parseWorkerBootReview } from "./worker-restoration-qualification";
 import { serialFailure } from "./worker-serial";
 import { maybeWorkerSerialDiagnostic } from "./worker-serial-diagnostics";
 
@@ -20,7 +20,7 @@ const admissionLine = (stage: string, failure: string, readiness = 7) =>
   `worker_admission schema=v1 stage=${stage} first_failure=${failure} readiness=${readiness} budget_reserved_ms=30000 budget_complete=false redacted=true`;
 const diagnostic = (text: string) => { const value = maybeWorkerSerialDiagnostic(text); if (!value) throw new Error("fixture_diagnostic"); return value; };
 
-function fixture(local: Record<string, unknown> = {}, enabled = true) {
+function fixture(local: Record<string, unknown> = {}, enabled = true, rejectionV2 = false) {
   const calls: string[] = [];
   const posted: { path: string; body: unknown }[] = [];
   const highWater = new WorkerRestorationHighWater();
@@ -47,7 +47,8 @@ function fixture(local: Record<string, unknown> = {}, enabled = true) {
         close: async reason => { calls.push(`close:${reason}`); },
         clockDiscontinuityStimulus: async () => { calls.push("stimulus"); return { ...vectors.stimulusAck.valid } as never; },
         clockDiscontinuityStimulusReview: async () => { calls.push("stimulus_review"); return parseClockDiscontinuityStimulusReview(vectors.stimulusReview.valid[2]); },
-        authorizationRejectionReview: async () => { calls.push("rejection_review"); return parseAuthorizationRejectionReview(vectors.rejectionReview.valid[1]?.response); },
+        authorizationRejectionReview: async () => { calls.push("rejection_review"); return parseAuthorizationRejectionReview((rejectionV2 ? vectors.rejectionReviewV2.valid[4] : vectors.rejectionReview.valid[1])?.response); },
+        bootReview: async () => { calls.push("boot_review"); return parseWorkerBootReview(vectors.bootReview.valid[3]); },
       };
     },
   });
@@ -358,4 +359,36 @@ test("outside restoration mode preservation observations are ignored", () => {
   f.ops.observePreservation(preservation("3".repeat(64), false));
   // Assert
   expect([f.ops.state().deviceIdentity, f.ops.state().poolConfiguration, f.ops.state().journal.entries]).toEqual([null, null, []]);
+});
+
+test("bootReview returns the parsed reset cause and journals it without a state field", async () => {
+  // Arrange
+  const f = fixture();
+  await f.ops.connect();
+  // Act
+  const review = await f.ops.bootReview();
+  // Assert
+  expect(review).toEqual({ schema: "worker-boot-review-v1", resetCause: "panic" });
+  expect(f.ops.state().journal.entries.at(-1)).toMatchObject({ event: "boot_reviewed", category: "panic" });
+  expect("bootReview" in f.ops.state() || "resetCause" in f.ops.state()).toBeFalse();
+});
+
+test("bootReview is refused during an active lease", async () => {
+  // Arrange
+  const f = fixture();
+  await running(f);
+  // Act / Assert
+  await expect(f.ops.bootReview()).rejects.toThrow("review_failed");
+  expect(f.calls).not.toContain("boot_review");
+});
+
+test("the page returns a version 2 rejection review with its safe-stop reason and no digest", async () => {
+  // Arrange
+  const f = fixture({}, true, true);
+  await f.ops.connect();
+  // Act
+  const review = await f.ops.authorizationRejectionReview();
+  // Assert
+  expect(review).toMatchObject({ schema: "worker-authorization-rejection-review-v2", last: { operation: "renew", safeStop: "control_failed" } });
+  expect(JSON.stringify(review)).not.toContain("2".repeat(64));
 });

@@ -59,8 +59,9 @@ renews, stops or polls. Every operation returns closed values only.
 | `pause()`, `cancel()`, `restoreChallengeSatisfied()` | Ends the active lease with `paused`, `cancelled` or `restore(challenge_satisfied)`. |
 | `triggerClockDiscontinuity()` | The bounded clock stimulus; one use per page lifetime, consumed even when refused. |
 | `clockDiscontinuityStimulusReview()` | Fresh possession, then the read-only stimulus review. |
-| `authorizationRejectionReview()` | Fresh possession, then the read-only rejection review, projected without its digest. |
+| `authorizationRejectionReview()` | Fresh possession, then the read-only rejection review (version 1 or 2, as the device sends it), projected without its digest. |
 | `statusReview()` | Status read; returns `{state, restoration, reason?}`. |
+| `bootReview()` | Fresh possession, then the read-only boot review; returns the parsed `worker-boot-review-v1` response. No state field. |
 | `admissionDiagnostic()` | Returns `{admission}`, the latest admission diagnostic already received; sends no device command. |
 | `replayArtifact()` | `GET /replay-artifact` and deliver that previously signed artifact unchanged (N1–N4). |
 | `beginPhysicalWindow()`, `armPhysicalWindow()` | `POST /physical-window` with `{event: "begin" | "arm"}`; begin requires an active lease, arm works while disconnected. |
@@ -99,7 +100,7 @@ without one) before any write. Its result is one of:
 
 ## Wire shapes
 
-All three commands are optional on Controller 0.4; older firmware answers
+All four commands are optional on Controller 0.4; older firmware answers
 `invalid_request`, which fails the session closed. None carries status
 evidence. `conformance/bwg-worker-controller-0.4/restoration-qualification-vectors.json`
 holds valid and invalid request and response vectors.
@@ -116,8 +117,9 @@ pending request or diagnostic fence. Once the request is sent, the adapter
 refuses every renewal of that lease, and the page discards its remaining
 renewals. A mismatched nonce or any other field fails the session.
 
-`clock_discontinuity_stimulus_review` and `authorization_rejection_review`
-take exactly `{}` as their payload, like the existing review commands. Each
+`clock_discontinuity_stimulus_review`, `authorization_rejection_review` and
+`boot_review` take exactly `{}` as their payload, like the existing review
+commands. Each
 requires an idle channel without an active lease and is preceded by a fresh
 possession proof. Responses:
 
@@ -131,6 +133,30 @@ possession proof. Responses:
 
 Counts are u32. `last` is `null` exactly when `bootRejections` is zero, and
 otherwise `1 ≤ last.ordinal ≤ bootRejections`. Unknown fields or values fail.
+
+The rejection review may instead be `worker-authorization-rejection-review-v2`:
+identical to version 1 except that a non-null `last` carries exactly one more
+field, `safeStop`, which is `none` or one of the Gate's closed restoration
+reasons (`paused`, `cancelled`, `lease_expired`, `lost_continuity`,
+`monotonic_reset`, `reboot`, `challenge_satisfied`, `challenge_expired`,
+`tab_closed`, `connectivity_lost`, `control_failed`). It is the safe-stop
+reason the rejection itself triggered, recorded with the rejection, so a
+later disconnect cannot overwrite it: an in-context renewal replay during an
+active lease reports `control_failed`, and a rejection without an active lease
+reports `none`. The Gate accepts both versions exactly; a version 1 record
+must not carry `safeStop`, and a version 2 record must. The page returns the
+version the device sent.
+
+`boot_review` answers exactly:
+
+```json
+{ "schema": "worker-boot-review-v1", "resetCause": "power_on|software_cpu|watchdog|panic|brownout|other" }
+```
+
+`resetCause` is this boot's reset category as the device classifies it. It is
+read-only evidence; a reset cause alone proves neither a cold start nor a
+restoration. The page journals `boot_reviewed` with the cause as its category
+and keeps no state field for it.
 
 ## Admission diagnostic
 

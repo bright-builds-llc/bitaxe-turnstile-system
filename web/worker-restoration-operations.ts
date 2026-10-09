@@ -14,7 +14,7 @@ import { workerSerialFailureCategory, type WorkerSerialFailureCategory } from ".
 
 export type WorkerRestorationController = Pick<WebSerialWorkerController,
   "requestPermission" | "subscribeDisconnect" | "status" | "prepareWorkerLeaseAuthorizationContext" | "startLease" | "renewLease" |
-  "pause" | "cancel" | "restore" | "close" | "clockDiscontinuityStimulus" | "clockDiscontinuityStimulusReview" | "authorizationRejectionReview">;
+  "pause" | "cancel" | "restore" | "close" | "clockDiscontinuityStimulus" | "clockDiscontinuityStimulusReview" | "authorizationRejectionReview" | "bootReview">;
 type ReplayOperation = "start" | "renew";
 /** Closed replay result: the device's own rejection category, or a closed local transport category. */
 export type WorkerRestorationReplayOutcome =
@@ -218,6 +218,11 @@ async function reviewRejections(s: RestorationSession) {
   s.journal.record("rejection_reviewed", review.last?.context ?? "none"); s.changed();
   return projectAuthorizationRejectionReview(review, s.deps.highWater);
 }
+async function reviewBoot(s: RestorationSession) {
+  const review = await s.observed("review_failed", () => s.idle().bootReview());
+  s.journal.record("boot_reviewed", review.resetCause); s.changed();
+  return review;
+}
 async function reviewStatus(s: RestorationSession) {
   await s.observed("review_failed", () => s.controller().status());
   s.journal.record("status_reviewed", s.maybeDevice?.reason ?? s.maybeDevice?.state ?? "unknown"); s.changed();
@@ -292,6 +297,7 @@ export function createWorkerRestorationOperations(deps: WorkerRestorationDepende
     clockDiscontinuityStimulusReview: () => reviewStimulus(s),
     authorizationRejectionReview: () => reviewRejections(s),
     statusReview: () => reviewStatus(s),
+    bootReview: () => reviewBoot(s),
     replayArtifact: () => replayArtifact(s),
     beginPhysicalWindow: () => physicalWindow(s, "begin"),
     armPhysicalWindow: () => physicalWindow(s, "arm"),
