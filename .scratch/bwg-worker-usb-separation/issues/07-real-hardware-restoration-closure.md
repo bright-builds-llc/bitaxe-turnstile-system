@@ -45,3 +45,10 @@ Pending.
 ## Superseded — 2026-09-04
 
 Closed without claiming hardware verification. The approved fixed Serial/JTAG task replaces this active implementation: `.scratch/bwg-worker-serial/issues/01-fixed-serial-worker.md`. Earlier checked evidence remains historical.
+
+## BWG-007 restoration evidence — 2026-10-10
+
+The firmware repository's serial restoration campaign (BWG-007 attempts 008 and
+009) supplies the restoration evidence for this effort. Core Ticket 23's
+"BWG-007 serial restoration evidence" section maps it item by item. Ticket 23
+stays open for its withheld-authorization, other-identity and BIP 23 items.

@@ -103,3 +103,10 @@ preconditions with synchronous valid invocation and an unconsumed local notice.
 DOM predicates are supplementary; the operator must verify the actual native
 foreground window. The firmware permission amendment owns closure and a fresh
 successor for the preserved pre-open failure.
+
+## BWG-007 restoration evidence — 2026-10-10
+
+The firmware repository's serial restoration campaign (BWG-007 attempts 008 and
+009) supplies the restoration evidence for this effort. Core Ticket 23's
+"BWG-007 serial restoration evidence" section maps it item by item. Ticket 23
+stays open for its withheld-authorization, other-identity and BIP 23 items.

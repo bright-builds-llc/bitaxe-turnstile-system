@@ -6,21 +6,21 @@
 
 **Status:** ready-for-agent
 
-- [ ] The firmware repository consumes the shared Controller 0.4, Worker Serial 0.2, Local Device
+- [x] The firmware repository consumes the shared Controller 0.4, Worker Serial 0.2, Local Device
   Possession, and Work Lease Authorization conformance profiles and fixtures, separate authority
   trust configurations, and exact signed Ultra 205 capability artifact.
-- [ ] Exact-device admission and safe hardware state are proven before each effectful attempt.
-- [ ] Completion, Pause, terminal Cancel, expiry, disconnect, reboot, and uncertain-time cases each end challenge mining.
-- [ ] Mining Baseline restoration is independently confirmed without exposing Wi-Fi or pool credentials.
-- [ ] Challenge credentials never persist as ordinary pool configuration.
-- [ ] Previously accepted Work Lease authorizations remain rejected across restoration and reboot
+- [x] Exact-device admission and safe hardware state are proven before each effectful attempt.
+- [x] Completion, Pause, terminal Cancel, expiry, disconnect, reboot, and uncertain-time cases each end challenge mining.
+- [x] Mining Baseline restoration is independently confirmed without exposing Wi-Fi or pool credentials.
+- [x] Challenge credentials never persist as ordinary pool configuration.
+- [x] Previously accepted Work Lease authorizations remain rejected across restoration and reboot
   using metadata-only durable per-key sequence state.
 - [ ] Withheld, expired-context, and cross-possession Work Lease authorizations fail before mining;
   only the privacy-safe control-session digest reaches the Gate Authority.
 - [ ] The same possession request answered by another Device Identity derives a different context
   and cannot reuse the first Worker's authorization.
 - [ ] Mainnet use follows the established per-job BIP 23 and Reward Policy guardrails rather than a regtest stage gate.
-- [ ] Evidence records source identity, commands, safety, privacy, cleanup, outcome, and residual risks through the firmware repository's native workflow.
+- [x] Evidence records source identity, commands, safety, privacy, cleanup, outcome, and residual risks through the firmware repository's native workflow.
 
 ## Transport prerequisite
 
@@ -101,3 +101,42 @@ full terminal/interruption restoration matrix have not been established by these
 runs. Stale complete device-to-host frames still require a bounded receive-only
 drain before some fresh Hello attempts; seamless recovery is not claimed. No
 unrelated mining, Stratum or hardware-parity blocker is promoted.
+
+## BWG-007 serial restoration evidence — 2026-10-10
+
+Firmware `8e16961bf3553e8b61c27531207fad8bee3bb609` with this repository at
+`be55781d73d9ea190a8fc5c83ec69dac9557d83d` passed the firmware repository's
+eight-scenario serial restoration campaign (BWG-007 attempt 009). An
+independent review agrees with caveats. The firmware repository owns the
+physical evidence:
+
+- [measured closure summary](https://github.com/bright-builds-llc/bitaxe-esp-miner/blob/5c74db19/docs/parity/evidence/20261010-bwg007-restoration-closure.md);
+- the first passing run, [attempt 008](https://github.com/bright-builds-llc/bitaxe-esp-miner/blob/5c74db19/docs/parity/evidence/20261009-bwg007-serial-restoration.md);
+- per-scenario projections `bwg007-attempt-009-*.json` (profile 0.3) under
+  [`bwg-worker-restoration/`](https://github.com/bright-builds-llc/bitaxe-esp-miner/blob/5c74db19/docs/parity/evidence/bwg-worker-restoration/);
+- campaign design in
+  [ADR-0035](https://github.com/bright-builds-llc/bitaxe-esp-miner/blob/5c74db19/docs/adr/0035-serial-bwg-restoration-campaign.md) and
+  [ADR-0036](https://github.com/bright-builds-llc/bitaxe-esp-miner/blob/5c74db19/docs/adr/0036-measured-bwg-restoration-closure-facts.md).
+
+| Acceptance item | Status | Evidence |
+| --- | --- | --- |
+| Shared profiles, fixtures, trust and signed Ultra 205 capability consumed | resolved | Pinned Gate conformance tests in the firmware repository; preflight admits trust, page and bundle digests |
+| Exact-device admission and safe state before each effect | resolved | Detector, `board-info` and preflight before every attempt; settle gate idle or complete before every signing |
+| Completion, Pause, Cancel, expiry, disconnect, reboot, uncertain time end mining | resolved | All eight scenarios passed, including the in-process `monotonic_reset` stimulus |
+| Baseline restoration confirmed without exposing credentials | resolved | Baseline confirmed per scenario; seal-time credential scan 0 hits; independent review |
+| Challenge credentials never persist as pool configuration | resolved, per boot | `worker-preservation-v2` reported pool configuration unchanged in all 54 statuses; cross-boot equality and identical-value writes are not distinguishable |
+| Accepted authorizations stay rejected across restoration and reboot | resolved | N1 durable replay after reboot and N4 in-context renewal replay, attributed to the durable high-water |
+| Withheld, expired-context and cross-possession authorizations fail before mining | partly resolved | Expired context (N2) and cross-possession (N3) rejected before mining; the withheld case was not separately exercised |
+| Another Device Identity derives a different context | open | Not covered by BWG-007; needs Gate conformance evidence |
+| Mainnet use follows the per-job BIP 23 and Reward Policy guardrails | open | Not evidenced by BWG-007 |
+| Evidence records identity, commands, safety, privacy, cleanup, outcome, residual risks | resolved | Firmware task record and evidence summaries |
+
+Caveats carried from the review:
+
+- `reboot` is not shown to be a power-on reset.
+- N4's `control_failed` stop is established by code, not observed.
+- Live safety limits and pool shares are not judged.
+- The device-identity tracker is page-local to this repository's restoration page.
+
+This ticket stays open until the withheld-authorization, other-identity and
+BIP 23 items resolve, and until its blockers 18, 20 and 22 are evidenced.
