@@ -5,8 +5,10 @@ import { maybeRestorationAdmission, type WorkerRestorationAdmission } from "./wo
 import type { WorkerSerialDiagnostic } from "./worker-serial-diagnostics";
 import {
   WORKER_RESTORATION_SCENARIOS, parseRestorationReplayArtifact, parseRestorationWindow,
+  WorkerRestorationDeviceIdentity, WorkerRestorationPoolConfiguration,
   type AuthorizationRejectionReview, type RestorationReplayArtifact, type RestorationWindow, type WorkerRestorationHighWater, type WorkerRestorationScenario,
 } from "./worker-restoration-qualification";
+import type { WorkerPreservation } from "./worker-preservation";
 import type { WorkerSerialAdmissionStage, WebSerialWorkerController } from "./worker-serial-controller.types";
 import { workerSerialFailureCategory, type WorkerSerialFailureCategory } from "./worker-serial-errors";
 
@@ -71,6 +73,8 @@ export type WorkerRestorationDependencies = {
 /** One page lifetime's restoration state and its admission guards. */
 class RestorationSession {
   readonly journal = new WorkerRestorationJournal();
+  readonly deviceIdentity = new WorkerRestorationDeviceIdentity();
+  readonly poolConfiguration = new WorkerRestorationPoolConfiguration();
   maybeController: WorkerRestorationController | undefined;
   maybeWindow: RestorationWindow | undefined;
   maybeDevice: WorkerRestorationDevice | undefined;
@@ -86,7 +90,8 @@ class RestorationSession {
     return { schema: "worker-restoration-page-v1", ...this.deps.identity(), status: this.status, connected: this.connected, leaseActive: this.leaseActive,
       leaseLoaded: this.maybeWindow !== undefined, renewalsRemaining: this.maybeWindow?.renewals.length ?? 0, stimulusUsed: this.stimulusUsed,
       highWaterEpoch: this.deps.highWater.epoch, ...(this.maybeDevice ? { device: { ...this.maybeDevice } } : {}),
-      ...(this.maybeFailure ? { failure: this.maybeFailure } : {}), admission: this.admission(), journal: this.journal.values() };
+      ...(this.maybeFailure ? { failure: this.maybeFailure } : {}), admission: this.admission(),
+      deviceIdentity: this.deviceIdentity.publicState(), poolConfiguration: this.poolConfiguration.publicState(), journal: this.journal.values() };
   }
   admission(): WorkerRestorationAdmission | null { return this.maybeAdmission ? { ...this.maybeAdmission } : null; }
   changed(maybeNext?: string) { if (maybeNext) this.status = maybeNext; this.deps.publish(); }
@@ -140,6 +145,14 @@ function observeDiagnostic(s: RestorationSession, value: WorkerSerialDiagnostic)
   s.maybeAdmission = maybeNext;
   if (maybePrevious?.firstFailure !== maybeNext.firstFailure) s.journal.record("admission_observed", maybeNext.firstFailure);
   if (!maybePrevious || maybePrevious.firstFailure !== maybeNext.firstFailure || maybePrevious.stage !== maybeNext.stage || maybePrevious.readiness !== maybeNext.readiness) s.changed();
+}
+
+/** Page-local identity and pool trackers; the raw digests they consume never leave this page. */
+function observePreservation(s: RestorationSession, value: WorkerPreservation) {
+  if (!s.deps.enabled()) return;
+  if (s.deviceIdentity.observe(value)) s.journal.record("device_identity_changed");
+  if (s.poolConfiguration.observe(value)) s.journal.record("pool_configuration_changed");
+  s.changed();
 }
 
 async function stopLease(s: RestorationSession, event: "paused" | "cancelled" | "restored", run: (value: WorkerRestorationController) => Promise<WorkerControllerStatus>) {
@@ -272,6 +285,7 @@ export function createWorkerRestorationOperations(deps: WorkerRestorationDepende
     observeAdmissionFailure(stage: WorkerSerialAdmissionStage) { s.journal.record("admission_failed", stage); },
     observeSerialFailure(category: WorkerSerialFailureCategory) { s.journal.record("serial_failure", category); },
     observeDiagnostic: (value: WorkerSerialDiagnostic) => observeDiagnostic(s, value),
+    observePreservation: (value: WorkerPreservation) => observePreservation(s, value),
     connect: () => connect(s),
     reconnect: () => connect(s),
     ...leaseOperations(s),

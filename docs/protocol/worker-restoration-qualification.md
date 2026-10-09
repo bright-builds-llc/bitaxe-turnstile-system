@@ -67,7 +67,7 @@ renews, stops or polls. Every operation returns closed values only.
 | `physicalWindowState()` | `GET /physical-window`. |
 | `close()` | Reads status first when a lease looks active, then closes (`restore(tab_closed)` only for a lease the device still holds). |
 | `submitCompletion()` | Both reviews, close, supervisor flush, then `POST /completion-review`. |
-| `state()` | The published page state, including `admission` and the journal. |
+| `state()` | The published page state, including `admission`, `deviceIdentity`, `poolConfiguration` and the journal. |
 
 Physical-window answers must be exactly `{checkpoint}` with a lower-case
 `[a-z][a-z0-9_]{0,63}` token. `GET /completion-context` answers exactly
@@ -151,6 +151,32 @@ without repeating the periodic diagnostic.
 The observation is evidence only. It never admits, gates, delays or ends a
 Gate transition; a device rejection or status still decides every outcome.
 Other pages and modes do not record it.
+
+## Device identity and pool configuration
+
+Status preservation may be `worker-preservation-v1` or `worker-preservation-v2`
+(see the serial 0.1 preservation section). In restoration mode only, two
+page-local trackers consume every preservation the controller has already
+checked against the freshly verified possession key; their raw digests never
+leave the page.
+
+- `state().deviceIdentity` is `null` before the first preservation status,
+  otherwise exactly `{epoch, observations}`. `epoch` counts the distinct
+  device-identity digests seen in this page lifetime (expected 1) and
+  `observations` counts every preservation observation. Each new identity
+  after the first journals the closed event `device_identity_changed` (no
+  category). A reconnect or reboot that reacquires the same key keeps epoch 1
+  while observations grow.
+- `state().poolConfiguration` is `null` until the first version 2
+  observation, otherwise exactly `{observations, changed}`. `observations`
+  counts version 2 observations only; version 1 observations are ignored.
+  `changed` becomes `true` the first time any version 2 observation reports
+  `pool_configuration_unchanged_since_boot: false`, stays `true` for the page
+  lifetime, and that flip journals `pool_configuration_changed` (no category).
+
+Both are observations for the supervisor's judge. They never gate a Gate
+transition, and `changed: false` only reflects what the device compared
+locally against its own boot snapshot.
 
 ## Bounds
 

@@ -24,7 +24,7 @@ const hook: WorkerSerialQualificationHook = {
   memoryOnlyContinuity: true,
   allowClockDiscontinuityStimulus: false,
   observeStatus: value => { operations.observeStatus(value); publish(); },
-  observePreservation: value => { highWater.observe(value); },
+  observePreservation: value => { highWater.observe(value); operations.observePreservation(value); },
   maybeObserveAdmissionFailure: stage => { operations.observeAdmissionFailure(stage); },
   maybeObserveSerialFailure: category => { operations.observeSerialFailure(category); },
   maybeObserveDiagnostic: value => { operations.observeDiagnostic(value); },
@@ -60,7 +60,7 @@ function configure(input: unknown) {
   return operations.state();
 }
 
-const { observeStatus: _observeStatus, observeAdmissionFailure: _admission, observeSerialFailure: _serial, observeDiagnostic: _diagnostic, configured: _configured, ...pageOperations } = operations;
+const { observeStatus: _observeStatus, observeAdmissionFailure: _admission, observeSerialFailure: _serial, observeDiagnostic: _diagnostic, observePreservation: _preservation, configured: _configured, ...pageOperations } = operations;
 export const workerRestoration = { ...pageOperations, configure };
 Object.assign(window, { workerRestoration });
 bindWorkerQualificationConnect(document.getElementById("connect"), () => true, operations.connect, async () => { publish(); });

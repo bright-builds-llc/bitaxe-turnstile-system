@@ -141,3 +141,39 @@ export class WorkerRestorationHighWater {
     return { fingerprintMatchesLatestObservation: fingerprintSha256 === this.#maybeLatest, fingerprintFirstObservedEpoch: this.#firstEpoch.get(fingerprintSha256) ?? null };
   }
 }
+
+/** Same-key reacquisition: how many distinct device identity digests this page has seen (expected 1). */
+export class WorkerRestorationDeviceIdentity {
+  readonly #seen = new Set<string>();
+  #overflow = 0;
+  #observations = 0;
+  /** Returns true when this observation introduced a new identity after the first. */
+  observe(value: Pick<WorkerPreservation, "device_identity_sha256">): boolean {
+    this.#observations += 1;
+    const digest = value.device_identity_sha256;
+    if (this.#seen.has(digest)) return false;
+    if (this.#seen.size < 64) this.#seen.add(digest); else this.#overflow += 1;
+    return this.epoch > 1;
+  }
+  get epoch(): number { return this.#seen.size + this.#overflow; }
+  publicState(): { epoch: number; observations: number } | null {
+    return this.#observations === 0 ? null : { epoch: this.epoch, observations: this.#observations };
+  }
+}
+
+/** Counts `worker-preservation-v2` observations; one `false` makes `changed` true for the page lifetime. */
+export class WorkerRestorationPoolConfiguration {
+  #observations = 0;
+  #changed = false;
+  /** Returns true only on the observation that first reports a changed pool configuration. */
+  observe(value: WorkerPreservation): boolean {
+    if (value.schema !== "worker-preservation-v2") return false;
+    this.#observations += 1;
+    if (value.pool_configuration_unchanged_since_boot || this.#changed) return false;
+    this.#changed = true;
+    return true;
+  }
+  publicState(): { observations: number; changed: boolean } | null {
+    return this.#observations === 0 ? null : { observations: this.#observations, changed: this.#changed };
+  }
+}

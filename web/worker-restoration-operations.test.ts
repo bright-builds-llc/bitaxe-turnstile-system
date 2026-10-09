@@ -318,3 +318,44 @@ test("outside restoration mode admission diagnostics are ignored", () => {
   expect(f.ops.state().admission).toBeNull();
   expect(f.ops.state().journal.entries).toEqual([]);
 });
+
+const preservation = (identity: string, maybePool?: boolean) => ({ schema: maybePool === undefined ? "worker-preservation-v1" : "worker-preservation-v2",
+  settings_sha256: "1".repeat(64), authorization_high_water_sha256: "2".repeat(64), device_identity_sha256: identity, mine_on_boot: false,
+  ...(maybePool === undefined ? {} : { pool_configuration_unchanged_since_boot: maybePool }) }) as never;
+
+test("identity and pool trackers are null before any preservation status", () => {
+  // Arrange / Act
+  const state = fixture().ops.state();
+  // Assert
+  expect([state.deviceIdentity, state.poolConfiguration]).toEqual([null, null]);
+});
+
+test("preservation observations publish only identity epochs and pool booleans", () => {
+  // Arrange
+  const f = fixture();
+  // Act
+  for (const value of [preservation("3".repeat(64)), preservation("3".repeat(64), true), preservation("3".repeat(64), true)]) f.ops.observePreservation(value);
+  // Assert
+  expect(f.ops.state()).toMatchObject({ deviceIdentity: { epoch: 1, observations: 3 }, poolConfiguration: { observations: 2, changed: false } });
+  expect(JSON.stringify(f.ops.state())).not.toContain("3".repeat(64));
+  expect(f.ops.state().journal.entries).toEqual([]);
+});
+
+test("a new identity and a changed pool configuration are journaled as closed events", () => {
+  // Arrange
+  const f = fixture();
+  // Act
+  for (const value of [preservation("3".repeat(64), true), preservation("4".repeat(64), false), preservation("4".repeat(64), false)]) f.ops.observePreservation(value);
+  // Assert
+  expect(f.ops.state().journal.entries.map(entry => [entry.event, entry.category])).toEqual([["device_identity_changed", undefined], ["pool_configuration_changed", undefined]]);
+  expect(f.ops.state()).toMatchObject({ deviceIdentity: { epoch: 2, observations: 3 }, poolConfiguration: { observations: 3, changed: true } });
+});
+
+test("outside restoration mode preservation observations are ignored", () => {
+  // Arrange
+  const f = fixture({}, false);
+  // Act
+  f.ops.observePreservation(preservation("3".repeat(64), false));
+  // Assert
+  expect([f.ops.state().deviceIdentity, f.ops.state().poolConfiguration, f.ops.state().journal.entries]).toEqual([null, null, []]);
+});

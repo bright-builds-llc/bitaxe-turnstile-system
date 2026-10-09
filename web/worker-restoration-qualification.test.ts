@@ -4,7 +4,7 @@ import { decodeWorkerControllerSerialRequestFor } from "./worker-controller-seri
 import { parseWorkerLeaseGrant, parseWorkerLeaseRenewal, WORKER_CONTROLLER_PROTOCOL_VERSION } from "./worker-controller";
 import {
   createClockDiscontinuityNonce, parseAuthorizationRejectionReview, parseClockDiscontinuityStimulusAck, parseClockDiscontinuityStimulusReview,
-  parseRestorationReplayArtifact, parseRestorationWindow, WorkerRestorationHighWater,
+  parseRestorationReplayArtifact, parseRestorationWindow, WorkerRestorationDeviceIdentity, WorkerRestorationHighWater, WorkerRestorationPoolConfiguration,
 } from "./worker-restoration-qualification";
 import { serialToken } from "./worker-serial";
 
@@ -118,4 +118,55 @@ test("high-water continuity exposes change epochs, never digests", () => {
   expect(highWater.compare("2".repeat(64))).toEqual({ fingerprintMatchesLatestObservation: true, fingerprintFirstObservedEpoch: 2 });
   expect(highWater.compare("1".repeat(64))).toEqual({ fingerprintMatchesLatestObservation: false, fingerprintFirstObservedEpoch: 1 });
   expect(highWater.compare("3".repeat(64))).toEqual({ fingerprintMatchesLatestObservation: false, fingerprintFirstObservedEpoch: null });
+});
+
+const v1 = { schema: "worker-preservation-v1", settings_sha256: "1".repeat(64), authorization_high_water_sha256: "2".repeat(64), device_identity_sha256: "3".repeat(64), mine_on_boot: false } as const;
+const v2 = (unchanged: boolean) => ({ ...v1, schema: "worker-preservation-v2", pool_configuration_unchanged_since_boot: unchanged } as const);
+
+test("a stable device identity stays in epoch 1 while observations count up", () => {
+  // Arrange
+  const identity = new WorkerRestorationDeviceIdentity();
+  // Act
+  const changes = [identity.observe(v1), identity.observe(v1), identity.observe(v2(true))];
+  // Assert
+  expect(changes).toEqual([false, false, false]);
+  expect(identity.publicState()).toEqual({ epoch: 1, observations: 3 });
+});
+
+test("a second device identity digest opens epoch 2", () => {
+  // Arrange
+  const identity = new WorkerRestorationDeviceIdentity();
+  identity.observe(v1);
+  // Act
+  const changed = identity.observe({ device_identity_sha256: "4".repeat(64) });
+  // Assert
+  expect(changed).toBeTrue();
+  expect(identity.publicState()).toEqual({ epoch: 2, observations: 2 });
+});
+
+test("device identity is null before any preservation observation", () => {
+  // Arrange / Act / Assert
+  expect(new WorkerRestorationDeviceIdentity().publicState()).toBeNull();
+});
+
+test("one changed pool configuration report stays changed for the page lifetime", () => {
+  // Arrange
+  const pool = new WorkerRestorationPoolConfiguration();
+  // Act
+  const flips = [pool.observe(v2(true)), pool.observe(v2(false)), pool.observe(v2(true)), pool.observe(v2(false))];
+  // Assert
+  expect(flips).toEqual([false, true, false, false]);
+  expect(pool.publicState()).toEqual({ observations: 4, changed: true });
+});
+
+test("version 1 observations never count toward the pool configuration", () => {
+  // Arrange
+  const pool = new WorkerRestorationPoolConfiguration();
+  // Act
+  pool.observe(v1);
+  const before = pool.publicState();
+  pool.observe(v2(true));
+  // Assert
+  expect(before).toBeNull();
+  expect(pool.publicState()).toEqual({ observations: 1, changed: false });
 });

@@ -83,6 +83,25 @@ if (scenario === "acceptance_config") {
   assert.deepEqual(page.state().journal.entries.filter(entry => entry.event === "admission_observed").map(entry => entry.category), ["none", "preparation"]);
   assert.equal(page.state().connected, true);
   await page.close();
+} else if (scenario === "preservation_trackers") {
+  // Real status parsing: version 1 counts toward identity only; version 2 also feeds the pool tracker.
+  await page.connect();
+  const first = page.state().deviceIdentity;
+  assert.equal(first?.epoch, 1); assert.equal(page.state().poolConfiguration, null);
+  h.setPreservationField("schema", "worker-preservation-v2"); h.setPreservationField("pool_configuration_unchanged_since_boot", true);
+  await page.statusReview();
+  assert.deepEqual(page.state().poolConfiguration, { observations: 1, changed: false });
+  await page.close(); await page.connect();
+  const reacquired = page.state().deviceIdentity;
+  assert.equal(reacquired?.epoch, 1); assert.ok((reacquired?.observations ?? 0) > (first?.observations ?? 0));
+  const counted = page.state().poolConfiguration?.observations ?? 0;
+  assert.equal(page.state().poolConfiguration?.changed, false);
+  h.setPreservationField("pool_configuration_unchanged_since_boot", false); await page.statusReview();
+  h.setPreservationField("pool_configuration_unchanged_since_boot", true); await page.statusReview();
+  assert.deepEqual(page.state().poolConfiguration, { observations: counted + 2, changed: true });
+  assert.deepEqual(page.state().journal.entries.filter(entry => entry.event === "pool_configuration_changed").length, 1);
+  assert.equal(page.state().journal.entries.some(entry => entry.event === "device_identity_changed"), false);
+  await page.close();
 } else throw new Error("unknown scenario");
 const published = JSON.stringify(page.state());
 for (const value of [maybeGrant?.authorization, maybeGrant?.leaseId, h.input.continuityScope.challengeId, "fixture-session-user", "fixture-session-password"])
