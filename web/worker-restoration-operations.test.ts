@@ -6,6 +6,7 @@ import { createWorkerRestorationOperations, type WorkerRestorationController } f
 import { WorkerRestorationJournal } from "./worker-restoration-journal";
 import { WorkerRestorationHighWater, parseAuthorizationRejectionReview, parseClockDiscontinuityStimulusReview } from "./worker-restoration-qualification";
 import { serialFailure } from "./worker-serial";
+import { maybeWorkerSerialDiagnostic } from "./worker-serial-diagnostics";
 
 const secret = "SECRET_AUTHORIZATION_VALUE";
 const grant = { protocolVersion: "bwg-worker-controller/0.4", leaseId: "lease_secret_id", challengeId: "challenge_secret_id", authorization: secret,
@@ -15,7 +16,11 @@ const mining = { protocolVersion: "bwg-worker-controller/0.4", state: "mining", 
 const baseline = (reason: string) => ({ protocolVersion: "bwg-worker-controller/0.4", state: "baseline", monotonicMilliseconds: 2, restoration: { status: "confirmed", reason } }) as WorkerControllerStatus;
 const rejection = (category: string) => { try { parseWorkerControlResult({ protocolVersion: "bwg-worker-controller/0.4", requestId: "serial_1", ok: false, error: { code: "command_rejected", message: category } }); } catch (error) { return error; } throw new Error("unreachable"); };
 
-function fixture(local: Record<string, unknown> = {}) {
+const admissionLine = (stage: string, failure: string, readiness = 7) =>
+  `worker_admission schema=v1 stage=${stage} first_failure=${failure} readiness=${readiness} budget_reserved_ms=30000 budget_complete=false redacted=true`;
+const diagnostic = (text: string) => { const value = maybeWorkerSerialDiagnostic(text); if (!value) throw new Error("fixture_diagnostic"); return value; };
+
+function fixture(local: Record<string, unknown> = {}, enabled = true) {
   const calls: string[] = [];
   const posted: { path: string; body: unknown }[] = [];
   const highWater = new WorkerRestorationHighWater();
@@ -25,7 +30,7 @@ function fixture(local: Record<string, unknown> = {}) {
   const routes: Record<string, unknown> = { "/scenario-artifacts": { grant, renewals: [renewal] }, "/replay-artifact": { operation: "start", grant }, "/completion-context": { nonce: "n" },
     "/completion-review": { result: "passed", scenario: "completion", cleanup_confirmed: true }, "/physical-window": { checkpoint: "armed" }, ...local };
   const ops = createWorkerRestorationOperations({
-    enabled: () => true, highWater, identity: () => ({}), publish() {}, flush: async () => { calls.push("flush"); },
+    enabled: () => enabled, highWater, identity: () => ({}), publish() {}, flush: async () => { calls.push("flush"); },
     local: async (path: string, body?: object) => { posted.push({ path, body }); calls.push(path); return routes[path] ?? {}; },
     createController(): WorkerRestorationController {
       const observe = (value: WorkerControllerStatus) => { deviceStatus = value; ops.observeStatus(value); return value; };
@@ -251,4 +256,65 @@ test("the journal accepts only closed category tokens", () => {
   // Assert
   expect(journal.values().entries).toEqual([{ ordinal: 1, event: "replay_rejected", category: "authentication_failed" }]);
   expect(() => journal.record("replay_rejected", "eyJhbGciOiJFZERTQSJ9.payload")).toThrow("journal_category_invalid");
+});
+
+test("the latest admission diagnostic appears in state without budget fields", async () => {
+  // Arrange
+  const f = fixture();
+  await f.ops.connect();
+  // Act
+  f.ops.observeDiagnostic(diagnostic(admissionLine("preparation", "none", 31)));
+  // Assert
+  expect(f.ops.state().admission).toEqual({ stage: "preparation", firstFailure: "none", readiness: 31 });
+});
+
+test("admission is null before any observation", () => {
+  // Arrange / Act / Assert
+  expect(fixture().ops.state().admission).toBeNull();
+});
+
+test("the journal records admission only when its first failure changes", async () => {
+  // Arrange
+  const f = fixture();
+  await f.ops.connect();
+  // Act
+  for (const [stage, failure] of [["admission", "none"], ["readiness", "none"], ["preparation", "none"], ["cleanup", "preparation"], ["complete", "preparation"]])
+    f.ops.observeDiagnostic(diagnostic(admissionLine(stage!, failure!)));
+  // Assert
+  expect(f.ops.state().journal.entries.filter(entry => entry.event === "admission_observed").map(entry => entry.category)).toEqual(["none", "preparation"]);
+  expect(f.ops.state().admission).toEqual({ stage: "complete", firstFailure: "preparation", readiness: 7 });
+});
+
+test("admissionDiagnostic returns the latest observation without a device command", async () => {
+  // Arrange
+  const f = fixture();
+  await f.ops.connect();
+  f.ops.observeDiagnostic(diagnostic(admissionLine("pool_activation", "pool_activation")));
+  const before = f.calls.length;
+  // Act
+  const result = await f.ops.admissionDiagnostic();
+  // Assert
+  expect(result).toEqual({ admission: { stage: "pool_activation", firstFailure: "pool_activation", readiness: 7 } });
+  expect(f.calls.length).toBe(before);
+});
+
+test("an admission failure observation never ends or blocks the page lease", async () => {
+  // Arrange
+  const f = fixture();
+  await running(f);
+  // Act
+  f.ops.observeDiagnostic(diagnostic(admissionLine("cleanup", "preparation")));
+  await f.ops.renewOnce();
+  // Assert
+  expect(f.ops.state()).toMatchObject({ leaseActive: true, status: "running" });
+});
+
+test("outside restoration mode admission diagnostics are ignored", () => {
+  // Arrange
+  const f = fixture({}, false);
+  // Act
+  f.ops.observeDiagnostic(diagnostic(admissionLine("cleanup", "preparation")));
+  // Assert
+  expect(f.ops.state().admission).toBeNull();
+  expect(f.ops.state().journal.entries).toEqual([]);
 });

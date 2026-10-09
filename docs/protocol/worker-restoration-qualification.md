@@ -61,12 +61,13 @@ renews, stops or polls. Every operation returns closed values only.
 | `clockDiscontinuityStimulusReview()` | Fresh possession, then the read-only stimulus review. |
 | `authorizationRejectionReview()` | Fresh possession, then the read-only rejection review, projected without its digest. |
 | `statusReview()` | Status read; returns `{state, restoration, reason?}`. |
+| `admissionDiagnostic()` | Returns `{admission}`, the latest admission diagnostic already received; sends no device command. |
 | `replayArtifact()` | `GET /replay-artifact` and deliver that previously signed artifact unchanged (N1–N4). |
 | `beginPhysicalWindow()`, `armPhysicalWindow()` | `POST /physical-window` with `{event: "begin" | "arm"}`; begin requires an active lease, arm works while disconnected. |
 | `physicalWindowState()` | `GET /physical-window`. |
 | `close()` | Reads status first when a lease looks active, then closes (`restore(tab_closed)` only for a lease the device still holds). |
 | `submitCompletion()` | Both reviews, close, supervisor flush, then `POST /completion-review`. |
-| `state()` | The published page state, including the journal. |
+| `state()` | The published page state, including `admission` and the journal. |
 
 Physical-window answers must be exactly `{checkpoint}` with a lower-case
 `[a-z][a-z0-9_]{0,63}` token. `GET /completion-context` answers exactly
@@ -130,6 +131,26 @@ possession proof. Responses:
 
 Counts are u32. `last` is `null` exactly when `bootRejections` is zero, and
 otherwise `1 ≤ last.ordinal ≤ bootRejections`. Unknown fields or values fail.
+
+## Admission diagnostic
+
+The firmware periodically emits the non-authoritative USB diagnostic
+`worker_admission schema=v1 stage=… first_failure=… readiness=…
+budget_reserved_ms=… budget_complete=… redacted=true`. In restoration mode only,
+the page keeps the latest one, across reconnects, as `state().admission`:
+`null` before any observation, otherwise exactly
+`{stage, firstFailure, readiness}` with `stage` one of `idle`, `admission`,
+`readiness`, `preparation`, `pool_activation`, `active`, `cleanup` or
+`complete`, `firstFailure` one of `none`, `admission`, `readiness`,
+`preparation`, `pool_activation` or `cleanup`, and `readiness` an integer from 0
+to 63. Budget fields are omitted. Whenever `firstFailure` changes, including the
+first observation, the journal records `admission_observed` with that
+`firstFailure` as its category, so a failed Start's stage lands in the journal
+without repeating the periodic diagnostic.
+
+The observation is evidence only. It never admits, gates, delays or ends a
+Gate transition; a device rejection or status still decides every outcome.
+Other pages and modes do not record it.
 
 ## Bounds
 

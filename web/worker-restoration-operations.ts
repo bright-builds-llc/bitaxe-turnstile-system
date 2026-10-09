@@ -1,6 +1,8 @@
 import { maybeWorkerControlRejectionCategory } from "./worker-control-rejection";
 import type { WorkerControllerStatus, WorkerRestorationReason } from "./worker-controller";
 import { WorkerRestorationJournal, type WorkerRestorationJournalEvent } from "./worker-restoration-journal";
+import { maybeRestorationAdmission, type WorkerRestorationAdmission } from "./worker-restoration-admission";
+import type { WorkerSerialDiagnostic } from "./worker-serial-diagnostics";
 import {
   WORKER_RESTORATION_SCENARIOS, parseRestorationReplayArtifact, parseRestorationWindow,
   type AuthorizationRejectionReview, type RestorationReplayArtifact, type RestorationWindow, type WorkerRestorationHighWater, type WorkerRestorationScenario,
@@ -73,6 +75,7 @@ class RestorationSession {
   maybeWindow: RestorationWindow | undefined;
   maybeDevice: WorkerRestorationDevice | undefined;
   maybeFailure: string | undefined;
+  maybeAdmission: WorkerRestorationAdmission | undefined;
   connected = false;
   leaseActive = false;
   stimulusUsed = false;
@@ -83,8 +86,9 @@ class RestorationSession {
     return { schema: "worker-restoration-page-v1", ...this.deps.identity(), status: this.status, connected: this.connected, leaseActive: this.leaseActive,
       leaseLoaded: this.maybeWindow !== undefined, renewalsRemaining: this.maybeWindow?.renewals.length ?? 0, stimulusUsed: this.stimulusUsed,
       highWaterEpoch: this.deps.highWater.epoch, ...(this.maybeDevice ? { device: { ...this.maybeDevice } } : {}),
-      ...(this.maybeFailure ? { failure: this.maybeFailure } : {}), journal: this.journal.values() };
+      ...(this.maybeFailure ? { failure: this.maybeFailure } : {}), admission: this.admission(), journal: this.journal.values() };
   }
+  admission(): WorkerRestorationAdmission | null { return this.maybeAdmission ? { ...this.maybeAdmission } : null; }
   changed(maybeNext?: string) { if (maybeNext) this.status = maybeNext; this.deps.publish(); }
   endLease() { this.leaseActive = false; this.maybeWindow = undefined; }
   requireEnabled() { if (!this.deps.enabled()) throw new Error("restoration_mode_required"); }
@@ -123,6 +127,19 @@ function observeStatus(s: RestorationSession, maybeValue: WorkerControllerStatus
   if (maybeValue.state !== "baseline" || !s.leaseActive) return;
   s.endLease();
   if (!s.ownStop) { s.journal.record("device_baseline_observed", maybeValue.restoration.reason ?? "not_required"); s.changed("device_baseline"); }
+}
+
+/**
+ * Keeps the latest firmware admission stage across reconnects and journals each change of its first failure
+ * (including the first observation). Observation only: no Gate transition depends on it.
+ */
+function observeDiagnostic(s: RestorationSession, value: WorkerSerialDiagnostic) {
+  const maybeNext = s.deps.enabled() ? maybeRestorationAdmission(value) : undefined;
+  if (!maybeNext) return;
+  const maybePrevious = s.maybeAdmission;
+  s.maybeAdmission = maybeNext;
+  if (maybePrevious?.firstFailure !== maybeNext.firstFailure) s.journal.record("admission_observed", maybeNext.firstFailure);
+  if (!maybePrevious || maybePrevious.firstFailure !== maybeNext.firstFailure || maybePrevious.stage !== maybeNext.stage || maybePrevious.readiness !== maybeNext.readiness) s.changed();
 }
 
 async function stopLease(s: RestorationSession, event: "paused" | "cancelled" | "restored", run: (value: WorkerRestorationController) => Promise<WorkerControllerStatus>) {
@@ -254,6 +271,7 @@ export function createWorkerRestorationOperations(deps: WorkerRestorationDepende
     observeStatus: (maybeValue: WorkerControllerStatus | undefined) => observeStatus(s, maybeValue),
     observeAdmissionFailure(stage: WorkerSerialAdmissionStage) { s.journal.record("admission_failed", stage); },
     observeSerialFailure(category: WorkerSerialFailureCategory) { s.journal.record("serial_failure", category); },
+    observeDiagnostic: (value: WorkerSerialDiagnostic) => observeDiagnostic(s, value),
     connect: () => connect(s),
     reconnect: () => connect(s),
     ...leaseOperations(s),
@@ -264,6 +282,8 @@ export function createWorkerRestorationOperations(deps: WorkerRestorationDepende
     beginPhysicalWindow: () => physicalWindow(s, "begin"),
     armPhysicalWindow: () => physicalWindow(s, "arm"),
     async physicalWindowState() { s.requireEnabled(); return parseCheckpoint(await deps.local("/physical-window")); },
+    /** The latest non-authoritative admission diagnostic already received; sends no device command. */
+    async admissionDiagnostic() { s.requireEnabled(); return { admission: s.admission() }; },
     close: () => close(s),
     submitCompletion: () => submitCompletion(s),
   };

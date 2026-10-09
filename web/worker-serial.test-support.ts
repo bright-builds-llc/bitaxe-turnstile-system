@@ -512,6 +512,7 @@ export async function serialHarness(
     setTelemetryEndpoint(value: unknown) { maybeTelemetryEndpoint = structuredClone(value); },
     setCadenceReview(value: unknown) { cadenceReview = structuredClone(value); },
     counts: () => ({ opened, closed, locked, active }),
+    sendDiagnostic: (line: string) => send("diagnostic", { line }),
     receiveRaw(bytes: Uint8Array) {
       if (!maybeOutput) throw new Error("fixture_port_not_open");
       maybeOutput.enqueue(bytes);

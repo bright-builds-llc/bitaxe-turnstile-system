@@ -72,6 +72,17 @@ if (scenario === "acceptance_config") {
   const outcome = await page.replayArtifact();
   assert.deepEqual(outcome, { operation: "renew", outcome: "rejected", category: "authentication_failed" });
   assert.equal(renewals, 2);
+} else if (scenario === "admission_diagnostic") {
+  // The real runtime routes device diagnostic frames through the restoration hook into page state.
+  await page.connect();
+  const line = (stage: string, failure: string) => `worker_admission schema=v1 stage=${stage} first_failure=${failure} readiness=12 budget_reserved_ms=30000 budget_complete=false redacted=true`;
+  for (const [stage, failure] of [["preparation", "none"], ["preparation", "none"], ["cleanup", "preparation"]]) await h.sendDiagnostic(line(stage!, failure!));
+  await h.advance(100);
+  assert.deepEqual(await page.admissionDiagnostic(), { admission: { stage: "cleanup", firstFailure: "preparation", readiness: 12 } });
+  assert.deepEqual(page.state().admission, { stage: "cleanup", firstFailure: "preparation", readiness: 12 });
+  assert.deepEqual(page.state().journal.entries.filter(entry => entry.event === "admission_observed").map(entry => entry.category), ["none", "preparation"]);
+  assert.equal(page.state().connected, true);
+  await page.close();
 } else throw new Error("unknown scenario");
 const published = JSON.stringify(page.state());
 for (const value of [maybeGrant?.authorization, maybeGrant?.leaseId, h.input.continuityScope.challengeId, "fixture-session-user", "fixture-session-password"])

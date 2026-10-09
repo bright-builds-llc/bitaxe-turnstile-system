@@ -5,7 +5,7 @@ export const WORKER_RESTORATION_JOURNAL_EVENTS = [
   "paused", "cancelled", "restored", "stop_failed", "device_baseline_observed",
   "stimulus_acknowledged", "stimulus_failed", "stimulus_reviewed", "rejection_reviewed", "status_reviewed", "review_failed",
   "replay_accepted", "replay_rejected", "replay_failed",
-  "physical_window_begun", "physical_window_armed",
+  "physical_window_begun", "physical_window_armed", "admission_observed",
   "status_failed", "closed", "close_failed", "completion_submitted", "completion_failed",
 ] as const;
 export type WorkerRestorationJournalEvent = typeof WORKER_RESTORATION_JOURNAL_EVENTS[number];

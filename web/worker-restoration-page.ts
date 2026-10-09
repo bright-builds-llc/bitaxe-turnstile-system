@@ -27,6 +27,7 @@ const hook: WorkerSerialQualificationHook = {
   observePreservation: value => { highWater.observe(value); },
   maybeObserveAdmissionFailure: stage => { operations.observeAdmissionFailure(stage); },
   maybeObserveSerialFailure: category => { operations.observeSerialFailure(category); },
+  maybeObserveDiagnostic: value => { operations.observeDiagnostic(value); },
   async prepareScope() { return parseWorkerAcceptanceActivation(await localJson("/activate", {})); },
 };
 const operations = createWorkerRestorationOperations({
@@ -59,7 +60,7 @@ function configure(input: unknown) {
   return operations.state();
 }
 
-const { observeStatus: _observeStatus, observeAdmissionFailure: _admission, observeSerialFailure: _serial, configured: _configured, ...pageOperations } = operations;
+const { observeStatus: _observeStatus, observeAdmissionFailure: _admission, observeSerialFailure: _serial, observeDiagnostic: _diagnostic, configured: _configured, ...pageOperations } = operations;
 export const workerRestoration = { ...pageOperations, configure };
 Object.assign(window, { workerRestoration });
 bindWorkerQualificationConnect(document.getElementById("connect"), () => true, operations.connect, async () => { publish(); });
