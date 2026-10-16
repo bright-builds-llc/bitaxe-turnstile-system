@@ -4,7 +4,7 @@ const qualification = {
   schema: "worker-qualification-v1",
   revocation_reason: "none",
   active_limit_ms: null,
-  shutdown_budget_ms: 15550,
+  shutdown_budget_ms: 22550,
   work_gate_remaining_ms: null,
   generation: 1,
   active_ms: 10,

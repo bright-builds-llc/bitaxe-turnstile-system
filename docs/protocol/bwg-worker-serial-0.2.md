@@ -240,7 +240,7 @@ regular SafeStop path to restore the baseline, including on connection loss.
 The browser clears cached restoration confirmation before an effect and restores
 that flag only after an actual baseline-confirmed status response. Restoration
 invalidates possession; budget review or subsequent Start preparation requires a
-fresh proof. The outer command bound is the existing 145-second restoration
+fresh proof. The outer command bound is the 152-second restoration
 bound, with independent heartbeats and device deadlines unchanged. Any failed
 or malformed response closes the connection and leaves restoration unconfirmed.
 

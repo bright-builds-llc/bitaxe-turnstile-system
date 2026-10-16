@@ -7,7 +7,7 @@ import { isWorkerV2Stratum } from "./worker-v2-stratum";
 
 /**
  * BWG-007 serial restoration qualification (firmware ADR-0035). Exact wire shapes for the bounded clock
- * stimulus and the metadata-only rejection review, plus the unbudgeted Conservative scenario leases.
+ * stimulus and the metadata-only rejection review, plus the unbudgeted Stratum V1 scenario leases.
  */
 export const CLOCK_DISCONTINUITY_OFFSET_MILLISECONDS = 1000;
 export const CLOCK_DISCONTINUITY_ARMED_MILLISECONDS = 2000;
@@ -105,11 +105,11 @@ function maximumRenewals(value: { durationMilliseconds: number; renewAfterMillis
   return undefined;
 }
 
-/** An unbudgeted Conservative Stratum V1 Start: no campaign, attempt, soak allowance or upstream-default profile. */
+/** An unbudgeted Stratum V1 Start: no campaign, attempt or soak allowance. The device's settings choose its profile (firmware ADR-0037). */
 export function parseRestorationGrant(input: unknown): WorkerLeaseGrant {
   const grant = parseWorkerLeaseGrant(input);
   if (grant.acceptanceCampaign || grant.qualificationAttempt || grant.soakAllowance) throw new Error("restoration_grant_budgeted");
-  if (isWorkerV2Stratum(grant.stratum) || (grant.hardwareProfile ?? "conservative") !== "conservative") throw new Error("restoration_grant_profile");
+  if (isWorkerV2Stratum(grant.stratum)) throw new Error("restoration_grant_stratum");
   if (maximumRenewals(grant) === undefined) throw new Error("restoration_window");
   return grant;
 }

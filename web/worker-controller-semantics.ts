@@ -1,6 +1,6 @@
 import { serialRecord } from "./worker-serial";
 import { isWorkerV2Stratum, parseWorkerV2Stratum, type WorkerV2Stratum } from "./worker-v2-stratum";
-import { parseWorkerHardwareProfile, parseWorkerSoakAllowance, validSoakShape, type WorkerHardwareProfile, type WorkerSoakAllowance } from "./worker-soak-allowance";
+import { parseWorkerSoakAllowance, validSoakShape, type WorkerSoakAllowance } from "./worker-soak-allowance";
 import { parseWorkerQualificationAttempt, type WorkerQualificationAttempt } from "./worker-qualification-attempt";
 import { parseWorkerPreservation, type WorkerPreservation } from "./worker-preservation";
 import { parseWorkerQualification, type WorkerQualification } from "./worker-qualification";
@@ -37,7 +37,6 @@ export type WorkerLeaseGrant = {
   stratum: { endpoint: string; username: string; password: string; suggestedDifficulty?: number } | WorkerV2Stratum;
   acceptanceCampaign?: WorkerAcceptanceCampaign;
   qualificationAttempt?: WorkerQualificationAttempt;
-  hardwareProfile?: WorkerHardwareProfile;
   soakAllowance?: WorkerSoakAllowance;
 };
 
@@ -196,7 +195,7 @@ export function parseWorkerLeaseGrant(input: unknown): WorkerLeaseGrant {
     "durationMilliseconds",
     "renewAfterMilliseconds",
     "stratum",
-  ], ["acceptanceCampaign", "qualificationAttempt", "hardwareProfile", "soakAllowance"]);
+  ], ["acceptanceCampaign", "qualificationAttempt", "soakAllowance"]);
   if ([value.acceptanceCampaign, value.qualificationAttempt, value.soakAllowance].filter((mode) => mode !== undefined).length > 1) throw new Error("Work Lease qualification modes are mutually exclusive");
   const rawStratum = serialRecord(value.stratum);
   const maybeV2 = isWorkerV2Stratum(rawStratum) ? parseWorkerV2Stratum(rawStratum) : undefined;
@@ -208,7 +207,6 @@ export function parseWorkerLeaseGrant(input: unknown): WorkerLeaseGrant {
     ...window,
     ...(value.qualificationAttempt === undefined ? {} : { qualificationAttempt: parseWorkerQualificationAttempt(value.qualificationAttempt) }),
     ...(value.acceptanceCampaign === undefined ? {} : { acceptanceCampaign: parseAcceptanceCampaign(value.acceptanceCampaign) }),
-    ...(value.hardwareProfile === undefined ? {} : { hardwareProfile: parseWorkerHardwareProfile(value.hardwareProfile) }),
     ...(value.soakAllowance === undefined ? {} : { soakAllowance: parseWorkerSoakAllowance(value.soakAllowance) }),
     leaseId: requiredString(value, "leaseId"),
     challengeId: requiredString(value, "challengeId"),

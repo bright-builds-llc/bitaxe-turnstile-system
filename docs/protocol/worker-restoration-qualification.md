@@ -26,10 +26,11 @@ stimulus before writing anything.
 
 ## Restoration leases
 
-Restoration leases are unbudgeted Conservative Stratum V1 grants (decision D1):
-no `acceptanceCampaign`, `qualificationAttempt` or `soakAllowance`, and no
-`hardwareProfile` other than an absent or `conservative` value. Two windows are
-accepted:
+Restoration leases are unbudgeted Stratum V1 grants (decision D1): no
+`acceptanceCampaign`, `qualificationAttempt` or `soakAllowance`. No grant carries
+a `hardwareProfile`; the device's own settings choose the mining profile, and
+the Gate refuses any grant with that field (firmware ADR-0037, Gate ADR-0103).
+Two windows are accepted:
 
 - 60,000 ms duration and 20,000 ms renewal point, with zero or one renewal of
   the same lease and window;
@@ -210,6 +211,11 @@ locally against its own boot snapshot.
   1,000 ms offset; armed for 2,000 ms real time after the acknowledgement is
   sent; the firmware requires at least 5,000 ms of lease headroom.
 - No page timers; one renewal at most per loaded lease.
+- Restoration: after a lease ends, the device starts its ordered shutdown
+  within 3,000 ms, bounds it at 22,550 ms (the firmware's catalog-maximum
+  tail, outside any budget) and proves cooling within 120,000 ms. A graceful
+  Pause, Cancel or Restore therefore waits at most 152,000 ms: that 145,550 ms
+  sequence plus a 6,450 ms transport allowance.
 - Journal: at most 256 entries, oldest dropped and counted.
 
 ## Device-ended leases (F9)

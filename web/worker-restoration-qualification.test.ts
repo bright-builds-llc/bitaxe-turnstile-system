@@ -69,7 +69,6 @@ test.each(vectors.rejectionReview.invalid)("a rejection review with $name is rej
 test.each([
   ["a 60,000/20,000 Start with one renewal", { grant, renewals: [renewal] }],
   ["a 60,000/20,000 Start without renewal", { grant, renewals: [] }],
-  ["an explicitly Conservative Start", { grant: { ...grant, hardwareProfile: "conservative" }, renewals: [] }],
   ["the 30,000/10,000 expiry Start", { grant: { ...grant, durationMilliseconds: 30000, renewAfterMilliseconds: 10000 }, renewals: [] }],
 ])("restoration mode admits %s", (_name, input) => {
   // Arrange / Act
@@ -80,11 +79,12 @@ test.each([
 
 const attempt = { schema: "worker-qualification-attempt-v1", id: "AQEBAQEBAQEBAQEBAQEBAQ", ordinal: 1, purpose: "normal", maximumActiveMilliseconds: 180000 };
 const campaign = { id: "AAAAAAAAAAAAAAAAAAAAAA", window: 0, maximumActiveMilliseconds: 180000 };
-const soakAllowance = { schema: "worker-soak-allowance-v1", id: "AwMDAwMDAwMDAwMDAwMDAw", ordinal: 1, maximumActiveMilliseconds: 619050 };
+const soakAllowance = { schema: "worker-soak-allowance-v2", id: "AwMDAwMDAwMDAwMDAwMDAw", ordinal: 1, maximumActiveMilliseconds: 600000 };
 test.each([
   ["a qualification attempt", { grant: { ...grant, qualificationAttempt: attempt }, renewals: [] }],
   ["an acceptance campaign", { grant: { ...grant, acceptanceCampaign: campaign }, renewals: [] }],
-  ["a soak allowance", { grant: { ...grant, hardwareProfile: "upstream-default", soakAllowance }, renewals: [] }],
+  ["a soak allowance", { grant: { ...grant, soakAllowance }, renewals: [] }],
+  ["a hardware profile", { grant: { ...grant, hardwareProfile: "conservative" }, renewals: [] }],
   ["another lease window", { grant: { ...grant, durationMilliseconds: 45000 }, renewals: [] }],
   ["a renewal on the expiry lease", { grant: { ...grant, durationMilliseconds: 30000, renewAfterMilliseconds: 10000 }, renewals: [renewal] }],
   ["two renewals", { grant, renewals: [renewal, renewal] }],

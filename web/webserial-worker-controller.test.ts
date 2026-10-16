@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { serialHarness } from "./worker-serial.test-support";
+import { WORKER_TERMINAL_SEQUENCE_MILLISECONDS } from "./worker-restoration-bound";
 import {
   createWebSerialWorkerController,
   workerSerialQualificationHook,
@@ -186,7 +187,30 @@ test("graceful cooling keeps heartbeats but hiding aborts that wait and releases
   expect(h.counts()).toMatchObject({ closed: 1, locked: false });
 });
 
-test("graceful terminal acknowledgment after 130 seconds remains within the 145-second outer bound", async () => {
+test("graceful terminal acknowledgment after the full terminal sequence including the 22,550 ms shutdown bound succeeds", async () => {
+  // Arrange
+  const h = await serialHarness();
+  await h.controller.requestPermission();
+  await h.controller.startLease(
+    await h.grant(
+      await h.controller.prepareWorkerLeaseAuthorizationContext("start"),
+    ),
+  );
+  h.holdRestore();
+  const restoring = h.controller.restore("cancelled").then(
+    (value) => ({ ok: true, value }),
+    () => ({ ok: false }),
+  );
+  // Act
+  await h.advance(WORKER_TERMINAL_SEQUENCE_MILLISECONDS);
+  h.completeRestore();
+  const result = await restoring;
+  // Assert
+  expect(result.ok).toBeTrue();
+  await h.controller.close();
+});
+
+test("graceful terminal acknowledgment after 130 seconds remains within the restoration response bound", async () => {
   // Arrange
   const h = await serialHarness();
   await h.controller.requestPermission();

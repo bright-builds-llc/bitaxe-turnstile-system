@@ -29,7 +29,7 @@ export function parseWorkerSerialAcceptanceConfiguration(input: unknown, gateCom
   // A soak runs alone: no recovery phase, cadence, restart, Noise, Stratum V2, self-test or one-use endpoint handoff.
   const soakPresent = Object.hasOwn(value, "soakQualification");
   if (soakPresent && (value.soakQualification !== true || ["recoveryPhase", "cadenceQualification", "restartQualification", "noiseQualification", "noiseIdentities", "stratumV2Qualification", "stratumV2Identities", "stratumV2Scope", "coreDumpSelfTestQualification", "stationEndpointHandoff"].some(key => Object.hasOwn(value, key)))) throw new Error("configuration_invalid");
-  // Restoration qualification (BWG-007) runs alone as well; it is the only mode admitting unbudgeted Conservative leases.
+  // Restoration qualification (BWG-007) runs alone as well; it is the only mode admitting unbudgeted leases.
   const restorationPresent = Object.hasOwn(value, "restorationQualification");
   if (restorationPresent && (value.restorationQualification !== true || keys.some(key => key !== "restorationQualification" && !["expectedGateCommit", "expectedFirmwareSourceCommit", "expectedAppElfSha256", "trust"].includes(key) && Object.hasOwn(value, key)))) throw new Error("configuration_invalid");
   const phasePresent = Object.hasOwn(value, "recoveryPhase"), maybePhase = value.recoveryPhase;
