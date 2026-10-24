@@ -1,6 +1,7 @@
 import { encodeBase64Url, sha256Base64UrlBytes } from "./crypto-bytes";
 import { isCanonicalPrimeSubgroupEd25519PublicKey } from "./ed25519-public-key";
 import { canonicalJson } from "./headless-values";
+import { maybeReferenceFirmwareBoard } from "./reference-firmware-board";
 import {
   WORKER_DEPLOYMENT_TRUST_PROFILE,
   parseWorkLeaseAuthorityTrust,
@@ -68,7 +69,10 @@ export function parseWorkerDeploymentTrust(input: unknown): WorkerDeploymentTrus
   };
 }
 
-/** Signs one Ultra 205 Controller capability with the Update Authority. */
+/**
+ * Signs one Reference Firmware Controller capability with the Update Authority.
+ * Refuses, before signing, any board outside the admitted set (ADR-0104).
+ */
 export async function signWorkerControllerCapability(input: {
   capability: UnsignedWorkerControllerCapability;
   manifest: WorkerSerialManifest;
@@ -83,13 +87,15 @@ export async function signWorkerControllerCapability(input: {
     );
     const kid = keyId(input.kid);
     assertPrivateSigningKey(input.privateKey);
+    const maybeBoard = maybeReferenceFirmwareBoard(
+      capability.board.model,
+      capability.board.revision,
+    );
+    if (!maybeBoard) throw invalidTrust();
     const claims = {
       profile: "bwg-reference-firmware-capability/0.2" as const,
       protocolVersion: capability.protocolVersion,
-      board: {
-        model: capability.board.model,
-        revision: capability.board.revision,
-      },
+      board: { ...maybeBoard },
       firmware: capability.firmware,
       compatibility: capability.compatibility,
       transportProfile: capability.transportProfile,

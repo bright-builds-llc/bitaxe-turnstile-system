@@ -17,6 +17,10 @@ import {
 import { isCanonicalPrimeSubgroupEd25519PublicKey } from "./ed25519-public-key";
 import { canonicalJson } from "./headless-values";
 import {
+  maybeReferenceFirmwareBoard,
+  type ReferenceFirmwareBoard,
+} from "./reference-firmware-board";
+import {
   parseWorkerSerialManifest,
   type WorkerSerialManifest,
 } from "./worker-serial";
@@ -39,7 +43,7 @@ export type WorkerControllerCapabilityClaims<
 > = {
   profile: "bwg-reference-firmware-capability/0.2";
   protocolVersion: Protocol;
-  board: { model: string; revision: string };
+  board: ReferenceFirmwareBoard;
   firmware: { name: string; version: string };
   compatibility: WorkerControllerCapabilities["compatibility"];
   transportProfile: TransportProfile;
@@ -273,13 +277,11 @@ function parseCapabilityAttestation<Protocol extends string, TransportProfile ex
     ["referenceFirmware", "workLease", "miningBaselineRestoration", "settingsPreservation"],
     errorMessage,
   );
+  const maybeBoard = maybeReferenceFirmwareBoard(board.model, board.revision);
   if (
     claims.profile !== "bwg-reference-firmware-capability/0.2" ||
     claims.protocolVersion !== profile.protocolVersion ||
-    typeof board.model !== "string" ||
-    !validLabel(board.model) ||
-    typeof board.revision !== "string" ||
-    !validLabel(board.revision) ||
+    !maybeBoard ||
     typeof firmware.name !== "string" ||
     !validLabel(firmware.name) ||
     typeof firmware.version !== "string" ||
@@ -303,7 +305,7 @@ function parseCapabilityAttestation<Protocol extends string, TransportProfile ex
     claims: {
       profile: "bwg-reference-firmware-capability/0.2",
       protocolVersion: profile.protocolVersion,
-      board: { model: board.model, revision: board.revision },
+      board: { ...maybeBoard },
       firmware: { name: firmware.name, version: firmware.version },
       compatibility: {
         referenceFirmware: compatibility.referenceFirmware,

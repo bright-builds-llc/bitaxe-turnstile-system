@@ -432,15 +432,43 @@
           ],
           "properties": {
             "model": {
-              "const": "bitaxe-ultra"
+              "enum": [
+                "bitaxe-ultra",
+                "bitaxe-gamma"
+              ]
             },
             "revision": {
-              "const": "205"
+              "enum": [
+                "205",
+                "601"
+              ]
             },
             "usbTransport": {
               "const": "web_serial"
             }
-          }
+          },
+          "oneOf": [
+            {
+              "properties": {
+                "model": {
+                  "const": "bitaxe-ultra"
+                },
+                "revision": {
+                  "const": "205"
+                }
+              }
+            },
+            {
+              "properties": {
+                "model": {
+                  "const": "bitaxe-gamma"
+                },
+                "revision": {
+                  "const": "601"
+                }
+              }
+            }
+          ]
         },
         "firmware": {
           "type": "object",

@@ -67,6 +67,8 @@ describe("Bitaxe onboarding admission", () => {
 
   test.each([
     ["board", { compatibleBoards: [{ model: "bitaxe-ultra", revisions: ["999"] }] }],
+    ["Gamma 601 board", { compatibleBoards: [{ model: "bitaxe-gamma", revisions: ["601"] }] }],
+    ["Ultra 205 board", { compatibleBoards: [{ model: "bitaxe-ultra", revisions: ["205"] }] }],
     ["partition", { partition: { scheme: "esp32-ota-ab", minimumAppSlotBytes: 9_999_999, rollbackRequired: true } }],
     ["schema", { settingsSchema: { minimumReadable: 5, maximumReadable: 6, target: 6 } }],
   ] as const)("rejects incompatible %s before flashing", async (_name, overrides) => {

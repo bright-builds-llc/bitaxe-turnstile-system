@@ -11,6 +11,10 @@ import { access, chmod, mkdir, readFile, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { signWorkerControllerCapability } from "../web/worker-deployment-trust";
+import {
+  maybeReferenceFirmwareBoardByRevision,
+  type ReferenceFirmwareBoard,
+} from "../web/reference-firmware-board";
 import { signWorkerLeaseAuthorization } from "../web/worker-lease-authorization";
 import {
   assertMissing,
@@ -88,20 +92,18 @@ async function main(args: readonly string[]): Promise<void> {
     return;
   }
   if (command === "sign-capability") {
-    const parsed = exactOptions(options, [
-      "--directory",
-      "--input",
-      "--output",
-    ]);
+    const parsed = capabilityOptions(options);
+    const board = capabilityBoard(parsed["--board"] ?? "205");
     const directory = resolve(parsed["--directory"]);
     await withAuthorityLock(directory, () =>
       signCapability(
         directory,
+        board,
         resolve(parsed["--input"]),
         resolve(parsed["--output"]),
       ),
     );
-    console.log("worker_capability=signed board=205");
+    console.log(`worker_capability=signed board=${board.revision}`);
     return;
   }
   if (command === "rotate") {
@@ -213,11 +215,44 @@ async function signLeaseAuthorization(
   );
 }
 
+/** `--board` is optional and defaults to the Ultra 205 for existing callers. */
+function capabilityOptions(
+  options: readonly string[],
+): Record<string, string> & { "--board"?: string } {
+  const required = ["--directory", "--input", "--output"];
+  return options.includes("--board")
+    ? exactOptions(options, [...required, "--board"])
+    : exactOptions(options, required);
+}
+
+function capabilityBoard(revision: string): ReferenceFirmwareBoard {
+  const maybeBoard = maybeReferenceFirmwareBoardByRevision(revision);
+  if (!maybeBoard) throw new Error("capability_board_unsupported");
+  return maybeBoard;
+}
+
 async function signCapability(
   directory: string,
+  board: ReferenceFirmwareBoard,
   inputPath: string,
   outputPath: string,
 ): Promise<void> {
+  const input = await readJson(inputPath);
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    throw new Error("capability_input_invalid");
+  }
+  const value = input as Record<string, unknown>;
+  if (Object.keys(value).length !== 2 || !value.capability || !value.manifest) {
+    throw new Error("capability_input_invalid");
+  }
+  const maybeInputBoard = (value.capability as { board?: Record<string, unknown> })
+    .board;
+  if (
+    maybeInputBoard?.model !== board.model ||
+    maybeInputBoard?.revision !== board.revision
+  ) {
+    throw new Error("capability_board_mismatch");
+  }
   const registry = await privateAuthority(
     join(directory, "update-private.json"),
     "update_authority",
@@ -231,14 +266,6 @@ async function signCapability(
     false,
     ["sign"],
   );
-  const input = await readJson(inputPath);
-  if (typeof input !== "object" || input === null || Array.isArray(input)) {
-    throw new Error("capability_input_invalid");
-  }
-  const value = input as Record<string, unknown>;
-  if (Object.keys(value).length !== 2 || !value.capability || !value.manifest) {
-    throw new Error("capability_input_invalid");
-  }
   const signed = await signWorkerControllerCapability({
     capability: value.capability as Parameters<
       typeof signWorkerControllerCapability
