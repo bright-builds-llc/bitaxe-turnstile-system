@@ -49,6 +49,19 @@ test("source-produced ACK fields fill once and cannot rewrite the original nonce
   history.observe(parseWorkerV2Status(status)); status.record.shareFacts = [fact]; history.observe(parseWorkerV2Status(status));
   fact.nonce++; expect(() => history.observe(status)).toThrow();
 });
+function shareStatusWithCore(coreId: number, smallCoreId: number) {
+  const status = v2Admitted("share");
+  status.record.observedAtUs = status.observation.observedAtUs = 10000;
+  status.record.authorityDeadlineDeviceUs = 180001000;
+  status.record.shareFacts = [{ ...v2ShareFact(), coreId, smallCoreId }];
+  return status;
+}
+test.each([[111, 7], [112, 7], [111, 8], [48, 12], [127, 15]])("share fact from core %i, small core %i parses for the BM1366 or BM1370", (coreId, smallCoreId) => {
+  expect(parseWorkerV2Status(shareStatusWithCore(coreId, smallCoreId)).record?.shareFacts[0]).toMatchObject({ coreId, smallCoreId });
+});
+test.each([[128, 15], [127, 16]])("share fact from core %i, small core %i is beyond every admitted chip", (coreId, smallCoreId) => {
+  expect(() => parseWorkerV2Status(shareStatusWithCore(coreId, smallCoreId))).toThrow("v2_evidence_invalid");
+});
 test("maximum bounded native projection fits the real Serial encoder", async () => {
   const status = v2Admitted("share"), record = status.record;
   record.authorityDeadlineDeviceUs = 180001000;

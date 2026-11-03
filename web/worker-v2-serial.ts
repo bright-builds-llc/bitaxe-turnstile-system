@@ -4,6 +4,8 @@ import { parseWorkerV2Stratum } from "./worker-v2-stratum";
 import { V2_STAGES, V2_OPERATIONS, V2_FAILURES, type ChannelStart, type V2Status, type DeviceRecord, type SocketTuple, type Event, type Timing, type ShareFact, type Failure, type Resources } from "./worker-v2-serial.types";
 export type * from "./worker-v2-serial.types";
 const fail = () => { throw serialFailure("v2_evidence_invalid"); };
+/** The record never names its chip, so IDs are bounded by the widest admitted one: the Gamma 601's BM1370 (128 cores, 16 small cores) spans the Ultra 205's BM1366 (112, 8). */
+const MAX_CORE_ID = 127, MAX_SMALL_CORE_ID = 15;
 function numbers<K extends string>(value: Record<string, unknown>, keys: readonly K[]): Record<K, number> { return Object.fromEntries(keys.map(key => [key, uint(value[key])])) as Record<K, number>; }
 function nullableNumbers<K extends string>(value: Record<string, unknown>, keys: readonly K[]): Record<K, number | null> { return Object.fromEntries(keys.map(key => [key, nullableUInt(value[key])])) as Record<K, number | null>; }
 function array<T>(input: unknown, max: number, parse: (item: unknown) => T): T[] {
@@ -39,7 +41,7 @@ function shareFact(input: unknown): ShareFact {
   const v = exactSerialRecord(input, [...required, ...nullable, "workFieldsSha256"]);
   const result = { ...numbers(v, required), ...nullableNumbers(v, nullable), workFieldsSha256: digest(v.workFieldsSha256) };
   if (required.filter(key => !key.endsWith("DeviceUs") && key !== "dispatchSequence").some(key => result[key] > 0xffffffff)) return fail();
-  if (!result.dispatchSequence || result.asicJobId > 120 || result.asicJobId % 8 !== 0 || result.asicIndex !== 0 || result.coreId > 111 || result.smallCoreId > 7) return fail();
+  if (!result.dispatchSequence || result.asicJobId > 120 || result.asicJobId % 8 !== 0 || result.asicIndex !== 0 || result.coreId > MAX_CORE_ID || result.smallCoreId > MAX_SMALL_CORE_ID) return fail();
   if (result.nonceAtDeviceUs < result.dispatchedAtDeviceUs || (result.writeStartedAtDeviceUs !== null && result.writeStartedAtDeviceUs < result.nonceAtDeviceUs)) return fail();
   if (result.writeCompletedAtDeviceUs !== null && (result.writeStartedAtDeviceUs === null || result.writeCompletedAtDeviceUs < result.writeStartedAtDeviceUs)) return fail();
   for (const n of [result.ackLastSequence, result.ackAcceptedCount, result.matchedSubmitCount]) if (n !== null && n > 0xffffffff) return fail();
