@@ -1,0 +1,63 @@
+{
+  "note": "Test-only key: RFC 8032 section 7.1 test 2. Never a deployment key.",
+  "seedBase64Url": "TM0Imyj_ltqdtsNG7BFOD1uKMZ81q6Yk2oz27U-4pvs",
+  "trust": {
+    "profile": "bwg-worker-deployment-trust/0.2",
+    "issuer": "test-work-lease-authority",
+    "audience": "bwg-worker-controller/0.4",
+    "role": "work_lease_authority",
+    "keys": [
+      {
+        "kid": "test-work-lease-authority",
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "PUAXw-hDiVqStwqnTRt-vJyYLM8uxJaMwM1V8Sr0Zgw",
+        "alg": "Ed25519",
+        "use": "sig",
+        "key_ops": [
+          "verify"
+        ]
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "start",
+      "sequence": "1",
+      "input": {
+        "operation": "start",
+        "activeChallengeId": "challenge_00000000000000000000000000000001",
+        "controlSessionBindingSha256": "jEc1ro90lL2fX0ZozUbY0XpmxrC46gEkEUKKTyGj0Zs",
+        "request": {
+          "protocolVersion": "bwg-worker-controller/0.4",
+          "leaseId": "0b8f5c1e-3a7d-4e2b-9c61-2f4d8a9e7b10",
+          "challengeId": "challenge_00000000000000000000000000000001",
+          "durationMilliseconds": 60000,
+          "renewAfterMilliseconds": 20000,
+          "stratum": {
+            "endpoint": "stratum+tcp://pool-adapter.test:3333/",
+            "username": "bwg_test-session-user",
+            "password": "test-session-password"
+          }
+        }
+      },
+      "authorization": "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoidGVzdC13b3JrLWxlYXNlLWF1dGhvcml0eSIsInR5cCI6ImJ3Zy13b3JrZXItbGVhc2UtYXV0aG9yaXphdGlvbitqd3MifQ.eyJjb250cm9sU2Vzc2lvbkJpbmRpbmdTaGEyNTYiOiJqRWMxcm85MGxMMmZYMFpvelViWTBYcG14ckM0NmdFa0VVS0tUeUdqMFpzIiwib3BlcmF0aW9uIjoic3RhcnQiLCJyZXF1ZXN0U2hhMjU2IjoicmZvdWdjeTVWREV0Rk1QM0JrNVh0eFFzUjRaY01hbHZ5Q3ZkS2tnQ1JVNCIsInNlcXVlbmNlIjoiMSJ9.o3kl8BxFc8grzeHkYI7arzX38U_lnS5tZa6NZPrsQWCKBwkf1O-LA0dAQ9Nk-AM7QdSJqOBIqg-pEVuS8tszBA"
+    },
+    {
+      "name": "renew_at_allocator_ceiling",
+      "sequence": "9223372036854775807",
+      "input": {
+        "operation": "renew",
+        "activeChallengeId": "challenge_00000000000000000000000000000001",
+        "controlSessionBindingSha256": "jEc1ro90lL2fX0ZozUbY0XpmxrC46gEkEUKKTyGj0Zs",
+        "request": {
+          "protocolVersion": "bwg-worker-controller/0.4",
+          "leaseId": "0b8f5c1e-3a7d-4e2b-9c61-2f4d8a9e7b10",
+          "durationMilliseconds": 60000,
+          "renewAfterMilliseconds": 20000
+        }
+      },
+      "authorization": "eyJhbGciOiJFZDI1NTE5Iiwia2lkIjoidGVzdC13b3JrLWxlYXNlLWF1dGhvcml0eSIsInR5cCI6ImJ3Zy13b3JrZXItbGVhc2UtYXV0aG9yaXphdGlvbitqd3MifQ.eyJjb250cm9sU2Vzc2lvbkJpbmRpbmdTaGEyNTYiOiJqRWMxcm85MGxMMmZYMFpvelViWTBYcG14ckM0NmdFa0VVS0tUeUdqMFpzIiwib3BlcmF0aW9uIjoicmVuZXciLCJyZXF1ZXN0U2hhMjU2IjoiMXVfYTczVGFDSVdLNFBVWXhGQmVJQnA0ZW9BZy1uUV9MdDFVOTdrOGgyRSIsInNlcXVlbmNlIjoiOTIyMzM3MjAzNjg1NDc3NTgwNyJ9.9zz6hbqVnDSRfFXDVpkj2UdamJKYLmrExk__jKPP7KEdvsm3AiGihZMHGG6XLXeuQ2dHBFkR6Tltz2cvjHaYCQ"
+    }
+  ]
+}

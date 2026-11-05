@@ -19,3 +19,4 @@ pub mod stratum_v1;
 pub mod trusted_consent;
 pub mod web_url;
 pub mod work;
+pub mod work_lease_authorization;
