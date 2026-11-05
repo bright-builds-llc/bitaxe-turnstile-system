@@ -65,6 +65,10 @@ impl WorkerStratumCredentialPort for FailingOnceStratum {
         }
         self.inner.issue(request).await
     }
+
+    async fn renew(&self, request: WorkerStratumRequest) -> Result<(), WorkerStratumUnavailable> {
+        self.inner.renew(request).await
+    }
 }
 
 struct Fixture {
@@ -328,6 +332,42 @@ async fn renew_returns_a_renewal_under_the_next_sequence() -> Result<(), Box<dyn
     assert_eq!(renewal["leaseId"], grant["leaseId"]);
     assert_eq!(payload["operation"], "renew");
     assert_eq!(payload["sequence"], "2");
+    Ok(())
+}
+
+#[tokio::test]
+async fn renew_extends_the_stratum_session_under_the_same_password() -> Result<(), Box<dyn Error>> {
+    // Arrange
+    let fixture = Fixture::start().await?;
+    let grant = fixture.start_work().await?;
+    let registry = PostgresStratumSessionRegistry::connect(fixture.database.database_url()).await?;
+    let username = grant["stratum"]["username"].as_str().ok_or("username")?;
+    let password = grant["stratum"]["password"].as_str().ok_or("password")?;
+    let granted = registry
+        .authenticate(username, password, now()?)
+        .await?
+        .ok_or("granted credentials must authenticate")?;
+
+    // Act
+    fixture
+        .renew(&grant["leaseId"], CONTROL_SESSION)
+        .await?
+        .error_for_status()?;
+    let renewed = registry
+        .authenticate(username, password, now()?)
+        .await?
+        .ok_or("the granted password must still authenticate after Renew")?;
+
+    // Assert
+    assert!(
+        renewed.lease_context().last_monotonic_milliseconds()
+            > granted.lease_context().last_monotonic_milliseconds()
+    );
+    assert!(
+        renewed.lease_context().expires_at_monotonic_milliseconds()
+            > granted.lease_context().expires_at_monotonic_milliseconds()
+    );
+    assert!(renewed.expires_at_unix_seconds() >= granted.expires_at_unix_seconds());
     Ok(())
 }
 

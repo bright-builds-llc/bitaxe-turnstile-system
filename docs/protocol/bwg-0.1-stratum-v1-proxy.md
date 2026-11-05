@@ -4,9 +4,11 @@ The reference Pool Adapter is an MIT Rust TCP proxy between an unmodified standa
 
 ## Work Session admission
 
-The Pool Adapter issues one deterministic opaque username and 256-bit secret for an exact `(Work Session ID, expiry)` under an operator key. Repeating one generation returns the same credentials after response loss, while another Work Session receives different values. Credentials may not extend beyond 60 seconds, the Work Lease wall-clock expiry, the Work Challenge expiry, or the remaining monotonic Work Lease duration. A later generation atomically rotates the verifier for the same Work Session, and an older generation cannot roll it back. PostgreSQL stores only a domain-separated secret verifier, the opaque session mapping, issuance/expiry times, and exact Authority-issued Work Lease context; it never stores the Worker secret.
+The Pool Adapter issues one deterministic opaque username and 256-bit secret for an exact `(Work Session ID, expiry)` under an operator key. Repeating one generation returns the same credentials after response loss, while another Work Session receives different values. Credentials may not extend beyond 60 seconds, the Work Lease wall-clock expiry, the Work Challenge expiry, or the remaining monotonic Work Lease duration. A later generation, ordered by its issue time in milliseconds, atomically rotates the verifier for the same Work Session, and an older generation cannot roll it back. PostgreSQL stores only a domain-separated secret verifier, the opaque session mapping, issuance/expiry times, and exact Authority-issued Work Lease context; it never stores the Worker secret.
 
 `mining.authorize` is checked locally before it reaches the upstream connection. Invalid credentials receive a standard `result:false` response, expired credentials terminate processing, and every later `mining.submit` must name the authorized Worker username. For pools such as Hydra that use the standard username as a payout identity, the adapter may translate only the Pool-facing authorize/submit username to the selected address; Worker-facing traffic and accepted responses remain standard, and the payout address is not persisted in adapter session or outbox records. Each accepted upstream subscription is assigned a connection ID, and its case-canonical `extranonce1` is durably reserved before the successful subscription response is exposed to the Worker. Authorization then binds that reservation to the authenticated Work Session. Every pre-bind exit removes the reservation; if admission and cleanup both fail, the adapter reports both errors for recovery instead of hiding the leak. A reconnect may receive a fresh `extranonce1`, but no two connection records can claim the same coinbase space.
+
+A Work Lease renewal extends the registration instead of rotating it. The extension keeps the verifier, so the Worker's password is unchanged, and moves the expiry and lease context forward under the same bounds as a fresh issue. It applies only to an unexpired registration of the same lease and continuity, never shrinks the window, and an identical replay succeeds. An admitted connection rereads its registration every five seconds and at its expiry, so it continues past the window it was admitted with; rotated or expired credentials no longer authenticate, and the connection then ends at its own expiry. Each submit's lease reading advances the registered reading by the wall-clock milliseconds elapsed since it was issued, and claimant Work Sessions issue at the Authority lease clock's own reading so the two agree.
 
 ## Target and job state
 
@@ -37,7 +39,8 @@ The context-local retention seam rejects periods below the hosted 30-day operati
 The checked-in [`stratum-v1-proxy-transcript.json`](../../conformance/bwg-0.1/stratum-v1-proxy-transcript.json) drives the Rust transcript test. PostgreSQL and real TCP acceptance additionally cover:
 
 - deterministic credentials and expiry;
-- generation-bound credential rotation and monotonic lease advancement;
+- generation-bound credential rotation, including within one second, and monotonic lease advancement;
+- renewal extension of registered and live sessions without a password change;
 - unique connection-scoped extranonce reservation across restart;
 - integer and fractional variable difficulty;
 - reconstructed-header fingerprinting and network-target classification;

@@ -138,6 +138,55 @@ impl StratumCredentialIssuer {
     }
 }
 
+/// A renewed lease window for registered credentials whose secret stays unchanged.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StratumSessionExtension {
+    session_id: WorkSessionId,
+    lease_context: StratumLeaseContext,
+    issued_at_unix_milliseconds: u64,
+    expires_at_unix_seconds: u64,
+}
+
+impl StratumSessionExtension {
+    /// Bounds the extended expiry exactly as a fresh issue would be bounded.
+    pub fn new(
+        session_id: WorkSessionId,
+        lease_context: StratumLeaseContext,
+        now_unix_milliseconds: u64,
+        lease_expires_at_unix_seconds: u64,
+        challenge_expires_at_unix_seconds: u64,
+    ) -> Result<Self, StratumV1Error> {
+        let expires_at_unix_seconds = bounded_session_expiry(
+            &lease_context,
+            now_unix_milliseconds / 1_000,
+            lease_expires_at_unix_seconds,
+            challenge_expires_at_unix_seconds,
+        )?;
+        Ok(Self {
+            session_id,
+            lease_context,
+            issued_at_unix_milliseconds: now_unix_milliseconds,
+            expires_at_unix_seconds,
+        })
+    }
+
+    pub fn session_id(&self) -> &WorkSessionId {
+        &self.session_id
+    }
+
+    pub fn lease_context(&self) -> &StratumLeaseContext {
+        &self.lease_context
+    }
+
+    pub fn issued_at_unix_milliseconds(&self) -> u64 {
+        self.issued_at_unix_milliseconds
+    }
+
+    pub fn expires_at_unix_seconds(&self) -> u64 {
+        self.expires_at_unix_seconds
+    }
+}
+
 /// Worker-visible short-lived credentials bound to one opaque Work Session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StratumSessionCredentials {
@@ -188,7 +237,7 @@ impl StratumSessionCredentials {
             secret: self.secret,
             upstream_username,
             upstream_secret,
-            issued_at_unix_seconds: self.issued_at_unix_milliseconds / 1_000,
+            issued_at_unix_milliseconds: self.issued_at_unix_milliseconds,
             expires_at_unix_seconds: self.expires_at_unix_seconds,
         }
     }
@@ -202,7 +251,7 @@ pub struct StratumSessionConfig {
     pub(super) secret: String,
     pub(super) upstream_username: String,
     pub(super) upstream_secret: String,
-    pub(super) issued_at_unix_seconds: u64,
+    pub(super) issued_at_unix_milliseconds: u64,
     pub(super) expires_at_unix_seconds: u64,
 }
 
@@ -225,7 +274,9 @@ impl StratumSessionConfig {
             upstream_secret: secret.clone(),
             username,
             secret,
-            issued_at_unix_seconds: now_unix_seconds,
+            issued_at_unix_milliseconds: now_unix_seconds
+                .checked_mul(1_000)
+                .ok_or(StratumV1Error::InvalidSessionConfig)?,
             expires_at_unix_seconds: bounded_session_expiry(
                 &lease_context,
                 now_unix_seconds,
@@ -317,15 +368,12 @@ impl StratumLeaseContext {
 
     pub(super) fn advanced_by_wall_clock(
         &self,
-        issued_at_unix_seconds: u64,
-        now_unix_seconds: u64,
+        issued_at_unix_milliseconds: u64,
+        now_unix_milliseconds: u64,
     ) -> Result<Self, StratumV1Error> {
-        let elapsed_seconds = now_unix_seconds
-            .checked_sub(issued_at_unix_seconds)
+        let elapsed_milliseconds = now_unix_milliseconds
+            .checked_sub(issued_at_unix_milliseconds)
             .ok_or(StratumV1Error::ClockRollback)?;
-        let elapsed_milliseconds = elapsed_seconds
-            .checked_mul(1_000)
-            .ok_or(StratumV1Error::InvalidSessionConfig)?;
         let observed = self
             .last_monotonic_milliseconds
             .checked_add(elapsed_milliseconds)

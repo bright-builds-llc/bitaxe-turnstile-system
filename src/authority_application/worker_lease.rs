@@ -52,7 +52,7 @@ pub struct WorkerStratumRequest {
     pub session_id: WorkSessionId,
     pub lease: WorkLease,
     pub clock: WorkerClock,
-    /// Authority wall-clock reading no earlier than `clock`'s, ordering credential generations.
+    /// Authority wall-clock reading at which `clock` was taken, ordering credential generations.
     pub now_unix_milliseconds: u64,
     pub lease_expires_at_unix_seconds: u64,
     pub challenge_expires_at_unix_seconds: u64,
@@ -71,6 +71,9 @@ pub trait WorkerStratumCredentialPort: Send + Sync {
         &self,
         request: WorkerStratumRequest,
     ) -> Result<WorkerStratumV1, WorkerStratumUnavailable>;
+
+    /// Extends the registered and live credentials of one renewed lease, keeping the password.
+    async fn renew(&self, request: WorkerStratumRequest) -> Result<(), WorkerStratumUnavailable>;
 }
 
 /// Work Lease Authority signer and Pool Adapter port that enable claimant routes.
@@ -221,9 +224,19 @@ impl AuthorityApplication {
     ) -> Result<WorkerLeaseRenewal, AuthorityApplicationError> {
         let issuance = self.worker_leases()?;
         let session_id = claimant_session_id(challenge_id)?;
-        self.simulated_pool_adapter()
-            .renew_lease(&session_id, &lease_id, authority_clock(control_session)?)
+        let clock = authority_clock(control_session)?;
+        let lease = self
+            .simulated_pool_adapter()
+            .renew_lease(&session_id, &lease_id, clock.clone())
             .await?;
+        let request = self
+            .worker_stratum_request(challenge_id, session_id, lease, clock)
+            .await?;
+        issuance
+            .stratum
+            .renew(request)
+            .await
+            .map_err(|_| AuthorityApplicationError::WorkerStratumUnavailable)?;
         let sequence = self.next_sequence(issuance).await?;
         Ok(issuance.signer.sign_renewal(
             lease_id,
@@ -286,22 +299,13 @@ impl AuthorityApplication {
         clock: WorkerClock,
         control_session: &ControlSessionBinding,
     ) -> Result<WorkerLeaseGrant, AuthorityApplicationError> {
-        let descriptor = self.repository.challenge(challenge_id).await?;
-        let now_unix_milliseconds = current_unix_milliseconds()?;
-        let now = now_unix_milliseconds / 1_000;
         let lease_id = lease.lease_id().to_owned();
+        let request = self
+            .worker_stratum_request(challenge_id, session_id, lease, clock)
+            .await?;
         let stratum = issuance
             .stratum
-            .issue(WorkerStratumRequest {
-                session_id,
-                lease,
-                clock,
-                now_unix_milliseconds,
-                lease_expires_at_unix_seconds: now
-                    .checked_add(WORK_LEASE_MAX_DURATION_SECONDS)
-                    .ok_or(AuthorityApplicationError::TimeOverflow)?,
-                challenge_expires_at_unix_seconds: descriptor.expires_at_unix_seconds(),
-            })
+            .issue(request)
             .await
             .map_err(|_| AuthorityApplicationError::WorkerStratumUnavailable)?;
         let sequence = self.next_sequence(issuance).await?;
@@ -312,6 +316,29 @@ impl AuthorityApplication {
             control_session,
             sequence,
         )?)
+    }
+
+    /// Binds the Stratum window to the lease clock's own reading, so the Pool Adapter's
+    /// wall-clock advance reproduces the Authority's lease clock without drift.
+    async fn worker_stratum_request(
+        &self,
+        challenge_id: &ChallengeId,
+        session_id: WorkSessionId,
+        lease: WorkLease,
+        clock: WorkerClock,
+    ) -> Result<WorkerStratumRequest, AuthorityApplicationError> {
+        let descriptor = self.repository.challenge(challenge_id).await?;
+        let now_unix_milliseconds = clock.monotonic_milliseconds();
+        Ok(WorkerStratumRequest {
+            session_id,
+            lease,
+            clock,
+            now_unix_milliseconds,
+            lease_expires_at_unix_seconds: (now_unix_milliseconds / 1_000)
+                .checked_add(WORK_LEASE_MAX_DURATION_SECONDS)
+                .ok_or(AuthorityApplicationError::TimeOverflow)?,
+            challenge_expires_at_unix_seconds: descriptor.expires_at_unix_seconds(),
+        })
     }
 
     async fn next_sequence(
@@ -348,18 +375,13 @@ fn claimant_session_id(
 fn authority_clock(
     control_session: &ControlSessionBinding,
 ) -> Result<WorkerClock, AuthorityApplicationError> {
-    Ok(WorkerClock::new(
-        control_session.as_str(),
-        current_unix_milliseconds()?,
-    )?)
-}
-
-fn current_unix_milliseconds() -> Result<u64, AuthorityApplicationError> {
     let milliseconds = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| AuthorityApplicationError::ClockUnavailable)?
         .as_millis();
-    u64::try_from(milliseconds).map_err(|_| AuthorityApplicationError::ClockUnavailable)
+    let milliseconds =
+        u64::try_from(milliseconds).map_err(|_| AuthorityApplicationError::ClockUnavailable)?;
+    Ok(WorkerClock::new(control_session.as_str(), milliseconds)?)
 }
 
 fn sha256_base64url(bytes: &[u8]) -> String {

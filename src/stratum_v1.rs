@@ -166,7 +166,19 @@ impl StratumSession {
         frame: &str,
         now_unix_seconds: u64,
     ) -> Result<Vec<StratumProxyAction>, StratumV1Error> {
-        self.require_unexpired(now_unix_seconds)?;
+        let now_unix_milliseconds = now_unix_seconds
+            .checked_mul(1_000)
+            .ok_or(StratumV1Error::InvalidSessionConfig)?;
+        self.worker_frame_at(frame, now_unix_milliseconds)
+    }
+
+    /// Handles one Worker frame, advancing a submit's lease reading by elapsed milliseconds.
+    pub fn worker_frame_at(
+        &mut self,
+        frame: &str,
+        now_unix_milliseconds: u64,
+    ) -> Result<Vec<StratumProxyAction>, StratumV1Error> {
+        self.require_unexpired(now_unix_milliseconds / 1_000)?;
         if frame.len() > MAXIMUM_STRATUM_FRAME_BYTES {
             return Err(StratumV1Error::FrameTooLarge);
         }
@@ -255,8 +267,8 @@ impl StratumSession {
                     nonce: nonce.to_owned(),
                     target: job.assigned_target,
                     lease_context: self.config.lease_context.advanced_by_wall_clock(
-                        self.config.issued_at_unix_seconds,
-                        now_unix_seconds,
+                        self.config.issued_at_unix_milliseconds,
+                        now_unix_milliseconds,
                     )?,
                 })))
             }
@@ -466,6 +478,11 @@ impl StratumSession {
         Ok(StratumProxyAction::ForwardWorker(pending.response))
     }
 
+    /// Moves this live connection onto a renewed registration of its same lease.
+    pub fn renew(&mut self, renewed: AuthenticatedStratumSession) -> Result<(), StratumV1Error> {
+        renewed.renew_config(&mut self.config)
+    }
+
     fn require_unexpired(&self, now_unix_seconds: u64) -> Result<(), StratumV1Error> {
         if now_unix_seconds >= self.config.expires_at_unix_seconds {
             return Err(StratumV1Error::ExpiredCredentials);
@@ -570,6 +587,8 @@ pub enum StratumV1Error {
     ConflictingSessionReplay,
     #[error("Stratum Session is not registered")]
     UnknownSession,
+    #[error("Stratum Session cannot be extended under this lease")]
+    UnextendableSession,
     #[error("accepted-work delivery lease is no longer owned by this worker")]
     LostDeliveryLease,
     #[error("Pool Adapter database operation failed")]
@@ -602,5 +621,5 @@ pub enum StratumV1Error {
 }
 pub use credentials::{
     StratumCredentialIssuer, StratumLeaseContext, StratumSessionConfig, StratumSessionCredentials,
-    StratumUpstreamAuthorization,
+    StratumSessionExtension, StratumUpstreamAuthorization,
 };

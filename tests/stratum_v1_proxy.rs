@@ -23,7 +23,7 @@ use bwg_core::{
 };
 use serde_json::Value;
 use tokio::{
-    io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader},
+    io::{AsyncBufReadExt as _, BufReader},
     net::{TcpListener, TcpStream},
 };
 
@@ -40,9 +40,11 @@ mod credentials;
 mod fixtures;
 #[path = "support/stratum_hash.rs"]
 mod stratum_hash_support;
-use fixtures::{StratumJobFields, hex_target, test_lease_context, worked_nonce};
+use fixtures::{StratumJobFields, hex_target, test_lease_context, worked_nonce, write_line};
 #[path = "stratum_v1_proxy/persistence.rs"]
 mod persistence;
+#[path = "stratum_v1_proxy/renewal.rs"]
+mod renewal;
 #[path = "stratum_v1_proxy/retention.rs"]
 mod retention;
 #[path = "stratum_v1_proxy/target_math.rs"]
@@ -577,15 +579,6 @@ async fn simulated_upstream(
     write_line(&mut write, r#"{"id":3,"result":true,"error":null}"#).await?;
     while lines.next_line().await?.is_some() {}
     Ok(())
-}
-
-async fn write_line<W>(writer: &mut W, line: &str) -> Result<(), std::io::Error>
-where
-    W: tokio::io::AsyncWrite + Unpin,
-{
-    writer.write_all(line.as_bytes()).await?;
-    writer.write_all(b"\n").await?;
-    writer.flush().await
 }
 
 struct RecordingSink {

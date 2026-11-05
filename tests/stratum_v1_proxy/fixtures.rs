@@ -126,3 +126,13 @@ impl WorkSessionDisconnectSink for IgnoreDisconnect {
         Ok(())
     }
 }
+
+pub(super) async fn write_line<W>(writer: &mut W, line: &str) -> Result<(), std::io::Error>
+where
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    use tokio::io::AsyncWriteExt as _;
+    writer.write_all(line.as_bytes()).await?;
+    writer.write_all(b"\n").await?;
+    writer.flush().await
+}

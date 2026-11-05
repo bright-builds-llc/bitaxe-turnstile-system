@@ -2,7 +2,10 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use ring::hmac;
 use sqlx::PgPool;
 
-use super::{StratumLeaseContext, StratumSessionConfig, StratumSessionCredentials, StratumV1Error};
+use super::{
+    StratumLeaseContext, StratumSessionConfig, StratumSessionCredentials, StratumSessionExtension,
+    StratumV1Error,
+};
 use crate::progress::WorkSessionId;
 
 /// Context-local durable mapping for short-lived Worker credentials and extranonce space.
@@ -101,6 +104,61 @@ impl PostgresStratumSessionRegistry {
         }
     }
 
+    /// Extends an unexpired registration of the same lease without changing its secret.
+    ///
+    /// An older or shrinking extension, another lease, or an expired session is refused, and
+    /// an identical replay succeeds.
+    pub async fn extend(
+        &self,
+        extension: &StratumSessionExtension,
+        now_unix_seconds: u64,
+    ) -> Result<(), StratumV1Error> {
+        let context = extension.lease_context();
+        let maybe_session = sqlx::query_scalar::<_, String>(
+            "UPDATE pool_adapter.stratum_sessions AS session
+             SET issued_at_unix_seconds = $2 / 1000,
+                 issued_at_unix_milliseconds = $2,
+                 expires_at_unix_seconds = $3,
+                 last_monotonic_milliseconds = $6,
+                 renew_at_monotonic_milliseconds = $7,
+                 lease_expires_at_monotonic_milliseconds = $8
+             WHERE session.session_id = $1
+               AND session.lease_id = $4::uuid
+               AND session.continuity_id = $5
+               AND (
+                   (
+                       session.issued_at_unix_milliseconds < $2
+                       AND session.expires_at_unix_seconds > $9
+                       AND session.expires_at_unix_seconds <= $3
+                       AND session.last_monotonic_milliseconds <= $6
+                       AND session.lease_expires_at_monotonic_milliseconds <= $8
+                   )
+                   OR (
+                       session.issued_at_unix_milliseconds = $2
+                       AND session.expires_at_unix_seconds = $3
+                       AND session.last_monotonic_milliseconds = $6
+                       AND session.renew_at_monotonic_milliseconds = $7
+                       AND session.lease_expires_at_monotonic_milliseconds = $8
+                   )
+               )
+             RETURNING session.session_id",
+        )
+        .bind(extension.session_id().as_str())
+        .bind(to_i64(extension.issued_at_unix_milliseconds())?)
+        .bind(to_i64(extension.expires_at_unix_seconds())?)
+        .bind(context.lease_id())
+        .bind(context.continuity_id())
+        .bind(to_i64(context.last_monotonic_milliseconds())?)
+        .bind(to_i64(context.renew_at_monotonic_milliseconds())?)
+        .bind(to_i64(context.expires_at_monotonic_milliseconds())?)
+        .bind(to_i64(now_unix_seconds)?)
+        .fetch_optional(&self.pool)
+        .await?;
+        maybe_session
+            .map(|_| ())
+            .ok_or(StratumV1Error::UnextendableSession)
+    }
+
     pub async fn authenticate(
         &self,
         username: &str,
@@ -108,7 +166,8 @@ impl PostgresStratumSessionRegistry {
         now_unix_seconds: u64,
     ) -> Result<Option<AuthenticatedStratumSession>, StratumV1Error> {
         let maybe_row = sqlx::query(
-            "SELECT session_id, secret_verifier, issued_at_unix_seconds, expires_at_unix_seconds,
+            "SELECT session_id, secret_verifier, issued_at_unix_milliseconds,
+                    expires_at_unix_seconds,
                     lease_id::text AS lease_id, continuity_id,
                     last_monotonic_milliseconds, renew_at_monotonic_milliseconds,
                     lease_expires_at_monotonic_milliseconds
@@ -135,7 +194,7 @@ impl PostgresStratumSessionRegistry {
                 to_u64(row.try_get("renew_at_monotonic_milliseconds")?)?,
                 to_u64(row.try_get("lease_expires_at_monotonic_milliseconds")?)?,
             )?,
-            issued_at_unix_seconds: to_u64(row.try_get("issued_at_unix_seconds")?)?,
+            issued_at_unix_milliseconds: to_u64(row.try_get("issued_at_unix_milliseconds")?)?,
             expires_at_unix_seconds: expires_at,
         }))
     }
@@ -247,7 +306,7 @@ impl PostgresStratumSessionRegistry {
 pub struct AuthenticatedStratumSession {
     session_id: WorkSessionId,
     lease_context: StratumLeaseContext,
-    issued_at_unix_seconds: u64,
+    issued_at_unix_milliseconds: u64,
     expires_at_unix_seconds: u64,
 }
 
@@ -258,6 +317,29 @@ impl AuthenticatedStratumSession {
 
     pub fn expires_at_unix_seconds(&self) -> u64 {
         self.expires_at_unix_seconds
+    }
+
+    pub fn lease_context(&self) -> &StratumLeaseContext {
+        &self.lease_context
+    }
+
+    /// Applies this later registration of the same lease to a live session's config.
+    pub(super) fn renew_config(
+        self,
+        config: &mut StratumSessionConfig,
+    ) -> Result<(), StratumV1Error> {
+        if self.session_id != config.session_id
+            || self.lease_context.lease_id() != config.lease_context.lease_id()
+            || self.lease_context.continuity_id() != config.lease_context.continuity_id()
+            || self.issued_at_unix_milliseconds < config.issued_at_unix_milliseconds
+            || self.expires_at_unix_seconds < config.expires_at_unix_seconds
+        {
+            return Err(StratumV1Error::UnextendableSession);
+        }
+        config.lease_context = self.lease_context;
+        config.issued_at_unix_milliseconds = self.issued_at_unix_milliseconds;
+        config.expires_at_unix_seconds = self.expires_at_unix_seconds;
+        Ok(())
     }
 
     pub fn into_session_config(
@@ -278,7 +360,7 @@ impl AuthenticatedStratumSession {
             secret,
             upstream_username,
             upstream_secret,
-            issued_at_unix_seconds: self.issued_at_unix_seconds,
+            issued_at_unix_milliseconds: self.issued_at_unix_milliseconds,
             expires_at_unix_seconds: self.expires_at_unix_seconds,
         })
     }

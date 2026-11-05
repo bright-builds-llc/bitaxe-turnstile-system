@@ -20,6 +20,9 @@ use super::{
     WorkSessionDisconnectSink,
 };
 
+/// How often a live connection rereads its registration to pick up a renewed lease.
+const LIVE_SESSION_REFRESH_MILLISECONDS: u64 = 5_000;
+
 /// TCP adapter that executes one pure Stratum Session against one upstream connection.
 #[derive(Clone)]
 pub struct StratumTcpProxy {
@@ -214,11 +217,15 @@ impl StratumTcpProxy {
         mut session: StratumSession,
         connection_id: String,
     ) -> Result<(), StratumV1Error> {
+        let mut next_refresh_at =
+            current_unix_milliseconds()?.saturating_add(LIVE_SESSION_REFRESH_MILLISECONDS);
         loop {
             tokio::select! {
                 maybe_line = next_frame(&mut worker_reader, self.idle_timeout) => {
                     let Some(line) = maybe_line? else { return Ok(()); };
-                    let actions = session.worker_frame(&line, current_unix_seconds()?)?;
+                    let now = current_unix_milliseconds()?;
+                    self.refresh_when_due(&mut session, &mut next_refresh_at, now).await?;
+                    let actions = session.worker_frame_at(&line, now)?;
                     self.execute_actions(
                         actions,
                         &mut session,
@@ -229,7 +236,9 @@ impl StratumTcpProxy {
                 }
                 maybe_line = next_frame(&mut upstream_reader, self.idle_timeout) => {
                     let Some(line) = maybe_line? else { return Ok(()); };
-                    let actions = session.upstream_frame(&line, current_unix_seconds()?)?;
+                    let now = current_unix_milliseconds()?;
+                    self.refresh_when_due(&mut session, &mut next_refresh_at, now).await?;
+                    let actions = session.upstream_frame(&line, now / 1_000)?;
                     self.execute_actions(
                         actions,
                         &mut session,
@@ -239,6 +248,37 @@ impl StratumTcpProxy {
                     ).await?;
                 }
             }
+        }
+    }
+
+    /// Picks up a Renew's extension, periodically and whenever the session reaches expiry.
+    ///
+    /// Rotated or expired credentials no longer authenticate, so the session keeps its
+    /// current window and ends at that expiry as before.
+    async fn refresh_when_due(
+        &self,
+        session: &mut StratumSession,
+        next_refresh_at: &mut u64,
+        now_unix_milliseconds: u64,
+    ) -> Result<(), StratumV1Error> {
+        let now_unix_seconds = now_unix_milliseconds / 1_000;
+        if now_unix_milliseconds < *next_refresh_at
+            && now_unix_seconds < session.config.expires_at_unix_seconds
+        {
+            return Ok(());
+        }
+        *next_refresh_at = now_unix_milliseconds.saturating_add(LIVE_SESSION_REFRESH_MILLISECONDS);
+        let maybe_renewed = self
+            .sessions
+            .authenticate(
+                &session.config.username,
+                &session.config.secret,
+                now_unix_seconds,
+            )
+            .await?;
+        match maybe_renewed {
+            Some(renewed) => session.renew(renewed),
+            None => Ok(()),
         }
     }
 
@@ -393,4 +433,9 @@ where
 
 fn current_unix_seconds() -> Result<u64, StratumV1Error> {
     Ok(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs())
+}
+
+fn current_unix_milliseconds() -> Result<u64, StratumV1Error> {
+    u64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis())
+        .map_err(|_| StratumV1Error::InvalidSessionConfig)
 }
