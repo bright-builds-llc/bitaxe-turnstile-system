@@ -166,6 +166,51 @@ async fn renewed_session_credentials_rotate_without_allowing_generation_rollback
 }
 
 #[tokio::test]
+async fn same_second_regrant_rotates_without_allowing_generation_rollback()
+-> Result<(), Box<dyn Error>> {
+    // Arrange
+    let database = PostgresTestDatabase::start().await?;
+    let registry = PostgresStratumSessionRegistry::connect(database.database_url()).await?;
+    let issuer = StratumCredentialIssuer::new([19_u8; 32]);
+    let session_id = WorkSessionId::try_from("session_stratum_same_second_01".to_owned())?;
+    let regranted_lease = StratumLeaseContext::new(
+        "00000000-0000-4000-8000-000000000098".to_owned(),
+        "boot_stratum_test".to_owned(),
+        500,
+        20_500,
+        60_500,
+    )?;
+    let first = issuer.issue_at_milliseconds(
+        session_id.clone(),
+        test_lease_context()?,
+        1_000_100,
+        1_060,
+        2_000,
+    )?;
+    let regranted =
+        issuer.issue_at_milliseconds(session_id, regranted_lease, 1_000_600, 1_060, 2_000)?;
+    registry.register(&first).await?;
+
+    // Act
+    registry.register(&regranted).await?;
+    let replayed = registry.register(&regranted).await;
+    let old_authentication = registry
+        .authenticate(first.username(), first.secret(), 1_000)
+        .await?;
+    let rollback = registry.register(&first).await;
+
+    // Assert
+    assert_ne!(first.secret(), regranted.secret());
+    assert!(replayed.is_ok());
+    assert!(old_authentication.is_none());
+    assert!(matches!(
+        rollback,
+        Err(StratumV1Error::ConflictingSessionReplay)
+    ));
+    Ok(())
+}
+
+#[tokio::test]
 async fn delivery_retries_the_exact_event_until_the_authority_acknowledges()
 -> Result<(), Box<dyn Error>> {
     // Arrange

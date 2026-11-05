@@ -368,8 +368,6 @@ async fn resume_after_claimant_pause_returns_a_fresh_grant() -> Result<(), Box<d
     let fixture = Fixture::start().await?;
     let first = fixture.start_work().await?;
     fixture.pause().await?;
-    // The Pool Adapter registry rotates a session's credentials only in a later second.
-    tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
 
     // Act
     let resumed: Value = fixture

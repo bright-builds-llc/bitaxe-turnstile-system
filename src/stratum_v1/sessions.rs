@@ -35,11 +35,13 @@ impl PostgresStratumSessionRegistry {
                  session_id, username, secret_verifier, issued_at_unix_seconds,
                  expires_at_unix_seconds,
                  lease_id, continuity_id, last_monotonic_milliseconds,
-                 renew_at_monotonic_milliseconds, lease_expires_at_monotonic_milliseconds
-             ) VALUES ($1, $2, $3, $4, $5, $6::uuid, $7, $8, $9, $10)
+                 renew_at_monotonic_milliseconds, lease_expires_at_monotonic_milliseconds,
+                 issued_at_unix_milliseconds
+             ) VALUES ($1, $2, $3, $4, $5, $6::uuid, $7, $8, $9, $10, $11)
              ON CONFLICT (session_id) DO UPDATE
              SET secret_verifier = EXCLUDED.secret_verifier,
                  issued_at_unix_seconds = EXCLUDED.issued_at_unix_seconds,
+                 issued_at_unix_milliseconds = EXCLUDED.issued_at_unix_milliseconds,
                  expires_at_unix_seconds = EXCLUDED.expires_at_unix_seconds,
                  lease_id = EXCLUDED.lease_id,
                  continuity_id = EXCLUDED.continuity_id,
@@ -49,9 +51,9 @@ impl PostgresStratumSessionRegistry {
                      EXCLUDED.lease_expires_at_monotonic_milliseconds
              WHERE session.username = EXCLUDED.username
                AND (
-                   EXCLUDED.issued_at_unix_seconds > session.issued_at_unix_seconds
+                   EXCLUDED.issued_at_unix_milliseconds > session.issued_at_unix_milliseconds
                    OR (
-                       EXCLUDED.issued_at_unix_seconds = session.issued_at_unix_seconds
+                       EXCLUDED.issued_at_unix_milliseconds = session.issued_at_unix_milliseconds
                        AND session.secret_verifier = EXCLUDED.secret_verifier
                        AND session.expires_at_unix_seconds = EXCLUDED.expires_at_unix_seconds
                        AND session.lease_id = EXCLUDED.lease_id
@@ -86,6 +88,7 @@ impl PostgresStratumSessionRegistry {
                 .lease_context()
                 .expires_at_monotonic_milliseconds(),
         )?)
+        .bind(to_i64(credentials.issued_at_unix_milliseconds())?)
         .fetch_optional(&self.pool)
         .await;
         match maybe_session {

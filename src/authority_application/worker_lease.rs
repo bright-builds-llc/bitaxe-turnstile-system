@@ -10,7 +10,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use ring::digest;
 use thiserror::Error;
 
-use super::{AuthorityApplication, AuthorityApplicationError, claimant_key, current_unix_seconds};
+use super::{AuthorityApplication, AuthorityApplicationError, claimant_key};
 use crate::{
     challenge::ChallengeId,
     crypto_profile::{p256_jwk_thumbprint, verify_work_session_proof},
@@ -52,7 +52,8 @@ pub struct WorkerStratumRequest {
     pub session_id: WorkSessionId,
     pub lease: WorkLease,
     pub clock: WorkerClock,
-    pub now_unix_seconds: u64,
+    /// Authority wall-clock reading no earlier than `clock`'s, ordering credential generations.
+    pub now_unix_milliseconds: u64,
     pub lease_expires_at_unix_seconds: u64,
     pub challenge_expires_at_unix_seconds: u64,
 }
@@ -286,7 +287,8 @@ impl AuthorityApplication {
         control_session: &ControlSessionBinding,
     ) -> Result<WorkerLeaseGrant, AuthorityApplicationError> {
         let descriptor = self.repository.challenge(challenge_id).await?;
-        let now = current_unix_seconds()?;
+        let now_unix_milliseconds = current_unix_milliseconds()?;
+        let now = now_unix_milliseconds / 1_000;
         let lease_id = lease.lease_id().to_owned();
         let stratum = issuance
             .stratum
@@ -294,7 +296,7 @@ impl AuthorityApplication {
                 session_id,
                 lease,
                 clock,
-                now_unix_seconds: now,
+                now_unix_milliseconds,
                 lease_expires_at_unix_seconds: now
                     .checked_add(WORK_LEASE_MAX_DURATION_SECONDS)
                     .ok_or(AuthorityApplicationError::TimeOverflow)?,
@@ -346,13 +348,18 @@ fn claimant_session_id(
 fn authority_clock(
     control_session: &ControlSessionBinding,
 ) -> Result<WorkerClock, AuthorityApplicationError> {
+    Ok(WorkerClock::new(
+        control_session.as_str(),
+        current_unix_milliseconds()?,
+    )?)
+}
+
+fn current_unix_milliseconds() -> Result<u64, AuthorityApplicationError> {
     let milliseconds = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| AuthorityApplicationError::ClockUnavailable)?
         .as_millis();
-    let milliseconds =
-        u64::try_from(milliseconds).map_err(|_| AuthorityApplicationError::ClockUnavailable)?;
-    Ok(WorkerClock::new(control_session.as_str(), milliseconds)?)
+    u64::try_from(milliseconds).map_err(|_| AuthorityApplicationError::ClockUnavailable)
 }
 
 fn sha256_base64url(bytes: &[u8]) -> String {

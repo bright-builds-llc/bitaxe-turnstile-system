@@ -45,10 +45,10 @@ impl PoolAdapterWorkerStratum {
             request.lease.renew_at_monotonic_milliseconds(),
             request.lease.expires_at_monotonic_milliseconds(),
         )?;
-        let credentials = self.issuer.issue(
+        let credentials = self.issuer.issue_at_milliseconds(
             request.session_id,
             lease_context,
-            request.now_unix_seconds,
+            request.now_unix_milliseconds,
             request.lease_expires_at_unix_seconds,
             request.challenge_expires_at_unix_seconds,
         )?;

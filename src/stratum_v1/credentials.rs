@@ -81,6 +81,28 @@ impl StratumCredentialIssuer {
         lease_expires_at_unix_seconds: u64,
         challenge_expires_at_unix_seconds: u64,
     ) -> Result<StratumSessionCredentials, StratumV1Error> {
+        self.issue_at_milliseconds(
+            session_id,
+            lease_context,
+            now_unix_seconds
+                .checked_mul(1_000)
+                .ok_or(StratumV1Error::InvalidSessionConfig)?,
+            lease_expires_at_unix_seconds,
+            challenge_expires_at_unix_seconds,
+        )
+    }
+
+    /// Issues credentials whose generation is ordered to the millisecond, so a re-grant
+    /// within one second still supersedes the credentials it replaces.
+    pub fn issue_at_milliseconds(
+        &self,
+        session_id: WorkSessionId,
+        lease_context: StratumLeaseContext,
+        now_unix_milliseconds: u64,
+        lease_expires_at_unix_seconds: u64,
+        challenge_expires_at_unix_seconds: u64,
+    ) -> Result<StratumSessionCredentials, StratumV1Error> {
+        let now_unix_seconds = now_unix_milliseconds / 1_000;
         let expires_at_unix_seconds = bounded_session_expiry(
             &lease_context,
             now_unix_seconds,
@@ -97,7 +119,7 @@ impl StratumCredentialIssuer {
         let mut secret_input = b"BWG/0.1 Stratum secret\0".to_vec();
         secret_input.extend_from_slice(session_id.as_str().as_bytes());
         secret_input.push(0);
-        secret_input.extend_from_slice(&now_unix_seconds.to_be_bytes());
+        secret_input.extend_from_slice(&now_unix_milliseconds.to_be_bytes());
         secret_input.push(0);
         secret_input.extend_from_slice(&expires_at_unix_seconds.to_be_bytes());
         secret_input.push(0);
@@ -110,7 +132,7 @@ impl StratumCredentialIssuer {
             lease_context,
             username,
             secret,
-            issued_at_unix_seconds: now_unix_seconds,
+            issued_at_unix_milliseconds: now_unix_milliseconds,
             expires_at_unix_seconds,
         })
     }
@@ -123,7 +145,7 @@ pub struct StratumSessionCredentials {
     lease_context: StratumLeaseContext,
     username: String,
     secret: String,
-    issued_at_unix_seconds: u64,
+    issued_at_unix_milliseconds: u64,
     expires_at_unix_seconds: u64,
 }
 
@@ -149,7 +171,11 @@ impl StratumSessionCredentials {
     }
 
     pub fn issued_at_unix_seconds(&self) -> u64 {
-        self.issued_at_unix_seconds
+        self.issued_at_unix_milliseconds / 1_000
+    }
+
+    pub fn issued_at_unix_milliseconds(&self) -> u64 {
+        self.issued_at_unix_milliseconds
     }
 
     pub fn into_session_config(self) -> StratumSessionConfig {
@@ -162,7 +188,7 @@ impl StratumSessionCredentials {
             secret: self.secret,
             upstream_username,
             upstream_secret,
-            issued_at_unix_seconds: self.issued_at_unix_seconds,
+            issued_at_unix_seconds: self.issued_at_unix_milliseconds / 1_000,
             expires_at_unix_seconds: self.expires_at_unix_seconds,
         }
     }
