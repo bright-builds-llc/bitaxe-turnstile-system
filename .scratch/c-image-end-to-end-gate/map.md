@@ -5,7 +5,7 @@ production browser path. Planning only so far.
 
 | Ticket | Type | Status | Blocked by |
 | --- | --- | --- | --- |
-| [01](issues/01-authority-worker-lease-grants.md) Authority issues signed Worker Lease grants and renewals | task | ready-for-agent | None |
+| [01](issues/01-authority-worker-lease-grants.md) Authority issues signed Worker Lease grants and renewals | task | needs-info | None |
 | [02](issues/02-c-image-onboarding-contract.md) Agree the C image's onboarding contract | grilling | ready-for-human | None |
 | [03](issues/03-c-image-onboarding-commands.md) C image serves onboarding inspection and install | task | ready-for-agent | 02 |
 | [04](issues/04-web-serial-onboarding-device.md) Web Serial onboarding device | task | ready-for-agent | 02 |
