@@ -42,10 +42,10 @@ side through a test authority, not the production path.
 
 ## Gaps found while planning
 
-- No Authority HTTP route returns a `WorkerLeaseGrant` on Start or Resume, or
-  serves Renew (`src/authority/http.rs`, `openapi/bwg-0.1.json`). The headless
-  transport seam expects both, and the Work Lease Authority signer exists only in
-  `scripts/worker-development-authority.ts`. Ticket 01.
+- No Authority HTTP route returned a `WorkerLeaseGrant` on Start or Resume, or
+  served Renew. Ticket 01 added the claimant Work Session routes (ADR-0106).
+  Claimant Pool Selection and Stratum session renewal remain at the Pool Adapter,
+  which is Ticket 10.
 - Onboarding has only a simulated `BitaxeOnboardingDevice`. The C image reports
   no settings-schema version, settings readability or A/B rollback facts, and its
   build leaves app rollback off. Tickets 02 to 04.
@@ -53,6 +53,7 @@ side through a test authority, not the production path.
 
 ## Tickets
 
-Dependency order: 01 and 02 start now; 03 and 04 follow 02; 05 follows 03 and
-04; 06 follows 01 and 04; 07 follows 05 and 06; 08 follows 07; 09 follows 08.
+Dependency order: 01 is resolved; 02 and 10 start now; 03 and 04 follow 02; 05
+follows 03 and 04; 06 follows 04 and 10; 07 follows 05 and 06; 08 follows 07; 09
+follows 08.
 See [map.md](map.md).

@@ -2,7 +2,7 @@
 
 Type: task
 Status: ready-for-agent
-Blocked by: 01, 04
+Blocked by: 04, 10
 
 ## Objective
 

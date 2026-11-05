@@ -1,7 +1,7 @@
 # Authority issues signed Worker Lease grants and renewals
 
 Type: task
-Status: needs-info
+Status: resolved
 Blocked by: None
 
 ## Objective
@@ -16,16 +16,38 @@ challenge and not from a local signing CLI.
 
 - [x] Confirm no other seam already does this (Core Tickets 10, 15 and 21, the
   headless and Worker Controller protocol docs), and record what was found.
-- [ ] On Start and Resume for a possession-bound Worker, return a grant whose
+- [x] On Start and Resume for a possession-bound Worker, return a grant whose
   `stratum` names the Pool Adapter's lease-scoped Stratum V1 credentials, signed
   under ADR-0093: the authorizationless request digest with the active Challenge
   binding, the control-session digest, and a durable monotonic sequence per key.
-- [ ] Add a Renew route on the same lease, refused after Pause, Cancel, expiry or
+- [x] Add a Renew route on the same lease, refused after Pause, Cancel, expiry or
   lost continuity.
-- [ ] Load the Work Lease Authority key as a deployment secret, separate from the
+- [x] Load the Work Lease Authority key as a deployment secret, separate from the
   Gate Pass and Update Authority keys. Tests and fixtures use test keys only.
-- [ ] Update OpenAPI, the headless client doc and conformance vectors, and run
+- [x] Update OpenAPI, the headless client doc and conformance vectors, and run
   `bun run verify`.
+
+## Answer
+
+ADR-0106 and commits `cb77401` and `41e3727`. Five claimant routes sit under
+`/v0/challenges/{challenge_id}/work-session` (Start, Resume, Renew, Pause and
+Cancel), each authenticated by a single-use `bwg-work-session-proof+jwt` that
+binds the exact body. Start and Resume return a signed Controller 0.4 grant with
+lease-scoped Stratum V1 credentials from a Pool Adapter port. Renew returns a
+signed renewal. Each key's sequence comes from the durable row in migration 0014.
+
+The Rust signer reproduces the TypeScript signer's bytes on the shared vectors
+in `conformance/bwg-worker-deployment-trust-0.2/authority-signer-vectors.json`,
+which use the public RFC 8032 test key. `tests/claimant_work_session.rs` covers:
+- Renew refused after Pause, and under another control session;
+- Resume refused after Cancel;
+- replayed and body-swapped proofs refused;
+- the sequence continuing after an Authority restart;
+- a Gate Pass key refused as the lease key;
+- a retried Start after a grant that never left the Authority.
+
+Expiry ends Renew through the existing session rules, which the lifecycle tests
+cover. These routes don't test it again.
 
 ## Comments
 
@@ -54,3 +76,10 @@ sequence lives in a new PostgreSQL table, and the key loads from its own
 deployment secret. A new ADR records the claimant routes. Claimant Pause and
 Cancel stay open: either the Relying Service proxies them or these routes add
 them.
+
+2026-11-05: The owner chose claimant routes, Pause and Cancel included. One part
+of the proposal changed: Pool Selection stayed off the Authority. Its raw payout
+choice is documented as accepted only at the Pool Adapter boundary
+(`src/pool_offer/selection.rs`), so Start still needs a selection consented
+there. That intake, and two other Pool Adapter limits found here, moved to
+Ticket 10.
