@@ -109,4 +109,4 @@ The network-block fast path and composed outage/reorg evidence are documented in
 
 ## License
 
-Project-authored protocols, services, SDKs, adapters, and firmware additions are licensed under the [MIT License](./LICENSE). Replaceable external pool engines retain their own disclosed licenses.
+Project-authored protocols, services, SDKs, and adapters are licensed under the [MIT License](./LICENSE). Reference Firmware lives in [`bitaxe-esp-miner-c`](https://github.com/bright-builds-llc/bitaxe-esp-miner-c), a fork of upstream ESP-Miner that is GPL-3.0 as a whole ([ADR-0105](./docs/adr/0105-reference-firmware-is-the-c-fork-of-esp-miner.md)). Replaceable external pool engines retain their own disclosed licenses.
