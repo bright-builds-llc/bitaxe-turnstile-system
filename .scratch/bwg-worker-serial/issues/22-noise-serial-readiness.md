@@ -1,8 +1,8 @@
 # Fixed-serial Noise diagnostic readiness
 
 Type: task
-Status: claimed
-Blocked by: Firmware bounded crypto cancellation and combined-owner readiness
+Status: resolved
+Blocked by: None
 
 ## Objective
 
@@ -18,9 +18,9 @@ No hardware, mining, lease signing or historical acceptance changes.
 - [x] Add the three Controller methods with exact-pair opt-in and possession checks.
 - [x] Preserve consumed admission after ambiguity and exclude competing effects.
 - [x] Verify production serial dispatch, correlation and privacy with fixtures.
-- [ ] Complete same-page before/candidate/recovery browser integration.
-- [ ] Join the actual firmware implementation and independent host fixture.
-- [ ] Complete coordinated publication and required verification.
+- [x] Complete same-page before/candidate/recovery browser integration (v2 below).
+- [x] Join the actual firmware implementation and independent host fixture.
+- [x] Complete coordinated publication and required verification.
 
 ## Progress | 2026-09-16
 
@@ -67,8 +67,8 @@ Controller methods select v2 replies explicitly and retain query-v1 payloads.
 - [x] Freeze before/candidate exact identity configurations on one loaded page.
 - [x] Preserve the original private baseline through normal close/reconnect.
 - [x] Add private possession/Start/status/cancel helpers without mining routes.
-- [ ] Join production firmware and host fixture/evaluator composition.
-- [ ] Complete coordinated verification and publication before hardware.
+- [x] Join production firmware and host fixture/evaluator composition.
+- [x] Complete coordinated verification and publication before hardware.
 
 The optional dedicated recovery route remains unavailable. A fresh page cannot
 begin as a candidate or import a preservation baseline; the first before-mode
@@ -117,3 +117,25 @@ as failure evidence. Its focused unchanged rerun and the full test-stage retry
 pass (352 tests, two existing ignored), followed by passing headless conformance.
 The new controller regression also reproduces `noise_possession` against the
 published `953fbcf` source before passing on this correction.
+
+## Answer
+
+The Gate's Noise parser and paired Controller client met real firmware twice.
+The Rust 205 qualified serial Noise under `str005-noise-serial-v2` on
+2026-09-16, with Gate `5dc5ed6`. The v2 amendment had already dropped the
+five-second cleanup bound this ticket was blocked on. The C fork implements the
+same three `noise_diagnostic_*` commands with v2 start and status replies, and
+on its 205 test image the Gate's `noiseDiagnosticStart` and
+`noiseDiagnosticStatus`, from `web/webserial-worker-controller.ts`, ran in
+Chrome's Web Serial and were accepted by the Rust fixture's protocol judge. A
+wrong authority was rejected and a cancel was cancelled, both through the
+firmware's harness. Nothing is left for the Gate.
+
+## Comments
+
+2026-11-05: Resolved after the Reference Firmware switch (ADR-0105). The Rust
+readiness task is retired, and the C fork covers what it waited for, with these
+non-claims: a test authority, the 205 only, the firmware's own attempt page
+rather than this repository's acceptance page, and a cancel before the socket
+opened, so no cancel during ElligatorSwift work. Noise is a diagnostic on the
+pool link and no production Gate path needs it.

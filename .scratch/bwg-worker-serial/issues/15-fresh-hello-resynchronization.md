@@ -1,7 +1,7 @@
 # Fresh Hello resynchronization
 
 Type: task
-Status: claimed
+Status: resolved
 Blocked by: None
 
 ## Objective
@@ -17,7 +17,17 @@ possession, receive counters, deadlines and stream/lock cleanup.
 - [x] Reproduce a complete stale control reply before fresh Hello.
 - [x] Implement bounded bootstrap handling and adversarial regressions.
 - [x] Run full Gate verification and review the exact consumer source.
-- [ ] Bind firmware-owned no-mining hardware evidence; no mining authority here.
+- [x] ~~Bind firmware-owned no-mining hardware evidence~~: retired with the Rust
+  firmware task; the hardware criterion moves to
+  [`c-image-end-to-end-gate` Ticket 08](../../c-image-end-to-end-gate/issues/08-interruptions-and-negatives.md).
+
+## Answer
+
+The Gate's part is done and published: bounded fresh-Hello bootstrap that
+validates and discards stale Controller and possession replies, counted by
+`helloRecovery.discardedReplies`. Whether a real board ever leaves a complete
+stale reply before a fresh Hello is unproven on any firmware, and that check
+now belongs to the C image.
 
 ## Comments
 
@@ -150,3 +160,13 @@ The user requested source commit/push after these gates. This software revision
 is ready for publication and a browser rebuild stamped with its committed HEAD.
 Hardware remains governed by the firmware-owned successor contract; no new
 device execution, complete stale-reply recovery or parity promotion is claimed.
+
+2026-11-05: Resolved after the Reference Firmware switch (ADR-0105). The Rust
+task this waited on is retired. Its last run, the 205's live Hello recovery of
+2026-09-11, recovered on its first reconnect but skipped no control reply, and
+recorded stale-reply hardware coverage as false. The C fork's link starts a
+fresh Hello on a new line after partial output, and its evidence shows fresh
+Hellos after a pulled cable on the 601, but it records no
+`helloRecovery.discardedReplies` count, so it doesn't cover the criterion
+either. No Gate change is needed. A positive count on the C image is a check in
+`c-image-end-to-end-gate` Ticket 08.

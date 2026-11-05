@@ -110,3 +110,11 @@ The firmware repository's serial restoration campaign (BWG-007 attempts 008 and
 009) supplies the restoration evidence for this effort. Core Ticket 23's
 "BWG-007 serial restoration evidence" section maps it item by item. Ticket 23
 stays open for its withheld-authorization, other-identity and BIP 23 items.
+
+## Reference Firmware switch — 2026-11-05
+
+ADR-0105 makes the C fork of ESP-Miner the Reference Firmware. [Ticket 15](issues/15-fresh-hello-resynchronization.md)
+is resolved, its stale-reply hardware check moved to
+[`c-image-end-to-end-gate`](../c-image-end-to-end-gate/spec.md) Ticket 08.
+[Ticket 22](issues/22-noise-serial-readiness.md) is resolved, since the Gate's
+Noise client ran against both firmwares' producers.
