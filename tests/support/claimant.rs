@@ -115,6 +115,29 @@ impl Claimant {
         )
     }
 
+    #[allow(dead_code)]
+    pub fn sign_work_session_proof(
+        &self,
+        route_url: &str,
+        challenge_id: &str,
+        proof_id: &str,
+        issued_at: u64,
+        body: &[u8],
+    ) -> Result<String, Box<dyn Error>> {
+        let body_digest = ring::digest::digest(&ring::digest::SHA256, body);
+        self.sign(
+            "bwg-work-session-proof+jwt",
+            json!({
+                "jti": proof_id,
+                "htm": "POST",
+                "htu": route_url,
+                "iat": issued_at,
+                "challenge_id": challenge_id,
+                "request_sha256": URL_SAFE_NO_PAD.encode(body_digest.as_ref())
+            }),
+        )
+    }
+
     fn sign(&self, proof_type: &str, payload: serde_json::Value) -> Result<String, Box<dyn Error>> {
         let protected = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({
             "typ": proof_type,

@@ -128,6 +128,12 @@ impl AuthorityPublicConfig {
     pub(crate) fn authority_keys(&self) -> &AuthorityKeySet {
         &self.authority_keys
     }
+
+    /// Claimant Work Session route prefix, which isn't part of the discovery document.
+    pub(crate) fn work_session_url_template(&self) -> String {
+        let base_url = self.public_base_url.as_str().trim_end_matches('/');
+        format!("{base_url}/v0/challenges/{{challenge_id}}/work-session")
+    }
 }
 
 /// A validated, versioned public Gate Authority discovery document.

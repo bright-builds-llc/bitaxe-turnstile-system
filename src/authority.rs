@@ -22,9 +22,11 @@ use http::ApiError;
 pub(crate) use http::CreateChallengeRequest;
 pub use http::router;
 
+use crate::authority_application::WorkSessionOperation;
 pub use crate::authority_application::{
     AuthorityApplication, AuthorityApplicationError, IssuanceProcessingOutcome, IssuanceWorkerId,
-    SimulatedPoolAdapter,
+    SimulatedPoolAdapter, WorkerLeaseIssuance, WorkerStratumCredentialPort, WorkerStratumRequest,
+    WorkerStratumUnavailable,
 };
 pub use crate::authority_descriptor::AuthorityPublicConfig;
 
@@ -194,6 +196,7 @@ pub struct Config {
     authentication_throttle: AuthenticationThrottle,
     authority_keys: AuthorityKeySet,
     maybe_signer: Option<AuthoritySigningKey>,
+    work_session_url_template: String,
 }
 
 impl Config {
@@ -221,6 +224,7 @@ impl Config {
         }
 
         let authority_keys = public.authority_keys().clone();
+        let work_session_url_template = public.work_session_url_template();
         let descriptor = public.descriptor();
         let jwks = descriptor.jwks();
         Ok(Self {
@@ -230,6 +234,7 @@ impl Config {
             authentication_throttle: AuthenticationThrottle::default(),
             authority_keys,
             maybe_signer: None,
+            work_session_url_template,
         })
     }
 
@@ -260,6 +265,19 @@ impl Config {
 
     pub(crate) fn issuance_lookup_url(&self, challenge_id: &ChallengeId) -> String {
         self.descriptor.gate_pass_url(challenge_id.as_str())
+    }
+
+    pub(crate) fn work_session_url(
+        &self,
+        challenge_id: &ChallengeId,
+        operation: WorkSessionOperation,
+    ) -> String {
+        format!(
+            "{}/{}",
+            self.work_session_url_template
+                .replace("{challenge_id}", challenge_id.as_str()),
+            operation.path_segment()
+        )
     }
 
     fn signed_pool_offers(

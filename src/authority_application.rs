@@ -43,8 +43,14 @@ use crate::{
 mod lifecycle_events;
 mod pool_adapter;
 mod trusted_consent;
+mod worker_lease;
 pub use pool_adapter::SimulatedPoolAdapter;
 use trusted_consent::authority_origin;
+pub(crate) use worker_lease::{ClaimantWorkSessionRequest, WorkSessionOperation};
+pub use worker_lease::{
+    WorkerLeaseIssuance, WorkerStratumCredentialPort, WorkerStratumRequest,
+    WorkerStratumUnavailable,
+};
 
 const PROGRESS_CHANNEL_CAPACITY: usize = 32;
 const SIGNING_LEASE_SECONDS: u64 = 30;
@@ -60,6 +66,7 @@ pub struct AuthorityApplication {
     lifecycle_channels: Arc<Mutex<HashMap<ChallengeId, broadcast::Sender<ChallengeLifecycle>>>>,
     lifecycle_expiry_deadlines: Arc<Mutex<HashMap<ChallengeId, u64>>>,
     trusted_consent_verifier: Arc<dyn TrustedConsentWebauthnVerifier>,
+    maybe_worker_leases: Option<WorkerLeaseIssuance>,
 }
 
 impl AuthorityApplication {
@@ -97,6 +104,7 @@ impl AuthorityApplication {
             lifecycle_channels: Arc::new(Mutex::new(HashMap::new())),
             lifecycle_expiry_deadlines: Arc::new(Mutex::new(HashMap::new())),
             trusted_consent_verifier,
+            maybe_worker_leases: None,
         })
     }
 
@@ -534,6 +542,16 @@ pub enum AuthorityApplicationError {
     ReplayedIssuanceProof,
     #[error("Gate Pass issuance bytes have passed their Retention Floor")]
     IssuanceRetired,
+    #[error("Worker Lease issuance is not configured")]
+    WorkLeaseUnavailable,
+    #[error("Work Lease Authority sequence is exhausted")]
+    WorkLeaseSequenceExhausted,
+    #[error("Work Lease Authority key must not be a Gate Pass key")]
+    WorkLeaseKeyReused,
+    #[error("Pool Adapter could not issue Worker Stratum credentials")]
+    WorkerStratumUnavailable,
+    #[error(transparent)]
+    WorkLeaseAuthorization(crate::work_lease_authorization::WorkLeaseAuthorizationError),
     #[error("Gate Authority persistence failed")]
     Persistence(#[source] Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
@@ -590,6 +608,9 @@ impl From<AuthorityPersistenceError> for AuthorityApplicationError {
             }
             AuthorityPersistenceError::TrustedConsentChallengeUnavailable => {
                 Self::TrustedConsent(TrustedConsentError::CeremonyFailed)
+            }
+            AuthorityPersistenceError::WorkLeaseSequenceExhausted => {
+                Self::WorkLeaseSequenceExhausted
             }
             AuthorityPersistenceError::InvalidProgress(error) => Self::Progress(error),
             AuthorityPersistenceError::InvalidLifecycle(error) => Self::Lifecycle(error),

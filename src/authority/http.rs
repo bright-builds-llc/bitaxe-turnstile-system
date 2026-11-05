@@ -30,6 +30,8 @@ use crate::{
     trusted_consent::{TrustedConsentBeginRequest, TrustedConsentCeremonyId, TrustedConsentError},
 };
 
+mod work_session;
+
 #[derive(Clone)]
 struct AuthorityState {
     application: AuthorityApplication,
@@ -106,6 +108,7 @@ pub fn router(application: AuthorityApplication) -> Router {
             "/v0/trusted-consent.js",
             get(trusted_consent_surface_script),
         )
+        .merge(work_session::routes())
         .with_state(AuthorityState { application })
 }
 
@@ -392,6 +395,7 @@ pub(super) enum ApiError {
     TooManyAuthenticationAttempts,
     PolicyNotPermitted,
     CancelConfirmationRequired,
+    InvalidWorkSessionRequest,
     InvalidChallenge(ChallengeError),
     InternalTime,
     InternalState,
@@ -435,6 +439,9 @@ impl IntoResponse for ApiError {
             Self::PolicyNotPermitted => (StatusCode::FORBIDDEN, "policy_not_permitted"),
             Self::CancelConfirmationRequired => {
                 (StatusCode::BAD_REQUEST, "cancel_confirmation_required")
+            }
+            Self::InvalidWorkSessionRequest => {
+                (StatusCode::BAD_REQUEST, "invalid_work_session_request")
             }
             Self::InvalidChallenge(ChallengeError::UnknownActionPolicy) => {
                 (StatusCode::BAD_REQUEST, "unknown_action_policy")
@@ -492,11 +499,27 @@ impl IntoResponse for ApiError {
                 StatusCode::SERVICE_UNAVAILABLE,
                 "pool_offer_signing_unavailable",
             ),
+            Self::InvalidApplication(
+                AuthorityApplicationError::WorkLeaseUnavailable
+                | AuthorityApplicationError::WorkLeaseSequenceExhausted
+                | AuthorityApplicationError::WorkerStratumUnavailable,
+            ) => (StatusCode::SERVICE_UNAVAILABLE, "worker_lease_unavailable"),
+            Self::InvalidApplication(AuthorityApplicationError::PoolSelectionRequired) => {
+                (StatusCode::CONFLICT, "pool_selection_required")
+            }
+            Self::InvalidApplication(AuthorityApplicationError::TrustedConsentRequired) => {
+                (StatusCode::FORBIDDEN, "trusted_consent_required")
+            }
+            Self::InvalidApplication(
+                AuthorityApplicationError::InvalidTrustedConsentReceipt
+                | AuthorityApplicationError::TrustedConsentReceiptReplayed,
+            ) => (StatusCode::FORBIDDEN, "invalid_trusted_consent_receipt"),
             Self::InvalidApplication(AuthorityApplicationError::ChallengeControlNotPermitted) => {
                 (StatusCode::FORBIDDEN, "challenge_control_not_permitted")
             }
             Self::InvalidApplication(
                 AuthorityApplicationError::ForbiddenLifecycleTransition
+                | AuthorityApplicationError::UnknownWorkSession
                 | AuthorityApplicationError::WrongWorkLease
                 | AuthorityApplicationError::WorkerContinuityLost
                 | AuthorityApplicationError::WorkLeaseExpired,

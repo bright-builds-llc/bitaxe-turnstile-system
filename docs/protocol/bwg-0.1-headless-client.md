@@ -61,6 +61,11 @@ Possession-bound deployments may separately supply `WorkerLeaseAuthorizationCont
 The client obtains its Device Identity-bound digest before Authority Start/resume and the active
 context before renewal, then passes only that digest to the transport's authorization seam. The
 stable `WorkerController` interface does not expose the context or change shape.
+A transport reaches the Authority through the claimant Work Session routes in
+[`bwg-0.1-lifecycle.md`](./bwg-0.1-lifecycle.md): Start and Resume return the grant to forward, and
+Renew returns the renewal. The Rust Authority signer and this package's signer produce identical
+authorizations, which `conformance/bwg-worker-deployment-trust-0.2/authority-signer-vectors.json`
+proves under a public RFC 8032 test key.
 The complete wire and simulator profile is documented in
 [`bwg-0.1-worker-controller.md`](./bwg-0.1-worker-controller.md).
 

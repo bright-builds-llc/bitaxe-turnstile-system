@@ -242,6 +242,140 @@
         }
       }
     },
+    "/v0/challenges/{challenge_id}/work-session/start": {
+      "post": {
+        "summary": "Start the claimant Work Session lease and return a signed device grant",
+        "parameters": [
+          { "$ref": "#/components/parameters/ChallengeId" },
+          { "$ref": "#/components/parameters/WorkSessionProof" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/StartWorkSessionRequest" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Controller 0.4 grant with lease-scoped Stratum V1 credentials",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/WorkerLeaseGrant" } }
+            }
+          },
+          "400": { "description": "Request body is malformed" },
+          "401": { "$ref": "#/components/responses/InvalidClaimantProof" },
+          "403": { "description": "Trusted Consent receipt is required or invalid" },
+          "409": { "description": "Pool Selection is missing or the session cannot start a lease" },
+          "503": { "description": "Worker Lease issuance or the Pool Adapter is unavailable" }
+        }
+      }
+    },
+    "/v0/challenges/{challenge_id}/work-session/resume": {
+      "post": {
+        "summary": "Confirm the paused session's restoration and return a fresh signed grant",
+        "parameters": [
+          { "$ref": "#/components/parameters/ChallengeId" },
+          { "$ref": "#/components/parameters/WorkSessionProof" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ResumeWorkSessionRequest" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Controller 0.4 grant for a new lease",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/WorkerLeaseGrant" } }
+            }
+          },
+          "400": { "description": "Request body is malformed" },
+          "401": { "$ref": "#/components/responses/InvalidClaimantProof" },
+          "409": { "description": "The session is not paused or the challenge is terminal" },
+          "503": { "description": "Worker Lease issuance or the Pool Adapter is unavailable" }
+        }
+      }
+    },
+    "/v0/challenges/{challenge_id}/work-session/renew": {
+      "post": {
+        "summary": "Renew the exact active lease under the same control session",
+        "parameters": [
+          { "$ref": "#/components/parameters/ChallengeId" },
+          { "$ref": "#/components/parameters/WorkSessionProof" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/RenewWorkSessionRequest" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Controller 0.4 renewal",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/WorkerLeaseRenewal" } }
+            }
+          },
+          "400": { "description": "Request body is malformed" },
+          "401": { "$ref": "#/components/responses/InvalidClaimantProof" },
+          "409": { "description": "The lease ended by Pause, Cancel, expiry or lost continuity" },
+          "503": { "description": "Worker Lease issuance or the Pool Adapter is unavailable" }
+        }
+      }
+    },
+    "/v0/challenges/{challenge_id}/work-session/pause": {
+      "post": {
+        "summary": "Pause the challenge on the claimant's own authority",
+        "parameters": [
+          { "$ref": "#/components/parameters/ChallengeId" },
+          { "$ref": "#/components/parameters/WorkSessionProof" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/PauseChallengeRequest" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Paused lifecycle",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ChallengeLifecycle" } }
+            }
+          },
+          "400": { "description": "Request body is malformed" },
+          "401": { "$ref": "#/components/responses/InvalidClaimantProof" },
+          "409": { "description": "Challenge is terminal or otherwise cannot be paused" }
+        }
+      }
+    },
+    "/v0/challenges/{challenge_id}/work-session/cancel": {
+      "post": {
+        "summary": "Terminally cancel the challenge on the claimant's own authority",
+        "parameters": [
+          { "$ref": "#/components/parameters/ChallengeId" },
+          { "$ref": "#/components/parameters/WorkSessionProof" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/CancelChallengeRequest" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Terminal cancelled lifecycle",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ChallengeLifecycle" } }
+            }
+          },
+          "400": { "description": "Request body is malformed" },
+          "401": { "$ref": "#/components/responses/InvalidClaimantProof" },
+          "409": { "description": "Challenge can no longer be cancelled" }
+        }
+      }
+    },
     "/account-creation/challenge": {
       "post": {
         "summary": "Create the reference Standard-policy challenge",
@@ -337,6 +471,13 @@
         "in": "path",
         "required": true,
         "schema": { "type": "string", "pattern": "^action_[A-Za-z0-9_-]+$" }
+      },
+      "WorkSessionProof": {
+        "name": "bwg-claimant-proof",
+        "in": "header",
+        "required": true,
+        "description": "Claimant-signed bwg-work-session-proof+jwt; see ClaimantWorkSessionProofClaims",
+        "schema": { "type": "string", "pattern": "^[^.]+\\.[^.]+\\.[^.]+$" }
       },
       "ClaimantProof": {
         "name": "bwg-claimant-proof",
@@ -694,6 +835,95 @@
             }
           }
         ]
+      },
+      "ClaimantWorkSessionProofClaims": {
+        "allOf": [
+          { "$ref": "#/components/schemas/RequestProofClaims" },
+          {
+            "type": "object",
+            "required": ["challenge_id", "request_sha256"],
+            "properties": {
+              "htm": { "const": "POST" },
+              "challenge_id": { "type": "string" },
+              "request_sha256": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }
+            }
+          }
+        ]
+      },
+      "StartWorkSessionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["control_session_binding_sha256"],
+        "properties": {
+          "control_session_binding_sha256": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" },
+          "trusted_consent_receipt": { "type": "string" }
+        }
+      },
+      "ResumeWorkSessionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["control_session_binding_sha256"],
+        "properties": {
+          "control_session_binding_sha256": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }
+        }
+      },
+      "RenewWorkSessionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["control_session_binding_sha256", "lease_id"],
+        "properties": {
+          "control_session_binding_sha256": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" },
+          "lease_id": { "type": "string" }
+        }
+      },
+      "WorkerLeaseGrant": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "protocolVersion",
+          "leaseId",
+          "challengeId",
+          "authorization",
+          "durationMilliseconds",
+          "renewAfterMilliseconds",
+          "stratum"
+        ],
+        "properties": {
+          "protocolVersion": { "const": "bwg-worker-controller/0.4" },
+          "leaseId": { "type": "string" },
+          "challengeId": { "type": "string" },
+          "authorization": { "type": "string", "maxLength": 512 },
+          "durationMilliseconds": { "const": 60000 },
+          "renewAfterMilliseconds": { "const": 20000 },
+          "stratum": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["endpoint", "username", "password"],
+            "properties": {
+              "endpoint": { "type": "string", "pattern": "^stratum\\+tcp://[A-Za-z0-9.-]+:[1-9][0-9]*/$" },
+              "username": { "type": "string" },
+              "password": { "type": "string" }
+            }
+          }
+        }
+      },
+      "WorkerLeaseRenewal": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "protocolVersion",
+          "leaseId",
+          "authorization",
+          "durationMilliseconds",
+          "renewAfterMilliseconds"
+        ],
+        "properties": {
+          "protocolVersion": { "const": "bwg-worker-controller/0.4" },
+          "leaseId": { "type": "string" },
+          "authorization": { "type": "string", "maxLength": 512 },
+          "durationMilliseconds": { "const": 60000 },
+          "renewAfterMilliseconds": { "const": 20000 }
+        }
       },
       "RequestProofClaims": {
         "type": "object",

@@ -181,7 +181,7 @@ pub fn verify_outcome_proof(compact_jws: &str) -> Result<VerifiedOutcomeProof, C
     })
 }
 
-fn verify_claimant_jws<'a>(
+pub(super) fn verify_claimant_jws<'a>(
     compact_jws: &'a str,
     expected_type: &str,
 ) -> Result<(CompactJws<'a>, String), CryptoProfileError> {

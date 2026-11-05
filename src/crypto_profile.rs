@@ -9,12 +9,16 @@ mod claimant_proof;
 mod signing;
 #[cfg(test)]
 pub(crate) mod test_support;
+mod work_session_proof;
 pub use claimant_proof::{
     VerifiedDpop, VerifiedIssuanceProof, VerifiedOutcomeProof, verify_dpop, verify_issuance_proof,
     verify_outcome_proof,
 };
 pub use signing::{AuthoritySigningKey, GatePassClaimsInput, GatePassConfirmationInput};
 pub(crate) use signing::{GatePassClaimsSeed, GatePassClaimsTemplate};
+pub use work_session_proof::{
+    VerifiedWorkSessionProof, WORK_SESSION_PROOF_TYPE, verify_work_session_proof,
+};
 
 /// Mandatory fully specified JOSE algorithm for BWG Gate Passes.
 pub const GATE_PASS_JWS_ALGORITHM: &str = "Ed25519";
@@ -54,6 +58,10 @@ impl AuthorityJwk {
     /// Returns the case-sensitive key identifier used during rotation.
     pub fn kid(&self) -> &str {
         &self.kid
+    }
+
+    pub(crate) fn public_key(&self) -> &[u8] {
+        &self.public_key
     }
 
     fn to_wire(&self) -> AuthorityJwkWire {
@@ -463,6 +471,10 @@ pub enum CryptoProfileError {
     InvalidOutcomeProofType,
     #[error("Claimant Outcome Proof claims are invalid")]
     InvalidOutcomeProofClaims,
+    #[error("Claimant Work Session Proof type is invalid")]
+    InvalidWorkSessionProofType,
+    #[error("Claimant Work Session Proof claims are invalid")]
+    InvalidWorkSessionProofClaims,
     #[error("JWS algorithm is unknown")]
     UnknownAlgorithm,
     #[error("symmetric JWS algorithms are forbidden")]

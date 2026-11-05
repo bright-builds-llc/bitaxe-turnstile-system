@@ -395,6 +395,12 @@ pub(crate) trait AuthorityRepository: Send + Sync {
         &self,
         now_unix_seconds: u64,
     ) -> Result<u64, AuthorityPersistenceError>;
+
+    /// Durably allocates the next Work Lease authorization sequence for one key.
+    async fn allocate_work_lease_authorization_sequence(
+        &self,
+        key_id: &str,
+    ) -> Result<u64, AuthorityPersistenceError>;
 }
 
 #[derive(Debug, Error)]
@@ -445,6 +451,8 @@ pub(crate) enum AuthorityPersistenceError {
     TrustedConsentReceiptReplayed,
     #[error("Work Challenge is no longer awaiting Trusted Consent")]
     TrustedConsentChallengeUnavailable,
+    #[error("Work Lease Authority sequence is exhausted for this key")]
+    WorkLeaseSequenceExhausted,
     #[error("persisted Authority data is invalid")]
     InvalidPersistedData,
     #[error("Gate Authority database operation failed")]

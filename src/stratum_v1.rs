@@ -16,6 +16,7 @@ mod retention;
 mod sessions;
 mod target;
 mod tcp;
+mod worker_grant;
 pub use delivery::{
     AcceptedWorkDeliveryWorker, AcceptedWorkSink, AcceptedWorkSinkError, DeliveryOutcome,
     WorkSessionDisconnectSink, WorkSessionDisconnectSinkError,
@@ -27,6 +28,7 @@ use target::{
     classify_network_target, meets_assigned_target, submitted_header, target_for_difficulty,
 };
 pub use tcp::StratumTcpProxy;
+pub use worker_grant::PoolAdapterWorkerStratum;
 
 pub(crate) const MAXIMUM_STRATUM_FRAME_BYTES: usize = 16 * 1024;
 const MAXIMUM_OUTSTANDING_REQUESTS: usize = 64;

@@ -8,6 +8,7 @@ mod offer_replacement;
 mod pool_selection;
 mod trusted_consent;
 mod trusted_consent_lease;
+mod work_lease_sequence;
 pub(crate) use connection::PostgresAuthorityRepository;
 
 use accounting::{
@@ -681,6 +682,13 @@ impl AuthorityRepository for PostgresAuthorityRepository {
         now_unix_seconds: u64,
     ) -> Result<u64, AuthorityPersistenceError> {
         trusted_consent::retire_expired(&self.pool, now_unix_seconds).await
+    }
+
+    async fn allocate_work_lease_authorization_sequence(
+        &self,
+        key_id: &str,
+    ) -> Result<u64, AuthorityPersistenceError> {
+        work_lease_sequence::allocate(&self.pool, key_id).await
     }
 }
 

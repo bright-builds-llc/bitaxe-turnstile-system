@@ -1,13 +1,18 @@
 use std::{env, error::Error, sync::Arc};
 
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use bwg_core::trusted_consent::{AttestedWebauthnVerifier, TrustedAttestationAnchorInput};
 use bwg_core::{
     authority::{
-        self, AuthorityPublicConfig, DeploymentEnvironment, IssuanceProcessingOutcome,
-        IssuanceWorkerId, ServiceCredential,
+        self, AuthorityApplication, AuthorityPublicConfig, DeploymentEnvironment,
+        IssuanceProcessingOutcome, IssuanceWorkerId, ServiceCredential, WorkerLeaseIssuance,
     },
     challenge::ActionPolicy,
     crypto_profile::AuthorityJwkWire,
+    stratum_v1::{
+        PoolAdapterWorkerStratum, PostgresStratumSessionRegistry, StratumCredentialIssuer,
+    },
+    work_lease_authorization::WorkLeaseAuthoritySigner,
 };
 use serde::Deserialize;
 use tokio::net::TcpListener;
@@ -86,6 +91,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     } else {
         authority::AuthorityApplication::connect_postgres(config, &database_url).await?
     };
+    let application = with_configured_worker_leases(application).await?;
     let issuance_application = application.clone();
     let issuance_worker_id =
         IssuanceWorkerId::try_from(format!("worker_{}", Uuid::new_v4().simple()))?;
@@ -122,4 +128,38 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     axum::serve(listener, authority::router(application)).await?;
 
     Ok(())
+}
+
+/// Enables claimant Worker Leases when the Work Lease Authority secret is deployed.
+///
+/// The seed is its own secret, never the Gate Pass or Update Authority key.
+async fn with_configured_worker_leases(
+    application: AuthorityApplication,
+) -> Result<AuthorityApplication, Box<dyn Error + Send + Sync>> {
+    let seed = match env::var("BWG_WORK_LEASE_AUTHORITY_SEED") {
+        Ok(seed) => seed,
+        Err(env::VarError::NotPresent) => {
+            tracing::info!("Work Lease Authority is not configured; claimant leases are off");
+            return Ok(application);
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let signer = WorkLeaseAuthoritySigner::from_seed_base64url(
+        env::var("BWG_WORK_LEASE_AUTHORITY_KID")?,
+        env::var("BWG_WORK_LEASE_AUTHORITY_ISSUER")?,
+        &seed,
+    )?;
+    let credential_key =
+        <[u8; 32]>::try_from(URL_SAFE_NO_PAD.decode(env::var("BWG_STRATUM_CREDENTIAL_KEY")?)?)
+            .map_err(|_| "BWG_STRATUM_CREDENTIAL_KEY must hold 32 base64url bytes")?;
+    let registry =
+        PostgresStratumSessionRegistry::connect(&env::var("BWG_POOL_ADAPTER_DATABASE_URL")?)
+            .await?;
+    let stratum = PoolAdapterWorkerStratum::new(
+        env::var("BWG_WORKER_STRATUM_ENDPOINT")?,
+        StratumCredentialIssuer::new(credential_key),
+        registry,
+    )?;
+    Ok(application
+        .with_worker_lease_issuance(WorkerLeaseIssuance::new(signer, Arc::new(stratum)))?)
 }

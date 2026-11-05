@@ -37,6 +37,11 @@ fn openapi_contract_covers_the_complete_pass_and_outcome_journey()
             "/v0/challenges/{challenge_id}/cancel",
             "/v0/challenges/{challenge_id}/trusted-consent",
             "/v0/challenges/{challenge_id}/trusted-consent/{ceremony_id}",
+            "/v0/challenges/{challenge_id}/work-session/start",
+            "/v0/challenges/{challenge_id}/work-session/resume",
+            "/v0/challenges/{challenge_id}/work-session/renew",
+            "/v0/challenges/{challenge_id}/work-session/pause",
+            "/v0/challenges/{challenge_id}/work-session/cancel",
             "/v0/trusted-consent",
             "/v0/trusted-consent.js",
             "/v0/trusted-consent.css",
@@ -63,6 +68,12 @@ fn openapi_contract_covers_the_complete_pass_and_outcome_journey()
         "TrustedConsentChallengeResponse",
         "TrustedConsentFinishResponse",
         "WebauthnRegistrationCredential",
+        "ClaimantWorkSessionProofClaims",
+        "StartWorkSessionRequest",
+        "ResumeWorkSessionRequest",
+        "RenewWorkSessionRequest",
+        "WorkerLeaseGrant",
+        "WorkerLeaseRenewal",
     ] {
         assert!(schemas.contains_key(schema), "missing schema {schema}");
     }
@@ -79,6 +90,22 @@ fn openapi_contract_covers_the_complete_pass_and_outcome_journey()
             json!([])
         );
     }
+    for operation in ["start", "resume", "renew", "pause", "cancel"] {
+        let route = &contract["paths"]
+            [format!("/v0/challenges/{{challenge_id}}/work-session/{operation}")]["post"];
+        assert!(
+            route["security"].is_null(),
+            "{operation} needs no service credential"
+        );
+        assert_eq!(
+            route["parameters"][1]["$ref"],
+            "#/components/parameters/WorkSessionProof"
+        );
+    }
+    assert_eq!(
+        schemas["ClaimantWorkSessionProofClaims"]["allOf"][1]["properties"]["htm"]["const"],
+        "POST"
+    );
     let sse_events =
         contract["paths"]["/v0/challenges/{challenge_id}/events"]["get"]["x-bwg-sse-events"]
             .as_object()
