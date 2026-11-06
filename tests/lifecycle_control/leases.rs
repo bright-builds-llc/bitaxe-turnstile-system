@@ -238,7 +238,9 @@ async fn report_at_lease_expiry_stops_new_work_but_exact_replay_stays_stable()
     // Assert
     assert!(matches!(
         late,
-        Err(AuthorityApplicationError::WorkLeaseExpired)
+        Err(AuthorityApplicationError::WorkRefused(
+            bwg_core::progress::AcceptedWorkRefusal::WorkLeaseExpired
+        ))
     ));
     assert_eq!(replayed, accepted);
     assert_eq!(stopped.state(), SessionLifecycleState::Stopping);

@@ -259,8 +259,8 @@ async fn work_received_at_challenge_expiry_cannot_advance_progress()
     // Assert
     assert!(matches!(
         result,
-        Err(AuthorityApplicationError::Progress(
-            bwg_core::progress::ProgressError::ChallengeExpired
+        Err(AuthorityApplicationError::WorkRefused(
+            bwg_core::progress::AcceptedWorkRefusal::ChallengeDeadlinePassed
         ))
     ));
 

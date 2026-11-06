@@ -188,7 +188,9 @@ async fn cancel_requires_destructive_confirmation_and_is_terminal() -> Result<()
     ));
     assert!(matches!(
         rejected_work,
-        Err(AuthorityApplicationError::ForbiddenLifecycleTransition)
+        Err(AuthorityApplicationError::WorkRefused(
+            bwg_core::progress::AcceptedWorkRefusal::ChallengeCancelled
+        ))
     ));
 
     Ok(())
@@ -453,7 +455,9 @@ async fn challenge_expiry_ends_leases_and_makes_progress_ineligible() -> Result<
     ));
     assert!(matches!(
         late_work,
-        Err(AuthorityApplicationError::ForbiddenLifecycleTransition)
+        Err(AuthorityApplicationError::WorkRefused(
+            bwg_core::progress::AcceptedWorkRefusal::ChallengeDeadlinePassed
+        ))
     ));
 
     Ok(())

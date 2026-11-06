@@ -437,6 +437,8 @@ pub(crate) enum AuthorityPersistenceError {
     UnknownPoolOfferReplacement,
     #[error("Accepted Work Event identity conflicts with its canonical delivery")]
     ConflictingEventReplay,
+    #[error("Accepted Work Event will never be credited: {}", .0.code())]
+    WorkRefused(crate::progress::AcceptedWorkRefusal),
     #[error("Gate Pass signing lease is no longer owned by this worker")]
     LostSigningLease,
     #[error("Claimant Issuance Proof identity was already consumed")]

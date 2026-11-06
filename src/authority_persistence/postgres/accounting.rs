@@ -7,13 +7,13 @@ use crate::{
     challenge::{ChallengeId, WorkChallengeDescriptor},
     crypto_profile::{GATE_PASS_JWS_ALGORITHM, GatePassClaimsSeed},
     lifecycle::{
-        LeaseObservation, LeaseObservationInput, SessionLifecycleCommand, SessionLifecycleState,
-        WorkerClock, apply_session_command, observe_work_lease,
+        ChallengeLifecycleState, LeaseObservation, LeaseObservationInput, SessionLifecycleCommand,
+        SessionLifecycleState, WorkerClock, apply_session_command, observe_work_lease,
     },
     progress::{
         AcceptedWorkAcknowledgement, AcceptedWorkDisposition, AcceptedWorkEvent,
-        AcceptedWorkEventId, NetworkTargetOutcome, PersistedAcknowledgementInput, ReceiptTime,
-        WorkSessionId,
+        AcceptedWorkEventId, AcceptedWorkRefusal, NetworkTargetOutcome,
+        PersistedAcknowledgementInput, ReceiptTime, WorkSessionId,
     },
     work::{CreditedWork, VerifiedProgress},
 };
@@ -29,9 +29,37 @@ pub(super) async fn challenge_for_session(
     .fetch_optional(&mut **transaction)
     .await?;
     let Some(challenge_id) = maybe_challenge_id else {
-        return Err(AuthorityPersistenceError::UnknownWorkSession);
+        return Err(refused(AcceptedWorkRefusal::UnknownWorkLease));
     };
     Ok(challenge_id)
+}
+
+/// Names why a challenge in `state` no longer accepts work.
+pub(super) fn challenge_refusal(state: ChallengeLifecycleState) -> AuthorityPersistenceError {
+    match state {
+        ChallengeLifecycleState::Satisfied | ChallengeLifecycleState::PassIssued => {
+            refused(AcceptedWorkRefusal::ChallengeSatisfied)
+        }
+        ChallengeLifecycleState::Cancelled => refused(AcceptedWorkRefusal::ChallengeCancelled),
+        ChallengeLifecycleState::Expired => refused(AcceptedWorkRefusal::ChallengeDeadlinePassed),
+        ChallengeLifecycleState::Issued | ChallengeLifecycleState::Active => {
+            AuthorityPersistenceError::ForbiddenLifecycleTransition
+        }
+    }
+}
+
+/// An event ID reused with other fields can never be credited.
+pub(super) fn refused_replay(error: AuthorityPersistenceError) -> AuthorityPersistenceError {
+    match error {
+        AuthorityPersistenceError::ConflictingEventReplay => {
+            refused(AcceptedWorkRefusal::ConflictingEventReplay)
+        }
+        error => error,
+    }
+}
+
+fn refused(refusal: AcceptedWorkRefusal) -> AuthorityPersistenceError {
+    AuthorityPersistenceError::WorkRefused(refusal)
 }
 
 pub(super) async fn insert_challenge(
@@ -193,12 +221,12 @@ pub(super) async fn observe_session_lease(
     .fetch_optional(&mut **transaction)
     .await?;
     let Some(row) = maybe_row else {
-        return Err(AuthorityPersistenceError::UnknownWorkSession);
+        return Err(refused(AcceptedWorkRefusal::UnknownWorkLease));
     };
     let persisted_challenge_id = row.try_get::<String, _>("challenge_id")?;
     let state = SessionLifecycleState::parse(row.try_get("lifecycle_state")?)?;
     if persisted_challenge_id != challenge_id {
-        return Err(AuthorityPersistenceError::ForbiddenLifecycleTransition);
+        return Err(refused(AcceptedWorkRefusal::UnknownWorkLease));
     }
     apply_session_command(state, SessionLifecycleCommand::ObserveLease).map_err(map_lease_error)?;
     let persisted_lease_id = row.try_get::<String, _>("lease_id")?;
@@ -238,10 +266,10 @@ pub(super) async fn observe_session_lease(
 fn map_lease_error(error: crate::lifecycle::LifecycleError) -> AuthorityPersistenceError {
     match error {
         crate::lifecycle::LifecycleError::ForbiddenTransition => {
-            AuthorityPersistenceError::ForbiddenLifecycleTransition
+            refused(AcceptedWorkRefusal::WorkLeaseEnded)
         }
         crate::lifecycle::LifecycleError::WrongWorkLease => {
-            AuthorityPersistenceError::WrongWorkLease
+            refused(AcceptedWorkRefusal::UnknownWorkLease)
         }
         error => AuthorityPersistenceError::InvalidLifecycle(error),
     }

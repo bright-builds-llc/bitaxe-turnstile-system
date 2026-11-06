@@ -369,7 +369,9 @@ async fn event_identity_conflict_across_sessions_cannot_change_progress()
     // Assert
     assert!(matches!(
         conflict,
-        Err(AuthorityApplicationError::ConflictingEventReplay)
+        Err(AuthorityApplicationError::WorkRefused(
+            bwg_core::progress::AcceptedWorkRefusal::ConflictingEventReplay
+        ))
     ));
     assert_eq!(
         first.verified_progress().to_decimal_string(),

@@ -12,8 +12,9 @@ mod work_lease_sequence;
 pub(crate) use connection::PostgresAuthorityRepository;
 
 use accounting::{
-    AcceptedEventRecordInput, challenge_for_session, insert_accepted_event, insert_issuance_intent,
-    insert_share_fingerprint, observe_session_lease, persisted_acceptance, update_progress,
+    AcceptedEventRecordInput, challenge_for_session, challenge_refusal, insert_accepted_event,
+    insert_issuance_intent, insert_share_fingerprint, observe_session_lease, persisted_acceptance,
+    refused_replay, update_progress,
 };
 
 use super::{
@@ -26,8 +27,8 @@ use crate::{
     challenge::{ChallengeId, WorkChallengeDescriptor},
     crypto_profile::{GatePassClaimsSeed, GatePassClaimsTemplate},
     progress::{
-        AcceptedWorkAcknowledgement, AcceptedWorkEvent, PersistedAcknowledgementInput,
-        WorkSessionId,
+        AcceptedWorkAcknowledgement, AcceptedWorkEvent, AcceptedWorkRefusal,
+        PersistedAcknowledgementInput, WorkSessionId,
     },
     trusted_consent::{
         TrustedConsentBinding, TrustedConsentCeremonyId, TrustedConsentOperationOwner,
@@ -293,7 +294,7 @@ impl AuthorityRepository for PostgresAuthorityRepository {
             .fetch_optional(&mut *transaction)
             .await?;
         if let Some(row) = maybe_replay {
-            let replay = persisted_acceptance(&row, &event)?;
+            let replay = persisted_acceptance(&row, &event).map_err(refused_replay)?;
             transaction.commit().await?;
             return Ok(replay);
         }
@@ -315,7 +316,7 @@ impl AuthorityRepository for PostgresAuthorityRepository {
             lifecycle_state,
             crate::lifecycle::ChallengeLifecycleCommand::AcceptWork,
         )
-        .map_err(|_| AuthorityPersistenceError::ForbiddenLifecycleTransition)?;
+        .map_err(|_| challenge_refusal(lifecycle_state))?;
         let signing_deadline = challenge.try_get::<i64, _>("expires_at_unix_seconds")?;
         let claims_seed = serde_json::from_value::<GatePassClaimsSeed>(
             challenge.try_get("gate_pass_claims_seed")?,
@@ -328,10 +329,12 @@ impl AuthorityRepository for PostgresAuthorityRepository {
         }
 
         // Late delivery never completes a challenge: the Authority's clock decides too.
-        if let Err(error) = crate::progress::ensure_event_before_challenge_expiry(
+        if crate::progress::ensure_event_before_challenge_expiry(
             event.received_at().unix_seconds().max(now),
             challenge_expires_at,
-        ) {
+        )
+        .is_err()
+        {
             sqlx::query(
                 "UPDATE gate_authority.work_challenges
                  SET lifecycle_state = 'expired',
@@ -356,7 +359,9 @@ impl AuthorityRepository for PostgresAuthorityRepository {
             .execute(&mut *transaction)
             .await?;
             transaction.commit().await?;
-            return Err(error.into());
+            return Err(AuthorityPersistenceError::WorkRefused(
+                AcceptedWorkRefusal::ChallengeDeadlinePassed,
+            ));
         }
         let lease_observation =
             observe_session_lease(&mut transaction, &event, &challenge_id, lease_id, clock).await?;
@@ -364,11 +369,13 @@ impl AuthorityRepository for PostgresAuthorityRepository {
             transaction.commit().await?;
             return Err(match reason {
                 crate::lifecycle::SessionStopReason::LeaseExpired => {
-                    AuthorityPersistenceError::WorkLeaseExpired
+                    AuthorityPersistenceError::WorkRefused(AcceptedWorkRefusal::WorkLeaseExpired)
                 }
                 crate::lifecycle::SessionStopReason::WorkerReboot
                 | crate::lifecycle::SessionStopReason::MonotonicReset => {
-                    AuthorityPersistenceError::WorkerContinuityLost
+                    AuthorityPersistenceError::WorkRefused(
+                        AcceptedWorkRefusal::WorkerContinuityLost,
+                    )
                 }
                 _ => AuthorityPersistenceError::InvalidPersistedData,
             });

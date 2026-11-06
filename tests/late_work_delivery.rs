@@ -6,7 +6,8 @@ use std::{
 };
 
 use bwg_core::{
-    authority::AuthorityApplicationError, progress::AcceptedWorkAcknowledgement,
+    authority::AuthorityApplicationError,
+    progress::{AcceptedWorkAcknowledgement, AcceptedWorkRefusal},
     stratum_v1::StratumLeaseContext,
 };
 use reqwest::StatusCode;
@@ -215,7 +216,9 @@ async fn reading_before_the_lease_started_is_refused() -> Result<(), Box<dyn Err
     // Assert
     assert!(matches!(
         delivered,
-        Err(AuthorityApplicationError::WorkerContinuityLost)
+        Err(AuthorityApplicationError::WorkRefused(
+            AcceptedWorkRefusal::WorkerContinuityLost
+        ))
     ));
     assert_eq!(leased.renew().await?, StatusCode::CONFLICT);
     Ok(())
@@ -255,7 +258,9 @@ async fn reading_under_another_continuity_is_refused() -> Result<(), Box<dyn Err
     // Assert
     assert!(matches!(
         delivered,
-        Err(AuthorityApplicationError::WorkerContinuityLost)
+        Err(AuthorityApplicationError::WorkRefused(
+            AcceptedWorkRefusal::WorkerContinuityLost
+        ))
     ));
     Ok(())
 }
@@ -304,7 +309,9 @@ async fn work_delivered_after_a_pause_is_not_credited() -> Result<(), Box<dyn Er
     // Assert
     assert!(matches!(
         delivered,
-        Err(AuthorityApplicationError::ForbiddenLifecycleTransition)
+        Err(AuthorityApplicationError::WorkRefused(
+            AcceptedWorkRefusal::WorkLeaseEnded
+        ))
     ));
     assert_eq!(leased.verified_progress().await?, "0");
     Ok(())
@@ -342,7 +349,9 @@ async fn work_delivered_after_satisfaction_is_not_credited() -> Result<(), Box<d
     // Assert
     assert!(matches!(
         late,
-        Err(AuthorityApplicationError::ForbiddenLifecycleTransition)
+        Err(AuthorityApplicationError::WorkRefused(
+            AcceptedWorkRefusal::ChallengeSatisfied
+        ))
     ));
     assert_eq!(replayed, satisfying);
     assert_eq!(leased.verified_progress().await?, progress);
@@ -368,8 +377,110 @@ async fn work_delivered_after_the_deadline_is_refused_before_expiry_is_recorded(
         .await?;
 
     // Assert
-    assert!(delivered.is_err(), "{delivered:?}");
+    assert!(matches!(
+        delivered,
+        Err(AuthorityApplicationError::WorkRefused(
+            AcceptedWorkRefusal::ChallengeDeadlinePassed
+        ))
+    ));
     assert_eq!(leased.verified_progress().await?, "0");
     assert_eq!(leased.lifecycle_state().await?, "expired");
+    Ok(())
+}
+
+#[tokio::test]
+async fn work_under_an_unknown_lease_is_refused() -> Result<(), Box<dyn Error>> {
+    // Arrange
+    let leased = Leased::start().await?;
+    let now = now_unix_milliseconds()?;
+    let context = StratumLeaseContext::new(
+        "00000000-0000-4000-8000-000000000001".to_owned(),
+        CONTROL_SESSION.to_owned(),
+        now,
+        now + 20_000,
+        now + 60_000,
+    )?;
+    let event = accepted_event(
+        "event_unknown_lease_01",
+        "share_unknown_lease_01",
+        claimant_session_id(&leased.fixture.challenge_id)?,
+        LOW_WORK_TARGET_MARKER,
+        now / 1_000,
+    )?;
+
+    // Act
+    let delivered = leased
+        .fixture
+        .application
+        .simulated_pool_adapter()
+        .report_stratum(event, &context)
+        .await;
+
+    // Assert
+    assert!(matches!(
+        delivered,
+        Err(AuthorityApplicationError::WorkRefused(
+            AcceptedWorkRefusal::UnknownWorkLease
+        ))
+    ));
+    assert_eq!(leased.renew().await?, StatusCode::OK);
+    Ok(())
+}
+
+#[tokio::test]
+async fn work_delivered_after_a_cancel_is_refused() -> Result<(), Box<dyn Error>> {
+    // Arrange
+    let leased = Leased::start().await?;
+    let observed_at = now_unix_milliseconds()?;
+    leased
+        .fixture
+        .post(
+            "cancel",
+            &serde_json::json!({ "confirm_progress_loss": true }),
+        )
+        .await?
+        .error_for_status()?;
+
+    // Act
+    let delivered = leased
+        .deliver("cancelled_01", "cancelled_01", CONTROL_SESSION, observed_at)
+        .await?;
+
+    // Assert
+    assert!(matches!(
+        delivered,
+        Err(AuthorityApplicationError::WorkRefused(
+            AcceptedWorkRefusal::ChallengeCancelled
+        ))
+    ));
+    assert_eq!(leased.verified_progress().await?, "0");
+    Ok(())
+}
+
+#[tokio::test]
+async fn event_id_reused_with_another_share_is_refused() -> Result<(), Box<dyn Error>> {
+    // Arrange
+    let leased = Leased::start().await?;
+    let observed_at = now_unix_milliseconds()?;
+    let first = leased
+        .deliver("reused_01", "reused_01", CONTROL_SESSION, observed_at)
+        .await??;
+
+    // Act
+    let conflicting = leased
+        .deliver("reused_01", "reused_02", CONTROL_SESSION, observed_at)
+        .await?;
+
+    // Assert
+    assert!(matches!(
+        conflicting,
+        Err(AuthorityApplicationError::WorkRefused(
+            AcceptedWorkRefusal::ConflictingEventReplay
+        ))
+    ));
+    assert_eq!(
+        leased.verified_progress().await?,
+        first.verified_progress().to_decimal_string()
+    );
     Ok(())
 }

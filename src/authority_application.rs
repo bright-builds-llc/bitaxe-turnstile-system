@@ -24,13 +24,10 @@ use crate::{
     },
     lifecycle::{
         ChallengeLifecycle, ChallengeLifecycleState, GATE_PASS_TTL_SECONDS, LifecycleError,
-        PauseReason, WorkLease, WorkerClock,
+        PauseReason,
     },
     pool_offer::verify_pool_offer_set,
-    progress::{
-        AcceptedWorkAcknowledgement, AcceptedWorkEvent, ProgressError, ProgressUpdate,
-        WorkSessionId,
-    },
+    progress::{ProgressError, ProgressUpdate, WorkSessionId},
     trusted_consent::{
         TrustedConsentBeginRequest, TrustedConsentBeginResponse, TrustedConsentBinding,
         TrustedConsentBindingInput, TrustedConsentCeremony, TrustedConsentCeremonyId,
@@ -40,6 +37,7 @@ use crate::{
     },
 };
 
+mod accepted_work;
 mod claimant_pool_selection;
 mod lifecycle_events;
 mod pool_adapter;
@@ -234,49 +232,6 @@ impl AuthorityApplication {
         self.release_claimant_pool_selection(challenge_id).await;
         self.notify_lifecycle(challenge_id, lifecycle.clone())?;
         Ok(lifecycle)
-    }
-
-    async fn accept_work(
-        &self,
-        event: AcceptedWorkEvent,
-        lease: &WorkLease,
-        clock: &WorkerClock,
-    ) -> Result<AcceptedWorkAcknowledgement, AuthorityApplicationError> {
-        let session_id = event.work_session_id().clone();
-        let acceptance = match self
-            .repository
-            .accept_work(event, lease.lease_id(), clock, current_unix_seconds()?)
-            .await
-        {
-            Ok(acceptance) => acceptance,
-            Err(error) => {
-                let application_error = AuthorityApplicationError::from(error);
-                if matches!(
-                    application_error,
-                    AuthorityApplicationError::WorkerContinuityLost
-                        | AuthorityApplicationError::WorkLeaseExpired
-                ) {
-                    self.notify_lifecycle_for_session(&session_id).await?;
-                }
-                return Err(application_error);
-            }
-        };
-        let update = ProgressUpdate::persisted(
-            acceptance.challenge_id.clone(),
-            acceptance.acknowledgement.verified_progress(),
-            acceptance.acknowledgement.work_requirement(),
-        );
-        self.notify_progress(&acceptance.challenge_id, update)?;
-        if acceptance.acknowledgement.issuance_intent_created() {
-            self.release_claimant_pool_selection(&acceptance.challenge_id)
-                .await;
-            let lifecycle = self
-                .repository
-                .challenge_lifecycle(&acceptance.challenge_id, current_unix_seconds()?)
-                .await?;
-            self.notify_lifecycle(&acceptance.challenge_id, lifecycle)?;
-        }
-        Ok(acceptance.acknowledgement)
     }
 
     /// Claims and processes at most one durable Gate Pass issuance intent.
@@ -523,6 +478,8 @@ pub enum AuthorityApplicationError {
     TrustedConsentReceiptReplayed,
     #[error("Accepted Work Event conflicts with its canonical delivery")]
     ConflictingEventReplay,
+    #[error("Accepted Work Event will never be credited: {}", .0.code())]
+    WorkRefused(crate::progress::AcceptedWorkRefusal),
     #[error("issuance worker identity is invalid")]
     InvalidWorkerId,
     #[error("Gate Pass signing key is unavailable")]
@@ -597,6 +554,7 @@ impl From<AuthorityPersistenceError> for AuthorityApplicationError {
                 Self::UnknownPoolOfferReplacement
             }
             AuthorityPersistenceError::ConflictingEventReplay => Self::ConflictingEventReplay,
+            AuthorityPersistenceError::WorkRefused(refusal) => Self::WorkRefused(refusal),
             AuthorityPersistenceError::ReplayedIssuanceProof => Self::ReplayedIssuanceProof,
             AuthorityPersistenceError::TrustedConsentRequired => Self::TrustedConsentRequired,
             AuthorityPersistenceError::InvalidTrustedConsentReceipt => {

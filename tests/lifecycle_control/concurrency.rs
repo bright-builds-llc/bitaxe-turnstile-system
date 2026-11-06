@@ -61,7 +61,9 @@ async fn pause_winning_the_session_lock_prevents_later_work_admission() -> Resul
     assert_eq!(pause.status().as_u16(), 200);
     assert!(matches!(
         report,
-        Err(AuthorityApplicationError::ForbiddenLifecycleTransition)
+        Err(AuthorityApplicationError::WorkRefused(
+            bwg_core::progress::AcceptedWorkRefusal::WorkLeaseEnded
+        ))
     ));
     assert_eq!(lifecycle["verified_progress"], "0");
 

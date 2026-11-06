@@ -11,7 +11,7 @@ use bwg_core::{
     },
     challenge::{ActionPolicy, ChallengeId},
     lifecycle::{SessionLifecycleState, WorkerClock},
-    progress::{ProgressError, WorkSessionId},
+    progress::WorkSessionId,
     stratum_v1::{
         PostgresStratumSessionRegistry, StratumCredentialIssuer, StratumV1Error,
         WorkSessionDisconnectSink,
@@ -528,8 +528,8 @@ async fn challenge_expiry_stops_a_ready_replacement_and_rejects_late_registratio
     // Assert
     assert!(matches!(
         expired_work,
-        Err(AuthorityApplicationError::Progress(
-            ProgressError::ChallengeExpired
+        Err(AuthorityApplicationError::WorkRefused(
+            bwg_core::progress::AcceptedWorkRefusal::ChallengeDeadlinePassed
         ))
     ));
     assert_eq!(ready_lifecycle.state(), SessionLifecycleState::Stopping);

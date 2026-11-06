@@ -9,10 +9,12 @@ use crate::{
 };
 
 const MAXIMUM_OPAQUE_ID_LENGTH: usize = 128;
+mod refusal;
 mod service;
 #[cfg(test)]
 mod tests;
 
+pub use refusal::AcceptedWorkRefusal;
 pub use service::ProgressService;
 
 /// Stable Pool Adapter identity for one at-least-once Accepted Work Event.
