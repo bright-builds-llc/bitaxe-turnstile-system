@@ -10,7 +10,8 @@ production browser path. Tickets 01 and 10 are resolved; the rest is still plann
 | [03](issues/03-c-image-onboarding-commands.md) C image serves onboarding inspection and install | task | ready-for-agent | 02 |
 | [04](issues/04-web-serial-onboarding-device.md) Web Serial onboarding device | task | ready-for-agent | 02 |
 | [05](issues/05-signed-c-image-package.md) Owner signs the C image's firmware package | task | ready-for-human | 03, 04 |
-| [06](issues/06-production-path-rehearsal.md) Compose and rehearse the production path | task | ready-for-agent | 04, 10 |
+| [11](issues/11-late-work-delivery-after-renew.md) Authority judges a Work Event by the reading at which it was observed | task | ready-for-agent | 10 |
+| [06](issues/06-production-path-rehearsal.md) Compose and rehearse the production path | task | ready-for-agent | 04, 11 |
 | [07](issues/07-first-c-image-gate.md) First end-to-end Gate on the C image | task | ready-for-human | 05, 06 |
 | [08](issues/08-interruptions-and-negatives.md) Interruptions and negatives on the C image | task | ready-for-human | 07 |
 | [09](issues/09-core-mvp-evidence-map.md) Map C-image evidence onto the Core MVP | task | ready-for-agent | 08 |

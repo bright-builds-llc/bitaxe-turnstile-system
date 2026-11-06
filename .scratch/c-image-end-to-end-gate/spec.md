@@ -53,7 +53,7 @@ side through a test authority, not the production path.
 
 ## Tickets
 
-Dependency order: 01 and 10 are resolved; 02 starts now; 03 and 04 follow 02; 05
-follows 03 and 04; 06 follows 04 and 10; 07 follows 05 and 06; 08 follows 07; 09
+Dependency order: 01 and 10 are resolved; 02 and 11 start now; 03 and 04 follow 02; 05
+follows 03 and 04; 06 follows 04 and 11; 07 follows 05 and 06; 08 follows 07; 09
 follows 08.
 See [map.md](map.md).
