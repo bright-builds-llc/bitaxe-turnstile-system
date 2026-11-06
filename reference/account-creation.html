@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>Create an account</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0 auto; max-width: 40rem; padding: 1rem; }
+      label, input, button { display: block; margin-block: 0.5rem; }
+      input { width: 100%; }
+    </style>
+    <!-- The deployment replaces this with its public trust; it holds no secrets. -->
+    <script type="application/json" id="bwg-reference-config">null</script>
+  </head>
+  <body>
+    <main>
+      <h1>Create an account</h1>
+      <label for="payout-address">Bitcoin payout address</label>
+      <input id="payout-address" autocomplete="off" spellcheck="false" />
+      <button id="connect-bitaxe" type="button">Connect Bitaxe over USB</button>
+      <p id="connect-status" role="status"></p>
+      <bwg-work-gate presentation="inline"></bwg-work-gate>
+    </main>
+    <script type="module" src="../dist/reference-page/reference-account-page-entry.js"></script>
+  </body>
+</html>
