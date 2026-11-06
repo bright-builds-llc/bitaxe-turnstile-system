@@ -11,7 +11,7 @@ use crate::progress::WorkSessionId;
 /// Context-local durable mapping for short-lived Worker credentials and extranonce space.
 #[derive(Clone)]
 pub struct PostgresStratumSessionRegistry {
-    pool: PgPool,
+    pub(super) pool: PgPool,
 }
 
 impl PostgresStratumSessionRegistry {

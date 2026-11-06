@@ -14,6 +14,8 @@ use tokio::{
     },
 };
 
+use crate::progress::WorkSessionId;
+
 use super::{
     MAXIMUM_STRATUM_FRAME_BYTES, PostgresAcceptedWorkOutbox, PostgresStratumSessionRegistry,
     StratumProxyAction, StratumSession, StratumUpstreamAuthorization, StratumV1Error,
@@ -30,6 +32,7 @@ pub struct StratumTcpProxy {
     sessions: PostgresStratumSessionRegistry,
     idle_timeout: Duration,
     maybe_upstream_authorization: Option<StratumUpstreamAuthorization>,
+    maybe_session_upstream_secret: Option<String>,
     disconnect_sink: Arc<dyn WorkSessionDisconnectSink>,
 }
 
@@ -44,6 +47,7 @@ impl StratumTcpProxy {
             sessions,
             idle_timeout: Duration::from_secs(90),
             maybe_upstream_authorization: None,
+            maybe_session_upstream_secret: None,
             disconnect_sink,
         }
     }
@@ -62,6 +66,7 @@ impl StratumTcpProxy {
             sessions,
             idle_timeout,
             maybe_upstream_authorization: None,
+            maybe_session_upstream_secret: None,
             disconnect_sink,
         })
     }
@@ -73,6 +78,35 @@ impl StratumTcpProxy {
     ) -> Self {
         self.maybe_upstream_authorization = Some(authorization);
         self
+    }
+
+    /// Derives each session's Mining Pool-facing identity from its stored claimant choice.
+    ///
+    /// A session without a stored choice is refused at admission.
+    pub fn with_session_upstream_authorization(
+        mut self,
+        upstream_secret: String,
+    ) -> Result<Self, StratumV1Error> {
+        if upstream_secret.is_empty() || upstream_secret.len() > 256 {
+            return Err(StratumV1Error::InvalidSessionConfig);
+        }
+        self.maybe_session_upstream_secret = Some(upstream_secret);
+        Ok(self)
+    }
+
+    async fn upstream_authorization_for(
+        &self,
+        session_id: &WorkSessionId,
+        now_unix_seconds: u64,
+    ) -> Result<Option<StratumUpstreamAuthorization>, StratumV1Error> {
+        let Some(secret) = &self.maybe_session_upstream_secret else {
+            return Ok(self.maybe_upstream_authorization.clone());
+        };
+        self.sessions
+            .session_upstream_authorization(session_id, secret, now_unix_seconds)
+            .await?
+            .map(Some)
+            .ok_or(StratumV1Error::UnknownSession)
     }
 
     pub async fn serve_one(
@@ -129,7 +163,10 @@ impl StratumTcpProxy {
                 .await?;
                 return Ok(());
             };
-            if let Some(authorization) = &self.maybe_upstream_authorization
+            let maybe_upstream = self
+                .upstream_authorization_for(authenticated.session_id(), now)
+                .await?;
+            if let Some(authorization) = &maybe_upstream
                 && authenticated.session_id() != authorization.session_id()
             {
                 return Err(StratumV1Error::UnknownSession);
@@ -139,7 +176,7 @@ impl StratumTcpProxy {
                 .await?;
             let established_session_id = authenticated.session_id().clone();
             let mut session_config = authenticated.into_session_config(username, secret, now)?;
-            if let Some(authorization) = &self.maybe_upstream_authorization {
+            if let Some(authorization) = &maybe_upstream {
                 session_config = session_config.with_upstream_authorization(
                     authorization.username().to_owned(),
                     authorization.secret().to_owned(),

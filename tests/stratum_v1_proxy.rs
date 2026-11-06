@@ -47,6 +47,8 @@ mod persistence;
 mod renewal;
 #[path = "stratum_v1_proxy/retention.rs"]
 mod retention;
+#[path = "stratum_v1_proxy/session_upstream.rs"]
+mod session_upstream;
 #[path = "stratum_v1_proxy/target_math.rs"]
 mod target_math;
 #[path = "stratum_v1_proxy/upstream_first.rs"]
