@@ -89,7 +89,7 @@ wait_for_first_line() {
 for required in bun openssl; do
   require_command "$required"
 done
-prepare_regtest_stack
+prepare_pinned_stack
 start_regtest_stack
 start_hydra
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Pinned regtest Bitcoin Core and Hydra, shared by the Hydra integration runner
-# and the production-path rehearsal. Callers set repo_root and integration_root,
-# then call prepare_regtest_stack, start_regtest_stack and start_hydra.
+# Pinned Bitcoin Core and Hydra, shared by the Hydra integration runner, the
+# production-path rehearsal and the mainnet stack. Callers set repo_root and
+# integration_root, then call prepare_pinned_stack; the regtest callers then call
+# start_regtest_stack and start_hydra.
 
 bitcoin_pid=""
 hydra_pid=""
@@ -9,10 +10,18 @@ bitcoin_cli=""
 rpc_user=""
 rpc_password=""
 hydra_run=0
+# The chain every bitcoin-cli call names; the mainnet stack sets `-chain=main`.
+bitcoin_chain_arg="-regtest"
+# Neither Hydra nor job admission reads the transaction index, so regtest runs
+# pruned at Bitcoin Core's minimum without one, like the mainnet node (Ticket 07).
+regtest_storage_args=(-prune=550)
+# A mainnet node can take minutes to load its index and to flush on shutdown.
+rpc_wait_seconds=60
+process_exit_attempts=50
 
 wait_for_process_exit() {
   process_id=$1
-  for _attempt in $(seq 1 50); do
+  for _attempt in $(seq 1 "$process_exit_attempts"); do
     if ! process_state=$(ps -o stat= -p "$process_id"); then
       return 0
     fi
@@ -51,7 +60,7 @@ stop_hydra() {
 stop_bitcoind() {
   stop_status=0
   if [[ -n "$bitcoin_cli" ]] && [[ -x "$bitcoin_cli" ]]; then
-    if ! "$bitcoin_cli" -regtest -rpcconnect=127.0.0.1 -rpcport="$rpc_port" \
+    if ! "$bitcoin_cli" "$bitcoin_chain_arg" -rpcconnect=127.0.0.1 -rpcport="$rpc_port" \
       -rpcuser="$rpc_user" -rpcpassword="$rpc_password" stop >/dev/null 2>&1; then
       printf 'Bitcoin Core RPC shutdown failed\n' >&2
       stop_status=1
@@ -109,8 +118,8 @@ download_verified() {
 }
 
 wait_for_rpc() {
-  for _attempt in $(seq 1 60); do
-    if "$bitcoin_cli" -regtest -rpcconnect=127.0.0.1 -rpcport="$rpc_port" \
+  for _attempt in $(seq 1 "$rpc_wait_seconds"); do
+    if "$bitcoin_cli" "$bitcoin_chain_arg" -rpcconnect=127.0.0.1 -rpcport="$rpc_port" \
       -rpcuser="$rpc_user" -rpcpassword="$rpc_password" getblockcount >/dev/null 2>&1; then
       return 0
     fi
@@ -118,6 +127,33 @@ wait_for_rpc() {
   done
   printf 'Bitcoin Core RPC did not become ready\n' >&2
   return 1
+}
+
+# Fails unless the node is pruned and runs no transaction index, so a passing run
+# proves Hydra and job admission need neither.
+bitcoin_rpc() {
+  "$bitcoin_cli" "$bitcoin_chain_arg" -rpcconnect=127.0.0.1 -rpcport="$rpc_port" \
+    -rpcuser="$rpc_user" -rpcpassword="$rpc_password" "$@"
+}
+
+require_pruned_without_txindex() {
+  chain_info=$(bitcoin_rpc getblockchaininfo)
+  index_info=$(bitcoin_rpc getindexinfo)
+  if [[ "$(jq -r .pruned <<<"$chain_info")" != "true" ]] || jq -e 'has("txindex")' <<<"$index_info" >/dev/null; then
+    printf 'Bitcoin Core must run pruned without a transaction index\n' >&2
+    return 1
+  fi
+  printf 'Bitcoin Core is pruned (prune height %s) with indexes %s\n' \
+    "$(jq -r '.pruneheight // 0' <<<"$chain_info")" "$(jq -c 'keys' <<<"$index_info")"
+}
+
+# Prints sync progress; succeeds only once the node has left initial block download.
+node_is_synced() {
+  chain_info=$(bitcoin_rpc getblockchaininfo)
+  printf 'Bitcoin Core: %s blocks of %s headers, verification progress %s, initial block download %s\n' \
+    "$(jq -r .blocks <<<"$chain_info")" "$(jq -r .headers <<<"$chain_info")" \
+    "$(jq -r .verificationprogress <<<"$chain_info")" "$(jq -r .initialblockdownload <<<"$chain_info")"
+  [[ "$(jq -r .initialblockdownload <<<"$chain_info")" == "false" ]]
 }
 
 wait_for_port() {
@@ -141,7 +177,7 @@ start_hydra() {
   wait_for_port "$stratum_port"
 }
 
-prepare_regtest_stack() {
+prepare_pinned_stack() {
   for required in cargo codesign curl git jq nc python3 shasum tar tee; do
     require_command "$required"
   done
@@ -228,7 +264,7 @@ start_regtest_stack() {
   mkdir "$integration_root/bitcoin-data"
   "$bitcoin_bin/bitcoind" \
     -datadir="$integration_root/bitcoin-data" \
-    -regtest -server=1 -listen=0 -txindex=1 -fallbackfee=0.0002 \
+    -regtest -server=1 -listen=0 "${regtest_storage_args[@]}" -fallbackfee=0.0002 \
     -rpcuser="$rpc_user" -rpcpassword="$rpc_password" -rpcbind=127.0.0.1 -rpcallowip=127.0.0.1 \
     -rpcport="$rpc_port" -zmqpubhashblock="tcp://127.0.0.1:$zmq_port" \
     -printtoconsole >"$integration_root/bitcoind.log" 2>&1 &

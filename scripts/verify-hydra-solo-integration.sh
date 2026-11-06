@@ -181,9 +181,11 @@ run_upstream_admission_tests() {
   } 2>&1 | tee "$integration_root/upstream-admission-tests.log"
 }
 
-prepare_regtest_stack
+prepare_pinned_stack
 run_upstream_admission_tests
 start_regtest_stack
+require_pruned_without_txindex
+node_is_synced
 start_hydra
 run_integration
 stop_hydra
