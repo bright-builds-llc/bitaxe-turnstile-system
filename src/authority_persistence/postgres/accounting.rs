@@ -186,7 +186,7 @@ pub(super) async fn observe_session_lease(
 ) -> Result<LeaseObservation, AuthorityPersistenceError> {
     let maybe_row = sqlx::query(
         "SELECT challenge_id, lifecycle_state, lease_id::text AS lease_id, continuity_id,
-                last_monotonic_milliseconds, expires_at_monotonic_milliseconds
+                lease_started_at_monotonic_milliseconds, expires_at_monotonic_milliseconds
          FROM gate_authority.work_sessions WHERE session_id = $1 FOR UPDATE",
     )
     .bind(event.work_session_id().as_str())
@@ -203,44 +203,34 @@ pub(super) async fn observe_session_lease(
     apply_session_command(state, SessionLifecycleCommand::ObserveLease).map_err(map_lease_error)?;
     let persisted_lease_id = row.try_get::<String, _>("lease_id")?;
     let continuity_id = row.try_get::<String, _>("continuity_id")?;
-    let last_monotonic_milliseconds = to_u64(row.try_get("last_monotonic_milliseconds")?)?;
+    // Delivery is late and unordered, so only the lease's start bounds the reading;
+    // event and share deduplication stop a second credit.
+    let lease_started_at = to_u64(row.try_get("lease_started_at_monotonic_milliseconds")?)?;
     let expires_at_monotonic_milliseconds =
         to_u64(row.try_get("expires_at_monotonic_milliseconds")?)?;
     let observation = observe_work_lease(LeaseObservationInput {
         state,
         expected_lease_id: &persisted_lease_id,
         expected_continuity_id: &continuity_id,
-        last_monotonic_milliseconds,
+        last_monotonic_milliseconds: lease_started_at,
         expires_at_monotonic_milliseconds,
         presented_lease_id: lease_id,
         clock,
     })
     .map_err(map_lease_error)?;
-    match observation {
-        LeaseObservation::Accepted => {
-            sqlx::query(
-                "UPDATE gate_authority.work_sessions
-                 SET last_monotonic_milliseconds = $2 WHERE session_id = $1",
-            )
-            .bind(event.work_session_id().as_str())
-            .bind(to_i64(clock.monotonic_milliseconds())?)
-            .execute(&mut **transaction)
-            .await?;
-        }
-        LeaseObservation::Stop(reason) => {
-            sqlx::query(
-                "UPDATE gate_authority.work_sessions
-                 SET lifecycle_state = 'stopping', lease_id = NULL, continuity_id = NULL,
-                     last_monotonic_milliseconds = NULL,
-                     renew_at_monotonic_milliseconds = NULL,
-                     expires_at_monotonic_milliseconds = NULL, stop_reason = $2
-                 WHERE session_id = $1",
-            )
-            .bind(event.work_session_id().as_str())
-            .bind(reason.as_str())
-            .execute(&mut **transaction)
-            .await?;
-        }
+    if let LeaseObservation::Stop(reason) = observation {
+        sqlx::query(
+            "UPDATE gate_authority.work_sessions
+             SET lifecycle_state = 'stopping', lease_id = NULL, continuity_id = NULL,
+                 last_monotonic_milliseconds = NULL,
+                 renew_at_monotonic_milliseconds = NULL,
+                 expires_at_monotonic_milliseconds = NULL, stop_reason = $2
+             WHERE session_id = $1",
+        )
+        .bind(event.work_session_id().as_str())
+        .bind(reason.as_str())
+        .execute(&mut **transaction)
+        .await?;
     }
     Ok(observation)
 }
@@ -255,10 +245,6 @@ fn map_lease_error(error: crate::lifecycle::LifecycleError) -> AuthorityPersiste
         }
         error => AuthorityPersistenceError::InvalidLifecycle(error),
     }
-}
-
-fn to_i64(value: u64) -> Result<i64, AuthorityPersistenceError> {
-    i64::try_from(value).map_err(|_| AuthorityPersistenceError::InvalidPersistedData)
 }
 
 fn to_u64(value: i64) -> Result<u64, AuthorityPersistenceError> {

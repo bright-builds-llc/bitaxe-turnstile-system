@@ -144,7 +144,8 @@ pub(super) async fn start_work_lease(
     sqlx::query(
         "UPDATE gate_authority.work_sessions
          SET lifecycle_state = 'leased', lease_id = $2::uuid, continuity_id = $3,
-             last_monotonic_milliseconds = $4, renew_at_monotonic_milliseconds = $5,
+             last_monotonic_milliseconds = $4, lease_started_at_monotonic_milliseconds = $4,
+             renew_at_monotonic_milliseconds = $5,
              expires_at_monotonic_milliseconds = $6, stop_reason = NULL
          WHERE session_id = $1",
     )
