@@ -4,6 +4,9 @@ Accepted 2026-11-05, on the owner's choice for `c-image-end-to-end-gate` Ticket 
 It adds claimant routes to the Gate Authority and changes no Controller,
 deployment-trust or Gate Pass profile.
 
+Amended 2026-11-05 by ADR-0107: claimant Pool Selection is now an Authority route
+that hands the raw choice to the Pool Adapter.
+
 Under `/v0/challenges/{challenge_id}/work-session` the Authority serves `start`,
 `resume`, `renew`, `pause` and `cancel`. Each is a POST authenticated by a
 `bwg-work-session-proof+jwt` from the challenge's claimant key. The proof binds the
