@@ -58,3 +58,6 @@ feed 09.
   into the SDK before anything past 07. `gate-authority` runs the proxy when
   `BWG_STRATUM_PROXY_LISTEN_ADDRESS` is set. Ticket 07 follows
   [run-sheet-07.md](run-sheet-07.md).
+- Ticket 07, on the owner's choice: mainnet, on a pruned node without
+  `-txindex`, which Hydra and job admission don't need. The node starts with
+  `scripts/hydra-mainnet-stack.sh`.

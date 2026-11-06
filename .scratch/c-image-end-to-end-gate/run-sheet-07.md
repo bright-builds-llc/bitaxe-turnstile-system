@@ -23,7 +23,35 @@ and changes nothing else. Nothing private goes into either repository.
 - **`reference-service`**, with the account-creation executor.
 - **PostgreSQL**, one database each for the Authority, the Reference Relying
   Service and the Pool Adapter.
-- **Hydra and Bitcoin Core**, at the pins in `scripts/hydra-regtest-stack.sh`.
+- **Hydra and Bitcoin Core on mainnet**, at the regtest runner's pins, started by
+  `scripts/hydra-mainnet-stack.sh`. Bitcoin Core runs pruned without a
+  transaction index. Hydra starts only once the node has left initial block
+  download, and serves Stratum on loopback for `BWG_POOL_UPSTREAM_STRATUM_ADDRESS`.
+
+## Node prerequisite
+
+The owner chose mainnet. Neither Hydra nor job admission (Reward Policy and the
+BIP 23 proposal) reads the transaction index, and both pass against a pruned
+node with early blocks deleted. So the node is pruned, without `-txindex`.
+
+| Node | Disk, late 2026 | Fits the 25 GiB free here |
+| --- | --- | --- |
+| Pruned at `-prune=550`, no txindex (this stack) | about 12 GB, mostly the UTXO set | yes; keep a few GB spare, as the UTXO set grows |
+| Full, no txindex | about 770 GB | no |
+| Full with txindex | over 800 GB | no |
+
+Pruning saves disk, not sync time. The node still downloads and checks about
+770 GB. Expect roughly a day on this machine with a large cache and a fast link,
+and several days on a slow link. Start it well before the run:
+
+```bash
+scripts/hydra-mainnet-stack.sh --datadir /path/outside/the/repo --prune 550 \
+  --payout-address ADDRESS --wait-for-sync -- -dbcache=8000
+```
+
+The datadir holds `bitcoin/` and `hydra/`, and a later start resumes the sync.
+Without `--wait-for-sync`, the script refuses to start Hydra while the node is
+syncing.
 
 ## Record before starting
 
@@ -34,8 +62,8 @@ and changes nothing else. Nothing private goes into either repository.
 
 ## Steps only the owner runs
 
-1. Choose the network. Criterion 5 needs mainnet with per-job BIP 23 admission
-   (Core Ticket 18).
+1. Sync the mainnet node (see the node prerequisite above). The network is
+   mainnet, with per-job BIP 23 admission (Core Ticket 18).
 2. Flash the 601 by hand with the C reference image, and record its digests.
 3. Load the private values from `~/.bitaxe-fork-private` into the deployment's
    environment, never into a file in either repository:
@@ -44,8 +72,10 @@ and changes nothing else. Nothing private goes into either repository.
    - the Stratum credential key (`BWG_STRATUM_CREDENTIAL_KEY`);
    - the service credential (`BWG_SERVICE_CREDENTIAL`);
    - the database URLs;
-   - the pool address and password.
-   Agents never see these values. The payout address is typed into the page.
+   - the pool address and password;
+   - Hydra's `--payout-address`.
+   Agents never see these values. The claimant's payout address is typed into
+   the page.
 4. Serve the origin with a real certificate, not the rehearsal's throwaway one.
 5. At the board, click "Connect Bitaxe over USB", choose the board, consent and
    Start.
@@ -57,7 +87,7 @@ and changes nothing else. Nothing private goes into either repository.
 | Fake serial Worker with fixture identity | The 601 over Web Serial |
 | CPU miner on the Worker's Stratum grant | The board's ASIC on the same grant |
 | Test Work Lease, Gate Pass and service keys | The owner's keys, loaded by the owner |
-| Regtest | The owner's network choice |
+| Regtest, pruned, no txindex | Mainnet, pruned node from `scripts/hydra-mainnet-stack.sh` |
 | Loopback front with a self-signed certificate | The real same-origin HTTPS front |
 | One synthetic share crosses the Work Requirement | Real accepted shares only |
 

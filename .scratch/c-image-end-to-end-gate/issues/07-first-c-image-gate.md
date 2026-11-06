@@ -26,3 +26,18 @@ Follow [run-sheet-07.md](../run-sheet-07.md).
   non-claims, and nothing private, recorded in both repositories.
 
 ## Comments
+
+- 2026-11-06: the owner chose mainnet. Neither pinned Hydra nor job admission
+  needs `-txindex`, and both work against a pruned node.
+  - Hydra's source calls only `getblockchaininfo`, `getblocktemplate` (including
+    the BIP 23 proposal), `getdifficulty`, `submitblock` and
+    `decoderawtransaction`, and none reads the transaction index. Upstream's own
+    signet and testnet4 node configs run `prune=1000` with `txindex` off.
+  - On regtest, the upstream admission tests and the Hydra integration pass at
+    `-prune=550` without txindex. They also pass after `pruneblockchain`
+    deleted blocks 0 to 253. That one-off expected the halved regtest subsidy,
+    because the chain was past height 600.
+  - `scripts/hydra-mainnet-stack.sh` runs the node pruned, and refuses to start
+    Hydra while the node is in initial block download. The run sheet gives the
+    disk needs and sync time.
+
