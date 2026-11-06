@@ -7,15 +7,12 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use bwg_core::{
     challenge::ChallengeId,
     pool_offer::PoolSelection,
-    progress::WorkSessionId,
     stratum_v1::{PostgresStratumSessionRegistry, StratumLeaseContext},
 };
 use reqwest::StatusCode;
-use ring::digest;
 use serde_json::{Value, json};
 use sqlx::{PgPool, Row as _};
 
@@ -33,7 +30,7 @@ mod running_server;
 #[allow(dead_code)]
 #[path = "support/work_session.rs"]
 mod work_session_support;
-use fixture::{CONTROL_SESSION, Fixture};
+use fixture::{CONTROL_SESSION, Fixture, claimant_session_id};
 use postgres_support::PostgresTestDatabase;
 use work_session_support::accepted_event;
 
@@ -82,16 +79,6 @@ fn selection_body(address: &str) -> Value {
         "payout_destination_type": "bitcoin_mainnet_address",
         "payout_destination": address
     })
-}
-
-fn claimant_session_id(challenge_id: &ChallengeId) -> Result<WorkSessionId, Box<dyn Error>> {
-    let mut input = b"BWG/0.1 claimant Work Session\0".to_vec();
-    input.extend_from_slice(challenge_id.as_str().as_bytes());
-    let digest = digest::digest(&digest::SHA256, &input);
-    Ok(WorkSessionId::try_from(format!(
-        "session_{}",
-        URL_SAFE_NO_PAD.encode(digest.as_ref())
-    ))?)
 }
 
 fn now_unix_milliseconds() -> Result<u64, Box<dyn Error>> {

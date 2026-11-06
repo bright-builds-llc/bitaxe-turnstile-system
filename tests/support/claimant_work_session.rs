@@ -254,3 +254,16 @@ pub(crate) fn authorization_payload(authorization: &Value) -> Result<Value, Box<
         .map_err(|_| "authorization signature must verify")?;
     Ok(serde_json::from_slice(&URL_SAFE_NO_PAD.decode(payload)?)?)
 }
+
+/// Derives the one claimant Work Session of a challenge, as the Authority does.
+pub(crate) fn claimant_session_id(
+    challenge_id: &ChallengeId,
+) -> Result<bwg_core::progress::WorkSessionId, Box<dyn Error>> {
+    let mut input = b"BWG/0.1 claimant Work Session\0".to_vec();
+    input.extend_from_slice(challenge_id.as_str().as_bytes());
+    let digest = ring::digest::digest(&ring::digest::SHA256, &input);
+    Ok(bwg_core::progress::WorkSessionId::try_from(format!(
+        "session_{}",
+        URL_SAFE_NO_PAD.encode(digest.as_ref())
+    ))?)
+}
