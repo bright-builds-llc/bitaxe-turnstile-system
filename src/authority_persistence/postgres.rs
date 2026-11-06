@@ -280,6 +280,7 @@ impl AuthorityRepository for PostgresAuthorityRepository {
         event: AcceptedWorkEvent,
         lease_id: &str,
         clock: &crate::lifecycle::WorkerClock,
+        now: u64,
     ) -> Result<PersistedAcceptance, AuthorityPersistenceError> {
         let mut transaction = self.pool.begin().await?;
         sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
@@ -326,8 +327,9 @@ impl AuthorityRepository for PostgresAuthorityRepository {
             return Err(AuthorityPersistenceError::InvalidPersistedData);
         }
 
+        // Late delivery never completes a challenge: the Authority's clock decides too.
         if let Err(error) = crate::progress::ensure_event_before_challenge_expiry(
-            event.received_at().unix_seconds(),
+            event.received_at().unix_seconds().max(now),
             challenge_expires_at,
         ) {
             sqlx::query(

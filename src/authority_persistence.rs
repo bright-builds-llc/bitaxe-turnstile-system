@@ -283,11 +283,13 @@ pub(crate) trait AuthorityRepository: Send + Sync {
         session_id: &WorkSessionId,
     ) -> Result<SessionLifecycle, AuthorityPersistenceError>;
 
+    /// Credits one event, refusing it once the challenge deadline has passed at `now`.
     async fn accept_work(
         &self,
         event: AcceptedWorkEvent,
         lease_id: &str,
         clock: &WorkerClock,
+        now: u64,
     ) -> Result<PersistedAcceptance, AuthorityPersistenceError>;
 
     async fn maybe_claim_issuance(

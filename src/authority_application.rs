@@ -245,7 +245,7 @@ impl AuthorityApplication {
         let session_id = event.work_session_id().clone();
         let acceptance = match self
             .repository
-            .accept_work(event, lease.lease_id(), clock)
+            .accept_work(event, lease.lease_id(), clock, current_unix_seconds()?)
             .await
         {
             Ok(acceptance) => acceptance,

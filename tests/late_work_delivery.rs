@@ -350,7 +350,7 @@ async fn work_delivered_after_satisfaction_is_not_credited() -> Result<(), Box<d
 }
 
 #[tokio::test]
-async fn work_received_before_expiry_counts_once_until_expiry_is_recorded()
+async fn work_delivered_after_the_deadline_is_refused_before_expiry_is_recorded()
 -> Result<(), Box<dyn Error>> {
     // Arrange
     let leased = Leased::start().await?;
@@ -364,27 +364,12 @@ async fn work_received_before_expiry_counts_once_until_expiry_is_recorded()
 
     // Act
     let delivered = leased
-        .deliver("expiry_01", "expiry_01", CONTROL_SESSION, observed_at)
-        .await??;
-    let replayed = leased
-        .deliver("expiry_01", "expiry_01", CONTROL_SESSION, observed_at)
-        .await??;
-    let lifecycle = leased.lifecycle_state().await?;
-    let after_recorded = leased
-        .deliver("expiry_02", "expiry_02", CONTROL_SESSION, observed_at)
+        .deliver("deadline_01", "deadline_01", CONTROL_SESSION, observed_at)
         .await?;
 
     // Assert
-    assert!(delivered.maybe_credited_work().is_some());
-    assert_eq!(replayed, delivered);
-    assert_eq!(lifecycle, "expired");
-    assert!(matches!(
-        after_recorded,
-        Err(AuthorityApplicationError::ForbiddenLifecycleTransition)
-    ));
-    assert_eq!(
-        leased.verified_progress().await?,
-        delivered.verified_progress().to_decimal_string()
-    );
+    assert!(delivered.is_err(), "{delivered:?}");
+    assert_eq!(leased.verified_progress().await?, "0");
+    assert_eq!(leased.lifecycle_state().await?, "expired");
     Ok(())
 }
