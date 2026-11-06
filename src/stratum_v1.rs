@@ -11,6 +11,7 @@ use crate::progress::{
 
 mod credentials;
 mod delivery;
+pub mod in_process;
 mod pool_selection;
 mod postgres;
 mod retention;

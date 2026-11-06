@@ -11,11 +11,12 @@ use bwg_core::{
     crypto_profile::AuthorityJwkWire,
     stratum_v1::{
         PoolAdapterWorkerStratum, PostgresStratumSessionRegistry, StratumCredentialIssuer,
+        in_process::{InProcessPoolAdapterConfig, spawn_in_process_pool_adapter},
     },
     work_lease_authorization::WorkLeaseAuthoritySigner,
 };
 use serde::Deserialize;
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, task::JoinSet};
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -92,6 +93,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         authority::AuthorityApplication::connect_postgres(config, &database_url).await?
     };
     let application = with_configured_worker_leases(application).await?;
+    let _maybe_pool_adapter = with_configured_pool_adapter(&application).await?;
     let issuance_application = application.clone();
     let issuance_worker_id =
         IssuanceWorkerId::try_from(format!("worker_{}", Uuid::new_v4().simple()))?;
@@ -162,4 +164,30 @@ async fn with_configured_worker_leases(
     )?;
     Ok(application
         .with_worker_lease_issuance(WorkerLeaseIssuance::new(signer, Arc::new(stratum)))?)
+}
+
+/// Runs the Pool Adapter's proxy, delivery and expiry sweep in this process when its
+/// listener is deployed (ADR-0109), delivering through the in-process port.
+async fn with_configured_pool_adapter(
+    application: &AuthorityApplication,
+) -> Result<Option<JoinSet<()>>, Box<dyn Error + Send + Sync>> {
+    let listen_address = match env::var("BWG_STRATUM_PROXY_LISTEN_ADDRESS") {
+        Ok(address) => address,
+        Err(env::VarError::NotPresent) => {
+            tracing::info!("Stratum proxy is not configured; the Pool Adapter runs elsewhere");
+            return Ok(None);
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let config = InProcessPoolAdapterConfig {
+        database_url: env::var("BWG_POOL_ADAPTER_DATABASE_URL")?,
+        upstream_address: env::var("BWG_POOL_UPSTREAM_STRATUM_ADDRESS")?,
+        upstream_password: env::var("BWG_POOL_UPSTREAM_PASSWORD")?,
+    };
+    let listener = TcpListener::bind(&listen_address).await?;
+    tracing::info!(%listen_address, "Stratum proxy listening");
+    let tasks =
+        spawn_in_process_pool_adapter(config, listener, application.simulated_pool_adapter())
+            .await?;
+    Ok(Some(tasks))
 }
