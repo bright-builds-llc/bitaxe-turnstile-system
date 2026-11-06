@@ -20,7 +20,8 @@ mod tcp;
 mod worker_grant;
 pub use delivery::{
     AcceptedWorkDeliveryWorker, AcceptedWorkSink, AcceptedWorkSinkError, DeliveryOutcome,
-    WorkSessionDisconnectSink, WorkSessionDisconnectSinkError,
+    MAX_DELIVERY_RETRY_SECONDS, WorkSessionDisconnectSink, WorkSessionDisconnectSinkError,
+    retry_delay_seconds,
 };
 pub use postgres::{ClaimedAcceptedWork, PersistedAcceptedWork, PostgresAcceptedWorkOutbox};
 pub use retention::{PoolAdapterRetentionCounts, PostgresPoolAdapterRetention};

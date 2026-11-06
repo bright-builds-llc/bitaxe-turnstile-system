@@ -484,3 +484,39 @@ async fn event_id_reused_with_another_share_is_refused() -> Result<(), Box<dyn E
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn replay_after_the_deadline_returns_the_first_acknowledgement() -> Result<(), Box<dyn Error>>
+{
+    // Arrange
+    let leased = Leased::start().await?;
+    let observed_at = now_unix_milliseconds()?;
+    let first = leased
+        .deliver(
+            "deadline_replay_01",
+            "deadline_replay_01",
+            CONTROL_SESSION,
+            observed_at,
+        )
+        .await??;
+    let deadline = observed_at / 1_000 + 1;
+    leased.set_challenge_deadline(deadline).await?;
+    tokio::time::sleep(std::time::Duration::from_millis(
+        (deadline * 1_000).saturating_sub(now_unix_milliseconds()?) + 50,
+    ))
+    .await;
+
+    // Act
+    let replayed = leased
+        .deliver(
+            "deadline_replay_01",
+            "deadline_replay_01",
+            CONTROL_SESSION,
+            observed_at,
+        )
+        .await??;
+
+    // Assert
+    assert_eq!(replayed, first);
+    Ok(())
+}

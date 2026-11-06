@@ -1,0 +1,52 @@
+{
+  "profile": "BWG/0.1",
+  "boundary": "Gate Authority to Pool Adapter accepted-work delivery",
+  "sources": ["docs/adr/0108-uncreditable-work-is-refused-terminally.md"],
+  "refusals": [
+    {
+      "reason": "unknown_work_lease",
+      "when": "the event names a Work Session or lease the Authority does not hold",
+      "terminal": true
+    },
+    {
+      "reason": "work_lease_ended",
+      "when": "Pause or another stop ended the lease before delivery",
+      "terminal": true
+    },
+    {
+      "reason": "worker_continuity_lost",
+      "when": "the reading names another continuity or precedes the lease start",
+      "terminal": true
+    },
+    {
+      "reason": "work_lease_expired",
+      "when": "the reading falls at or after the lease expiry",
+      "terminal": true
+    },
+    {
+      "reason": "challenge_satisfied",
+      "when": "the challenge already met its Work Requirement",
+      "terminal": true
+    },
+    {
+      "reason": "challenge_cancelled",
+      "when": "the challenge was cancelled",
+      "terminal": true
+    },
+    {
+      "reason": "challenge_deadline_passed",
+      "when": "receipt or delivery is at or after the challenge deadline",
+      "terminal": true
+    },
+    {
+      "reason": "conflicting_event_replay",
+      "when": "the event ID was credited before with other fields",
+      "terminal": true
+    }
+  ],
+  "outage": {
+    "terminal": false,
+    "retry_delays_seconds": [1, 2, 4, 8, 16, 32, 64, 128, 256, 300, 300],
+    "max_retry_delay_seconds": 300
+  }
+}
