@@ -1,7 +1,7 @@
 # C-image end-to-end Gate map
 
 [Spec](spec.md). The first Gate on the C Reference Firmware image through the
-production browser path. Ticket 01 is resolved; the rest is still planning.
+production browser path. Tickets 01 and 10 are resolved; the rest is still planning.
 
 | Ticket | Type | Status | Blocked by |
 | --- | --- | --- | --- |
@@ -14,10 +14,15 @@ production browser path. Ticket 01 is resolved; the rest is still planning.
 | [07](issues/07-first-c-image-gate.md) First end-to-end Gate on the C image | task | ready-for-human | 05, 06 |
 | [08](issues/08-interruptions-and-negatives.md) Interruptions and negatives on the C image | task | ready-for-human | 07 |
 | [09](issues/09-core-mvp-evidence-map.md) Map C-image evidence onto the Core MVP | task | ready-for-agent | 08 |
-| [10](issues/10-pool-adapter-claimant-intake-and-renewal.md) Pool Adapter takes claimant Pool Selection and extends Stratum sessions on Renew | task | ready-for-agent | 01 |
+| [10](issues/10-pool-adapter-claimant-intake-and-renewal.md) Pool Adapter takes claimant Pool Selection and extends Stratum sessions on Renew | task | resolved | 01 |
 
 ## Decisions so far
 
 - Ticket 01, ADR-0106: claimant Work Session routes on the Authority issue signed
   Worker Lease grants and renewals, and also carry claimant Pause and Cancel.
   Pool Selection stays at the Pool Adapter, which is Ticket 10.
+- Ticket 10: Renew extends the Worker's Stratum session in place under the same
+  password, rather than the renewal carrying fresh credentials. Credential
+  generations are ordered by issue milliseconds. ADR-0107: claimant Pool
+  Selection is an Authority route that keeps only the commitment. The Pool
+  Adapter stores the raw choice until the challenge is terminal.
