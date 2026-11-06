@@ -45,7 +45,8 @@ side through a test authority, not the production path.
 - No Authority HTTP route returned a `WorkerLeaseGrant` on Start or Resume, or
   served Renew. Ticket 01 added the claimant Work Session routes (ADR-0106).
   Ticket 10 added claimant Pool Selection (ADR-0107) and Stratum session
-  renewal. Ticket 11 stopped late or unordered delivery from ending a lease.
+  renewal. Ticket 11 stopped late or unordered delivery from ending a lease, and
+  Ticket 12 made uncreditable work a terminal refusal (ADR-0108).
 - Onboarding has only a simulated `BitaxeOnboardingDevice`. The C image reports
   no settings-schema version, settings readability or A/B rollback facts, and its
   build leaves app rollback off. Tickets 02 to 04.
@@ -53,7 +54,7 @@ side through a test authority, not the production path.
 
 ## Tickets
 
-Dependency order: 01, 10 and 11 are resolved; 02, 12 and 13 start now; 03 and 04 follow 02; 05
+Dependency order: 01, 10, 11 and 12 are resolved; 02 and 13 start now; 03 and 04 follow 02; 05
 follows 03 and 04; 06 follows 04 and 12; 07 follows 05 and 06; 08 follows 07; 09
 follows 08.
 See [map.md](map.md).
