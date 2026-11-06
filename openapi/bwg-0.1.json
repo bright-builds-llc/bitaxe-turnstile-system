@@ -376,6 +376,34 @@
         }
       }
     },
+    "/v0/challenges/{challenge_id}/work-session/pool-selection": {
+      "post": {
+        "summary": "Consent to one approved Pool Offer and raw payout choice (ADR-0107)",
+        "description": "The raw choice goes only to the Pool Adapter; the Authority keeps its commitment.",
+        "parameters": [
+          { "$ref": "#/components/parameters/ChallengeId" },
+          { "$ref": "#/components/parameters/WorkSessionProof" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ClaimantPoolSelectionRequest" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Consented selection commitment",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ClaimantPoolSelection" } }
+            }
+          },
+          "400": { "description": "Request body, Pool Offer or payout choice is invalid" },
+          "401": { "$ref": "#/components/responses/InvalidClaimantProof" },
+          "409": { "description": "A different choice is already consented, or selection is closed" },
+          "503": { "description": "Work-lease configuration or the Pool Adapter is unavailable" }
+        }
+      }
+    },
     "/account-creation/challenge": {
       "post": {
         "summary": "Create the reference Standard-policy challenge",
@@ -874,6 +902,25 @@
         "properties": {
           "control_session_binding_sha256": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" },
           "lease_id": { "type": "string" }
+        }
+      },
+      "ClaimantPoolSelectionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["pool_offer_id", "payout_destination_type", "payout_destination"],
+        "properties": {
+          "pool_offer_id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$" },
+          "payout_destination_type": { "enum": ["bitcoin_mainnet_address", "approved_beneficiary"] },
+          "payout_destination": { "type": "string", "minLength": 1, "maxLength": 256 }
+        }
+      },
+      "ClaimantPoolSelection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["pool_offer_id", "payout_commitment"],
+        "properties": {
+          "pool_offer_id": { "type": "string" },
+          "payout_commitment": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
         }
       },
       "WorkerLeaseGrant": {

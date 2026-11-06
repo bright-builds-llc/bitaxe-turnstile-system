@@ -40,6 +40,7 @@ use crate::{
     },
 };
 
+mod claimant_pool_selection;
 mod lifecycle_events;
 mod pool_adapter;
 mod trusted_consent;
@@ -48,7 +49,7 @@ pub use pool_adapter::SimulatedPoolAdapter;
 use trusted_consent::authority_origin;
 pub(crate) use worker_lease::{ClaimantWorkSessionRequest, WorkSessionOperation};
 pub use worker_lease::{
-    WorkerLeaseIssuance, WorkerStratumCredentialPort, WorkerStratumRequest,
+    PoolSelectionIntake, WorkerLeaseIssuance, WorkerStratumCredentialPort, WorkerStratumRequest,
     WorkerStratumUnavailable,
 };
 
@@ -191,6 +192,7 @@ impl AuthorityApplication {
                 | crate::lifecycle::ChallengeLifecycleState::Expired
         ) {
             self.cancel_scheduled_expiry(challenge_id)?;
+            self.release_claimant_pool_selection(challenge_id).await;
         }
         self.notify_lifecycle(challenge_id, lifecycle.clone())?;
         Ok(lifecycle)
@@ -229,6 +231,7 @@ impl AuthorityApplication {
     ) -> Result<ChallengeLifecycle, AuthorityApplicationError> {
         let lifecycle = self.repository.cancel_challenge(challenge_id, now).await?;
         self.cancel_scheduled_expiry(challenge_id)?;
+        self.release_claimant_pool_selection(challenge_id).await;
         self.notify_lifecycle(challenge_id, lifecycle.clone())?;
         Ok(lifecycle)
     }
@@ -265,6 +268,8 @@ impl AuthorityApplication {
         );
         self.notify_progress(&acceptance.challenge_id, update)?;
         if acceptance.acknowledgement.issuance_intent_created() {
+            self.release_claimant_pool_selection(&acceptance.challenge_id)
+                .await;
             let lifecycle = self
                 .repository
                 .challenge_lifecycle(&acceptance.challenge_id, current_unix_seconds()?)

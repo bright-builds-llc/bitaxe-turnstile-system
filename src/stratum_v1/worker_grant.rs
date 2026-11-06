@@ -7,7 +7,11 @@ use super::{
     StratumSessionExtension, StratumV1Error,
 };
 use crate::{
-    authority::{WorkerStratumCredentialPort, WorkerStratumRequest, WorkerStratumUnavailable},
+    authority::{
+        PoolSelectionIntake, WorkerStratumCredentialPort, WorkerStratumRequest,
+        WorkerStratumUnavailable,
+    },
+    challenge::ChallengeId,
     work_lease_authorization::{WorkerStratumV1, valid_stratum_endpoint},
 };
 
@@ -97,5 +101,37 @@ impl WorkerStratumCredentialPort for PoolAdapterWorkerStratum {
             tracing::warn!(%error, "Worker Stratum session was not extended");
             WorkerStratumUnavailable
         })
+    }
+
+    async fn record_pool_selection(
+        &self,
+        intake: PoolSelectionIntake,
+    ) -> Result<(), WorkerStratumUnavailable> {
+        self.registry
+            .record_pool_selection(
+                &intake.session_id,
+                &intake.challenge_id,
+                &intake.selection,
+                intake.challenge_expires_at_unix_seconds,
+                intake.now_unix_seconds,
+            )
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "claimant Pool Selection was not recorded");
+                WorkerStratumUnavailable
+            })
+    }
+
+    async fn release_pool_selection(
+        &self,
+        challenge_id: &ChallengeId,
+    ) -> Result<(), WorkerStratumUnavailable> {
+        self.registry
+            .delete_pool_selection(challenge_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "claimant Pool Selection was not deleted");
+                WorkerStratumUnavailable
+            })
     }
 }

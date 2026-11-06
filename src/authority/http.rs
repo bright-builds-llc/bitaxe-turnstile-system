@@ -507,6 +507,14 @@ impl IntoResponse for ApiError {
             Self::InvalidApplication(AuthorityApplicationError::PoolSelectionRequired) => {
                 (StatusCode::CONFLICT, "pool_selection_required")
             }
+            Self::InvalidApplication(
+                AuthorityApplicationError::UnknownPoolOffer
+                | AuthorityApplicationError::InvalidPoolSelection,
+            ) => (StatusCode::BAD_REQUEST, "invalid_pool_selection"),
+            Self::InvalidApplication(
+                AuthorityApplicationError::PoolSelectionLocked
+                | AuthorityApplicationError::PoolSelectionMismatch,
+            ) => (StatusCode::CONFLICT, "pool_selection_locked"),
             Self::InvalidApplication(AuthorityApplicationError::TrustedConsentRequired) => {
                 (StatusCode::FORBIDDEN, "trusted_consent_required")
             }

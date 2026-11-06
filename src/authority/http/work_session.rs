@@ -7,7 +7,7 @@ use axum::{
     http::HeaderMap,
     routing::post,
 };
-use serde::{Deserialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use super::{
     ApiError, AuthorityState, CancelChallengeRequest, PauseChallengeRequest, current_unix_seconds,
@@ -17,6 +17,7 @@ use crate::{
     authority_application::{ClaimantWorkSessionRequest, WorkSessionOperation},
     challenge::ChallengeId,
     lifecycle::ChallengeLifecycle,
+    pool_offer::PoolSelection,
     work_lease_authorization::{ControlSessionBinding, WorkerLeaseGrant, WorkerLeaseRenewal},
 };
 
@@ -41,6 +42,21 @@ struct RenewWorkRequest {
     lease_id: String,
 }
 
+/// A raw claimant payout choice; only its commitment is persisted here (ADR-0107).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SelectPoolRequest {
+    pool_offer_id: String,
+    payout_destination_type: String,
+    payout_destination: String,
+}
+
+#[derive(Serialize)]
+struct PoolSelectionResponse {
+    pool_offer_id: String,
+    payout_commitment: String,
+}
+
 /// Mounts the claimant routes under one challenge's Work Session.
 pub(super) fn routes() -> Router<AuthorityState> {
     const PREFIX: &str = "/v0/challenges/{challenge_id}/work-session";
@@ -50,6 +66,42 @@ pub(super) fn routes() -> Router<AuthorityState> {
         .route(&format!("{PREFIX}/renew"), post(renew_work))
         .route(&format!("{PREFIX}/pause"), post(pause_work))
         .route(&format!("{PREFIX}/cancel"), post(cancel_work))
+        .route(&format!("{PREFIX}/pool-selection"), post(select_pool))
+}
+
+async fn select_pool(
+    State(state): State<AuthorityState>,
+    Path(challenge_id): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<PoolSelectionResponse>, ApiError> {
+    let challenge_id = verified_challenge(
+        &state,
+        challenge_id,
+        WorkSessionOperation::PoolSelection,
+        &headers,
+        &body,
+    )
+    .await?;
+    let request: SelectPoolRequest = parse_body(&body)?;
+    let selection = match request.payout_destination_type.as_str() {
+        "bitcoin_mainnet_address" => {
+            PoolSelection::bitcoin_address(request.pool_offer_id, request.payout_destination)
+        }
+        "approved_beneficiary" => {
+            PoolSelection::approved_beneficiary(request.pool_offer_id, request.payout_destination)
+        }
+        _ => return Err(ApiError::InvalidWorkSessionRequest),
+    }
+    .map_err(|_| ApiError::InvalidWorkSessionRequest)?;
+    let commitment = state
+        .application
+        .claimant_select_pool(&challenge_id, selection)
+        .await?;
+    Ok(Json(PoolSelectionResponse {
+        pool_offer_id: commitment.pool_offer_id().to_owned(),
+        payout_commitment: commitment.commitment().to_owned(),
+    }))
 }
 
 async fn start_work(

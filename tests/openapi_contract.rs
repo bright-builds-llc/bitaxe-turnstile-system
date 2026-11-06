@@ -42,6 +42,7 @@ fn openapi_contract_covers_the_complete_pass_and_outcome_journey()
             "/v0/challenges/{challenge_id}/work-session/renew",
             "/v0/challenges/{challenge_id}/work-session/pause",
             "/v0/challenges/{challenge_id}/work-session/cancel",
+            "/v0/challenges/{challenge_id}/work-session/pool-selection",
             "/v0/trusted-consent",
             "/v0/trusted-consent.js",
             "/v0/trusted-consent.css",
@@ -74,6 +75,8 @@ fn openapi_contract_covers_the_complete_pass_and_outcome_journey()
         "RenewWorkSessionRequest",
         "WorkerLeaseGrant",
         "WorkerLeaseRenewal",
+        "ClaimantPoolSelectionRequest",
+        "ClaimantPoolSelection",
     ] {
         assert!(schemas.contains_key(schema), "missing schema {schema}");
     }
@@ -90,7 +93,14 @@ fn openapi_contract_covers_the_complete_pass_and_outcome_journey()
             json!([])
         );
     }
-    for operation in ["start", "resume", "renew", "pause", "cancel"] {
+    for operation in [
+        "start",
+        "resume",
+        "renew",
+        "pause",
+        "cancel",
+        "pool-selection",
+    ] {
         let route = &contract["paths"]
             [format!("/v0/challenges/{{challenge_id}}/work-session/{operation}")]["post"];
         assert!(

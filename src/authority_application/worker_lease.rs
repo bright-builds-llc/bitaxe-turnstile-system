@@ -15,6 +15,7 @@ use crate::{
     challenge::ChallengeId,
     crypto_profile::{p256_jwk_thumbprint, verify_work_session_proof},
     lifecycle::{WORK_LEASE_MAX_DURATION_SECONDS, WorkLease, WorkerClock, WorkerInterruption},
+    pool_offer::PoolSelection,
     progress::WorkSessionId,
     work_lease_authorization::{
         AuthorizationSequence, ControlSessionBinding, WorkLeaseAuthoritySigner,
@@ -33,6 +34,7 @@ pub(crate) enum WorkSessionOperation {
     Renew,
     Pause,
     Cancel,
+    PoolSelection,
 }
 
 impl WorkSessionOperation {
@@ -43,6 +45,7 @@ impl WorkSessionOperation {
             Self::Renew => "renew",
             Self::Pause => "pause",
             Self::Cancel => "cancel",
+            Self::PoolSelection => "pool-selection",
         }
     }
 }
@@ -58,12 +61,21 @@ pub struct WorkerStratumRequest {
     pub challenge_expires_at_unix_seconds: u64,
 }
 
+/// One claimant's raw Pool Selection, handed to the Pool Adapter and never persisted here.
+pub struct PoolSelectionIntake {
+    pub session_id: WorkSessionId,
+    pub challenge_id: ChallengeId,
+    pub selection: PoolSelection,
+    pub challenge_expires_at_unix_seconds: u64,
+    pub now_unix_seconds: u64,
+}
+
 /// The Pool Adapter could not issue or register Worker credentials.
 #[derive(Debug, Error)]
 #[error("Pool Adapter could not issue Worker Stratum credentials")]
 pub struct WorkerStratumUnavailable;
 
-/// Port through which the Authority asks the Pool Adapter for lease-scoped credentials.
+/// Port through which the Authority reaches the in-process Pool Adapter for one Worker.
 #[async_trait]
 pub trait WorkerStratumCredentialPort: Send + Sync {
     /// Issues and registers credentials for one started lease.
@@ -74,13 +86,25 @@ pub trait WorkerStratumCredentialPort: Send + Sync {
 
     /// Extends the registered and live credentials of one renewed lease, keeping the password.
     async fn renew(&self, request: WorkerStratumRequest) -> Result<(), WorkerStratumUnavailable>;
+
+    /// Stores the raw payout choice the Pool-facing identity derives from (ADR-0107).
+    async fn record_pool_selection(
+        &self,
+        intake: PoolSelectionIntake,
+    ) -> Result<(), WorkerStratumUnavailable>;
+
+    /// Deletes a terminal challenge's raw payout choice.
+    async fn release_pool_selection(
+        &self,
+        challenge_id: &ChallengeId,
+    ) -> Result<(), WorkerStratumUnavailable>;
 }
 
 /// Work Lease Authority signer and Pool Adapter port that enable claimant routes.
 #[derive(Clone)]
 pub struct WorkerLeaseIssuance {
     signer: WorkLeaseAuthoritySigner,
-    stratum: Arc<dyn WorkerStratumCredentialPort>,
+    pub(super) stratum: Arc<dyn WorkerStratumCredentialPort>,
 }
 
 impl WorkerLeaseIssuance {
@@ -352,7 +376,7 @@ impl AuthorityApplication {
         Ok(AuthorizationSequence::try_from(sequence)?)
     }
 
-    fn worker_leases(&self) -> Result<&WorkerLeaseIssuance, AuthorityApplicationError> {
+    pub(super) fn worker_leases(&self) -> Result<&WorkerLeaseIssuance, AuthorityApplicationError> {
         self.maybe_worker_leases
             .as_ref()
             .ok_or(AuthorityApplicationError::WorkLeaseUnavailable)
@@ -360,7 +384,7 @@ impl AuthorityApplication {
 }
 
 /// Derives the one claimant Work Session of a challenge.
-fn claimant_session_id(
+pub(super) fn claimant_session_id(
     challenge_id: &ChallengeId,
 ) -> Result<WorkSessionId, AuthorityApplicationError> {
     let mut input = CLAIMANT_SESSION_DOMAIN.to_vec();

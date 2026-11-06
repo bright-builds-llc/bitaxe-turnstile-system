@@ -115,10 +115,13 @@ impl AuthorityApplication {
                         {
                             deadlines.remove(&challenge_id);
                         }
-                        if lifecycle.state() == crate::lifecycle::ChallengeLifecycleState::Expired
-                            && let Err(error) =
-                                application.notify_lifecycle(&challenge_id, lifecycle)
-                        {
+                        if lifecycle.state() != crate::lifecycle::ChallengeLifecycleState::Expired {
+                            return;
+                        }
+                        application
+                            .release_claimant_pool_selection(&challenge_id)
+                            .await;
+                        if let Err(error) = application.notify_lifecycle(&challenge_id, lifecycle) {
                             tracing::debug!(%error, "lifecycle expiry notification failed");
                         }
                         return;

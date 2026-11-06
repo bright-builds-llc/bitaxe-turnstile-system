@@ -25,8 +25,8 @@ pub use http::router;
 use crate::authority_application::WorkSessionOperation;
 pub use crate::authority_application::{
     AuthorityApplication, AuthorityApplicationError, IssuanceProcessingOutcome, IssuanceWorkerId,
-    SimulatedPoolAdapter, WorkerLeaseIssuance, WorkerStratumCredentialPort, WorkerStratumRequest,
-    WorkerStratumUnavailable,
+    PoolSelectionIntake, SimulatedPoolAdapter, WorkerLeaseIssuance, WorkerStratumCredentialPort,
+    WorkerStratumRequest, WorkerStratumUnavailable,
 };
 pub use crate::authority_descriptor::AuthorityPublicConfig;
 
