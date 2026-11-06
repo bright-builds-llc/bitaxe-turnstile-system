@@ -1,0 +1,13 @@
+{
+  "browser": {
+    "launchOptions": {
+      "args": [
+        "--ignore-certificate-errors",
+        "--host-resolver-rules=MAP gate.rehearsal.test 127.0.0.1"
+      ]
+    },
+    "contextOptions": {
+      "ignoreHTTPSErrors": true
+    }
+  }
+}
