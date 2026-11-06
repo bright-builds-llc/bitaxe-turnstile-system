@@ -14,12 +14,18 @@ and shared vectors. Contract and tests only; no ROM client and no firmware.
 
 - [ ] A new ADR recording Ticket 02: one ROM writer, the first-install
   bootloader and table write, `esp32-factory-ota-ab`, per-schema categories,
-  nonce-keyed HMAC digests, and browser-driven rollback after mark-valid. It
-  amends ADR-0046 and says whether `bwg-reference-firmware/0.1` keeps its
-  identifier.
-- [ ] Ask the owner how the always-kept Migration Backup is keyed, since a
-  rollback after mark-valid must write it back, and ADR-0046's passphrase is
-  optional today.
+  nonce-keyed HMAC digests, browser-driven rollback after mark-valid, and the
+  rollback copy below. It amends ADR-0046 and says whether
+  `bwg-reference-firmware/0.1` keeps its identifier.
+- [ ] The raw NVS copy for rollback lives only in browser memory while onboarding
+  runs, as a bounded plaintext buffer like today's. It is wiped when the user
+  completes onboarding or anything fails, and never reaches browser storage.
+- [ ] The passphrase-encrypted Migration Backup download (ADR-0046) stays
+  optional, and is offered prominently for a first install from stock. If the tab
+  closes first, the device keeps the C image, which has passed its startup check,
+  and a later rollback needs that download.
+- [ ] `rollbackState` is `available` only while the in-memory copy exists, or when
+  the user supplies the download.
 - [ ] The manifest's partition block and the snapshot and verify parsers accept
   `esp32-factory-ota-ab`, with `factory` as an active slot, and refuse any other
   scheme.
@@ -32,3 +38,6 @@ and shared vectors. Contract and tests only; no ROM client and no firmware.
   vectors the C image's host tests can reuse. `bun run verify` passes.
 
 ## Comments
+
+- 2026-11-06: the owner chose "Memory, download optional" for how the rollback
+  copy is kept.

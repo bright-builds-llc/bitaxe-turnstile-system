@@ -93,3 +93,5 @@ The full contract:
 
 - The owner's answers came through the coordinating session's grilling, and the
   owner confirmed the whole contract.
+- 2026-11-06: point 6's backup is refined in Ticket 14. The rollback copy lives
+  in browser memory only, and the encrypted download stays optional.

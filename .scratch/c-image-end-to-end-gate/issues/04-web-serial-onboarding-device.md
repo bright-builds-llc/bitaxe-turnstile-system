@@ -20,8 +20,9 @@ implements it.
 - [ ] Read the partition table at `0x8000`, and refuse anything but upstream's known
   table or the C table before any write. From stock, write the C bootloader and C
   table once and read both back before rebooting.
-- [ ] Read the raw `nvs` partition through ROM, keep it as the encrypted local
-  Migration Backup, and parse it in JS for the nonce-keyed HMAC digests.
+- [ ] Read the raw `nvs` partition through ROM, keep it in memory as Ticket 14
+  says, offer the optional Migration Backup download, and parse it in JS for the
+  nonce-keyed HMAC digests.
 - [ ] Write the image to the inactive slot and set `otadata` to boot it pending.
   NVS is never written, except when a rollback restores the backup.
 - [ ] After mark-valid, `rollback()` points `otadata` at the untouched previous slot
