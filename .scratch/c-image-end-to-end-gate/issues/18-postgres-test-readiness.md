@@ -24,3 +24,9 @@ line. The failure was intermittent, so no run reproduced it before or after;
 the fix removes the window instead.
 
 ## Comments
+
+- 2026-11-06: the first full-suite run with this fix had one failure, in
+  `authority_persistence`. Docker reported `PortNotExposed` while mapping the
+  container's port, before the new wait ran. The test passed 3 of 3 runs alone,
+  and a full re-run passed 37 of 37. This is a separate one-off that the fix
+  doesn't cover.

@@ -1,7 +1,7 @@
 # C-image end-to-end Gate map
 
 [Spec](spec.md). The first Gate on the C Reference Firmware image through the
-production browser path. Tickets 01, 02, 10, 11 and 12 are resolved; the rest is still planning.
+production browser path. Tickets 01, 02, 06, 10, 11, 12 and 18 are resolved; the rest is still planning.
 The first Gate (06, 07) and onboarding (14, 03, 04, 05, 15) run apart, and both
 feed 09.
 
@@ -16,7 +16,7 @@ feed 09.
 | [15](issues/15-c-image-onboarding-on-the-601.md) Onboarding on the 601, from stock and between reference images | task | ready-for-human | 05 |
 | [11](issues/11-late-work-delivery-after-renew.md) Authority judges a Work Event by the reading at which it was observed | task | resolved | 10 |
 | [12](issues/12-terminal-refusal-of-uncreditable-work.md) Authority refuses uncreditable work terminally, and delivery stops retrying it | task | resolved | 11 |
-| [06](issues/06-production-path-rehearsal.md) Compose and rehearse the production path | task | claimed | 12 |
+| [06](issues/06-production-path-rehearsal.md) Compose and rehearse the production path | task | resolved | 12 |
 | [07](issues/07-first-c-image-gate.md) First end-to-end Gate on the C image | task | ready-for-human | 06 |
 | [08](issues/08-interruptions-and-negatives.md) Interruptions and negatives on the C image | task | ready-for-human | 07, 17 |
 | [09](issues/09-core-mvp-evidence-map.md) Map C-image evidence onto the Core MVP | task | ready-for-agent | 08, 15 |
@@ -55,4 +55,6 @@ feed 09.
   and expiry sweep run in the Authority's process until Ticket 16 builds the gRPC
   process. The rehearsal crosses the Work Requirement with one synthetic share
   that only the rehearsal can send. Ticket 17 moves the HTTP transport and Renew
-  into the SDK before anything past 07.
+  into the SDK before anything past 07. `gate-authority` runs the proxy when
+  `BWG_STRATUM_PROXY_LISTEN_ADDRESS` is set. Ticket 07 follows
+  [run-sheet-07.md](run-sheet-07.md).

@@ -11,6 +11,8 @@ with the owner at the board. The Gamma 601 goes first, flashed by hand with the 
 reference image, as the board the owner's image was admitted on; the Ultra 205
 follows. Onboarding is not part of this run (Ticket 15).
 
+Follow [run-sheet-07.md](../run-sheet-07.md).
+
 ## Plan
 
 - [ ] Owner: choose the network for the run. Criterion 5 needs mainnet with

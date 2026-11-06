@@ -59,7 +59,7 @@ side through a test authority, not the production path.
 
 ## Tickets
 
-Dependency order: 01, 02, 10, 11 and 12 are resolved. 06, 13 and 14 start now.
+Dependency order: 01, 02, 06, 10, 11 and 12 are resolved. 07, 13 and 14 start now.
 The Gate path is 06, then 07, then 08. The onboarding path is 14, then 03, 04, 05
 and 15. 09 follows 08 and 15.
 See [map.md](map.md).
