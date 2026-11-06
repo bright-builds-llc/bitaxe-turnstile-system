@@ -1,23 +1,36 @@
-# Web Serial onboarding device
+# Browser onboarding device over the ROM bootloader
 
 Type: task
 Status: ready-for-agent
-Blocked by: 02
+Blocked by: 03
 
 ## Objective
 
-Add a production `BitaxeOnboardingDevice` over the existing granted Web Serial
-port, so `bwg-core/bitaxe-onboarding` can inspect and install on a real board.
-Today only `web/simulated-bitaxe-onboarding.ts` implements it.
+Add a production `BitaxeOnboardingDevice` that writes through the ROM bootloader
+with esptool-js and inspects and verifies the C image over Worker Serial, so
+`bwg-core/bitaxe-onboarding` can install on a real board from stock ESP-Miner or
+from an earlier reference image. Today only `web/simulated-bitaxe-onboarding.ts`
+implements it.
 
 ## Plan
 
-- [ ] Strict parsers for Ticket 02's replies, with the existing redaction and
-  size bounds.
-- [ ] Reuse one granted port across onboarding and the Worker Controller (ADR-0101).
-- [ ] Update the onboarding simulator to Ticket 02's contract and run the browser
-  conformance fixture against it, including refusal before any write.
-- [ ] Wire the component's "Connect Bitaxe over USB" path to it, and run
+- [ ] esptool-js pinned to an exact version. Replace it with our own ROM client
+  only if a capability we need is proven missing, or if our own would be much more
+  useful (the owner's rule).
+- [ ] Read the partition table at `0x8000`, and refuse anything but upstream's known
+  table or the C table before any write. From stock, write the C bootloader and C
+  table once and read both back before rebooting.
+- [ ] Read the raw `nvs` partition through ROM, keep it as the encrypted local
+  Migration Backup, and parse it in JS for the nonce-keyed HMAC digests.
+- [ ] Write the image to the inactive slot and set `otadata` to boot it pending.
+  NVS is never written, except when a rollback restores the backup.
+- [ ] After mark-valid, `rollback()` points `otadata` at the untouched previous slot
+  and writes the backup back. Say how a rollback to stock, which has no Worker
+  Serial, is checked.
+- [ ] "Device is back" is a fresh Hello plus proof of possession on the new image.
+  Bounds chosen under Ticket 02's rules and measured on the 601, recorded here.
+- [ ] Reuse one granted port across ROM, onboarding and the Worker Controller
+  (ADR-0101), wire the component's "Connect Bitaxe over USB" path, and run
   `bun run verify`.
 
 ## Comments

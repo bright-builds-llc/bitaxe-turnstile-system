@@ -15,7 +15,8 @@ and check the signed one; they never handle the owner's keys.
 - [ ] Agent: build the reference image from a pushed C-repository commit with the
   owner's public trust, and record its commit, image and ELF digests.
 - [ ] Agent: prepare the unsigned manifest (version, image digest, boards 205 and
-  601, partition and rollback, settings schemas, public HTTPS source).
+  601, `esp32-factory-ota-ab` with rollback, settings schema `1`, public HTTPS
+  source).
 - [ ] Owner: review the GPL source and notice obligations before distributing the
   image, as the C repository's owner decisions require.
 - [ ] Owner: sign the manifest, and new capabilities if Ticket 03 changed the

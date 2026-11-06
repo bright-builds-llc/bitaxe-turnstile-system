@@ -10,8 +10,10 @@ C image has completed a Gate through the production browser path. This effort
 plans that first run: the `bwg-core/component` web component on the headless
 SDK, direct Web Serial, Authority Start and Renew, the Stratum V1 Pool Adapter in
 front of pinned Hydra, Verified Progress to the Work Requirement, Mining Baseline
-restoration, Gate Pass redemption, and the settings-preserving signed-manifest
-onboarding that leads into it. It is a plan; no hardware runs until Ticket 07.
+restoration and Gate Pass redemption, on a 601 flashed by hand. The
+settings-preserving signed-manifest onboarding is proven apart from it, on the
+same board. It is a plan; hardware is used only to measure bounds in Tickets 03
+and 04, and for the runs in Tickets 07, 08 and 15.
 
 Rules carried from the firmware repository: only the owner signs, agents never
 use the owner's private keys, and committed evidence names its board, commits,
@@ -49,12 +51,15 @@ side through a test authority, not the production path.
   Ticket 12 made uncreditable work a terminal refusal (ADR-0108).
 - Onboarding has only a simulated `BitaxeOnboardingDevice`. The C image reports
   no settings-schema version, settings readability or A/B rollback facts, and its
-  build leaves app rollback off. Tickets 02 to 04.
+  build leaves app rollback off. Ticket 02 settled the contract: the browser writes
+  through the ROM bootloader, and the C image reports and proves over Worker
+  Serial. Upstream's table needs the new scheme `esp32-factory-ota-ab`, and
+  settings digests become nonce-keyed HMACs. Tickets 14, 03 and 04.
 - The C image has no signed firmware package manifest. Ticket 05.
 
 ## Tickets
 
-Dependency order: 01, 10, 11 and 12 are resolved; 02 and 13 start now; 03 and 04 follow 02; 05
-follows 03 and 04; 06 follows 04 and 12; 07 follows 05 and 06; 08 follows 07; 09
-follows 08.
+Dependency order: 01, 02, 10, 11 and 12 are resolved. 06, 13 and 14 start now.
+The Gate path is 06, then 07, then 08. The onboarding path is 14, then 03, 04, 05
+and 15. 09 follows 08 and 15.
 See [map.md](map.md).

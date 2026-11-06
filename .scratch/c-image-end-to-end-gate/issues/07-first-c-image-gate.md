@@ -2,14 +2,14 @@
 
 Type: task
 Status: ready-for-human
-Blocked by: 05, 06
+Blocked by: 06
 
 ## Objective
 
-Run one complete Gate on a real board with the signed C reference image,
-through Ticket 06's page and services, with the owner at the board. The Gamma
-601 goes first, as the board the owner's image was admitted on; the Ultra 205
-follows.
+Run one complete Gate on a real board through Ticket 06's page and services,
+with the owner at the board. The Gamma 601 goes first, flashed by hand with the C
+reference image, as the board the owner's image was admitted on; the Ultra 205
+follows. Onboarding is not part of this run (Ticket 15).
 
 ## Plan
 
@@ -17,8 +17,6 @@ follows.
   per-job BIP 23 admission (Core Ticket 18).
 - [ ] Owner: load the Work Lease Authority and Gate Pass keys into the
   deployment. Agents never see them.
-- [ ] Onboarding: an already-compatible board proceeds without a write, and a
-  board on another image installs the signed package with its settings unchanged.
 - [ ] Gate: consent shown, Start, renewals, shares through the adapter credited as
   Verified Progress, the Work Requirement reached, restoration confirmed as
   `challenge_satisfied`, the Gate Pass redeemed once with DPoP and refused on reuse.

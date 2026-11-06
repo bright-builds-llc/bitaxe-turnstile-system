@@ -2,7 +2,7 @@
 
 Type: task
 Status: ready-for-agent
-Blocked by: 08
+Blocked by: 08, 15
 
 ## Objective
 
@@ -12,7 +12,7 @@ switch.
 
 ## Plan
 
-- [ ] Update the spec's criteria table from Tickets 07 and 08.
+- [ ] Update the spec's criteria table from Tickets 07, 08 and 15.
 - [ ] Note in Core Ticket 23 that its Rust evidence is historical and link the
   C-image evidence for each item.
 - [ ] Add the C-image evidence and its non-claims to Core Ticket 25.

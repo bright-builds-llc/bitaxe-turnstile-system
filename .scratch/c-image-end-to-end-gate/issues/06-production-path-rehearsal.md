@@ -2,7 +2,7 @@
 
 Type: task
 Status: ready-for-agent
-Blocked by: 04, 12
+Blocked by: 12
 
 ## Objective
 
@@ -11,8 +11,9 @@ with a software device and test keys, so the hardware run only adds the board.
 
 ## Plan
 
-- [ ] Reference account-creation page with `bwg-core/component`,
-  `connectWebSerialHeadlessClient` and the onboarding device.
+- [ ] Reference account-creation page with `bwg-core/component` and
+  `connectWebSerialHeadlessClient`, for a board already running the C image.
+  Onboarding is proven apart from it (Tickets 03 to 05 and 15).
 - [ ] Gate Authority, Reference Relying Service, PostgreSQL, the Stratum V1 proxy
   and pinned Hydra and Bitcoin Core, started by one script. Core Ticket 24 owns
   the general self-hosted package; this is the narrower run setup.
