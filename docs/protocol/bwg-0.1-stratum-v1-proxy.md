@@ -26,13 +26,13 @@ A clean `mining.notify` invalidates every older job before another submit can be
 
 An upstream `result:true` is not released to the Worker immediately. The transcript module first emits `PersistAccepted` with the exact target-qualified event, upstream response, and the Work Lease observation captured when the submit was forwarded. The TCP adapter commits them to the context-local `pool_adapter.accepted_work_outbox`; only `accepted_persisted` releases the unchanged response to the Worker. Replaying a response after connection loss returns the first durable event, lease observation, and response instead of changing their receipt time or monotonic reading.
 
-Delivery workers lease pending outbox events and resend the exact event until the Gate Authority acknowledges it. A process crash or unavailable Authority leaves the event recoverable after lease expiry, while Authority-side event/share deduplication returns stable acknowledgements without double credit. The Pool Adapter marks delivery acknowledged only after the Authority call succeeds.
+Delivery workers lease pending outbox events and resend the exact event until the Gate Authority settles it. An unavailable Authority releases the event for a retry after exponential backoff, from one second up to five minutes. A crashed worker's event is recoverable after its lease expires. Authority-side event and share deduplication returns stable acknowledgements without double credit. The Pool Adapter marks delivery acknowledged only after the Authority call succeeds. An event the Authority will never credit gets a typed refusal (ADR-0108), and the adapter records it once with its reason and never delivers it again.
 
 Worker submissions always reach the upstream Mining Pool before header reconstruction, network-target classification, outbox persistence, or Gate Authority delivery begins. If local observer state is malformed or outbox persistence fails afterward, the Worker receives no false acceptance, but a potential block candidate has already continued on the Mining Pool path.
 
 Frames are capped at 16 KiB before allocation, idle connections time out, and each session retains at most 64 outstanding request IDs and 64 jobs. Duplicate in-flight JSON-RPC IDs fail closed instead of overwriting request state.
 
-The context-local retention seam rejects periods below the hosted 30-day operational floor, oversized batches, and snapshot cutoffs later than its trusted current time. Once that floor has elapsed, one bounded transaction removes expired verifier/session rows, their connection reservations, abandoned unbound reservations, and acknowledged outbox events; pending delivery rows are never retired. Repeating the same retirement is idempotent and releases historical `extranonce1` space for safe reuse.
+The context-local retention seam rejects periods below the hosted 30-day operational floor, oversized batches, and snapshot cutoffs later than its trusted current time. Once that floor has elapsed, one bounded transaction removes expired verifier/session rows, their connection reservations, abandoned unbound reservations, and acknowledged or refused outbox events; pending delivery rows are never retired. Repeating the same retirement is idempotent and releases historical `extranonce1` space for safe reuse.
 
 ## Conformance
 
@@ -47,7 +47,8 @@ The checked-in [`stratum-v1-proxy-transcript.json`](../../conformance/bwg-0.1/st
 - reconstructed-header fingerprinting and network-target classification;
 - stale, rejected, duplicate, reconnect, and cross-session submissions;
 - persistence-before-acknowledgement;
-- outbox lease recovery and at-least-once Authority delivery;
+- outbox lease recovery, backoff after an outage, and at-least-once Authority delivery;
+- terminal refusal of uncreditable work, checked against the shared refusal vectors;
 - the existing Gate Authority Verified Progress transaction;
 - upstream-first behavior during a Pool Adapter persistence outage; and
 - bounded, idempotent Pool Adapter retirement after the governance floor.

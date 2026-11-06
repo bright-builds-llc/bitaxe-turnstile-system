@@ -124,7 +124,9 @@ pub(super) async fn issue_gate_pass(
         match delivery.deliver_one(&sink, fixture.now + offset).await? {
             DeliveryOutcome::Acknowledged => delivered_count += 1,
             DeliveryOutcome::Empty => break,
-            DeliveryOutcome::RetryableFailure => return Err("Authority delivery failed".into()),
+            DeliveryOutcome::RetryableFailure | DeliveryOutcome::Refused(_) => {
+                return Err("Authority delivery failed".into());
+            }
         }
     }
     let sink_state = sink.state.into_inner()?;

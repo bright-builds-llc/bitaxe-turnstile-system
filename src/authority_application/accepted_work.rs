@@ -1,11 +1,15 @@
 //! Credits one Accepted Work Event, or refuses it terminally (ADR-0108).
 
+use async_trait::async_trait;
+
 use super::{
-    AuthorityApplication, AuthorityApplicationError, ProgressUpdate, current_unix_seconds,
+    AuthorityApplication, AuthorityApplicationError, ProgressUpdate, SimulatedPoolAdapter,
+    current_unix_seconds,
 };
 use crate::{
     lifecycle::{WorkLease, WorkerClock},
     progress::{AcceptedWorkAcknowledgement, AcceptedWorkEvent, AcceptedWorkRefusal},
+    stratum_v1::{AcceptedWorkSink, AcceptedWorkSinkError, StratumLeaseContext},
 };
 
 impl AuthorityApplication {
@@ -52,5 +56,26 @@ impl AuthorityApplication {
             self.notify_lifecycle(&acceptance.challenge_id, lifecycle)?;
         }
         Ok(acceptance.acknowledgement)
+    }
+}
+
+/// In-process delivery: a refusal is terminal, any other error is an outage.
+#[async_trait]
+impl AcceptedWorkSink for SimulatedPoolAdapter {
+    async fn deliver(
+        &self,
+        event: AcceptedWorkEvent,
+        lease_context: StratumLeaseContext,
+    ) -> Result<(), AcceptedWorkSinkError> {
+        match self.report_stratum(event, &lease_context).await {
+            Ok(_) => Ok(()),
+            Err(AuthorityApplicationError::WorkRefused(refusal)) => {
+                Err(AcceptedWorkSinkError::Refused(refusal))
+            }
+            Err(error) => {
+                tracing::warn!(%error, "accepted work delivery will retry");
+                Err(AcceptedWorkSinkError::Unavailable)
+            }
+        }
     }
 }

@@ -12,7 +12,7 @@ const MAXIMUM_RETENTION_BATCH_ROWS: u64 = 1_000;
 pub struct PoolAdapterRetentionCounts {
     pub connections: u64,
     pub sessions: u64,
-    pub acknowledged_events: u64,
+    pub settled_events: u64,
 }
 
 /// Context-local cleanup seam for expired Pool Adapter operational records.
@@ -95,10 +95,10 @@ impl PostgresPoolAdapterRetention {
         .execute(&mut *transaction)
         .await?
         .rows_affected();
-        let acknowledged_events = sqlx::query(
+        let settled_events = sqlx::query(
             "WITH eligible AS (
                  SELECT event_id FROM pool_adapter.accepted_work_outbox
-                 WHERE delivery_state = 'acknowledged'
+                 WHERE delivery_state IN ('acknowledged', 'refused')
                    AND acknowledged_at_unix_seconds <= $1
                  ORDER BY acknowledged_at_unix_seconds, event_id
                  LIMIT $2
@@ -116,7 +116,7 @@ impl PostgresPoolAdapterRetention {
         Ok(PoolAdapterRetentionCounts {
             connections,
             sessions,
-            acknowledged_events,
+            settled_events,
         })
     }
 }

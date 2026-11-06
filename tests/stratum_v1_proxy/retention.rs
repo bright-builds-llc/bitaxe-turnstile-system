@@ -81,13 +81,13 @@ async fn pool_adapter_retirement_is_bounded_idempotent_and_releases_extranonce_s
     ));
     assert_eq!(counts.connections, 2);
     assert_eq!(counts.sessions, 1);
-    assert_eq!(counts.acknowledged_events, 1);
+    assert_eq!(counts.settled_events, 1);
     assert_eq!(
         repeated,
         PoolAdapterRetentionCounts {
             connections: 0,
             sessions: 0,
-            acknowledged_events: 0,
+            settled_events: 0,
         }
     );
     assert!(authentication.is_none());

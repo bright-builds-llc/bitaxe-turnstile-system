@@ -2,8 +2,8 @@ use sqlx::{PgPool, Row as _};
 
 use super::{StratumLeaseContext, StratumV1Error};
 use crate::progress::{
-    AcceptedWorkEvent, AcceptedWorkEventId, AcceptedWorkEventInput, NetworkTargetOutcome,
-    ReceiptTime, ShareFingerprint, WorkSessionId,
+    AcceptedWorkEvent, AcceptedWorkEventId, AcceptedWorkEventInput, AcceptedWorkRefusal,
+    NetworkTargetOutcome, ReceiptTime, ShareFingerprint, WorkSessionId,
 };
 
 /// Context-local durable outbox for at-least-once Gate Authority delivery.
@@ -105,6 +105,7 @@ impl PostgresAcceptedWorkOutbox {
                        delivery_owner IS NULL
                        OR delivery_lease_expires_at_unix_seconds <= $2
                    )
+                   AND COALESCE(next_attempt_at_unix_seconds <= $2, TRUE)
                  ORDER BY received_at_unix_seconds, event_id
                  FOR UPDATE SKIP LOCKED
                  LIMIT 1
@@ -122,7 +123,7 @@ impl PostgresAcceptedWorkOutbox {
                        event.lease_expires_at_monotonic_milliseconds,
                        event.assigned_target, event.received_at_unix_seconds,
                        event.share_fingerprint, event.network_target_outcome,
-                       event.worker_response",
+                       event.worker_response, event.delivery_attempts",
         )
         .bind(worker_id)
         .bind(to_i64(now_unix_seconds)?)
@@ -136,6 +137,8 @@ impl PostgresAcceptedWorkOutbox {
                 worker_response: row.try_get("worker_response")?,
                 delivery_owner: worker_id.to_owned(),
                 lease_expires_at_unix_seconds,
+                delivery_attempts: u32::try_from(row.try_get::<i32, _>("delivery_attempts")?)
+                    .map_err(|_| StratumV1Error::ConflictingOutboxReplay)?,
             })
         })
         .transpose()
@@ -146,12 +149,31 @@ impl PostgresAcceptedWorkOutbox {
         claimed: &ClaimedAcceptedWork,
         now_unix_seconds: u64,
     ) -> Result<(), StratumV1Error> {
+        self.settle(claimed, now_unix_seconds, None).await
+    }
+
+    /// Settles an event the Authority will never credit; it is never delivered again.
+    pub async fn refuse(
+        &self,
+        claimed: &ClaimedAcceptedWork,
+        refusal: AcceptedWorkRefusal,
+        now_unix_seconds: u64,
+    ) -> Result<(), StratumV1Error> {
+        self.settle(claimed, now_unix_seconds, Some(refusal)).await
+    }
+
+    /// Releases an event after an outage so no claim takes it before `retry_at`.
+    pub async fn defer(
+        &self,
+        claimed: &ClaimedAcceptedWork,
+        now_unix_seconds: u64,
+        retry_at_unix_seconds: u64,
+    ) -> Result<(), StratumV1Error> {
         let result = sqlx::query(
             "UPDATE pool_adapter.accepted_work_outbox
-             SET delivery_state = 'acknowledged',
-                 acknowledged_at_unix_seconds = $3,
-                 delivery_owner = NULL,
-                 delivery_lease_expires_at_unix_seconds = NULL
+             SET delivery_owner = NULL,
+                 delivery_lease_expires_at_unix_seconds = NULL,
+                 next_attempt_at_unix_seconds = $4
              WHERE event_id = $1
                AND delivery_state = 'pending'
                AND delivery_owner = $2
@@ -160,6 +182,38 @@ impl PostgresAcceptedWorkOutbox {
         .bind(claimed.event.event_id().as_str())
         .bind(&claimed.delivery_owner)
         .bind(to_i64(now_unix_seconds)?)
+        .bind(to_i64(retry_at_unix_seconds)?)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() != 1 {
+            return Err(StratumV1Error::LostDeliveryLease);
+        }
+        Ok(())
+    }
+
+    async fn settle(
+        &self,
+        claimed: &ClaimedAcceptedWork,
+        now_unix_seconds: u64,
+        maybe_refusal: Option<AcceptedWorkRefusal>,
+    ) -> Result<(), StratumV1Error> {
+        let result = sqlx::query(
+            "UPDATE pool_adapter.accepted_work_outbox
+             SET delivery_state = CASE WHEN $4::text IS NULL THEN 'acknowledged' ELSE 'refused' END,
+                 refusal_reason = $4,
+                 acknowledged_at_unix_seconds = $3,
+                 delivery_owner = NULL,
+                 delivery_lease_expires_at_unix_seconds = NULL,
+                 next_attempt_at_unix_seconds = NULL
+             WHERE event_id = $1
+               AND delivery_state = 'pending'
+               AND delivery_owner = $2
+               AND delivery_lease_expires_at_unix_seconds > $3",
+        )
+        .bind(claimed.event.event_id().as_str())
+        .bind(&claimed.delivery_owner)
+        .bind(to_i64(now_unix_seconds)?)
+        .bind(maybe_refusal.map(AcceptedWorkRefusal::code))
         .execute(&self.pool)
         .await?;
         if result.rows_affected() != 1 {
@@ -197,6 +251,7 @@ pub struct ClaimedAcceptedWork {
     worker_response: String,
     delivery_owner: String,
     lease_expires_at_unix_seconds: u64,
+    delivery_attempts: u32,
 }
 
 impl ClaimedAcceptedWork {
@@ -214,6 +269,11 @@ impl ClaimedAcceptedWork {
 
     pub fn lease_expires_at_unix_seconds(&self) -> u64 {
         self.lease_expires_at_unix_seconds
+    }
+
+    /// Claims so far, this one included.
+    pub fn delivery_attempts(&self) -> u32 {
+        self.delivery_attempts
     }
 }
 

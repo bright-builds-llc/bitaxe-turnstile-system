@@ -211,7 +211,7 @@ async fn same_second_regrant_rotates_without_allowing_generation_rollback()
 }
 
 #[tokio::test]
-async fn delivery_retries_the_exact_event_until_the_authority_acknowledges()
+async fn delivery_retries_an_outage_after_backoff_until_the_authority_acknowledges()
 -> Result<(), Box<dyn Error>> {
     // Arrange
     let database = PostgresTestDatabase::start().await?;
@@ -229,16 +229,47 @@ async fn delivery_retries_the_exact_event_until_the_authority_acknowledges()
 
     // Act
     let failed = worker.deliver_one(&sink, 1_000).await?;
-    let while_leased = worker.deliver_one(&sink, 1_029).await?;
-    let recovered = worker.deliver_one(&sink, 1_030).await?;
+    let during_backoff = worker.deliver_one(&sink, 1_000).await?;
+    let recovered = worker.deliver_one(&sink, 1_001).await?;
     let complete = worker.deliver_one(&sink, 1_061).await?;
 
     // Assert
     assert_eq!(failed, DeliveryOutcome::RetryableFailure);
-    assert_eq!(while_leased, DeliveryOutcome::Empty);
+    assert_eq!(during_backoff, DeliveryOutcome::Empty);
     assert_eq!(recovered, DeliveryOutcome::Acknowledged);
     assert_eq!(complete, DeliveryOutcome::Empty);
     assert_eq!(sink.attempts(), vec![event.clone(), event]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn crashed_delivery_is_recovered_when_its_lease_expires() -> Result<(), Box<dyn Error>> {
+    // Arrange
+    let database = PostgresTestDatabase::start().await?;
+    let outbox = PostgresAcceptedWorkOutbox::connect(database.database_url()).await?;
+    let event = persisted_event("event_stratum_crash_01", "share_stratum_crash_01")?;
+    outbox
+        .persist(
+            &event,
+            &test_lease_context()?,
+            r#"{"id":13,"result":true,"error":null}"#,
+        )
+        .await?;
+    outbox
+        .claim_next("delivery_worker_crashed", 1_000, 1_030)
+        .await?
+        .ok_or("the crashed worker must have claimed the event")?;
+    let sink = RecordingSink::fail_once();
+    let worker = AcceptedWorkDeliveryWorker::new(outbox, "delivery_worker_after".to_owned(), 30)?;
+
+    // Act
+    let while_leased = worker.deliver_one(&sink, 1_029).await?;
+    let recovered = worker.deliver_one(&sink, 1_030).await?;
+
+    // Assert
+    assert_eq!(while_leased, DeliveryOutcome::Empty);
+    assert_eq!(recovered, DeliveryOutcome::RetryableFailure);
+    assert_eq!(sink.attempts(), vec![event]);
     Ok(())
 }
 

@@ -9,7 +9,9 @@ use bwg_core::{
     },
     challenge::{ActionPolicy, ChallengeId},
     lifecycle::WorkerClock,
-    progress::{AcceptedWorkAcknowledgement, AcceptedWorkEvent, WorkSessionId},
+    progress::{
+        AcceptedWorkAcknowledgement, AcceptedWorkEvent, AcceptedWorkRefusal, WorkSessionId,
+    },
     stratum_v1::{
         AcceptedWorkDeliveryWorker, AcceptedWorkSink, AcceptedWorkSinkError, DeliveryOutcome,
         PostgresAcceptedWorkOutbox, StratumLeaseContext,
@@ -18,7 +20,7 @@ use bwg_core::{
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 
-use super::{PostgresTestDatabase, persisted_event};
+use super::{PostgresTestDatabase, fixtures::test_lease_context, persisted_event};
 
 #[path = "../support/authority_keys.rs"]
 mod authority_key_support;
@@ -105,6 +107,50 @@ async fn durable_proxy_event_advances_the_existing_authority_progress_path()
     assert_eq!(
         acknowledgement.verified_progress().to_decimal_string(),
         "4295032833"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn refused_event_is_recorded_once_and_never_redelivered() -> Result<(), Box<dyn Error>> {
+    // Arrange
+    let database = PostgresTestDatabase::start().await?;
+    let application =
+        AuthorityApplication::connect_postgres(authority_config()?, database.database_url())
+            .await?;
+    let outbox = PostgresAcceptedWorkOutbox::connect(database.database_url()).await?;
+    let event = persisted_event("event_stratum_refused_01", "share_stratum_refused_01")?;
+    outbox
+        .persist(
+            &event,
+            &test_lease_context()?,
+            r#"{"id":52,"result":true,"error":null}"#,
+        )
+        .await?;
+    let worker = AcceptedWorkDeliveryWorker::new(outbox, "delivery_worker_refused".to_owned(), 30)?;
+    let sink = application.simulated_pool_adapter();
+
+    // Act
+    let refused = worker.deliver_one(&sink, 1_000).await?;
+    let later = worker.deliver_one(&sink, 1_000 + 3_600).await?;
+
+    // Assert
+    assert_eq!(
+        refused,
+        DeliveryOutcome::Refused(AcceptedWorkRefusal::UnknownWorkLease)
+    );
+    assert_eq!(later, DeliveryOutcome::Empty);
+    let pool = sqlx::PgPool::connect(database.database_url()).await?;
+    let (state, reason, attempts): (String, String, i32) = sqlx::query_as(
+        "SELECT delivery_state, refusal_reason, delivery_attempts
+         FROM pool_adapter.accepted_work_outbox WHERE event_id = $1",
+    )
+    .bind("event_stratum_refused_01")
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        (state.as_str(), reason.as_str(), attempts),
+        ("refused", "unknown_work_lease", 1)
     );
     Ok(())
 }
