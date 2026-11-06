@@ -1,0 +1,56 @@
+# Mainnet Hydra for Ticket 07, rendered by scripts/hydra-mainnet-stack.sh. Difficulty
+# follows upstream's sample; there is no regtest-only difficulty override.
+[network]
+listen_address = "/ip4/127.0.0.1/tcp/__P2P_PORT__"
+dial_peers = []
+max_pending_incoming = 10
+max_pending_outgoing = 10
+max_established_incoming = 10
+max_established_outgoing = 10
+max_established_per_peer = 1
+max_workbase_per_second = 10
+max_userworkbase_per_second = 10
+max_miningshare_per_second = 100
+max_inventory_per_second = 100
+max_transaction_per_second = 100
+max_requests_per_second = 100
+dial_timeout_secs = 5
+
+[store]
+path = "__STORE_PATH__"
+background_task_frequency_hours = 24
+pplns_ttl_days = 7
+
+[stratum]
+hostname = "127.0.0.1"
+port = __STRATUM_PORT__
+start_difficulty = 10000
+minimum_difficulty = 100
+solo_address = "__PAYOUT_ADDRESS__"
+bootstrap_address = "__PAYOUT_ADDRESS__"
+zmqpubhashblock = "tcp://127.0.0.1:__ZMQ_PORT__"
+network = "main"
+version_mask = "1fffe000"
+difficulty_multiplier = 1.0
+pool_signature = "BWG-Hydra"
+max_connections = 16
+wait_for_chain_sync = true
+require_job_admission = true
+job_admission_timeout_ms = 2000
+job_admission_max_concurrency = 8
+block_submission_timeout_ms = 2000
+mode = "hydrapool"
+
+[bitcoinrpc]
+url = "http://127.0.0.1:__RPC_PORT__"
+username = "__RPC_USER__"
+password = "__RPC_PASSWORD__"
+
+[logging]
+console = true
+level = "info"
+stats_dir = "__STATS_PATH__"
+
+[api]
+hostname = "127.0.0.1"
+port = __API_PORT__
