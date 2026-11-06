@@ -1,7 +1,7 @@
 # Compose and rehearse the production path
 
 Type: task
-Status: ready-for-agent
+Status: claimed
 Blocked by: 12
 
 ## Objective
