@@ -7,6 +7,9 @@ use testcontainers::{
     runners::AsyncRunner as _,
 };
 
+const READINESS_TIMEOUT: Duration = Duration::from_secs(30);
+const READINESS_POLL: Duration = Duration::from_millis(250);
+
 pub struct PostgresTestDatabase {
     // Each integration-test binary compiles this shared helper independently.
     #[allow(dead_code)]
@@ -28,11 +31,38 @@ impl PostgresTestDatabase {
             .await?;
         let host = container.get_host().await?;
         let port = container.get_host_port_ipv4(5432).await?;
-
-        Ok(Self {
+        let database = Self {
             container,
             database_url: format!("postgres://bwg_test:bwg_test_password@{host}:{port}/bwg_test"),
-        })
+        };
+        database.wait_until_queryable().await?;
+        Ok(database)
+    }
+
+    /// The image logs "ready" from its temporary init server too, so wait for a real query.
+    async fn wait_until_queryable(&self) -> Result<(), Box<dyn Error>> {
+        let deadline = tokio::time::Instant::now() + READINESS_TIMEOUT;
+        loop {
+            let error = match self.query_once().await {
+                Ok(()) => return Ok(()),
+                Err(error) => error,
+            };
+            if tokio::time::Instant::now() >= deadline {
+                return Err(format!("PostgreSQL did not accept queries: {error}").into());
+            }
+            tokio::time::sleep(READINESS_POLL).await;
+        }
+    }
+
+    async fn query_once(&self) -> Result<(), sqlx::Error> {
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .acquire_timeout(READINESS_POLL)
+            .connect(&self.database_url)
+            .await?;
+        let result = sqlx::query("SELECT 1").execute(&pool).await.map(|_| ());
+        pool.close().await;
+        result
     }
 
     pub fn database_url(&self) -> &str {
