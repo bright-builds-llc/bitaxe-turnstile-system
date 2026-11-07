@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 use ring::digest;
 use serde_json::Value;
@@ -12,6 +12,7 @@ mod credentials;
 mod delivery;
 mod error;
 pub mod in_process;
+mod jobs;
 mod pool_selection;
 mod postgres;
 mod retention;
@@ -26,6 +27,8 @@ pub use delivery::{
     retry_delay_seconds,
 };
 pub use error::StratumV1Error;
+use jobs::RetainedJobs;
+pub use jobs::UnheldJob;
 pub use postgres::{ClaimedAcceptedWork, PersistedAcceptedWork, PostgresAcceptedWorkOutbox};
 pub use retention::{PoolAdapterRetentionCounts, PostgresPoolAdapterRetention};
 pub use sessions::{AuthenticatedStratumSession, PostgresStratumSessionRegistry};
@@ -38,9 +41,6 @@ pub use worker_grant::PoolAdapterWorkerStratum;
 
 pub(crate) const MAXIMUM_STRATUM_FRAME_BYTES: usize = 16 * 1024;
 const MAXIMUM_OUTSTANDING_REQUESTS: usize = 64;
-/// Outlasts Hydra's 15-minute job age at its new job about every 10 s, so the proxy
-/// never answers "Job not found" for a job Hydra would still take.
-const MAXIMUM_RETAINED_JOBS: usize = 96;
 
 /// Opaque handle released only after one accepted submission is durably recorded.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -98,6 +98,11 @@ pub enum StratumProxyAction {
         lease_context: StratumLeaseContext,
         worker_response: String,
     },
+    /// Answers a submit for a job the session does not hold; never forwarded or credited.
+    RefuseSubmit {
+        reason: UnheldJob,
+        worker_response: String,
+    },
 }
 
 /// Stateful standard Stratum V1 transcript with a persistence-before-acknowledgement interface.
@@ -105,9 +110,7 @@ pub struct StratumSession {
     config: StratumSessionConfig,
     authorized: bool,
     maybe_current_target: Option<[u8; 32]>,
-    jobs: HashMap<String, StratumJob>,
-    /// Retained job IDs, oldest first, so the bound retires the oldest job.
-    job_order: VecDeque<String>,
+    jobs: RetainedJobs,
     outstanding_requests: HashMap<String, OutstandingRequest>,
     awaiting_persistence: HashMap<AcceptedSubmissionToken, String>,
     awaiting_extranonce: HashMap<ExtranonceReservationToken, PendingExtranonce>,
@@ -165,8 +168,7 @@ impl StratumSession {
             config,
             authorized: false,
             maybe_current_target: None,
-            jobs: HashMap::new(),
-            job_order: VecDeque::new(),
+            jobs: RetainedJobs::default(),
             outstanding_requests: HashMap::new(),
             awaiting_persistence: HashMap::new(),
             awaiting_extranonce: HashMap::new(),
@@ -248,18 +250,22 @@ impl StratumSession {
                     return Err(StratumV1Error::InvalidCredentials);
                 }
                 if !(5..=6).contains(&params.len()) {
-                    return Err(StratumV1Error::UnknownJob);
+                    return Err(StratumV1Error::InvalidFrame);
                 }
                 let job_id = params
                     .get(1)
                     .and_then(Value::as_str)
-                    .ok_or(StratumV1Error::UnknownJob)?;
-                // A retired job's in-flight result is answered as a pool would, never forwarded.
-                let Some(job) = self.jobs.get(job_id) else {
-                    let id = message_id(&message)?;
-                    return Ok(vec![StratumProxyAction::ForwardWorker(format!(
-                        "{{\"id\":{id},\"result\":null,\"error\":[21,\"Job not found\",null]}}"
-                    ))]);
+                    .ok_or(StratumV1Error::InvalidFrame)?;
+                // An unheld job's result is answered as a pool would, never forwarded.
+                let job = match self.jobs.get(job_id) {
+                    Ok(job) => job,
+                    Err(reason) => {
+                        let worker_response = reason.worker_response(&message_id(&message)?);
+                        return Ok(vec![StratumProxyAction::RefuseSubmit {
+                            reason,
+                            worker_response,
+                        }]);
+                    }
                 };
                 let extranonce2 = params
                     .get(2)
@@ -350,7 +356,6 @@ impl StratumSession {
                         .ok_or(StratumV1Error::InvalidFrame)?;
                     if clean_jobs {
                         self.jobs.clear();
-                        self.job_order.clear();
                     }
                     let string_at = |index| {
                         params
@@ -382,7 +387,7 @@ impl StratumSession {
                             .maybe_current_target
                             .ok_or(StratumV1Error::TargetRequired)?,
                     };
-                    self.retain_job(job_id, job);
+                    self.jobs.retain(job_id, job);
                 }
                 _ => {}
             }
@@ -509,18 +514,6 @@ impl StratumSession {
     /// Moves this live connection onto a renewed registration of its same lease.
     pub fn renew(&mut self, renewed: AuthenticatedStratumSession) -> Result<(), StratumV1Error> {
         renewed.renew_config(&mut self.config)
-    }
-
-    fn retain_job(&mut self, job_id: &str, job: StratumJob) {
-        if self.jobs.insert(job_id.to_owned(), job).is_some() {
-            return;
-        }
-        self.job_order.push_back(job_id.to_owned());
-        if self.job_order.len() > MAXIMUM_RETAINED_JOBS
-            && let Some(oldest) = self.job_order.pop_front()
-        {
-            self.jobs.remove(&oldest);
-        }
     }
 
     fn require_unexpired(&self, now_unix_seconds: u64) -> Result<(), StratumV1Error> {

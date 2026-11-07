@@ -20,8 +20,6 @@ pub enum StratumV1Error {
     InvalidExtranonce,
     #[error("Stratum extranonce space is already assigned to another Work Session")]
     ExtranonceCollision,
-    #[error("Stratum submission names an unknown or stale job")]
-    UnknownJob,
     #[error("Stratum submission rolls the version without a negotiated version mask")]
     VersionRollingNotNegotiated,
     #[error("accepted submission persistence token is unknown")]

@@ -106,3 +106,6 @@ Follow [run-sheet-07.md](../run-sheet-07.md).
   - On the owner's choice ("Option A"), Hydra now keeps the connection across a
     new tip. It still removes old-tip jobs and sends the new tip's job with
     `clean_jobs`. The rehearsal's lease survives the block.
+  - The proxy now answers a job it dropped with "Stale job" and one it never
+    sent with "Job not found", both error 21, and logs them as `stale_job` and
+    `unknown_job`. The board's rejected-share list shows which one happened.

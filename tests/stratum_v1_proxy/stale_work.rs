@@ -1,12 +1,25 @@
 //! A Worker such as ESP-Miner submits in-flight results for jobs a new Bitcoin tip
 //! or a reconnect has retired. Pools answer those with error 21 and keep the
-//! connection, and so does the proxy.
+//! connection, and so does the proxy. A job this session dropped is "Stale job";
+//! one it never sent is "Job not found".
+
+use bwg_core::stratum_v1::UnheldJob;
 
 use super::fixtures::{StratumJobFields, disconnect_sink, worked_nonce};
 use super::*;
 
 const PREVIOUS_BLOCK: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 const JOB_NOT_FOUND: &str = r#"{"id":4,"result":null,"error":[21,"Job not found",null]}"#;
+const STALE_JOB: &str = r#"{"id":4,"result":null,"error":[21,"Stale job",null]}"#;
+/// 96 retained jobs plus 192 remembered drops, plus one more to push out the first.
+const JOBS_PAST_EVERY_BOUND: usize = 96 + 192 + 1;
+
+fn refused(reason: UnheldJob, response: &str) -> Vec<StratumProxyAction> {
+    vec![StratumProxyAction::RefuseSubmit {
+        reason,
+        worker_response: response.to_owned(),
+    }]
+}
 
 fn notify(job_id: &str, clean_jobs: bool) -> String {
     format!(
@@ -21,8 +34,7 @@ fn submit(id: u64, job_id: &str, nonce: &str) -> String {
 }
 
 #[test]
-fn clean_notify_answers_a_submit_for_the_superseded_job_as_not_found() -> Result<(), Box<dyn Error>>
-{
+fn clean_notify_answers_a_submit_for_the_superseded_job_as_stale() -> Result<(), Box<dyn Error>> {
     // Arrange
     let mut session = authorized_session()?;
     session.upstream_frame(&notify("job-old", true), 1_000)?;
@@ -32,10 +44,39 @@ fn clean_notify_answers_a_submit_for_the_superseded_job_as_not_found() -> Result
     let actions = session.worker_frame(&submit(4, "job-old", "abcdef01"), 1_002)?;
 
     // Assert
-    assert_eq!(
-        actions,
-        vec![StratumProxyAction::ForwardWorker(JOB_NOT_FOUND.to_owned())]
-    );
+    assert_eq!(actions, refused(UnheldJob::Stale, STALE_JOB));
+    Ok(())
+}
+
+#[test]
+fn a_job_never_sent_to_the_session_is_not_found() -> Result<(), Box<dyn Error>> {
+    // Arrange
+    let mut session = authorized_session()?;
+    session.upstream_frame(&notify("job-current", true), 1_000)?;
+
+    // Act
+    let actions = session.worker_frame(&submit(4, "job-elsewhere", "abcdef01"), 1_000)?;
+
+    // Assert
+    assert_eq!(actions, refused(UnheldJob::Unknown, JOB_NOT_FOUND));
+    Ok(())
+}
+
+#[test]
+fn remembered_drops_are_bounded_oldest_first() -> Result<(), Box<dyn Error>> {
+    // Arrange
+    let mut session = authorized_session()?;
+    for id in 0..JOBS_PAST_EVERY_BOUND {
+        session.upstream_frame(&notify(&format!("job-{id}"), false), 1_000)?;
+    }
+
+    // Act
+    let forgotten = session.worker_frame(&submit(4, "job-0", "00000000"), 1_000)?;
+    let remembered = session.worker_frame(&submit(4, "job-1", "00000000"), 1_000)?;
+
+    // Assert
+    assert_eq!(forgotten, refused(UnheldJob::Unknown, JOB_NOT_FOUND));
+    assert_eq!(remembered, refused(UnheldJob::Stale, STALE_JOB));
     Ok(())
 }
 
@@ -70,10 +111,7 @@ fn the_oldest_job_is_retired_once_the_retention_bound_is_reached() -> Result<(),
     let next_oldest = session.worker_frame(&submit(5, "job-1", "00000000"), 1_000)?;
 
     // Assert
-    assert_eq!(
-        oldest,
-        vec![StratumProxyAction::ForwardWorker(JOB_NOT_FOUND.to_owned())]
-    );
+    assert_eq!(oldest, refused(UnheldJob::Stale, STALE_JOB));
     assert!(matches!(
         next_oldest.as_slice(),
         [StratumProxyAction::ForwardUpstream(_)]

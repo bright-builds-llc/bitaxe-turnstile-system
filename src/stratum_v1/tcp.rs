@@ -358,6 +358,13 @@ impl StratumTcpProxy {
             match action {
                 StratumProxyAction::ForwardUpstream(frame) => write_line(upstream, &frame).await?,
                 StratumProxyAction::ForwardWorker(frame) => write_line(worker, &frame).await?,
+                StratumProxyAction::RefuseSubmit {
+                    reason,
+                    worker_response,
+                } => {
+                    tracing::info!(reason = reason.code(), "Stratum submit refused");
+                    write_line(worker, &worker_response).await?;
+                }
                 StratumProxyAction::ReserveExtranonce {
                     token,
                     session_id,
