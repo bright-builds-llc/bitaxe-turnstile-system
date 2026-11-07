@@ -117,6 +117,7 @@ fn scale_target(
 
 pub(super) fn submitted_header(
     job: &StratumJob,
+    version: &str,
     extranonce1: &str,
     extranonce2: &str,
     ntime: &str,
@@ -134,7 +135,7 @@ pub(super) fn submitted_header(
         merkle_root = double_sha256(&joined);
     }
     let mut header = Vec::with_capacity(80);
-    header.extend(reverse_fixed(decode_fixed_hex::<4>(&job.version)?));
+    header.extend(reverse_fixed(decode_fixed_hex::<4>(version)?));
     header.extend(stratum_previous_block_bytes(&job.previous_block_hash)?);
     header.extend(merkle_root);
     header.extend(reverse_fixed(decode_fixed_hex::<4>(ntime)?));

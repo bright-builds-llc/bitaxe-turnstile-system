@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use ring::digest;
 use serde_json::Value;
-use thiserror::Error;
 
 use crate::progress::{
     AcceptedWorkEvent, AcceptedWorkEventId, AcceptedWorkEventInput, ReceiptTime, ShareFingerprint,
@@ -11,6 +10,7 @@ use crate::progress::{
 
 mod credentials;
 mod delivery;
+mod error;
 pub mod in_process;
 mod pool_selection;
 mod postgres;
@@ -18,12 +18,14 @@ mod retention;
 mod sessions;
 mod target;
 mod tcp;
+mod version_rolling;
 mod worker_grant;
 pub use delivery::{
     AcceptedWorkDeliveryWorker, AcceptedWorkSink, AcceptedWorkSinkError, DeliveryOutcome,
     MAX_DELIVERY_RETRY_SECONDS, WorkSessionDisconnectSink, WorkSessionDisconnectSinkError,
     retry_delay_seconds,
 };
+pub use error::StratumV1Error;
 pub use postgres::{ClaimedAcceptedWork, PersistedAcceptedWork, PostgresAcceptedWorkOutbox};
 pub use retention::{PoolAdapterRetentionCounts, PostgresPoolAdapterRetention};
 pub use sessions::{AuthenticatedStratumSession, PostgresStratumSessionRegistry};
@@ -31,6 +33,7 @@ use target::{
     classify_network_target, meets_assigned_target, submitted_header, target_for_difficulty,
 };
 pub use tcp::StratumTcpProxy;
+use version_rolling::{negotiated_version_mask, rolled_version};
 pub use worker_grant::PoolAdapterWorkerStratum;
 
 pub(crate) const MAXIMUM_STRATUM_FRAME_BYTES: usize = 16 * 1024;
@@ -106,11 +109,13 @@ pub struct StratumSession {
     awaiting_extranonce: HashMap<ExtranonceReservationToken, PendingExtranonce>,
     maybe_extranonce1: Option<String>,
     maybe_extranonce2_size: Option<usize>,
+    maybe_version_mask: Option<u32>,
 }
 
 struct PendingSubmission {
     request: String,
     job: StratumJob,
+    version: String,
     extranonce1: String,
     extranonce2: String,
     ntime: String,
@@ -137,6 +142,7 @@ struct PendingExtranonce {
 }
 
 enum OutstandingRequest {
+    Configure,
     Subscribe,
     Authorize,
     Submit(Box<PendingSubmission>),
@@ -161,6 +167,7 @@ impl StratumSession {
             awaiting_extranonce: HashMap::new(),
             maybe_extranonce1: None,
             maybe_extranonce2_size: None,
+            maybe_version_mask: None,
         })
     }
 
@@ -188,6 +195,7 @@ impl StratumSession {
         let message = parse_object(frame)?;
         let mut upstream_frame = frame.to_owned();
         let maybe_request = match message.get("method").and_then(Value::as_str) {
+            Some("mining.configure") => Some(OutstandingRequest::Configure),
             Some("mining.subscribe") => Some(OutstandingRequest::Subscribe),
             Some("mining.authorize") => {
                 let params = message
@@ -234,7 +242,7 @@ impl StratumSession {
                 if params.first().and_then(Value::as_str) != Some(&self.config.username) {
                     return Err(StratumV1Error::InvalidCredentials);
                 }
-                if params.len() != 5 {
+                if !(5..=6).contains(&params.len()) {
                     return Err(StratumV1Error::UnknownJob);
                 }
                 let job_id = params
@@ -257,6 +265,10 @@ impl StratumSession {
                     .get(4)
                     .and_then(Value::as_str)
                     .ok_or(StratumV1Error::InvalidFrame)?;
+                let version = match params.get(5) {
+                    None => job.version.clone(),
+                    Some(bits) => rolled_version(&job.version, bits, self.maybe_version_mask)?,
+                };
                 if self.config.upstream_username != self.config.username {
                     upstream_frame =
                         rewrite_upstream_identity(&message, &self.config.upstream_username, None)?;
@@ -264,6 +276,7 @@ impl StratumSession {
                 Some(OutstandingRequest::Submit(Box::new(PendingSubmission {
                     request: frame.to_owned(),
                     job: job.clone(),
+                    version,
                     extranonce1: extranonce1.to_owned(),
                     extranonce2: extranonce2.to_owned(),
                     ntime: ntime.to_owned(),
@@ -373,6 +386,10 @@ impl StratumSession {
             return Ok(vec![StratumProxyAction::ForwardWorker(frame.to_owned())]);
         };
         let submission = match request {
+            OutstandingRequest::Configure => {
+                self.maybe_version_mask = negotiated_version_mask(&message);
+                return Ok(vec![StratumProxyAction::ForwardWorker(frame.to_owned())]);
+            }
             OutstandingRequest::Subscribe => {
                 let maybe_extranonce1 = message
                     .get("result")
@@ -421,6 +438,7 @@ impl StratumSession {
         }
         let header = submitted_header(
             &submission.job,
+            &submission.version,
             &submission.extranonce1,
             &submission.extranonce2,
             &submission.ntime,
@@ -550,78 +568,6 @@ fn global_share_digest(header: &[u8; 80]) -> String {
         .collect()
 }
 
-#[derive(Debug, Error)]
-pub enum StratumV1Error {
-    #[error("Stratum Session configuration is invalid")]
-    InvalidSessionConfig,
-    #[error("Stratum V1 frame is invalid")]
-    InvalidFrame,
-    #[error("Stratum Session credentials are invalid")]
-    InvalidCredentials,
-    #[error("Stratum Session credentials expired")]
-    ExpiredCredentials,
-    #[error("Stratum authorization is required before submission")]
-    AuthorizationRequired,
-    #[error("Stratum assigned target is unavailable")]
-    TargetRequired,
-    #[error("Stratum difficulty is unsupported")]
-    UnsupportedDifficulty,
-    #[error("Stratum extranonce is invalid")]
-    InvalidExtranonce,
-    #[error("Stratum extranonce space is already assigned to another Work Session")]
-    ExtranonceCollision,
-    #[error("Stratum submission names an unknown or stale job")]
-    UnknownJob,
-    #[error("accepted submission persistence token is unknown")]
-    UnknownPersistenceToken,
-    #[error("Stratum extranonce reservation token is unknown")]
-    UnknownExtranonceToken,
-    #[error("Stratum JSON-RPC request identity is already outstanding")]
-    DuplicateRequestId,
-    #[error("Stratum V1 frame exceeds the configured size limit")]
-    FrameTooLarge,
-    #[error("Stratum Session state exceeds the configured capacity")]
-    CapacityExceeded,
-    #[error("upstream accepted a share below the assigned Stratum target")]
-    ShareBelowAssignedTarget,
-    #[error("accepted-work outbox replay conflicts with its durable event")]
-    ConflictingOutboxReplay,
-    #[error("Stratum Session replay conflicts with its durable credentials")]
-    ConflictingSessionReplay,
-    #[error("Stratum Session is not registered")]
-    UnknownSession,
-    #[error("Stratum Session cannot be extended under this lease")]
-    UnextendableSession,
-    #[error("accepted-work delivery lease is no longer owned by this worker")]
-    LostDeliveryLease,
-    #[error("Pool Adapter database operation failed")]
-    Database(#[from] sqlx::Error),
-    #[error("Pool Adapter migration failed")]
-    Migration(#[from] sqlx::migrate::MigrateError),
-    #[error("Stratum V1 transport failed")]
-    Io(#[from] std::io::Error),
-    #[error("Pool Adapter clock is unavailable")]
-    Clock(#[from] std::time::SystemTimeError),
-    #[error("Pool Adapter wall clock moved backwards during a Stratum Session")]
-    ClockRollback,
-    #[error("Pool Adapter retention policy is below the hosted safety floor")]
-    InvalidRetentionPolicy,
-    #[error(
-        "Stratum admission failed ({admission}) and reservation cleanup also failed ({cleanup})"
-    )]
-    AdmissionCleanup {
-        admission: Box<StratumV1Error>,
-        cleanup: Box<StratumV1Error>,
-    },
-    #[error("authenticated Work Session disconnect could not be delivered to the Gate Authority")]
-    DisconnectNotificationUnavailable,
-    #[error("Stratum transport ended ({transport}) and its disconnect notification also failed")]
-    TransportAndDisconnectNotification { transport: Box<StratumV1Error> },
-    #[error("Stratum connection exceeded its idle deadline")]
-    IdleTimeout,
-    #[error(transparent)]
-    Progress(#[from] crate::progress::ProgressError),
-}
 pub use credentials::{
     StratumCredentialIssuer, StratumLeaseContext, StratumSessionConfig, StratumSessionCredentials,
     StratumSessionExtension, StratumUpstreamAuthorization,

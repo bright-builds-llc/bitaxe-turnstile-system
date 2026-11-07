@@ -53,6 +53,8 @@ mod session_upstream;
 mod target_math;
 #[path = "stratum_v1_proxy/upstream_first.rs"]
 mod upstream_first;
+#[path = "stratum_v1_proxy/version_rolling.rs"]
+mod version_rolling;
 
 #[test]
 fn standard_transcript_persists_an_accepted_submit_before_worker_acknowledgement()

@@ -129,9 +129,28 @@ impl StratumTcpProxy {
         let mut worker_reader = BufReader::new(worker_read);
         let mut upstream_reader = BufReader::new(upstream_read);
         let connection_id = uuid::Uuid::new_v4().to_string();
-        let subscribe = next_frame(&mut worker_reader, self.idle_timeout)
+        let mut subscribe = next_frame(&mut worker_reader, self.idle_timeout)
             .await?
             .ok_or(StratumV1Error::InvalidFrame)?;
+        // Version rolling is the one negotiation a standard Worker may send first.
+        let mut maybe_configure = None;
+        if message_method(&subscribe)? == "mining.configure" {
+            write_line(&mut upstream_write, &subscribe).await?;
+            let configured = next_frame(&mut upstream_reader, self.idle_timeout)
+                .await?
+                .ok_or(StratumV1Error::InvalidFrame)?;
+            if message_id(&configured)? != message_id(&subscribe)? {
+                return Err(StratumV1Error::InvalidFrame);
+            }
+            write_line(&mut worker_write, &configured).await?;
+            let configure = std::mem::replace(
+                &mut subscribe,
+                next_frame(&mut worker_reader, self.idle_timeout)
+                    .await?
+                    .ok_or(StratumV1Error::InvalidFrame)?,
+            );
+            maybe_configure = Some((configure, configured));
+        }
         if message_method(&subscribe)? != "mining.subscribe" {
             return Err(StratumV1Error::AuthorizationRequired);
         }
@@ -183,6 +202,10 @@ impl StratumTcpProxy {
                 )?;
             }
             let mut session = StratumSession::new(session_config)?;
+            if let Some((configure, configured)) = &maybe_configure {
+                let _ = session.worker_frame(configure, now)?;
+                let _ = session.upstream_frame(configured, now)?;
+            }
             let _ = session.worker_frame(&subscribe, now)?;
             let subscribe_actions = session.upstream_frame(&subscribed, now)?;
             let [
@@ -380,6 +403,19 @@ fn message_method(frame: &str) -> Result<String, StratumV1Error> {
                 .get("method")
                 .and_then(|method| method.as_str())
                 .map(str::to_owned)
+        })
+        .ok_or(StratumV1Error::InvalidFrame)
+}
+
+/// A request or response's non-null JSON-RPC id, in canonical JSON.
+fn message_id(frame: &str) -> Result<String, StratumV1Error> {
+    serde_json::from_str::<serde_json::Value>(frame)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("id")
+                .filter(|id| !id.is_null())
+                .map(ToString::to_string)
         })
         .ok_or(StratumV1Error::InvalidFrame)
 }

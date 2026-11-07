@@ -47,6 +47,43 @@ pub(super) fn worked_nonce(
     job: StratumJobFields<'_>,
     target: [u8; 32],
 ) -> Result<String, Box<dyn Error>> {
+    let prefix = header_prefix(extranonce1, extranonce2, job)?;
+    (0..=u32::MAX)
+        .find(|nonce| meets(&prefix, *nonce, &target))
+        .map(|nonce| format!("{nonce:08x}"))
+        .ok_or_else(|| "no worked nonce exists".into())
+}
+
+/// Finds a nonce that meets the target for `job` but not for `other`, so a share
+/// is credited only when its header is rebuilt from `job`.
+pub(super) fn worked_nonce_only_for(
+    extranonce1: &str,
+    extranonce2: &str,
+    job: StratumJobFields<'_>,
+    other: StratumJobFields<'_>,
+    target: [u8; 32],
+) -> Result<String, Box<dyn Error>> {
+    let prefix = header_prefix(extranonce1, extranonce2, job)?;
+    let other_prefix = header_prefix(extranonce1, extranonce2, other)?;
+    (0..=u32::MAX)
+        .find(|nonce| meets(&prefix, *nonce, &target) && !meets(&other_prefix, *nonce, &target))
+        .map(|nonce| format!("{nonce:08x}"))
+        .ok_or_else(|| "no distinguishing nonce exists".into())
+}
+
+fn meets(prefix: &[u8], nonce: u32, target: &[u8; 32]) -> bool {
+    let mut header = prefix.to_vec();
+    header.extend(nonce.to_le_bytes());
+    let mut hash = double_sha256(&header);
+    hash.reverse();
+    hash <= *target
+}
+
+fn header_prefix(
+    extranonce1: &str,
+    extranonce2: &str,
+    job: StratumJobFields<'_>,
+) -> Result<Vec<u8>, Box<dyn Error>> {
     let StratumJobFields {
         previous_block_hash,
         coinbase1,
@@ -73,16 +110,7 @@ pub(super) fn worked_nonce(
         bytes.reverse();
         header_prefix.extend(bytes);
     }
-    for nonce in 0..=u32::MAX {
-        let mut header = header_prefix.clone();
-        header.extend(nonce.to_le_bytes());
-        let mut hash = double_sha256(&header);
-        hash.reverse();
-        if hash <= target {
-            return Ok(format!("{nonce:08x}"));
-        }
-    }
-    Err("no worked nonce exists".into())
+    Ok(header_prefix)
 }
 
 fn double_sha256(input: &[u8]) -> [u8; 32] {

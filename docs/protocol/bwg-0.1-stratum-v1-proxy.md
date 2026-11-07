@@ -1,6 +1,6 @@
 # BWG/0.1 Stratum V1 Pool Adapter Proxy
 
-The reference Pool Adapter is an MIT Rust TCP proxy between an unmodified standard Stratum V1 Worker and one upstream Mining Pool connection. It forwards `mining.subscribe`, `mining.authorize`, `mining.set_difficulty`, `mining.notify`, `mining.submit`, and their JSON-RPC responses without adding Work Challenge or Protected Action fields to Stratum.
+The reference Pool Adapter is an MIT Rust TCP proxy between an unmodified standard Stratum V1 Worker and one upstream Mining Pool connection. It forwards `mining.subscribe`, `mining.authorize`, `mining.set_difficulty`, `mining.notify`, `mining.submit`, and their JSON-RPC responses without adding Work Challenge or Protected Action fields to Stratum. A Worker may open with one `mining.configure` before `mining.subscribe`; the proxy forwards it and relays the reply, and nothing else is accepted before authorization. A submit's sixth version-bits parameter is applied under the mask that reply granted, as the Mining Pool applies it, and is refused without one.
 
 ## Work Session admission
 
