@@ -4,7 +4,8 @@
 # Starts pinned Bitcoin Core and Hydra, PostgreSQL, the production `gate-authority`
 # (with the in-process Stratum V1 proxy, delivery and sweep of ADR-0109) and
 # `reference-service` binaries behind one HTTPS origin, and drives the reference
-# page in Chromium with a fake serial Worker and a CPU miner.
+# page in Chromium with a fake serial Worker and a CPU miner. A regtest block mined
+# mid-lease checks that the lease survives a new Bitcoin tip.
 # macOS arm64 only, like the Hydra runner. Not part of `bun run verify`.
 #
 # Usage: scripts/rehearse-production-path.sh [--hold]
@@ -107,6 +108,10 @@ BWG_REHEARSAL_ORIGIN="$origin" \
   BWG_REHEARSAL_REFERENCE_ADDRESS="127.0.0.1:$reference_port" \
   BWG_REHEARSAL_PROXY_ADDRESS="127.0.0.1:$proxy_port" \
   BWG_HYDRA_STRATUM_ADDR="127.0.0.1:$stratum_port" \
+  BWG_REHEARSAL_BITCOIN_RPC_URL="http://127.0.0.1:$rpc_port/" \
+  BWG_REHEARSAL_BITCOIN_RPC_USER="$rpc_user" \
+  BWG_REHEARSAL_BITCOIN_RPC_PASSWORD="$rpc_password" \
+  BWG_REHEARSAL_MINING_ADDRESS="$mining_address" \
   target/debug/examples/production-path-rehearsal \
   >"$integration_root/harness.json" 2>"$integration_root/harness.log" &
 harness_pid=$!

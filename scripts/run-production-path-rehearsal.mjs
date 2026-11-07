@@ -1,7 +1,7 @@
 // Drives the production-path rehearsal page (Ticket 06) through `playwright-cli run-code`.
 // From challenge to redeemed Gate Pass: consent, Start, at least one Renew while
-// shares are still being delivered, the synthetic share across the Work
-// Requirement, restoration as `challenge_satisfied`, DPoP redemption and a refused replay.
+// shares are still being delivered, a new Bitcoin tip mid-lease that the lease
+// survives, the synthetic share across the Work Requirement, restoration as `challenge_satisfied`, DPoP redemption and a refused replay.
 async (page) => {
   const WORK_TIMEOUT_MILLISECONDS = 120_000;
   const POLL_MILLISECONDS = 500;
@@ -78,6 +78,23 @@ async (page) => {
     return latest && BigInt(latest.verifiedProgress) > 0n ? latest.verifiedProgress : undefined;
   });
 
+  // A new tip retires the miner's job; its in-flight result is answered as stale and
+  // the same lease keeps earning credit.
+  const minerBeforeTip = await (await control("/miner")).json();
+  const deliveryBeforeTip = await delivery();
+  await control("/chain/block", {});
+  const afterTip = await until("the lease survives a new Bitcoin tip", async (state) => {
+    if (paused(state)) await fail("the lease survives a new Bitcoin tip", "the client paused");
+    const [miner, evidence] = [await (await control("/miner")).json(), await delivery()];
+    if (evidence.refused > deliveryBeforeTip.refused) {
+      await fail("the lease survives a new Bitcoin tip", JSON.stringify(evidence));
+    }
+    const credited = evidence.realAcknowledged - deliveryBeforeTip.realAcknowledged;
+    return miner.staleAnswered > minerBeforeTip.staleAnswered && credited >= 5
+      ? { reconnects: miner.reconnects, staleAnswered: miner.staleAnswered, realSharesCreditedAfterTip: credited }
+      : undefined;
+  });
+
   await until("synthetic share queued", async () =>
     (await control(`/challenges/${created.challengeId}/synthetic-share`, {})).status() === 204);
   await until("Gate Pass redeemed", (state) =>
@@ -106,6 +123,7 @@ async (page) => {
     realSharesAcknowledgedBeforeSynthetic: beforeSynthetic.realAcknowledged,
     leaseWindowsWithAcknowledgedShares: beforeSynthetic.acknowledgedLeaseWindows,
     verifiedProgressFromRealShares: realProgress,
+    newTip: afterTip,
     delivery: afterSynthetic,
     minerAccepted: miner.accepted,
     minerRejected: miner.rejected,

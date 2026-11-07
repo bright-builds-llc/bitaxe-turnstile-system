@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use tokio::{sync::Mutex, task::JoinHandle};
 
-use crate::{miner, synthetic};
+use crate::{chain::RegtestChain, miner, synthetic};
 
 #[derive(Clone)]
 pub(crate) struct ControlState {
@@ -26,12 +26,14 @@ pub(crate) struct ControlState {
     outbox: PostgresAcceptedWorkOutbox,
     stats: Arc<miner::MinerStats>,
     miner: Arc<Mutex<Option<JoinHandle<()>>>>,
+    chain: Arc<RegtestChain>,
 }
 
 impl ControlState {
     pub(crate) async fn new(
         adapter_database_url: &str,
         outbox: PostgresAcceptedWorkOutbox,
+        chain: RegtestChain,
     ) -> Result<Self, Box<dyn Error>> {
         Ok(Self {
             pool: PgPoolOptions::new()
@@ -41,6 +43,7 @@ impl ControlState {
             outbox,
             stats: Arc::new(miner::MinerStats::default()),
             miner: Arc::new(Mutex::new(None)),
+            chain: Arc::new(chain),
         })
     }
 }
@@ -59,6 +62,7 @@ pub(crate) fn router(state: ControlState) -> Router {
         .route("/miner", get(miner_stats))
         .route("/miner/start", post(start_miner))
         .route("/miner/stop", post(stop_miner))
+        .route("/chain/block", post(mine_block))
         .route(
             "/challenges/{challenge_id}/synthetic-share",
             post(queue_synthetic_share),
@@ -98,6 +102,18 @@ async fn stop_miner(State(state): State<ControlState>) -> StatusCode {
     StatusCode::NO_CONTENT
 }
 
+/// Mines one regtest block, so the pool sees a new Bitcoin tip mid-lease.
+async fn mine_block(
+    State(state): State<ControlState>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    state
+        .chain
+        .mine_block()
+        .await
+        .map(Json)
+        .map_err(|error| (StatusCode::BAD_GATEWAY, error.to_string()))
+}
+
 async fn miner_stats(State(state): State<ControlState>) -> Json<Value> {
     let running = state
         .miner
@@ -110,6 +126,8 @@ async fn miner_stats(State(state): State<ControlState>) -> Json<Value> {
         "submitted": state.stats.submitted.load(Ordering::Relaxed),
         "accepted": state.stats.accepted.load(Ordering::Relaxed),
         "rejected": state.stats.rejected.load(Ordering::Relaxed),
+        "reconnects": state.stats.reconnects.load(Ordering::Relaxed),
+        "staleAnswered": state.stats.stale_answered.load(Ordering::Relaxed),
     }))
 }
 

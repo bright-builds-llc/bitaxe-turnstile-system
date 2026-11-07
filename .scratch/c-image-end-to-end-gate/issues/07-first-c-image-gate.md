@@ -88,3 +88,20 @@ Follow [run-sheet-07.md](../run-sheet-07.md).
   - "Worker admission rollback failed" came from the controller rejecting
     rollback with the same failure it had already closed on. The page now shows
     that one failure instead.
+- 2026-11-07: the mainnet run stopped at the first new Bitcoin block.
+  - Job admission makes Hydra close every Stratum connection on a new tip. The
+    board reconnected and resubmitted its pre-tip result. The proxy ended the
+    session on the unknown job, and after three tries the board gave up.
+  - The proxy now answers a retired job's submit with error 21, "Job not found",
+    and keeps the session. Past 96 jobs it retires the oldest instead of ending.
+    Hydra sends a same-tip job about every 10 s without `clean_jobs`, so a tip
+    over about 10.7 minutes would have hit the old bound of 64.
+  - Hydra's vardiff had raised the board to about 19.1M, roughly a day per share
+    at its rate, and an unbounded difficulty can overflow in a debug build.
+    Mainnet Hydra now starts and stays at 4096, one share for the 2^44
+    requirement. A share that large is credited in full; nothing caps it.
+  - The rehearsal now mines a block mid-lease, and it still fails there. The
+    closed connection stops the Work Session, so the lease ends and the next
+    share is refused as `work_lease_ended`. The fix waits on the owner's choice:
+    keep Hydra's connection across a new tip, or let a lease survive a
+    pool-initiated reconnect.

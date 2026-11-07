@@ -1,6 +1,8 @@
 //! A paced CPU Stratum V1 miner that stands in for the board's ASIC in the rehearsal.
 //! Like the board's firmware it opens with `mining.configure` for version rolling,
 //! sends subscribe and authorize without waiting, and submits rolled version bits.
+//! Like ESP-Miner it also submits its in-flight result for a job a new Bitcoin tip
+//! retired, after the clean notify or after reconnecting when the pool closes.
 
 use std::{
     error::Error,
@@ -26,12 +28,19 @@ const SHARE_INTERVAL: Duration = Duration::from_millis(500);
 const MAXIMUM_NONCES_PER_SHARE: u32 = 1 << 22;
 /// Stays just inside the pool's target so float rounding never yields a low share.
 const TARGET_SAFETY: f64 = 0.999;
+/// The board gives up on a pool after three failed connections in a row.
+const MAXIMUM_RECONNECTS: u64 = 3;
+const RECONNECT_DELAY: Duration = Duration::from_secs(1);
+/// The standard Stratum error code a pool answers a retired job's submit with.
+const JOB_NOT_FOUND: u64 = 21;
 
 #[derive(Default)]
 pub(crate) struct MinerStats {
     pub(crate) submitted: AtomicU64,
     pub(crate) accepted: AtomicU64,
     pub(crate) rejected: AtomicU64,
+    pub(crate) reconnects: AtomicU64,
+    pub(crate) stale_answered: AtomicU64,
 }
 
 struct Subscription {
@@ -39,13 +48,34 @@ struct Subscription {
     extranonce2_bytes: usize,
 }
 
-/// Mines with the Worker's Stratum credentials until the connection ends.
+/// Mines with the Worker's Stratum credentials, reconnecting when the pool closes.
 pub(crate) async fn run(
     address: SocketAddr,
     username: String,
     password: String,
     stats: std::sync::Arc<MinerStats>,
 ) -> MinerResult<()> {
+    let mut maybe_in_flight = None;
+    for attempt in 0..=MAXIMUM_RECONNECTS {
+        if attempt > 0 {
+            stats.reconnects.fetch_add(1, Ordering::Relaxed);
+            tokio::time::sleep(RECONNECT_DELAY).await;
+        }
+        maybe_in_flight =
+            mine_connection(address, &username, &password, &stats, maybe_in_flight).await?;
+    }
+    Err("the pool kept closing the connection".into())
+}
+
+/// Mines one connection until the pool closes it, returning the last submit's params
+/// so the next connection can submit that in-flight result first.
+async fn mine_connection(
+    address: SocketAddr,
+    username: &str,
+    password: &str,
+    stats: &MinerStats,
+    mut maybe_in_flight: Option<Value>,
+) -> MinerResult<Option<Value>> {
     let (reader, mut writer) = TcpStream::connect(address).await?.into_split();
     let mut lines = BufReader::new(reader).lines();
     for request in [
@@ -60,6 +90,7 @@ pub(crate) async fn run(
     let mut maybe_subscription = None;
     let mut maybe_difficulty = None;
     let mut maybe_job: Option<Vec<Value>> = None;
+    let mut maybe_last_submit: Option<Value> = None;
     let mut authorized = false;
     let mut next_id = 4_u64;
     let mut extranonce_counter = 0_u64;
@@ -67,7 +98,7 @@ pub(crate) async fn run(
     loop {
         tokio::select! {
             line = lines.next_line() => {
-                let Some(line) = line? else { return Ok(()) };
+                let Some(line) = line? else { return Ok(maybe_last_submit) };
                 let message: Value = serde_json::from_str(&line)?;
                 match (message["id"].as_u64(), message["method"].as_str()) {
                     (Some(1), _) => {
@@ -81,16 +112,28 @@ pub(crate) async fn run(
                         if !authorized {
                             return Err("Stratum authorization was refused".into());
                         }
+                        if let Some(params) = maybe_in_flight.take() {
+                            send(&mut writer, json!({"id": next_id, "method": "mining.submit", "params": params})).await?;
+                            next_id += 1;
+                        }
                     }
                     (_, Some("mining.set_difficulty")) => {
                         maybe_difficulty = message["params"][0].as_f64();
                     }
                     (_, Some("mining.notify")) => {
+                        let new_tip = message["params"][8] == Value::Bool(true)
+                            && maybe_job.as_ref().is_some_and(|job| job.get(1) != message["params"].get(1));
                         maybe_job = message["params"].as_array().cloned();
+                        if let (true, Some(params)) = (new_tip, maybe_last_submit.take()) {
+                            send(&mut writer, json!({"id": next_id, "method": "mining.submit", "params": params})).await?;
+                            next_id += 1;
+                        }
                     }
                     (Some(_), None) => {
                         let counter = if message["result"] == Value::Bool(true) {
                             &stats.accepted
+                        } else if message["error"][0].as_u64() == Some(JOB_NOT_FOUND) {
+                            &stats.stale_answered
                         } else {
                             &stats.rejected
                         };
@@ -114,11 +157,9 @@ pub(crate) async fn run(
                 else {
                     continue;
                 };
-                send(&mut writer, json!({
-                    "id": next_id,
-                    "method": "mining.submit",
-                    "params": [username, job[0], extranonce2, ntime, nonce, version_bits]
-                })).await?;
+                let params = json!([username, job[0], extranonce2, ntime, nonce, version_bits]);
+                send(&mut writer, json!({"id": next_id, "method": "mining.submit", "params": params})).await?;
+                maybe_last_submit = Some(params);
                 next_id += 1;
                 stats.submitted.fetch_add(1, Ordering::Relaxed);
             }

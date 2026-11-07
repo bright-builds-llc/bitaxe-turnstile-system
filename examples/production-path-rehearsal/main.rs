@@ -20,6 +20,7 @@ use tokio::net::TcpListener;
 
 #[path = "../../tests/support/authority_keys.rs"]
 mod authority_key_support;
+mod chain;
 mod control;
 mod miner;
 #[path = "../../tests/support/postgres.rs"]
@@ -81,7 +82,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let control_listener = TcpListener::bind("127.0.0.1:0").await?;
     let control_address = control_listener.local_addr()?;
     let outbox = PostgresAcceptedWorkOutbox::connect(&databases.pool_adapter).await?;
-    let control_state = control::ControlState::new(&databases.pool_adapter, outbox).await?;
+    let control_state = control::ControlState::new(
+        &databases.pool_adapter,
+        outbox,
+        chain::RegtestChain::from_env()?,
+    )
+    .await?;
     tokio::spawn(async move {
         if let Err(error) = axum::serve(control_listener, control::router(control_state)).await {
             tracing::error!(%error, "rehearsal control stopped");
