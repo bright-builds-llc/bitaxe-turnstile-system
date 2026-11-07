@@ -25,6 +25,7 @@ feed 09.
 | [16](issues/16-pool-adapter-grpc-process.md) Pool Adapter runs as its own process over gRPC | task | ready-for-agent | None |
 | [17](issues/17-sdk-http-transport-and-renew.md) SDK claimant HTTP transport and component-owned Renew | task | ready-for-agent | 06 |
 | [18](issues/18-postgres-test-readiness.md) PostgreSQL test container is used before it accepts queries | bug | resolved | None |
+| [19](issues/19-deployment-policy-pages.md) Deployment serves its operator policy, privacy and terms pages | task | needs-triage | None |
 
 ## Decisions so far
 
@@ -62,3 +63,7 @@ feed 09.
   node (Bitcoin Core 31.1, a named deviation from the 28.1 pin) through an SSH
   tunnel, with `scripts/hydra-mainnet-stack.sh --external-node`. A pruned node
   without `-txindex`, which Hydra and job admission don't need, is the fallback.
+- Ticket 07, on the owner's approval (2026-11-07): `scripts/launch-gate-deployment.sh`
+  composes the deployment with the owner's keys, read from files at run time, on a
+  Tailscale origin. It seeds the Work Lease sequence above the board's last known
+  value, and records the high-water mark when it stops.

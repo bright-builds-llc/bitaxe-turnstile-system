@@ -17,8 +17,11 @@ Follow [run-sheet-07.md](../run-sheet-07.md).
 
 - [ ] Owner: choose the network for the run. Criterion 5 needs mainnet with
   per-job BIP 23 admission (Core Ticket 18).
-- [ ] Owner: load the Work Lease Authority and Gate Pass keys into the
-  deployment. Agents never see them.
+- [x] Owner: choose the origin. A Tailscale origin on this Mac, approved
+  2026-11-07.
+- [ ] Owner: generate the Gate's keys and launch the deployment with
+  `scripts/launch-gate-deployment.sh`, which reads the Work Lease Authority and
+  Gate Pass keys from the owner's files. Agents never see them.
 - [ ] Gate: consent shown, Start, renewals, shares through the adapter credited as
   Verified Progress, the Work Requirement reached, restoration confirmed as
   `challenge_satisfied`, the Gate Pass redeemed once with DPoP and refused on reuse.
@@ -55,3 +58,21 @@ Follow [run-sheet-07.md](../run-sheet-07.md).
     and left it running, and Hydra then passed the integration through the
     same path.
   - The pruned sync stays in the run sheet as the fallback.
+- 2026-11-07: the launcher the run sheet assumed now exists, with the owner's
+  approval and a Tailscale origin.
+  - `scripts/gate-deployment-keys.ts` generates the Gate Pass signing key, the
+    service credential and the Stratum credential key, mode 600, and prints only
+    public values.
+  - `scripts/launch-gate-deployment.sh` reads those keys and the existing Work
+    Lease Authority from files at run time. It passes them only through each
+    binary's environment, and checks the lease key against the owner trust.
+  - It seeds the lease sequence above `lease-sequence.json` plus a margin, and
+    fails closed if that file is unreadable. It records the run's high-water mark
+    back at the end.
+  - It binds the proxy to the LAN address and serves the filled page through
+    `tailscale serve`. Its logs redact the address and the tailnet name.
+  - `scripts/rehearse-gate-deployment-launch.sh` proves it on regtest with
+    generated test keys. It doesn't use Tailscale or the board.
+  - Hydra takes its payout from the pool user file
+    (`--payout-from-pool-user`), so the address never goes on a command line.
+  - The consent screen's policy links don't resolve yet; that is Ticket 19.
