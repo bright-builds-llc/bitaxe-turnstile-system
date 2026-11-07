@@ -9,10 +9,13 @@
 # Usage, with a synced node the owner already runs, reached on loopback:
 #   scripts/hydra-mainnet-stack.sh --external-node --datadir DIR --rpc-url URL
 #     --zmq-url URL --rpc-credentials-file FILE --payout-address ADDRESS [--stratum-port PORT]
+# Either usage may take --payout-from-pool-user FILE in place of --payout-address.
 #
 #   --datadir               absolute directory outside the repository; holds bitcoin/ and hydra/
 #   --prune                 Bitcoin Core's -prune in MiB: 550 or more
 #   --payout-address        Hydra's solo and bootstrap address
+#   --payout-from-pool-user JSON file whose poolUser, up to its first dot, is that
+#                           address; it is never printed
 #   --wait-for-sync         keep the node syncing and start Hydra once it is synced
 #   --stratum-port          Hydra's loopback Stratum port (default 3333)
 #   --external-node         use a running node; download and start no Bitcoin Core
@@ -33,11 +36,12 @@ external_node=false
 rpc_url=""
 zmq_url=""
 credentials_path=""
+pool_user_path=""
 bitcoind_extra_args=()
 SYNC_POLL_SECONDS=60
 
 usage() {
-  sed -n '6,23p' "$0" >&2
+  sed -n '6,26p' "$0" >&2
   exit 2
 }
 
@@ -51,6 +55,7 @@ while [[ $# -gt 0 ]]; do
     --datadir) datadir=${2:-}; shift 2 ;;
     --prune) prune=${2:-}; shift 2 ;;
     --payout-address) payout_address=${2:-}; shift 2 ;;
+    --payout-from-pool-user) pool_user_path=${2:-}; shift 2 ;;
     --wait-for-sync) wait_for_sync=true; shift ;;
     --stratum-port) hydra_stratum_port=${2:-}; shift 2 ;;
     --external-node) external_node=true; shift ;;
@@ -61,6 +66,18 @@ while [[ $# -gt 0 ]]; do
     *) usage ;;
   esac
 done
+if [[ -n "$pool_user_path" ]]; then
+  if [[ -n "$payout_address" ]]; then
+    refuse_usage '--payout-address and --payout-from-pool-user are exclusive'
+  fi
+  if ! pool_user=$(jq -er '.poolUser' "$pool_user_path" 2>/dev/null); then
+    refuse_usage '--payout-from-pool-user needs a readable JSON file with a poolUser'
+  fi
+  payout_address=${pool_user%%.*}
+  if ! [[ "$payout_address" =~ ^[A-Za-z0-9]{26,90}$ ]]; then
+    refuse_usage 'the poolUser does not start with a Bitcoin address'
+  fi
+fi
 if [[ -z "$datadir" || -z "$payout_address" ]]; then
   usage
 fi
