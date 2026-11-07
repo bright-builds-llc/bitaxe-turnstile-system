@@ -67,6 +67,6 @@ feed 09.
   composes the deployment with the owner's keys, read from files at run time, on a
   Tailscale origin. It seeds the Work Lease sequence above the board's last known
   value, and records the high-water mark when it stops.
-- Ticket 07 (2026-11-07): a new Bitcoin tip mid-lease still ends the lease, since
-  Hydra closes the connection and a closed connection stops the Work Session. It
-  waits on the owner's choice of which of the two changes.
+- Ticket 07, on the owner's choice (2026-11-07): Hydra keeps each Stratum
+  connection across a new tip and sends the new job with `clean_jobs`, so a block
+  no longer ends a Work Lease. A closed connection still stops its Work Session.

@@ -40,10 +40,11 @@ cannot enter between the check and release. Socket release is capped at 250 ms; 
 write removes that exact tracker job, releases the generation gate, and closes the connection so
 untrusted network backpressure cannot block template publication.
 
-A new Bitcoin tip removes every tracker job for an older tip and closes existing Stratum
-connections. Workers reconnect to validate the current tip; they cannot continue submitting an old
-job while availability pressure bypasses validation. Same-tip rejection leaves the last admitted
-job usable only within its existing lifetime. The network-target submit path remains unchanged and
+A new Bitcoin tip removes every tracker job for an older tip, so no old-tip job remains
+submittable. Each connection stays open and receives the current tip's admitted job with
+`clean_jobs`; until one is admitted, an old-tip submit is answered "Job not found". A block alone
+no longer ends a connection, so a Work Lease survives it. Same-tip rejection leaves the last
+admitted job usable only within its existing lifetime. The network-target submit path remains unchanged and
 continues to call Bitcoin Core before pool accounting or BWG persistence.
 
 Observability is metadata-only: category, bounded latency, job ID, and the SHA-256 candidate digest.

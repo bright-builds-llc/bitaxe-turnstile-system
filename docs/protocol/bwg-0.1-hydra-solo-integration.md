@@ -38,7 +38,8 @@ BWG extension. The test proves:
 - an accepted response is durably queued and advances the existing Gate Authority progress path
   exactly once;
 - an exact duplicate is rejected without another event;
-- a new Bitcoin tip invalidates old tracker jobs and closes the connection before reconnect;
+- a new Bitcoin tip invalidates old tracker jobs and keeps the connection, which receives the new
+  tip's job with `clean_jobs`;
 - reconnect receives fresh extranonce space and another valid job; and
 - the same journey succeeds after the external Hydra process restarts over its existing store.
 

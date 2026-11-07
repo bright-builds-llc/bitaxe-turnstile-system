@@ -9,7 +9,7 @@
     "regtestPatch": "p2poolv2-v0.12.0-regtest.patch",
     "regtestPatchSha256": "3da16af53a78b3c74b0097e7f4e6903cc9b1111fdd4972de5f1ed10cecfc5aa7",
     "jobAdmissionPatch": "p2poolv2-v0.12.0-job-admission.patch",
-    "jobAdmissionPatchSha256": "3f9c286337ccf16e39e8dd989833dd96f5a7cb94118d83361427a394d1b2b59f",
+    "jobAdmissionPatchSha256": "e6c2bdb912b50afb07d7f4855f8cb6a3af2abbe7aaf83ea1ba1e5e2700e41427",
     "blockSubmissionPatch": "p2poolv2-v0.12.0-block-submission.patch",
     "blockSubmissionPatchSha256": "e136ea458e793cfe02d052d16b9049a9ab71c618d8b8c6dd979a809f6b7c3d52"
   },

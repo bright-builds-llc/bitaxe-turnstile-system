@@ -208,7 +208,12 @@ pub(super) async fn close_initial_worker_after_gate_outage(
     );
     assert!(TcpStream::connect(fixture.authority_address).await.is_err());
     mine_regtest_block().await?;
-    wait_for_close(&mut worker_lines).await?;
+    // The connection survives the new tip: Hydra sends its job with clean_jobs.
+    let new_tip = next_matching(&mut worker_lines, |value| {
+        value["method"] == "mining.notify" && value["params"][8] == true
+    })
+    .await?;
+    assert!(new_tip["params"][0].is_string());
     drop(worker_lines);
     drop(worker_write);
     assert!(proxy_task.await?.is_ok());

@@ -340,7 +340,7 @@ index bb87d96..72f4cc6 100644
      }
  
 diff --git a/p2poolv2_lib/src/stratum/server.rs b/p2poolv2_lib/src/stratum/server.rs
-index f33cc02..4fb04f3 100644
+index f33cc02..06f85fd 100644
 --- a/p2poolv2_lib/src/stratum/server.rs
 +++ b/p2poolv2_lib/src/stratum/server.rs
 @@ -30,19 +30,26 @@ use crate::stratum::message_handlers::handle_message;
@@ -707,7 +707,7 @@ index f33cc02..4fb04f3 100644
                      }
                  }
              }
-@@ -536,21 +772,46 @@ where
+@@ -536,21 +772,47 @@ where
                  if session.username.is_none() {
                      // Not yet authorized, skip building notify
                  } else if let Some(prepared) = prepared_template {
@@ -719,12 +719,13 @@ index f33cc02..4fb04f3 100644
 +                        let removed = ctx
 +                            .tracker_handle
 +                            .invalidate_other_tips(prepared.previous_block_hash());
++                        // The connection stays open: no old-tip job remains submittable,
++                        // and the current tip's admitted job follows with clean_jobs.
 +                        warn!(
-+                            category = "new_tip_reconnect",
++                            category = "new_tip_revoked",
 +                            invalidated_jobs = removed,
-+                            "New Bitcoin tip invalidated prior jobs; reconnect required"
++                            "New Bitcoin tip invalidated prior jobs"
 +                        );
-+                        break;
 +                    }
                      let commitment_address = if is_hydrapool {
                          None
@@ -761,7 +762,7 @@ index f33cc02..4fb04f3 100644
                          }
                      }
                  }
-@@ -680,6 +941,13 @@ mod stratum_server_tests {
+@@ -680,6 +942,13 @@ mod stratum_server_tests {
      use std::sync::Arc;
      use tokio::sync::mpsc;
  
@@ -775,7 +776,7 @@ index f33cc02..4fb04f3 100644
      #[tokio::test]
      async fn test_create_and_start_server() {
          let (_shutdown_tx, shutdown_rx) = oneshot::channel();
-@@ -873,8 +1141,8 @@ mod stratum_server_tests {
+@@ -873,8 +1142,8 @@ mod stratum_server_tests {
          );
          assert_eq!(
              set_difficulty_json.get("params").unwrap(),

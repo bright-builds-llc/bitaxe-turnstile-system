@@ -100,8 +100,9 @@ Follow [run-sheet-07.md](../run-sheet-07.md).
     at its rate, and an unbounded difficulty can overflow in a debug build.
     Mainnet Hydra now starts and stays at 4096, one share for the 2^44
     requirement. A share that large is credited in full; nothing caps it.
-  - The rehearsal now mines a block mid-lease, and it still fails there. The
-    closed connection stops the Work Session, so the lease ends and the next
-    share is refused as `work_lease_ended`. The fix waits on the owner's choice:
-    keep Hydra's connection across a new tip, or let a lease survive a
-    pool-initiated reconnect.
+  - The rehearsal now mines a block mid-lease. Hydra's close on a new tip
+    stopped the Work Session there, so the next share was refused as
+    `work_lease_ended`.
+  - On the owner's choice ("Option A"), Hydra now keeps the connection across a
+    new tip. It still removes old-tip jobs and sends the new tip's job with
+    `clean_jobs`. The rehearsal's lease survives the block.
