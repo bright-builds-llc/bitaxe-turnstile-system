@@ -16,27 +16,17 @@ use super::fixtures::disconnect_sink;
 use super::{PostgresTestDatabase, test_lease_context};
 
 #[test]
-fn session_rejects_oversized_frames_and_unbounded_request_or_job_state()
--> Result<(), Box<dyn Error>> {
+fn session_rejects_oversized_frames_and_unbounded_request_state() -> Result<(), Box<dyn Error>> {
     // Arrange
     let mut oversized = bounded_session("session_stratum_bound_frame")?;
     let mut requests = bounded_session("session_stratum_bound_requests")?;
-    let mut jobs = bounded_session("session_stratum_bound_jobs")?;
     let oversized_frame = format!(
         r#"{{"id":1,"method":"mining.configure","params":["{}"]}}"#,
         "x".repeat(20_000)
     );
-    jobs.upstream_frame(
-        r#"{"id":null,"method":"mining.set_difficulty","params":[1]}"#,
-        1_000,
-    )?;
     for id in 0..64 {
         requests.worker_frame(
             &format!(r#"{{"id":{id},"method":"mining.configure","params":[]}}"#),
-            1_000,
-        )?;
-        jobs.upstream_frame(
-            &format!(r#"{{"id":null,"method":"mining.notify","params":["job-{id}","0000000000000000000000000000000000000000000000000000000000000000","01000000","00",[],"20000000","1d00ffff","5f5e1000",false]}}"#),
             1_000,
         )?;
     }
@@ -47,10 +37,6 @@ fn session_rejects_oversized_frames_and_unbounded_request_or_job_state()
         r#"{"id":64,"method":"mining.configure","params":[]}"#,
         1_000,
     );
-    let job_result = jobs.upstream_frame(
-        r#"{"id":null,"method":"mining.notify","params":["job-64","0000000000000000000000000000000000000000000000000000000000000000","01000000","00",[],"20000000","1d00ffff","5f5e1000",false]}"#,
-        1_000,
-    );
 
     // Assert
     assert!(matches!(frame_result, Err(StratumV1Error::FrameTooLarge)));
@@ -58,7 +44,6 @@ fn session_rejects_oversized_frames_and_unbounded_request_or_job_state()
         request_result,
         Err(StratumV1Error::CapacityExceeded)
     ));
-    assert!(matches!(job_result, Err(StratumV1Error::CapacityExceeded)));
     Ok(())
 }
 

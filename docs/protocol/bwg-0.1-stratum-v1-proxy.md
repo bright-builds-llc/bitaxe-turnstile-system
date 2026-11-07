@@ -20,7 +20,7 @@ division without floating-point accounting, saturating only when the final targe
 bits. Each `mining.notify` snapshots the then-effective target into its job, so a later difficulty
 update cannot change an older job’s Accepted Work Event.
 
-A clean `mining.notify` invalidates every older job before another submit can be forwarded. Rejected upstream responses pass directly back to the Worker and create no event. Event identity is stable for one session/request replay. Share Fingerprint is derived from the reconstructed 80-byte Bitcoin block header, so the same candidate is globally deduplicable while otherwise identical submissions with distinct `extranonce1` values remain distinct shares. The header hash is also checked against the compact network target captured in the job.
+A clean `mining.notify` invalidates every older job before another submit can be forwarded. A submit for a job the session no longer holds gets error 21, "Job not found", as a pool answers it. It is never forwarded or credited, and the connection continues. Rejected upstream responses pass directly back to the Worker and create no event. Event identity is stable for one session/request replay. Share Fingerprint is derived from the reconstructed 80-byte Bitcoin block header, so the same candidate is globally deduplicable while otherwise identical submissions with distinct `extranonce1` values remain distinct shares. The header hash is also checked against the compact network target captured in the job.
 
 ## Persistence and delivery
 
@@ -30,7 +30,7 @@ Delivery workers lease pending outbox events and resend the exact event until th
 
 Worker submissions always reach the upstream Mining Pool before header reconstruction, network-target classification, outbox persistence, or Gate Authority delivery begins. If local observer state is malformed or outbox persistence fails afterward, the Worker receives no false acceptance, but a potential block candidate has already continued on the Mining Pool path.
 
-Frames are capped at 16 KiB before allocation, idle connections time out, and each session retains at most 64 outstanding request IDs and 64 jobs. Duplicate in-flight JSON-RPC IDs fail closed instead of overwriting request state.
+Frames are capped at 16 KiB before allocation, idle connections time out, and each session retains at most 64 outstanding request IDs and its 96 newest jobs, retiring the oldest; 96 outlasts Hydra's 15-minute job age at its 10-second cadence. Duplicate in-flight JSON-RPC IDs fail closed instead of overwriting request state.
 
 The context-local retention seam rejects periods below the hosted 30-day operational floor, oversized batches, and snapshot cutoffs later than its trusted current time. Once that floor has elapsed, one bounded transaction removes expired verifier/session rows, their connection reservations, abandoned unbound reservations, and acknowledged or refused outbox events; pending delivery rows are never retired. Repeating the same retirement is idempotent and releases historical `extranonce1` space for safe reuse.
 

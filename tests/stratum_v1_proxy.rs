@@ -49,6 +49,8 @@ mod renewal;
 mod retention;
 #[path = "stratum_v1_proxy/session_upstream.rs"]
 mod session_upstream;
+#[path = "stratum_v1_proxy/stale_work.rs"]
+mod stale_work;
 #[path = "stratum_v1_proxy/target_math.rs"]
 mod target_math;
 #[path = "stratum_v1_proxy/upstream_first.rs"]
@@ -399,24 +401,6 @@ fn accepted_response_at_expiry_completes_a_submit_forwarded_while_valid()
         actions.as_slice(),
         [StratumProxyAction::PersistAccepted { .. }]
     ));
-    Ok(())
-}
-
-#[test]
-fn clean_notify_rejects_a_submit_for_the_superseded_job() -> Result<(), Box<dyn Error>> {
-    // Arrange
-    let mut session = authorized_session()?;
-    let first_notify = r#"{"id":null,"method":"mining.notify","params":["job-old","0000000000000000000000000000000000000000000000000000000000000000","01000000","00",[],"20000000","1d00ffff","5f5e1000",true]}"#;
-    let replacement_notify = r#"{"id":null,"method":"mining.notify","params":["job-current","0000000000000000000000000000000000000000000000000000000000000000","01000000","00",[],"20000000","1d00ffff","5f5e1001",true]}"#;
-    let stale_submit = r#"{"id":7,"method":"mining.submit","params":["bwg-session-stale","job-old","00000001","5f5e1000","abcdef01"]}"#;
-    session.upstream_frame(first_notify, 1_000)?;
-    session.upstream_frame(replacement_notify, 1_001)?;
-
-    // Act
-    let result = session.worker_frame(stale_submit, 1_002);
-
-    // Assert
-    assert!(matches!(result, Err(StratumV1Error::UnknownJob)));
     Ok(())
 }
 
