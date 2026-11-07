@@ -264,8 +264,9 @@ export class BrowserSerialController implements WebSerialWorkerController {
       throw serialFailure("challenge_binding");
     const result = await this.#statusRequest("start_lease", grant);
     if (!workerMiningStatusMatches(result, grant)) {
-      this.#lost(serialFailure("start_postcondition"));
-      throw serialFailure("start_postcondition");
+      const failure = serialFailure("start_postcondition");
+      this.#lost(failure);
+      throw failure;
     }
     this.#activeLease = true; this.#restoration.leaseStarted();
     if (isWorkerV2Stratum(grant.stratum)) this.#v2.shareActivated();

@@ -178,6 +178,11 @@ async function rollbackControllerOperation(
     transport.pause(),
   ]);
   const errors = [originalError];
+  // A controller that already failed closed rejects with that same failure; report it once.
+  if (controllerResult.status === "rejected" && controllerResult.reason === originalError) {
+    if (authorityResult.status === "rejected") errors.push(authorityResult.reason);
+    throwCollectedErrors(errors, "Worker admission rollback failed");
+  }
   collectRestorationResult(controllerResult, "control_failed", errors);
   if (authorityResult.status === "rejected") errors.push(authorityResult.reason);
   throwCollectedErrors(errors, "Worker admission rollback failed");

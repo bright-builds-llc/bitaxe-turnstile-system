@@ -407,6 +407,43 @@ test("controller disconnect pauses the Authority through the public hook", async
   expect(authority.calls).toEqual(["start", "pause"]);
 });
 
+test("admission rollback reports a controller that already failed closed once", async () => {
+  // Arrange
+  const failure = new Error("Worker Serial start_postcondition");
+  const controller = {
+    ...recordingWorkerController([]),
+    async startLease() {
+      throw failure;
+    },
+    async restore() {
+      throw failure;
+    },
+  } satisfies WorkerController;
+  const authority = transportHarness();
+  const transport = {
+    ...authority.transport,
+    async start() {
+      return workerLease;
+    },
+  };
+  const client = await createHeadlessClient({
+    ...(await headlessInput(transport)),
+    maybeWorkerController: controller,
+  });
+  await client.grantConsent();
+
+  // Act
+  let maybeError: unknown;
+  try {
+    await client.start();
+  } catch (error) {
+    maybeError = error;
+  }
+
+  // Assert
+  expect(maybeError).toBe(failure);
+});
+
 test("admission rollback preserves controller and Authority failures", async () => {
   // Arrange
   const controller = {
