@@ -1,4 +1,6 @@
 //! A paced CPU Stratum V1 miner that stands in for the board's ASIC in the rehearsal.
+//! Like the board's firmware it opens with `mining.configure` for version rolling,
+//! sends subscribe and authorize without waiting, and submits rolled version bits.
 
 use std::{
     error::Error,
@@ -46,16 +48,20 @@ pub(crate) async fn run(
 ) -> MinerResult<()> {
     let (reader, mut writer) = TcpStream::connect(address).await?.into_split();
     let mut lines = BufReader::new(reader).lines();
-    send(
-        &mut writer,
-        json!({"id": 1, "method": "mining.subscribe", "params": ["bwg-rehearsal-miner/0.1"]}),
-    )
-    .await?;
+    for request in [
+        json!({"id": 1, "method": "mining.configure",
+               "params": [["version-rolling"], {"version-rolling.mask": "ffffffff"}]}),
+        json!({"id": 2, "method": "mining.subscribe", "params": ["bwg-rehearsal-miner/0.1"]}),
+        json!({"id": 3, "method": "mining.authorize", "params": [username, password]}),
+    ] {
+        send(&mut writer, request).await?;
+    }
+    let mut maybe_version_mask = None;
     let mut maybe_subscription = None;
     let mut maybe_difficulty = None;
     let mut maybe_job: Option<Vec<Value>> = None;
     let mut authorized = false;
-    let mut next_id = 3_u64;
+    let mut next_id = 4_u64;
     let mut extranonce_counter = 0_u64;
     let mut tick = tokio::time::interval(SHARE_INTERVAL);
     loop {
@@ -65,12 +71,12 @@ pub(crate) async fn run(
                 let message: Value = serde_json::from_str(&line)?;
                 match (message["id"].as_u64(), message["method"].as_str()) {
                     (Some(1), _) => {
-                        maybe_subscription = Some(subscription(&message)?);
-                        send(&mut writer, json!({
-                            "id": 2, "method": "mining.authorize", "params": [username, password]
-                        })).await?;
+                        maybe_version_mask = Some(version_mask(&message)?);
                     }
                     (Some(2), _) => {
+                        maybe_subscription = Some(subscription(&message)?);
+                    }
+                    (Some(3), _) => {
                         authorized = message["result"] == Value::Bool(true);
                         if !authorized {
                             return Err("Stratum authorization was refused".into());
@@ -94,27 +100,58 @@ pub(crate) async fn run(
                 }
             }
             _ = tick.tick() => {
-                let (true, Some(subscription), Some(difficulty), Some(job)) =
-                    (authorized, &maybe_subscription, maybe_difficulty, &maybe_job)
+                let (true, Some(mask), Some(subscription), Some(difficulty), Some(job)) =
+                    (authorized, maybe_version_mask, &maybe_subscription, maybe_difficulty, &maybe_job)
                 else {
                     continue;
                 };
                 extranonce_counter += 1;
                 let extranonce2 = counter_hex(extranonce_counter, subscription.extranonce2_bytes);
                 let target = target_from_difficulty(difficulty);
-                let Some((ntime, nonce)) = solve(job, &subscription.extranonce1, &extranonce2, target)? else {
+                let (version, version_bits) = rolled_version(job, mask)?;
+                let Some((ntime, nonce)) =
+                    solve(job, &version, &subscription.extranonce1, &extranonce2, target)?
+                else {
                     continue;
                 };
                 send(&mut writer, json!({
                     "id": next_id,
                     "method": "mining.submit",
-                    "params": [username, job[0], extranonce2, ntime, nonce]
+                    "params": [username, job[0], extranonce2, ntime, nonce, version_bits]
                 })).await?;
                 next_id += 1;
                 stats.submitted.fetch_add(1, Ordering::Relaxed);
             }
         }
     }
+}
+
+fn version_mask(message: &Value) -> MinerResult<u32> {
+    if message["result"]["version-rolling"] != Value::Bool(true) {
+        return Err("the pool did not grant version rolling".into());
+    }
+    let mask = message["result"]["version-rolling.mask"]
+        .as_str()
+        .ok_or("configure result needs a version mask")?;
+    Ok(u32::from_str_radix(mask, 16)?)
+}
+
+/// Sets the lowest bit the mask grants, so every share's header differs from the job's.
+/// Returns the rolled header version and, as the board sends them, the bits that
+/// differ from the job's version.
+fn rolled_version(job: &[Value], mask: u32) -> MinerResult<(String, String)> {
+    let version = u32::from_str_radix(
+        job.get(5)
+            .and_then(Value::as_str)
+            .ok_or("notify field 5 must be a string")?,
+        16,
+    )?;
+    let lowest_granted_bit = mask & mask.wrapping_neg();
+    if lowest_granted_bit == 0 {
+        return Err("the pool granted an empty version mask".into());
+    }
+    let rolled = (version & !mask) | lowest_granted_bit;
+    Ok((format!("{rolled:08x}"), format!("{:08x}", rolled ^ version)))
 }
 
 fn subscription(message: &Value) -> MinerResult<Subscription> {
@@ -171,6 +208,7 @@ fn target_from_difficulty(difficulty: f64) -> [u8; 32] {
 /// Finds a nonce whose header meets the share target but not the network target.
 fn solve(
     job: &[Value],
+    version: &str,
     extranonce1: &str,
     extranonce2: &str,
     target: [u8; 32],
@@ -196,7 +234,7 @@ fn solve(
         merkle_root = double_sha256(&joined);
     }
     let mut prefix = Vec::with_capacity(80);
-    prefix.extend(reversed(field(5)?)?);
+    prefix.extend(reversed(version)?);
     let mut previous = Vec::<u8>::from_hex(field(1)?)?;
     for word in previous.chunks_exact_mut(4) {
         word.reverse();
