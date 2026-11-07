@@ -34,7 +34,9 @@ version_mask = "1fffe000"
 difficulty_multiplier = 1.0
 pool_signature = "BWG-Hydra"
 max_connections = 16
-wait_for_chain_sync = true
+# No peers, so the share chain's tip stays the genesis share; waiting for a recent
+# tip would keep Stratum closed forever.
+wait_for_chain_sync = false
 require_job_admission = true
 job_admission_timeout_ms = 2000
 job_admission_max_concurrency = 8
