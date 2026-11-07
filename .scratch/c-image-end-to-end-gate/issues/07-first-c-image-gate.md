@@ -76,3 +76,15 @@ Follow [run-sheet-07.md](../run-sheet-07.md).
   - Hydra takes its payout from the pool user file
     (`--payout-from-pool-user`), so the address never goes on a command line.
   - The consent screen's policy links don't resolve yet; that is Ticket 19.
+- 2026-11-07: the first real run stopped at the proxy. The board opens with
+  `mining.configure` for version rolling, and the proxy refused any first frame
+  but `mining.subscribe`. Its version-rolled six-parameter submits would also
+  have been refused.
+  - The proxy now forwards one `mining.configure` before subscribe and relays the
+    reply. Nothing else is accepted before authorization. Submits apply the
+    version bits under the granted mask, as Hydra does.
+  - A proxy test replays the board's exact order, and the rehearsal's CPU miner
+    now configures and rolls versions the same way.
+  - "Worker admission rollback failed" came from the controller rejecting
+    rollback with the same failure it had already closed on. The page now shows
+    that one failure instead.
