@@ -58,6 +58,7 @@ feed 09.
   into the SDK before anything past 07. `gate-authority` runs the proxy when
   `BWG_STRATUM_PROXY_LISTEN_ADDRESS` is set. Ticket 07 follows
   [run-sheet-07.md](run-sheet-07.md).
-- Ticket 07, on the owner's choice: mainnet, on a pruned node without
-  `-txindex`, which Hydra and job admission don't need. The node starts with
-  `scripts/hydra-mainnet-stack.sh`.
+- Ticket 07, on the owner's choice: mainnet, on the owner's existing synced
+  node (Bitcoin Core 31.1, a named deviation from the 28.1 pin) through an SSH
+  tunnel, with `scripts/hydra-mainnet-stack.sh --external-node`. A pruned node
+  without `-txindex`, which Hydra and job admission don't need, is the fallback.

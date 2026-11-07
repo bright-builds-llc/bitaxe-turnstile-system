@@ -23,16 +23,63 @@ and changes nothing else. Nothing private goes into either repository.
 - **`reference-service`**, with the account-creation executor.
 - **PostgreSQL**, one database each for the Authority, the Reference Relying
   Service and the Pool Adapter.
-- **Hydra and Bitcoin Core on mainnet**, at the regtest runner's pins, started by
-  `scripts/hydra-mainnet-stack.sh`. Bitcoin Core runs pruned without a
-  transaction index. Hydra starts only once the node has left initial block
-  download, and serves Stratum on loopback for `BWG_POOL_UPSTREAM_STRATUM_ADDRESS`.
+- **Hydra on mainnet**, at the regtest runner's pin, started by
+  `scripts/hydra-mainnet-stack.sh --external-node`. It uses the owner's existing
+  synced mainnet node through an SSH tunnel. Hydra starts only if the node reports
+  chain `main` and has left initial block download. It serves Stratum on loopback
+  for `BWG_POOL_UPSTREAM_STRATUM_ADDRESS`.
 
-## Node prerequisite
+## Node: the owner's existing node
 
-The owner chose mainnet. Neither Hydra nor job admission (Reward Policy and the
-BIP 23 proposal) reads the transaction index, and both pass against a pruned
-node with early blocks deleted. So the node is pruned, without `-txindex`.
+The owner runs a synced mainnet node on a remote host. It runs official Bitcoin
+Core 31.1, full, with `txindex=1`, which Hydra doesn't need but doesn't mind. Its
+RPC and ZMQ listen only on that host, so the stack reaches them through a tunnel.
+
+**Deviation that Ticket 07's evidence must name.** The node runs Bitcoin Core
+31.1, but the Gate pins 28.1. Hydra calls only `getblockchaininfo`,
+`getblocktemplate` (including the BIP 23 proposal), `getdifficulty`,
+`submitblock` and `decoderawtransaction`, so this is not expected to matter.
+Only the regtest runs at 28.1 show it. The stack prints the node's version, and
+the evidence records it.
+
+1. Write the RPC credentials file once, outside the repository, for example
+   under `~/.bitaxe-fork-private`. It holds only the node's `rpcuser=` and
+   `rpcpassword=` lines, copied from its `bitcoin.conf`. Make it owner-only with
+   `chmod 600`, or the stack refuses it.
+2. Open the tunnel in its own terminal and leave it open:
+
+   ```bash
+   ssh -N -o RemoteCommand=none -L 18332:127.0.0.1:8332 -L 28332:127.0.0.1:28332 YOUR_NODE_ALIAS
+   ```
+
+   This expects the node's RPC and `zmqpubhashblock` to listen on the host's
+   loopback, or on all addresses.
+3. Start Hydra:
+
+   ```bash
+   scripts/hydra-mainnet-stack.sh --external-node --datadir /path/outside/the/repo \
+     --rpc-url http://127.0.0.1:18332 --zmq-url tcp://127.0.0.1:28332 \
+     --rpc-credentials-file ~/.bitaxe-fork-private/RPC_CREDENTIALS_FILE \
+     --payout-address ADDRESS
+   ```
+
+The stack never downloads or starts Bitcoin Core in this mode, and never tells
+the node to stop. It accepts only `127.0.0.1` URLs, so RPC's basic auth never
+leaves this machine except inside the tunnel. The credentials reach curl on stdin
+and Hydra through its environment. They never go on a command line, into the
+rendered config or into a log. They are visible only to this user's processes,
+as the file already is. `scripts/verify-hydra-solo-integration.sh --external-node`
+proves the mode on regtest. It treats a separately started node as the owner's
+node: the stack refuses it on chain `regtest`, wrong credentials, a
+non-loopback URL and a loose file mode, and leaves it running. Hydra then passes
+the integration through the same path.
+
+## Fallback: a pruned node on this machine
+
+If the existing node is unavailable, the same script runs its own node.
+Neither Hydra nor job admission (Reward Policy and the BIP 23 proposal) reads the
+transaction index, and both pass against a pruned node with early blocks
+deleted. So that node is pruned, without `-txindex`.
 
 | Node | Disk, late 2026 | Fits the 25 GiB free here |
 | --- | --- | --- |
@@ -50,6 +97,7 @@ scripts/hydra-mainnet-stack.sh --datadir /path/outside/the/repo --prune 550 \
 ```
 
 The datadir holds `bitcoin/` and `hydra/`, and a later start resumes the sync.
+This path runs Bitcoin Core 28.1, the pin, so it has no version deviation.
 Without `--wait-for-sync`, the script refuses to start Hydra while the node is
 syncing.
 
@@ -57,13 +105,14 @@ syncing.
 
 - The Gate commit (`git rev-parse HEAD`) and a clean worktree.
 - The C image's commit and app ELF SHA-256, from the firmware repository.
-- The Hydra and Bitcoin Core pins.
+- The Hydra and Bitcoin Core pins, and the node's version as the stack prints it
+  (31.1 on the existing node, a deviation).
 - The page bundle's build, from the same commit.
 
 ## Steps only the owner runs
 
-1. Sync the mainnet node (see the node prerequisite above). The network is
-   mainnet, with per-job BIP 23 admission (Core Ticket 18).
+1. Open the tunnel and start Hydra against the existing node (see above). The
+   network is mainnet, with per-job BIP 23 admission (Core Ticket 18).
 2. Flash the 601 by hand with the C reference image, and record its digests.
 3. Load the private values from `~/.bitaxe-fork-private` into the deployment's
    environment, never into a file in either repository:
@@ -73,7 +122,8 @@ syncing.
    - the service credential (`BWG_SERVICE_CREDENTIAL`);
    - the database URLs;
    - the pool address and password;
-   - Hydra's `--payout-address`.
+   - Hydra's `--payout-address`;
+   - the node's RPC credentials file, which only the stack reads.
    Agents never see these values. The claimant's payout address is typed into
    the page.
 4. Serve the origin with a real certificate, not the rehearsal's throwaway one.
@@ -87,7 +137,7 @@ syncing.
 | Fake serial Worker with fixture identity | The 601 over Web Serial |
 | CPU miner on the Worker's Stratum grant | The board's ASIC on the same grant |
 | Test Work Lease, Gate Pass and service keys | The owner's keys, loaded by the owner |
-| Regtest, pruned, no txindex | Mainnet, pruned node from `scripts/hydra-mainnet-stack.sh` |
+| Regtest Bitcoin Core 28.1, pruned, no txindex | The owner's mainnet Bitcoin Core 31.1 through a tunnel |
 | Loopback front with a self-signed certificate | The real same-origin HTTPS front |
 | One synthetic share crosses the Work Requirement | Real accepted shares only |
 

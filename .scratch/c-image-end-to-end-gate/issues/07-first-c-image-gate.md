@@ -40,4 +40,18 @@ Follow [run-sheet-07.md](../run-sheet-07.md).
   - `scripts/hydra-mainnet-stack.sh` runs the node pruned, and refuses to start
     Hydra while the node is in initial block download. The run sheet gives the
     disk needs and sync time.
-
+- 2026-11-06: the owner chose an existing synced mainnet node over a new pruned
+  sync. It runs Bitcoin Core 31.1 with `txindex`, which is a deviation from the
+  28.1 pin that the evidence must name.
+  - `scripts/hydra-mainnet-stack.sh --external-node` downloads and starts no
+    Bitcoin Core. It takes loopback RPC and ZMQ URLs (through the owner's SSH
+    tunnel) and an owner-only credentials file outside the repository. It
+    refuses to start Hydra unless the node reports chain `main` and has left
+    initial block download.
+  - Credentials reach curl on stdin and Hydra through its environment, never
+    a command line, the config or a log.
+  - `scripts/verify-hydra-solo-integration.sh --external-node` passes on
+    regtest against a separately started node. The stack refused it six ways
+    and left it running, and Hydra then passed the integration through the
+    same path.
+  - The pruned sync stays in the run sheet as the fallback.
