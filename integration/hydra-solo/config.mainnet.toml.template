@@ -43,8 +43,8 @@ mode = "hydrapool"
 
 [bitcoinrpc]
 url = "http://127.0.0.1:__RPC_PORT__"
-username = "__RPC_USER__"
-password = "__RPC_PASSWORD__"
+# Hydra reads username and password from P2POOL_BITCOINRPC_USERNAME and
+# P2POOL_BITCOINRPC_PASSWORD, set by start_hydra.
 
 [logging]
 console = true

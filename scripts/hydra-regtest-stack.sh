@@ -2,7 +2,8 @@
 # Pinned Bitcoin Core and Hydra, shared by the Hydra integration runner, the
 # production-path rehearsal and the mainnet stack. Callers set repo_root and
 # integration_root, then call prepare_pinned_stack; the regtest callers then call
-# start_regtest_stack and start_hydra.
+# start_regtest_stack and start_hydra. A caller using a node it didn't start calls
+# prepare_pinned_hydra alone and sets rpc_user, rpc_password, rpc_port and zmq_port.
 
 bitcoin_pid=""
 hydra_pid=""
@@ -59,6 +60,10 @@ stop_hydra() {
 
 stop_bitcoind() {
   stop_status=0
+  # Only a node this stack started is ever told to stop.
+  if [[ -z "$bitcoin_pid" ]]; then
+    return 0
+  fi
   if [[ -n "$bitcoin_cli" ]] && [[ -x "$bitcoin_cli" ]]; then
     if ! "$bitcoin_cli" "$bitcoin_chain_arg" -rpcconnect=127.0.0.1 -rpcport="$rpc_port" \
       -rpcuser="$rpc_user" -rpcpassword="$rpc_password" stop >/dev/null 2>&1; then
@@ -168,8 +173,11 @@ wait_for_port() {
   return 1
 }
 
+# Hydra reads its RPC credentials from its environment, so they never reach a
+# command line or a rendered config.
 start_hydra() {
   hydra_run=$((hydra_run + 1))
+  P2POOL_BITCOINRPC_USERNAME="$rpc_user" P2POOL_BITCOINRPC_PASSWORD="$rpc_password" \
   RUST_LOG="p2poolv2_lib::stratum::server=info" \
     "$hydra_target_dir/debug/p2poolv2" --config "$config_path" \
     >"$integration_root/hydra-$hydra_run.log" 2>&1 &
@@ -177,12 +185,35 @@ start_hydra() {
   wait_for_port "$stratum_port"
 }
 
+# Renders TEMPLATE to config_path; Hydra's store and stats go under STATE_DIR.
+render_hydra_config() {
+  template=$1
+  state_dir=$2
+  (
+    umask 077
+    sed \
+      -e "s|__P2P_PORT__|$p2p_port|g" \
+      -e "s|__STORE_PATH__|$state_dir/hydra-store.db|g" \
+      -e "s|__STRATUM_PORT__|$stratum_port|g" \
+      -e "s|__PAYOUT_ADDRESS__|$payout_address|g" \
+      -e "s|__ZMQ_PORT__|$zmq_port|g" \
+      -e "s|__RPC_PORT__|$rpc_port|g" \
+      -e "s|__STATS_PATH__|$state_dir/hydra-stats|g" \
+      -e "s|__API_PORT__|$api_port|g" \
+      "$template" >"$config_path"
+  )
+}
+
 prepare_pinned_stack() {
+  prepare_pinned_hydra
+  install_pinned_bitcoin_core
+}
+
+# Verifies the pins and patches and builds Hydra; downloads no Bitcoin Core.
+prepare_pinned_hydra() {
   for required in cargo codesign curl git jq nc python3 shasum tar tee; do
     require_command "$required"
   done
-  rpc_user="bwg-integration"
-  rpc_password=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
 
   if [[ "$(uname -s)" != "Darwin" ]] || [[ "$(uname -m)" != "arm64" ]]; then
     printf 'This pinned integration runner currently supports macOS arm64 only\n' >&2
@@ -222,26 +253,9 @@ prepare_pinned_stack() {
     exit 1
   fi
 
-  rpc_port=$(free_port)
-  zmq_port=$(free_port)
   stratum_port=$(free_port)
   p2p_port=$(free_port)
   api_port=$(free_port)
-
-  bitcoin_archive="$integration_root/bitcoin.tar.gz"
-  download_verified \
-    "$bitcoin_source_url" \
-    "$bitcoin_source_digest" \
-    "$bitcoin_archive"
-  tar -xzf "$bitcoin_archive" -C "$integration_root"
-  bitcoin_bin="$integration_root/bitcoin-$bitcoin_version/bin"
-  bitcoin_cli="$bitcoin_bin/bitcoin-cli"
-  for binary in "$bitcoin_bin/bitcoind" "$bitcoin_cli"; do
-    if xattr -p com.apple.provenance "$binary" >/dev/null 2>&1; then
-      xattr -d com.apple.provenance "$binary"
-    fi
-    codesign --force --sign - "$binary"
-  done
 
   source_archive="$integration_root/p2poolv2-source.tar.gz"
   download_verified \
@@ -257,6 +271,29 @@ prepare_pinned_stack() {
   hydra_target_dir="$repo_root/target/hydra-v$p2pool_version"
   CARGO_TARGET_DIR="$hydra_target_dir" \
     cargo build --manifest-path "$source_dir/Cargo.toml" -p p2poolv2_node --bin p2poolv2
+}
+
+# Downloads the pinned Bitcoin Core and picks its RPC credentials and ports.
+install_pinned_bitcoin_core() {
+  rpc_user="bwg-integration"
+  rpc_password=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
+  rpc_port=$(free_port)
+  zmq_port=$(free_port)
+
+  bitcoin_archive="$integration_root/bitcoin.tar.gz"
+  download_verified \
+    "$bitcoin_source_url" \
+    "$bitcoin_source_digest" \
+    "$bitcoin_archive"
+  tar -xzf "$bitcoin_archive" -C "$integration_root"
+  bitcoin_bin="$integration_root/bitcoin-$bitcoin_version/bin"
+  bitcoin_cli="$bitcoin_bin/bitcoin-cli"
+  for binary in "$bitcoin_bin/bitcoind" "$bitcoin_cli"; do
+    if xattr -p com.apple.provenance "$binary" >/dev/null 2>&1; then
+      xattr -d com.apple.provenance "$binary"
+    fi
+    codesign --force --sign - "$binary"
+  done
 }
 
 start_regtest_stack() {
@@ -279,17 +316,5 @@ start_regtest_stack() {
     generatetoaddress 32 "$mining_address" >/dev/null
 
   config_path="$integration_root/hydra-config.toml"
-  sed \
-    -e "s|__P2P_PORT__|$p2p_port|g" \
-    -e "s|__STORE_PATH__|$integration_root/hydra-store.db|g" \
-    -e "s|__STRATUM_PORT__|$stratum_port|g" \
-    -e "s|__PAYOUT_ADDRESS__|$payout_address|g" \
-    -e "s|__ZMQ_PORT__|$zmq_port|g" \
-    -e "s|__RPC_PORT__|$rpc_port|g" \
-    -e "s|__RPC_USER__|$rpc_user|g" \
-    -e "s|__RPC_PASSWORD__|$rpc_password|g" \
-    -e "s|__STATS_PATH__|$integration_root/hydra-stats|g" \
-    -e "s|__API_PORT__|$api_port|g" \
-    "$repo_root/integration/hydra-solo/config.toml.template" >"$config_path"
-
+  render_hydra_config "$repo_root/integration/hydra-solo/config.toml.template" "$integration_root"
 }
