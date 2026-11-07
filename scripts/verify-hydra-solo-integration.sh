@@ -1,5 +1,17 @@
 #!/usr/bin/env bash
+# Usage: scripts/verify-hydra-solo-integration.sh [--external-node]
+#   --external-node  treat a separately started regtest node as the owner's node:
+#                    the mainnet stack must refuse it, and Hydra must run against it
+#                    through the external-node path (Ticket 07)
 set -euo pipefail
+
+external_node_mode=false
+if [[ "${1:-}" == "--external-node" ]]; then
+  external_node_mode=true
+elif [[ $# -gt 0 ]]; then
+  sed -n '2,5p' "$0" >&2
+  exit 2
+fi
 
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
 integration_root=$(mktemp -d)
@@ -10,6 +22,8 @@ integration_run=0
 
 # shellcheck source=scripts/hydra-regtest-stack.sh
 source "$repo_root/scripts/hydra-regtest-stack.sh"
+# shellcheck source=scripts/hydra-external-node.sh
+source "$repo_root/scripts/hydra-external-node.sh"
 
 cleanup() {
   command_exit=$?
@@ -181,16 +195,84 @@ run_upstream_admission_tests() {
   } 2>&1 | tee "$integration_root/upstream-admission-tests.log"
 }
 
+external_refusals=0
+
+# Runs the mainnet stack in external-node mode against the stand-in and requires
+# EXPECTED_EXIT and MESSAGE, with no credential in its output.
+expect_mainnet_refusal() {
+  expected_exit=$1
+  expected_message=$2
+  shift 2
+  external_refusals=$((external_refusals + 1))
+  refusal_log="$integration_root/mainnet-refusal-$external_refusals.log"
+  mkdir "$integration_root/mainnet-$external_refusals"
+  refusal_exit=0
+  "$repo_root/scripts/hydra-mainnet-stack.sh" --external-node \
+    --datadir "$integration_root/mainnet-$external_refusals" --payout-address "$payout_address" \
+    "$@" >"$refusal_log" 2>&1 || refusal_exit=$?
+  cat "$refusal_log"
+  if [[ "$refusal_exit" -ne "$expected_exit" ]] || ! grep -Fq -- "$expected_message" "$refusal_log"; then
+    printf 'Mainnet stack refusal %s: expected exit %s with "%s", got exit %s\n' \
+      "$external_refusals" "$expected_exit" "$expected_message" "$refusal_exit" >&2
+    return 1
+  fi
+}
+
+verify_external_node_refusals() {
+  credentials_path="$integration_root/rpc-credentials.conf"
+  wrong_credentials_path="$integration_root/wrong-rpc-credentials.conf"
+  (
+    umask 077
+    printf '# stand-in node\nrpcuser=%s\nrpcpassword=%s\n' "$rpc_user" "$rpc_password" >"$credentials_path"
+    printf 'rpcuser=%s\nrpcpassword=not-the-password\n' "$rpc_user" >"$wrong_credentials_path"
+  )
+  rpc_args=(--rpc-url "http://127.0.0.1:$rpc_port" --zmq-url "tcp://127.0.0.1:$zmq_port")
+  expect_mainnet_refusal 1 'the node reports chain regtest, not main' \
+    "${rpc_args[@]}" --rpc-credentials-file "$credentials_path"
+  expect_mainnet_refusal 1 'refused or did not answer getblockchaininfo' \
+    "${rpc_args[@]}" --rpc-credentials-file "$wrong_credentials_path"
+  expect_mainnet_refusal 2 '--rpc-url must be http://127.0.0.1:PORT' \
+    --rpc-url "http://localhost:$rpc_port" --zmq-url "tcp://127.0.0.1:$zmq_port" \
+    --rpc-credentials-file "$credentials_path"
+  expect_mainnet_refusal 2 '--external-node needs --rpc-credentials-file' "${rpc_args[@]}"
+  expect_mainnet_refusal 2 'bitcoind arguments need a node this script runs' \
+    "${rpc_args[@]}" --rpc-credentials-file "$credentials_path" -- -dbcache=100
+  chmod 644 "$credentials_path"
+  expect_mainnet_refusal 2 'readable only by its owner' \
+    "${rpc_args[@]}" --rpc-credentials-file "$credentials_path"
+  chmod 600 "$credentials_path"
+  # The stack never stops a node it didn't start.
+  bitcoin_rpc getblockcount >/dev/null
+  printf 'Mainnet stack refused the stand-in node %s times and left it running\n' "$external_refusals"
+}
+
+# Hydra through the external-node path: credentials only from the file, the node
+# checked by the mainnet stack's own function, on the stand-in's chain.
+start_external_node_hydra() {
+  rpc_user=""
+  rpc_password=""
+  load_rpc_credentials "$credentials_path"
+  require_external_node regtest
+  start_hydra
+}
+
 prepare_pinned_stack
-run_upstream_admission_tests
-start_regtest_stack
-require_pruned_without_txindex
-node_is_synced
-start_hydra
-run_integration
-stop_hydra
-start_hydra
-run_integration
+if [[ "$external_node_mode" == true ]]; then
+  start_regtest_stack
+  verify_external_node_refusals
+  start_external_node_hydra
+  run_integration
+else
+  run_upstream_admission_tests
+  start_regtest_stack
+  require_pruned_without_txindex
+  node_is_synced
+  start_hydra
+  run_integration
+  stop_hydra
+  start_hydra
+  run_integration
+fi
 
 printf 'Verified P2Poolv2 v%s commit %s with Bitcoin Core %s\n' \
   "$p2pool_version" "$p2pool_commit" "$bitcoin_version"
