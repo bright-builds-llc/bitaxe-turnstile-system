@@ -1,5 +1,6 @@
 # Mainnet Hydra for Ticket 07, rendered by scripts/hydra-mainnet-stack.sh. Difficulty
-# follows upstream's sample; there is no regtest-only difficulty override.
+# is bounded at 4096, one share for the Gate's 2^44 requirement. Unbounded, Hydra's
+# vardiff can climb out of a Worker's reach or saturate and overflow.
 [network]
 listen_address = "/ip4/127.0.0.1/tcp/__P2P_PORT__"
 dial_peers = []
@@ -24,8 +25,9 @@ pplns_ttl_days = 7
 [stratum]
 hostname = "127.0.0.1"
 port = __STRATUM_PORT__
-start_difficulty = 10000
+start_difficulty = 4096
 minimum_difficulty = 100
+maximum_difficulty = 4096
 solo_address = "__PAYOUT_ADDRESS__"
 bootstrap_address = "__PAYOUT_ADDRESS__"
 zmqpubhashblock = "tcp://127.0.0.1:__ZMQ_PORT__"

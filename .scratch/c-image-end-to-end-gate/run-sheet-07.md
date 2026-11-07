@@ -62,7 +62,11 @@ the evidence records it.
 
    This expects the node's RPC and `zmqpubhashblock` to listen on the host's
    loopback, or on all addresses.
-3. Start Hydra:
+3. Create the datadir first, because the stack refuses a missing one. Then start Hydra:
+
+   ```bash
+   mkdir -m 700 /path/outside/the/repo
+   ```
 
    ```bash
    scripts/hydra-mainnet-stack.sh --external-node --datadir /path/outside/the/repo \
