@@ -698,7 +698,7 @@ index 0368cb8..dd31f72 100644
      pub mintime: u32,
      pub mutable: Vec<String>,
 diff --git a/p2poolv2_lib/src/stratum/work/coinbase.rs b/p2poolv2_lib/src/stratum/work/coinbase.rs
-index 75b49f3..c008489 100644
+index 75b49f3..1083e7f 100644
 --- a/p2poolv2_lib/src/stratum/work/coinbase.rs
 +++ b/p2poolv2_lib/src/stratum/work/coinbase.rs
 @@ -21,7 +21,7 @@ use crate::stratum::work::error::WorkError;
@@ -731,7 +731,47 @@ index 75b49f3..c008489 100644
          }],
          output: outputs,
      };
-@@ -252,12 +257,18 @@ pub fn extract_outputs_from_coinbase2(
+@@ -175,9 +180,17 @@ pub(crate) fn build_bitcoin_coinbase_transaction(
+ 
+ /// Splits the coinbase transaction into two parts: coinbase1 and coinbase2, separated by our
+ /// extranonce2 separator.
++///
++/// Stratum miners hash coinbase1 + extranonces + coinbase2 as the coinbase txid, so the
++/// halves carry the non-witness serialization. A block restores the witness reserved
++/// value with [`restore_witness_reserved_value`].
+ #[allow(dead_code)]
+ pub fn split_coinbase(coinbase: &Transaction) -> Result<(String, String), WorkError> {
+-    let deserialized_coinbase = serialize::<Transaction>(coinbase);
++    let mut without_witness = coinbase.clone();
++    for input in &mut without_witness.input {
++        input.witness.clear();
++    }
++    let deserialized_coinbase = serialize::<Transaction>(&without_witness);
+     let separator_pos = match deserialized_coinbase
+         .as_slice()
+         .windows(EXTRANONCE1_SIZE + EXTRANONCE2_SIZE)
+@@ -198,6 +211,20 @@ pub fn split_coinbase(coinbase: &Transaction) -> Result<(String, String), WorkEr
+     Ok((coinbase1, coinbase2))
+ }
+ 
++/// Gives a coinbase rebuilt from Stratum halves the witness reserved value that a
++/// block with a witness commitment requires.
++pub(crate) fn restore_witness_reserved_value(
++    coinbase: &mut Transaction,
++    has_witness_commitment: bool,
++) {
++    if !has_witness_commitment {
++        return;
++    }
++    if let Some(input) = coinbase.input.first_mut() {
++        input.witness = bitcoin::Witness::from_slice(&[[0_u8; 32]]);
++    }
++}
++
+ /// Parses the `coinbase2` hex string to extract the transaction outputs.
+ ///
+ /// Based on `build_coinbase_transaction` and `split_coinbase`, `coinbase2`
+@@ -252,12 +279,18 @@ pub fn extract_outputs_from_coinbase2(
          });
      }
  
@@ -755,7 +795,57 @@ index 75b49f3..c008489 100644
  }
  
  /// Extracts the commitment hash from the coinbase scriptSig.
-@@ -529,7 +540,8 @@ mod tests {
+@@ -464,6 +497,49 @@ mod tests {
+         assert_eq!(reconstructed_coinbase, coinbase);
+     }
+ 
++    #[test]
++    fn split_coinbase_halves_hash_to_the_txid_as_stratum_miners_compute_it() {
++        let data = include_str!(
++            "../../../../p2poolv2_tests/test_data/gbt/regtest/ckpool/four-txns/gbt.json"
++        );
++        let template: BlockTemplate = serde_json::from_str(data).expect("Invalid JSON");
++        let address = parse_address(
++            "bcrt1qe2qaq0e8qlp425pxytrakala7725dynwhknufr",
++            bitcoin::Network::Regtest,
++        )
++        .unwrap();
++        let coinbase = build_bitcoin_coinbase_transaction(
++            Version::TWO,
++            &[OutputPair {
++                address,
++                amount: Amount::from_str("50 BTC").unwrap(),
++            }],
++            template.height as i64,
++            PushBytesBuf::from(&[0u8]),
++            template
++                .default_witness_commitment
++                .as_deref()
++                .and_then(|hex_str| WitnessCommitment::from_hex(hex_str).ok())
++                .as_ref(),
++            b"P2Poolv2",
++            None,
++            0,
++            None,
++        )
++        .unwrap();
++
++        let (coinbase1, coinbase2) = split_coinbase(&coinbase).unwrap();
++
++        let mut reconstructed = hex::decode(&coinbase1).unwrap();
++        reconstructed.extend_from_slice(&EXTRANONCE_SEPARATOR);
++        reconstructed.extend_from_slice(&hex::decode(&coinbase2).unwrap());
++        assert_ne!(&reconstructed[4..6], &[0x00, 0x01], "no segwit marker");
++        assert_eq!(
++            sha256d::Hash::hash(&reconstructed).to_byte_array(),
++            coinbase.compute_txid().to_byte_array()
++        );
++    }
++
+     #[test]
+     fn test_building_coinbase_with_regtest_ckpool_data() {
+         // Load GBT and expected notify JSON
+@@ -529,7 +605,8 @@ mod tests {
          );
          assert_eq!(input.previous_output.vout, u32::MAX);
          assert_eq!(input.sequence, BIP54_COINBASE_SEQUENCE);
@@ -765,7 +855,7 @@ index 75b49f3..c008489 100644
          assert_eq!(coinbase.output.len(), 3);
          let output1 = &coinbase.output[0];
          let output2 = &coinbase.output[1];
-@@ -639,7 +651,8 @@ mod tests {
+@@ -639,7 +716,8 @@ mod tests {
          );
          assert_eq!(input.previous_output.vout, u32::MAX);
          assert_eq!(input.sequence, BIP54_COINBASE_SEQUENCE);
@@ -1185,7 +1275,7 @@ index 32ef935..3ed3799 100644
              mintime: 0,
              mutable: vec![],
 diff --git a/p2poolv2_lib/src/stratum/work/prepared_notify.rs b/p2poolv2_lib/src/stratum/work/prepared_notify.rs
-index a8d5591..a5e42c0 100644
+index a8d5591..c228583 100644
 --- a/p2poolv2_lib/src/stratum/work/prepared_notify.rs
 +++ b/p2poolv2_lib/src/stratum/work/prepared_notify.rs
 @@ -79,6 +79,12 @@ pub struct PreparedNotifyParams {
@@ -1246,7 +1336,7 @@ index a8d5591..a5e42c0 100644
      let commitment_hash_hex = get_commitment_hex(&prepared.commitment_prefix, miner_address)?;
      let nsecs = get_timestamp_bytes(&SystemTimeProvider);
  
-@@ -444,18 +481,89 @@ pub(crate) fn build_notify_from_prepared(
+@@ -444,18 +481,93 @@ pub(crate) fn build_notify_from_prepared(
          coinbase_value: prepared.template.coinbasevalue,
      });
  
@@ -1262,10 +1352,14 @@ index a8d5591..a5e42c0 100644
 +    let coinbase_bytes = hex::decode(&coinbase_hex).map_err(|error| WorkError {
 +        message: format!("Failed to decode canonical coinbase: {error}"),
 +    })?;
-+    let coinbase: bitcoin::Transaction =
++    let mut coinbase: bitcoin::Transaction =
 +        bitcoin::consensus::deserialize(&coinbase_bytes).map_err(|error| WorkError {
 +            message: format!("Failed to parse canonical coinbase: {error}"),
 +        })?;
++    super::coinbase::restore_witness_reserved_value(
++        &mut coinbase,
++        prepared.template.default_witness_commitment.is_some(),
++    );
 +    let merkle_root = super::gbt::compute_merkle_root_from_branches(
 +        coinbase.compute_txid(),
 +        &prepared.merkle_branches,
@@ -1342,7 +1436,7 @@ index a8d5591..a5e42c0 100644
  }
  
  #[cfg(test)]
-@@ -465,6 +573,9 @@ mod tests {
+@@ -465,6 +577,9 @@ mod tests {
      use crate::stratum::work::tracker::{JobId, start_tracker_actor};
      use bitcoin::{CompressedPublicKey, Network};
  

@@ -180,6 +180,7 @@ run_upstream_admission_tests() {
       stratum::work::coinbase::tests::test_building_coinbase_with_regtest_ckpool_data \
       stratum::work::coinbase::tests::test_building_coinbase_with_share_commitment_should_include_the_commitment \
       stratum::work::coinbase::tests::test_extract_outputs_from_coinbase2_integration \
+      stratum::work::coinbase::tests::split_coinbase_halves_hash_to_the_txid_as_stratum_miners_compute_it \
       stratum::work::notify::tests::test_build_notify_and_extract_outputs_integration; do
       run_exact_upstream_test p2poolv2_lib "$test_name"
     done
@@ -187,6 +188,7 @@ run_upstream_admission_tests() {
       stratum::message_handlers::submit::block_submission_tests::submission_outcomes_are_explicit_and_do_not_retry_through_gate_services \
       stratum::message_handlers::submit::block_submission_tests::unavailable_bitcoin_core_has_an_explicit_non_gate_outcome \
       stratum::message_handlers::submit::block_submission_tests::hanging_bitcoin_core_is_bounded_by_the_submission_deadline \
+      stratum::message_handlers::submit::block_submission_tests::a_found_block_restores_the_coinbase_witness_reserved_value \
       stratum::message_handlers::submit::handle_submit_tests::test_handle_submit_with_stale_job_returns_error \
       stratum::message_handlers::submit::handle_submit_tests::test_handle_submit_duplicate_share_is_rejected \
       stratum::message_handlers::submit::handle_submit_tests::test_p2poolv2_mode_rejects_share_not_meeting_pool_difficulty; do
@@ -203,6 +205,8 @@ run_mainnet_build_tests() {
     prepare_pinned_hydra
     for test_name in \
       stratum::messages::tests::test_new_set_difficulty_notification \
+      stratum::work::coinbase::tests::split_coinbase_halves_hash_to_the_txid_as_stratum_miners_compute_it \
+      stratum::message_handlers::submit::block_submission_tests::a_found_block_restores_the_coinbase_witness_reserved_value \
       stratum::message_handlers::subscribe::tests::test_handle_subscribe_success \
       stratum::difficulty_adjuster::tests::test_difficulty_not_changed_before_minimum_shares \
       stratum::difficulty_adjuster::tests::test_difficulty_adjustment_after_minimum_time \

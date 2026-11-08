@@ -98,6 +98,11 @@ pub enum StratumProxyAction {
         lease_context: StratumLeaseContext,
         worker_response: String,
     },
+    /// Relays the pool's refusal of a submit unchanged; nothing is persisted.
+    ForwardUpstreamRefusal {
+        maybe_code: Option<i64>,
+        worker_response: String,
+    },
     /// Answers a submit for a job the session does not hold; never forwarded or credited.
     RefuseSubmit {
         reason: UnheldJob,
@@ -446,7 +451,10 @@ impl StratumSession {
             }
         };
         if message.get("result").and_then(Value::as_bool) != Some(true) {
-            return Ok(vec![StratumProxyAction::ForwardWorker(frame.to_owned())]);
+            return Ok(vec![StratumProxyAction::ForwardUpstreamRefusal {
+                maybe_code: upstream_error_code(&message),
+                worker_response: frame.to_owned(),
+            }]);
         }
         let header = submitted_header(
             &submission.job,
@@ -529,6 +537,16 @@ fn parse_object(frame: &str) -> Result<serde_json::Map<String, Value>, StratumV1
         .ok()
         .and_then(|value| value.as_object().cloned())
         .ok_or(StratumV1Error::InvalidFrame)
+}
+
+/// A pool's error code, whether sent as the classic `[code, message, data]` or as
+/// a JSON-RPC `{"code", "message", "data"}` object.
+fn upstream_error_code(message: &serde_json::Map<String, Value>) -> Option<i64> {
+    let error = message.get("error")?;
+    error
+        .get(0)
+        .or_else(|| error.get("code"))
+        .and_then(Value::as_i64)
 }
 
 fn message_id(message: &serde_json::Map<String, Value>) -> Result<String, StratumV1Error> {

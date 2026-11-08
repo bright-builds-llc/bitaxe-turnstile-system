@@ -120,3 +120,15 @@ Follow [run-sheet-07.md](../run-sheet-07.md).
   - Regtest still needs the scaling: at 0.0001 every regtest share is a block.
     The rehearsal miner now ignores out-of-range difficulty like ESP-Miner, with
     its floor scaled by the same factor.
+- 2026-11-08: the fourth mainnet run had every share rejected at difficulty 4096.
+  - Job admission gave the coinbase its witness reserved value, which a block
+    with a witness commitment needs, but the notify halves then carried the
+    witness serialization. ESP-Miner hashes them as sent, so its merkle root
+    differed from Hydra's and Hydra judged each share below 4096.
+  - The notify halves are now non-witness. The proposed block and any found
+    block add the reserved value back. A Hydra test covers each.
+  - The rehearsal miner and the Hydra integration test now hash the coinbase as
+    ESP-Miner does and stop on a witness-serialized one. Before the fix the
+    rehearsal failed on exactly that.
+  - The proxy now logs each refused submit with the pool's error code. Hydra
+    sends errors as JSON-RPC objects, which ESP-Miner shows as "unknown".

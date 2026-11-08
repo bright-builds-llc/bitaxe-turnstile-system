@@ -29,6 +29,11 @@ The exact serialized block is then sent to the configured Bitcoin Core using
 is success. Every string—including `duplicate`—object, malformed or RPC error response, missing
 input, policy mismatch, timeout, unavailable validator, or superseded generation withholds the job.
 
+The released `coinb1` and `coinb2` carry the coinbase's non-witness serialization, because a
+Stratum miner hashes `coinb1 || extranonce1 || extranonce2 || coinb2` as the coinbase txid. The
+proposed block and any found block add back the witness reserved value that the witness
+commitment requires.
+
 ## Bounded failure and concurrency
 
 `job_admission_timeout_ms` is constrained to 1–60,000 ms and

@@ -9,9 +9,9 @@
     "regtestPatch": "p2poolv2-v0.12.0-regtest.patch",
     "regtestPatchSha256": "b938dfb334868d991604611d3babe8a78b6e3b557cef460531b3a1e9642a1e2c",
     "jobAdmissionPatch": "p2poolv2-v0.12.0-job-admission.patch",
-    "jobAdmissionPatchSha256": "9c8dcaaa12c5a06d40ebc499e94254bd002bdfede177b4e6f0d0011162933043",
+    "jobAdmissionPatchSha256": "3039e8d886682548ac69456b7c82169a74bec1b847535467a51618ce299fd367",
     "blockSubmissionPatch": "p2poolv2-v0.12.0-block-submission.patch",
-    "blockSubmissionPatchSha256": "e136ea458e793cfe02d052d16b9049a9ab71c618d8b8c6dd979a809f6b7c3d52"
+    "blockSubmissionPatchSha256": "40539665f743dea0efc2791e7f90471c90224441b05408fa24b9b76c23cadcae"
   },
   "bitcoinCore": {
     "version": "28.1",

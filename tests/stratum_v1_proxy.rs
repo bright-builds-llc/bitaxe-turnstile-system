@@ -55,6 +55,8 @@ mod stale_work;
 mod target_math;
 #[path = "stratum_v1_proxy/upstream_first.rs"]
 mod upstream_first;
+#[path = "stratum_v1_proxy/upstream_refusals.rs"]
+mod upstream_refusals;
 #[path = "stratum_v1_proxy/version_rolling.rs"]
 mod version_rolling;
 
@@ -276,29 +278,6 @@ fn distinct_session_extranonces_produce_distinct_share_fingerprints() -> Result<
     assert_ne!(
         first_event.share_fingerprint(),
         second_event.share_fingerprint()
-    );
-    Ok(())
-}
-
-#[test]
-fn rejected_submission_returns_upstream_result_without_persistence() -> Result<(), Box<dyn Error>> {
-    // Arrange
-    let mut session = prepared_submit_session(
-        "session_stratum_rejected_01",
-        "worker-rejected-01",
-        61,
-        "11121314",
-        1_060,
-    )?;
-    let rejected = r#"{"id":61,"result":false,"error":[23,"low difficulty share",null]}"#;
-
-    // Act
-    let actions = session.upstream_frame(rejected, 1_002)?;
-
-    // Assert
-    assert_eq!(
-        actions,
-        [StratumProxyAction::ForwardWorker(rejected.to_owned())]
     );
     Ok(())
 }

@@ -135,10 +135,10 @@ index cdb2880..b478479 100644
  
      #[tokio::test]
 diff --git a/p2poolv2_config/src/lib.rs b/p2poolv2_config/src/lib.rs
-index ebd7120..3dfc574 100644
+index 028dc49..689fbfe 100644
 --- a/p2poolv2_config/src/lib.rs
 +++ b/p2poolv2_config/src/lib.rs
-@@ -138,6 +138,9 @@ pub struct StratumConfig<State = Raw> {
+@@ -135,6 +135,9 @@ pub struct StratumConfig<State = Raw> {
      /// Maximum concurrent Bitcoin Core proposal requests.
      #[serde(default = "default_job_admission_max_concurrency")]
      pub job_admission_max_concurrency: usize,
@@ -148,7 +148,7 @@ index ebd7120..3dfc574 100644
      /// Pool operating mode. Defaults to P2Poolv2 when not specified.
      #[serde(default)]
      pub mode: PoolMode,
-@@ -170,6 +173,11 @@ impl StratumConfig<Raw> {
+@@ -167,6 +170,11 @@ impl StratumConfig<Raw> {
                  message: "job_admission_max_concurrency must be between 1 and 1024".to_string(),
              });
          }
@@ -160,7 +160,7 @@ index ebd7120..3dfc574 100644
          if self.pool_signature.clone().unwrap_or("".to_string()).len() > MAX_POOL_SIGNATURE_LENGTH {
              return Err(ConfigError {
                  message: format!("Pool signature length is limited to {MAX_POOL_SIGNATURE_LENGTH}"),
-@@ -231,6 +239,7 @@ impl StratumConfig<Raw> {
+@@ -228,6 +236,7 @@ impl StratumConfig<Raw> {
              require_job_admission: self.require_job_admission,
              job_admission_timeout_ms: self.job_admission_timeout_ms,
              job_admission_max_concurrency: self.job_admission_max_concurrency,
@@ -168,7 +168,7 @@ index ebd7120..3dfc574 100644
              mode: self.mode,
              bootstrap_address_parsed: Some(bootstrap_address_parsed),
              solo_address_parsed,
-@@ -295,6 +304,7 @@ impl StratumConfig<Raw> {
+@@ -292,6 +301,7 @@ impl StratumConfig<Raw> {
              require_job_admission: false,
              job_admission_timeout_ms: default_job_admission_timeout_ms(),
              job_admission_max_concurrency: default_job_admission_max_concurrency(),
@@ -176,7 +176,7 @@ index ebd7120..3dfc574 100644
              mode: PoolMode::default(),
              bootstrap_address_parsed: None,
              solo_address_parsed: None,
-@@ -390,6 +400,10 @@ fn default_job_admission_max_concurrency() -> usize {
+@@ -387,6 +397,10 @@ fn default_job_admission_max_concurrency() -> usize {
      8
  }
  
@@ -187,7 +187,7 @@ index ebd7120..3dfc574 100644
  fn default_background_task_frequency_hours() -> u64 {
      1
  }
-@@ -651,9 +665,12 @@ mod tests {
+@@ -648,9 +662,12 @@ mod tests {
          zero_timeout.job_admission_timeout_ms = 0;
          let mut zero_concurrency = StratumConfig::new_for_test_default();
          zero_concurrency.job_admission_max_concurrency = 0;
@@ -201,7 +201,7 @@ index ebd7120..3dfc574 100644
  
      #[test]
 diff --git a/p2poolv2_lib/src/stratum/message_handlers/submit.rs b/p2poolv2_lib/src/stratum/message_handlers/submit.rs
-index b9007b8..9873d9c 100644
+index 525e589..3eea142 100644
 --- a/p2poolv2_lib/src/stratum/message_handlers/submit.rs
 +++ b/p2poolv2_lib/src/stratum/message_handlers/submit.rs
 @@ -30,10 +30,10 @@ use crate::stratum::{
@@ -232,7 +232,7 @@ index b9007b8..9873d9c 100644
      }
  
      // In P2Poolv2 mode, reject shares that do not meet the pool difficulty target.
-@@ -230,16 +235,41 @@ pub(crate) async fn handle_submit<'a, D: DifficultyAdjusterTrait>(
+@@ -230,25 +235,54 @@ pub(crate) async fn handle_submit<'a, D: DifficultyAdjusterTrait>(
      }
  }
  
@@ -283,7 +283,21 @@ index b9007b8..9873d9c 100644
  }
  
  /// Build full block from header, coinbase and blocktemplate
-@@ -259,6 +289,10 @@ fn build_full_block(
+ /// Only called for the rare case of finding a bitcoin block
+ fn build_full_block(
+     header: Header,
+-    coinbase: bitcoin::Transaction,
++    mut coinbase: bitcoin::Transaction,
+     blocktemplate: &BlockTemplate,
+ ) -> Block {
++    crate::stratum::work::coinbase::restore_witness_reserved_value(
++        &mut coinbase,
++        blocktemplate.default_witness_commitment.is_some(),
++    );
+     let mut all_transactions = Vec::with_capacity(blocktemplate.transactions.len() + 1);
+     all_transactions.push(coinbase);
+     all_transactions.extend(blocktemplate.decode_transactions());
+@@ -259,6 +293,10 @@ fn build_full_block(
      }
  }
  
@@ -296,10 +310,10 @@ index b9007b8..9873d9c 100644
  fn get_true_difficulty(hash: &bitcoin::BlockHash) -> u128 {
 diff --git a/p2poolv2_lib/src/stratum/message_handlers/submit/block_submission_tests.rs b/p2poolv2_lib/src/stratum/message_handlers/submit/block_submission_tests.rs
 new file mode 100644
-index 0000000..deacc6c
+index 0000000..cc29de9
 --- /dev/null
 +++ b/p2poolv2_lib/src/stratum/message_handlers/submit/block_submission_tests.rs
-@@ -0,0 +1,92 @@
+@@ -0,0 +1,140 @@
 +use super::*;
 +use std::time::Duration;
 +use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
@@ -392,8 +406,56 @@ index 0000000..deacc6c
 +    // Assert
 +    assert_eq!(outcome, BlockSubmissionOutcome::Unavailable);
 +}
++
++#[test]
++fn a_found_block_restores_the_coinbase_witness_reserved_value() {
++    use crate::accounting::OutputPair;
++    use crate::shares::witness_commitment::WitnessCommitment;
++    use crate::stratum::work::coinbase::{
++        build_bitcoin_coinbase_transaction, parse_address, split_coinbase,
++    };
++    use crate::stratum::work::difficulty::validate::build_coinbase_from_components;
++    use std::str::FromStr;
++
++    let template: BlockTemplate = serde_json::from_str(include_str!(
++        "../../../../../p2poolv2_tests/test_data/gbt/regtest/ckpool/four-txns/gbt.json"
++    ))
++    .expect("valid template");
++    let address = parse_address(
++        "bcrt1qe2qaq0e8qlp425pxytrakala7725dynwhknufr",
++        bitcoin::Network::Regtest,
++    )
++    .expect("valid address");
++    let witness_commitment = template
++        .default_witness_commitment
++        .as_deref()
++        .map(|hex| WitnessCommitment::from_hex(hex).expect("valid commitment"));
++    let coinbase = build_bitcoin_coinbase_transaction(
++        bitcoin::transaction::Version::TWO,
++        &[OutputPair {
++            address,
++            amount: bitcoin::Amount::from_str("50 BTC").expect("valid amount"),
++        }],
++        template.height as i64,
++        bitcoin::script::PushBytesBuf::from(&[0u8]),
++        witness_commitment.as_ref(),
++        b"P2Poolv2",
++        None,
++        0,
++        None,
++    )
++    .expect("coinbase builds");
++    let (coinbase1, coinbase2) = split_coinbase(&coinbase).expect("coinbase splits");
++    let submitted =
++        build_coinbase_from_components(&coinbase1, "00000000", "0000000000000000", &coinbase2)
++            .expect("submitted coinbase decodes");
++
++    let block = build_full_block(test_block().header, submitted, &template);
++
++    assert!(block.check_witness_commitment());
++}
 diff --git a/p2poolv2_lib/src/stratum/server.rs b/p2poolv2_lib/src/stratum/server.rs
-index 4fb04f3..7b731aa 100644
+index 97f070d..b60b97e 100644
 --- a/p2poolv2_lib/src/stratum/server.rs
 +++ b/p2poolv2_lib/src/stratum/server.rs
 @@ -51,6 +51,33 @@ use tracing::{debug, error, info, warn};
@@ -503,7 +565,7 @@ index 4fb04f3..7b731aa 100644
      fn job_admission(&self) -> Option<&Arc<BitcoinCoreJobAdmission>> {
          #[cfg(not(test))]
          {
-@@ -948,6 +1000,21 @@ mod stratum_server_tests {
+@@ -949,6 +1001,21 @@ mod stratum_server_tests {
          assert!(!requires_job_admission(bitcoin::Network::Regtest, false));
      }
  
