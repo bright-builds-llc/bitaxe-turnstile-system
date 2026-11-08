@@ -68,6 +68,8 @@ async (page) => {
   const paused = (state) => state.clientEvents.filter((event) => event.type === "lifecycle").at(-1)?.controlState === "paused";
   const beforeSynthetic = await until("Renew while shares are delivered", async (state) => {
     if (paused(state)) await fail("mining continues", "the client paused");
+    const minerNow = await (await control("/miner")).json();
+    if (minerNow.difficultyRefused > 0) await fail("the miner accepts the pool difficulty", JSON.stringify(minerNow));
     const evidence = await delivery();
     const renewed = state.pageEvents.some((event) => event.type === "renewed");
     return renewed && state.maybeDevice.renewals >= 1 && evidence.acknowledgedLeaseWindows >= 2 ? evidence : undefined;
@@ -114,6 +116,7 @@ async (page) => {
   if (replayStatus < 400 || replayStatus >= 500) await fail("replayed Gate Pass refused", replayStatus);
   const miner = await (await control("/miner")).json();
   if (miner.running) await fail("miner stopped at the Work Requirement", JSON.stringify(miner));
+  if (miner.difficultyRefused !== 0) await fail("the miner accepts the pool difficulty", JSON.stringify(miner));
   const afterSynthetic = await delivery();
   if (afterSynthetic.syntheticAcknowledged !== 1) await fail("one synthetic share", JSON.stringify(afterSynthetic));
 

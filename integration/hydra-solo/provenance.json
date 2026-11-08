@@ -7,9 +7,9 @@
     "sourceSha256": "f95544a942ba9d91fdef1f096662e8d405cd069cb01db2cb9b34dbfc5f0928e4",
     "license": "AGPL-3.0-or-later",
     "regtestPatch": "p2poolv2-v0.12.0-regtest.patch",
-    "regtestPatchSha256": "3da16af53a78b3c74b0097e7f4e6903cc9b1111fdd4972de5f1ed10cecfc5aa7",
+    "regtestPatchSha256": "b938dfb334868d991604611d3babe8a78b6e3b557cef460531b3a1e9642a1e2c",
     "jobAdmissionPatch": "p2poolv2-v0.12.0-job-admission.patch",
-    "jobAdmissionPatchSha256": "e6c2bdb912b50afb07d7f4855f8cb6a3af2abbe7aaf83ea1ba1e5e2700e41427",
+    "jobAdmissionPatchSha256": "9c8dcaaa12c5a06d40ebc499e94254bd002bdfede177b4e6f0d0011162933043",
     "blockSubmissionPatch": "p2poolv2-v0.12.0-block-submission.patch",
     "blockSubmissionPatchSha256": "e136ea458e793cfe02d052d16b9049a9ab71c618d8b8c6dd979a809f6b7c3d52"
   },

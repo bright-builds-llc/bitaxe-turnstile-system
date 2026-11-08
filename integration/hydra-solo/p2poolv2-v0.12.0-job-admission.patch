@@ -19,10 +19,10 @@ index 5da81bd..cdb2880 100644
                  })]
              }
 diff --git a/p2poolv2_config/src/lib.rs b/p2poolv2_config/src/lib.rs
-index 8263d9d..ebd7120 100644
+index 20f2b57..028dc49 100644
 --- a/p2poolv2_config/src/lib.rs
 +++ b/p2poolv2_config/src/lib.rs
-@@ -129,6 +129,15 @@ pub struct StratumConfig<State = Raw> {
+@@ -126,6 +126,15 @@ pub struct StratumConfig<State = Raw> {
      /// connections. Set to false when bootstrapping a new network.
      #[serde(default = "default_wait_for_chain_sync")]
      pub wait_for_chain_sync: bool,
@@ -38,7 +38,7 @@ index 8263d9d..ebd7120 100644
      /// Pool operating mode. Defaults to P2Poolv2 when not specified.
      #[serde(default)]
      pub mode: PoolMode,
-@@ -137,6 +146,8 @@ pub struct StratumConfig<State = Raw> {
+@@ -134,6 +143,8 @@ pub struct StratumConfig<State = Raw> {
      #[serde(skip)]
      pub bootstrap_address_parsed: Option<Address<NetworkChecked>>,
      #[serde(skip)]
@@ -47,7 +47,7 @@ index 8263d9d..ebd7120 100644
      pub donation_address_parsed: Option<Address<NetworkChecked>>,
      #[serde(skip)]
      pub fee_address_parsed: Option<Address<NetworkChecked>>,
-@@ -149,6 +160,16 @@ pub struct StratumConfig<State = Raw> {
+@@ -146,6 +157,16 @@ pub struct StratumConfig<State = Raw> {
  impl StratumConfig<Raw> {
      /// Parse and validate addresses, converting from Raw to Parsed state
      pub fn parse(self) -> Result<StratumConfig<Parsed>, ConfigError> {
@@ -64,7 +64,7 @@ index 8263d9d..ebd7120 100644
          if self.pool_signature.clone().unwrap_or("".to_string()).len() > MAX_POOL_SIGNATURE_LENGTH {
              return Err(ConfigError {
                  message: format!("Pool signature length is limited to {MAX_POOL_SIGNATURE_LENGTH}"),
-@@ -169,6 +190,11 @@ impl StratumConfig<Raw> {
+@@ -166,6 +187,11 @@ impl StratumConfig<Raw> {
          }
  
          let bootstrap_address_parsed = parse_address(&self.bootstrap_address, self.network)?;
@@ -76,7 +76,7 @@ index 8263d9d..ebd7120 100644
  
          let donation_address_parsed = self
              .donation_address
-@@ -202,8 +228,12 @@ impl StratumConfig<Raw> {
+@@ -199,8 +225,12 @@ impl StratumConfig<Raw> {
              pool_signature: self.pool_signature,
              max_connections: self.max_connections,
              wait_for_chain_sync: self.wait_for_chain_sync,
@@ -89,7 +89,7 @@ index 8263d9d..ebd7120 100644
              donation_address_parsed,
              fee_address_parsed,
              _state: PhantomData,
-@@ -219,6 +249,13 @@ impl StratumConfig<Parsed> {
+@@ -216,6 +246,13 @@ impl StratumConfig<Parsed> {
              .expect("bootstrap_address_parsed should always be Some in Parsed state")
      }
  
@@ -103,7 +103,7 @@ index 8263d9d..ebd7120 100644
      /// Get the parsed and validated donation address, if any
      pub fn donation_address(&self) -> Option<&Address<NetworkChecked>> {
          self.donation_address_parsed.as_ref()
-@@ -255,8 +292,12 @@ impl StratumConfig<Raw> {
+@@ -252,8 +289,12 @@ impl StratumConfig<Raw> {
              pool_signature: None,
              max_connections: None,
              wait_for_chain_sync: true,
@@ -116,7 +116,7 @@ index 8263d9d..ebd7120 100644
              donation_address_parsed: None,
              fee_address_parsed: None,
              _state: PhantomData,
-@@ -341,6 +382,14 @@ fn default_wait_for_chain_sync() -> bool {
+@@ -338,6 +379,14 @@ fn default_wait_for_chain_sync() -> bool {
      true
  }
  
@@ -131,7 +131,7 @@ index 8263d9d..ebd7120 100644
  fn default_background_task_frequency_hours() -> u64 {
      1
  }
-@@ -596,6 +645,17 @@ mod tests {
+@@ -593,6 +642,17 @@ mod tests {
      use temp_env::with_var;
      use tokio_test::assert_err;
  
@@ -247,100 +247,8 @@ index ab5b400..002c040 100644
      }
  
      #[tokio::test]
-diff --git a/p2poolv2_lib/src/stratum/message_handlers/authorize_response.rs b/p2poolv2_lib/src/stratum/message_handlers/authorize_response.rs
-index be1f640..88922d7 100644
---- a/p2poolv2_lib/src/stratum/message_handlers/authorize_response.rs
-+++ b/p2poolv2_lib/src/stratum/message_handlers/authorize_response.rs
-@@ -255,7 +255,7 @@ mod tests {
-             "Expected method to be 'mining.set_difficulty'"
-         );
-         assert_eq!(
--            difficulty_notification.params[0], 1000,
-+            difficulty_notification.params[0], 0.0000001,
-             "Expected difficulty notification to match pool minimum difficulty"
-         );
-     }
-@@ -547,7 +547,7 @@ mod tests {
- 
-         if let Message::SetDifficulty(notification) = &messages[1] {
-             assert_eq!(
--                notification.params[0], 500,
-+                notification.params[0], 0.00000005,
-                 "SetDifficulty notification should use password difficulty"
-             );
-         } else {
-@@ -604,7 +604,7 @@ mod tests {
- 
-         if let Message::SetDifficulty(notification) = &messages[1] {
-             assert_eq!(
--                notification.params[0], 100,
-+                notification.params[0], 0.00000001,
-                 "SetDifficulty notification should use clamped difficulty"
-             );
-         } else {
-diff --git a/p2poolv2_lib/src/stratum/message_handlers/submit.rs b/p2poolv2_lib/src/stratum/message_handlers/submit.rs
-index 525e589..b9007b8 100644
---- a/p2poolv2_lib/src/stratum/message_handlers/submit.rs
-+++ b/p2poolv2_lib/src/stratum/message_handlers/submit.rs
-@@ -658,7 +658,7 @@ mod handle_submit_tests {
-                 Message::SetDifficulty(SetDifficultyNotification { method: _, params }),
-             ] => {
-                 assert_eq!(result, &Some(json!(true)));
--                assert_eq!(params[0], 12345);
-+                assert_eq!(params[0], 0.0000012345);
-             }
-             _ => panic!("Expected SetDifficultyNotification message"),
-         }
-diff --git a/p2poolv2_lib/src/stratum/message_handlers/subscribe.rs b/p2poolv2_lib/src/stratum/message_handlers/subscribe.rs
-index 1431401..5322877 100644
---- a/p2poolv2_lib/src/stratum/message_handlers/subscribe.rs
-+++ b/p2poolv2_lib/src/stratum/message_handlers/subscribe.rs
-@@ -125,7 +125,7 @@ mod tests {
-             "Expected method to be 'mining.set_difficulty'"
-         );
-         assert_eq!(
--            difficulty_notification.params[0], 1000,
-+            difficulty_notification.params[0], 0.0000001,
-             "Expected difficulty notification to match pool minimum difficulty"
-         );
-     }
-diff --git a/p2poolv2_lib/src/stratum/message_handlers/suggest_difficulty.rs b/p2poolv2_lib/src/stratum/message_handlers/suggest_difficulty.rs
-index 45a1e4b..1d16ea5 100644
---- a/p2poolv2_lib/src/stratum/message_handlers/suggest_difficulty.rs
-+++ b/p2poolv2_lib/src/stratum/message_handlers/suggest_difficulty.rs
-@@ -71,7 +71,7 @@ mod tests {
-         let messages = result.unwrap();
-         assert_eq!(messages.len(), 1);
-         if let Message::SetDifficulty(notification) = &messages[0] {
--            assert_eq!(notification.params[0], 1000);
-+            assert_eq!(notification.params[0], 0.0000001);
-         } else {
-             panic!("Expected SetDifficulty message");
-         }
-@@ -93,7 +93,7 @@ mod tests {
-         let messages = result.unwrap();
-         assert_eq!(messages.len(), 1);
-         if let Message::SetDifficulty(notification) = &messages[0] {
--            assert_eq!(notification.params[0], 100);
-+            assert_eq!(notification.params[0], 0.00000001);
-         } else {
-             panic!("Expected SetDifficulty message");
-         }
-diff --git a/p2poolv2_lib/src/stratum/messages.rs b/p2poolv2_lib/src/stratum/messages.rs
-index bb87d96..72f4cc6 100644
---- a/p2poolv2_lib/src/stratum/messages.rs
-+++ b/p2poolv2_lib/src/stratum/messages.rs
-@@ -629,7 +629,7 @@ mod tests {
-         let serialized_message = serde_json::to_string(&message).unwrap();
-         assert_eq!(
-             serialized_message,
--            r#"{"method":"mining.set_difficulty","params":[1000]}"#
-+            r#"{"method":"mining.set_difficulty","params":[1e-7]}"#
-         );
-     }
- 
 diff --git a/p2poolv2_lib/src/stratum/server.rs b/p2poolv2_lib/src/stratum/server.rs
-index f33cc02..06f85fd 100644
+index f33cc02..97f070d 100644
 --- a/p2poolv2_lib/src/stratum/server.rs
 +++ b/p2poolv2_lib/src/stratum/server.rs
 @@ -30,19 +30,26 @@ use crate::stratum::message_handlers::handle_message;
@@ -776,17 +684,6 @@ index f33cc02..06f85fd 100644
      #[tokio::test]
      async fn test_create_and_start_server() {
          let (_shutdown_tx, shutdown_rx) = oneshot::channel();
-@@ -873,8 +1142,8 @@ mod stratum_server_tests {
-         );
-         assert_eq!(
-             set_difficulty_json.get("params").unwrap(),
--            &serde_json::json!([10000]),
--            "Set difficulty response should have params [10000]"
-+            &serde_json::json!([0.000001]),
-+            "Set difficulty response should have scaled test params"
-         );
- 
-         assert!(response.ends_with("\n"),);
 diff --git a/p2poolv2_lib/src/stratum/work/block_template.rs b/p2poolv2_lib/src/stratum/work/block_template.rs
 index 0368cb8..dd31f72 100644
 --- a/p2poolv2_lib/src/stratum/work/block_template.rs

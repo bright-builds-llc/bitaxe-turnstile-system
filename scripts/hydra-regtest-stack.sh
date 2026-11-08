@@ -19,6 +19,14 @@ regtest_storage_args=(-prune=550)
 # A mainnet node can take minutes to load its index and to flush on shutdown.
 rpc_wait_seconds=60
 process_exit_attempts=50
+# Which Hydra to build. Only a regtest build gets the regtest patch; the mainnet
+# stack sets `mainnet`, so mainnet Hydra advertises the difficulty it enforces.
+hydra_build=regtest
+# The regtest patch divides advertised difficulty by this so a CPU miner's shares
+# stay above regtest's network target instead of each being a block.
+regtest_difficulty_scale=10000000000
+# ESP-Miner's MIN_POOL_DIFFICULTY: the board ignores a lower set_difficulty.
+esp_miner_minimum_difficulty=0.0001
 
 wait_for_process_exit() {
   process_id=$1
@@ -183,6 +191,44 @@ start_hydra() {
     >"$integration_root/hydra-$hydra_run.log" 2>&1 &
   hydra_pid=$!
   wait_for_port "$stratum_port"
+  if ! require_advertised_difficulty; then
+    return 1
+  fi
+}
+
+# Subscribes once, without authorizing, and requires Hydra's set_difficulty to be
+# its configured start difficulty: exact on mainnet and at least ESP-Miner's floor,
+# scaled on regtest. Hydra enforces the start difficulty on that session.
+require_advertised_difficulty() {
+  if ! start_difficulty=$(awk -F' *= *' '$1 == "start_difficulty" { print $2 }' "$config_path") ||
+    ! [[ "$start_difficulty" =~ ^[0-9]+$ ]]; then
+    printf 'Hydra config has no integer start_difficulty\n' >&2
+    return 1
+  fi
+  if [[ "$hydra_build" == mainnet ]]; then
+    expected_difficulty=$start_difficulty
+    minimum_difficulty=$esp_miner_minimum_difficulty
+  else
+    expected_difficulty="$start_difficulty/$regtest_difficulty_scale"
+    minimum_difficulty=0
+  fi
+  python3 -I - "$stratum_port" "$expected_difficulty" "$minimum_difficulty" <<'EOF'
+import json, math, socket, sys
+from fractions import Fraction
+
+port, expected, minimum = int(sys.argv[1]), float(Fraction(sys.argv[2])), float(sys.argv[3])
+with socket.create_connection(("127.0.0.1", port), timeout=10) as probe:
+    probe.sendall(b'{"id":1,"method":"mining.subscribe","params":["bwg-difficulty-probe"]}\n')
+    for line in probe.makefile("r"):
+        message = json.loads(line)
+        if message.get("method") == "mining.set_difficulty":
+            advertised = float(message["params"][0])
+            break
+    else:
+        sys.exit("Hydra closed the difficulty probe before mining.set_difficulty")
+if not math.isclose(advertised, expected, rel_tol=1e-9) or advertised < minimum:
+    sys.exit(f"Hydra advertises difficulty {advertised:g}; expected {expected:g}, at least {minimum:g}")
+EOF
 }
 
 # Renders TEMPLATE to config_path; Hydra's store and stats go under STATE_DIR.
@@ -262,13 +308,19 @@ prepare_pinned_hydra() {
     "$p2pool_source_url" \
     "$p2pool_source_digest" \
     "$source_archive"
-  mkdir "$integration_root/source"
-  tar -xzf "$source_archive" -C "$integration_root/source"
-  source_dir=$(find "$integration_root/source" -mindepth 1 -maxdepth 1 -type d | head -1)
-  git -C "$source_dir" apply "$patch_path"
+  source_root="$integration_root/source-$hydra_build"
+  mkdir "$source_root"
+  tar -xzf "$source_archive" -C "$source_root"
+  source_dir=$(find "$source_root" -mindepth 1 -maxdepth 1 -type d | head -1)
   git -C "$source_dir" apply "$admission_patch_path"
   git -C "$source_dir" apply "$block_submission_patch_path"
   hydra_target_dir="$repo_root/target/hydra-v$p2pool_version"
+  if [[ "$hydra_build" == regtest ]]; then
+    git -C "$source_dir" apply "$patch_path"
+  else
+    # A rehearsal's regtest build never replaces the mainnet binary.
+    hydra_target_dir="$hydra_target_dir-$hydra_build"
+  fi
   CARGO_TARGET_DIR="$hydra_target_dir" \
     cargo build --manifest-path "$source_dir/Cargo.toml" -p p2poolv2_node --bin p2poolv2
 }

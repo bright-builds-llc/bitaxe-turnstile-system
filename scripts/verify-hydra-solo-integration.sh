@@ -195,6 +195,40 @@ run_upstream_admission_tests() {
   } 2>&1 | tee "$integration_root/upstream-admission-tests.log"
 }
 
+# The mainnet build has no regtest patch: Hydra's own vardiff tests and its unscaled
+# set_difficulty tests pass, and it serializes the difficulty it enforces (Ticket 07).
+run_mainnet_build_tests() {
+  (
+    hydra_build=mainnet
+    prepare_pinned_hydra
+    for test_name in \
+      stratum::messages::tests::test_new_set_difficulty_notification \
+      stratum::message_handlers::subscribe::tests::test_handle_subscribe_success \
+      stratum::difficulty_adjuster::tests::test_difficulty_not_changed_before_minimum_shares \
+      stratum::difficulty_adjuster::tests::test_difficulty_adjustment_after_minimum_time \
+      stratum::difficulty_adjuster::tests::test_difficulty_adjustment_after_enough_shares \
+      stratum::difficulty_adjuster::tests::test_difficulty_adjustment_with_enough_time_delay_to_trigger_adjustment \
+      stratum::difficulty_adjuster::tests::test_difficulty_adjustment_with_enough_time_delay_to_trigger_adjustment_start_from_100_000; do
+      run_exact_upstream_test p2poolv2_lib "$test_name"
+    done
+  ) 2>&1 | tee "$integration_root/mainnet-build-tests.log"
+}
+
+# Regtest Hydra advertises a scaled difficulty below ESP-Miner's floor, so the
+# mainnet guard must refuse it.
+verify_mainnet_difficulty_guard_refuses_regtest() {
+  guard_log="$integration_root/mainnet-difficulty-guard.log"
+  if (hydra_build=mainnet && require_advertised_difficulty) >"$guard_log" 2>&1; then
+    printf 'The mainnet difficulty guard accepted regtest Hydra\n' >&2
+    return 1
+  fi
+  if ! grep -Fq 'Hydra advertises difficulty 1e-10; expected 1, at least 0.0001' "$guard_log"; then
+    cat "$guard_log" >&2
+    return 1
+  fi
+  printf 'The mainnet difficulty guard refused regtest Hydra\n'
+}
+
 external_refusals=0
 
 # Runs the mainnet stack in external-node mode against the stand-in and requires
@@ -264,10 +298,12 @@ if [[ "$external_node_mode" == true ]]; then
   run_integration
 else
   run_upstream_admission_tests
+  run_mainnet_build_tests
   start_regtest_stack
   require_pruned_without_txindex
   node_is_synced
   start_hydra
+  verify_mainnet_difficulty_guard_refuses_regtest
   run_integration
   stop_hydra
   start_hydra

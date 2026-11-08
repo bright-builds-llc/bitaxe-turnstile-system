@@ -1,6 +1,7 @@
 # Mainnet Hydra for Ticket 07, rendered by scripts/hydra-mainnet-stack.sh. Difficulty
-# is bounded at 4096, one share for the Gate's 2^44 requirement. Unbounded, Hydra's
-# vardiff can climb out of a Worker's reach or saturate and overflow.
+# is pinned at 4096, one share for the Gate's 2^44 requirement, so the difficulty
+# Hydra advertises is the one it enforces. Unbounded, Hydra's vardiff can climb out
+# of a Worker's reach or saturate and overflow.
 [network]
 listen_address = "/ip4/127.0.0.1/tcp/__P2P_PORT__"
 dial_peers = []
@@ -26,7 +27,7 @@ pplns_ttl_days = 7
 hostname = "127.0.0.1"
 port = __STRATUM_PORT__
 start_difficulty = 4096
-minimum_difficulty = 100
+minimum_difficulty = 4096
 maximum_difficulty = 4096
 solo_address = "__PAYOUT_ADDRESS__"
 bootstrap_address = "__PAYOUT_ADDRESS__"

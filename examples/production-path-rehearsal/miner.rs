@@ -3,6 +3,7 @@
 //! sends subscribe and authorize without waiting, and submits rolled version bits.
 //! Like ESP-Miner it also submits its in-flight result for a job a new Bitcoin tip
 //! retired, after the clean notify or after reconnecting when the pool closes.
+//! Like ESP-Miner it ignores a set_difficulty outside its range and keeps the last.
 
 use std::{
     error::Error,
@@ -33,6 +34,12 @@ const MAXIMUM_RECONNECTS: u64 = 3;
 const RECONNECT_DELAY: Duration = Duration::from_secs(1);
 /// The standard Stratum error code a pool answers a retired job's submit with.
 const JOB_NOT_FOUND: u64 = 21;
+/// ESP-Miner's MIN_POOL_DIFFICULTY and MAX_POOL_DIFFICULTY.
+const MIN_POOL_DIFFICULTY: f64 = 0.0001;
+const MAX_POOL_DIFFICULTY: f64 = 4_294_967_295.0;
+/// Regtest Hydra divides advertised difficulty by this so shares stay above the
+/// regtest network target; ESP-Miner's floor is scaled to match.
+const REGTEST_DIFFICULTY_SCALE: f64 = 1e10;
 
 #[derive(Default)]
 pub(crate) struct MinerStats {
@@ -41,6 +48,7 @@ pub(crate) struct MinerStats {
     pub(crate) rejected: AtomicU64,
     pub(crate) reconnects: AtomicU64,
     pub(crate) stale_answered: AtomicU64,
+    pub(crate) difficulty_refused: AtomicU64,
 }
 
 struct Subscription {
@@ -118,7 +126,12 @@ async fn mine_connection(
                         }
                     }
                     (_, Some("mining.set_difficulty")) => {
-                        maybe_difficulty = message["params"][0].as_f64();
+                        match message["params"][0].as_f64().filter(|difficulty| in_range(*difficulty)) {
+                            Some(difficulty) => maybe_difficulty = Some(difficulty),
+                            None => {
+                                stats.difficulty_refused.fetch_add(1, Ordering::Relaxed);
+                            }
+                        }
                     }
                     (_, Some("mining.notify")) => {
                         let new_tip = message["params"][8] == Value::Bool(true)
@@ -226,6 +239,11 @@ fn counter_hex(counter: u64, bytes: usize) -> String {
     } else {
         full[full.len() - width..].to_owned()
     }
+}
+
+/// ESP-Miner's range check, with its floor scaled for regtest.
+fn in_range(difficulty: f64) -> bool {
+    (MIN_POOL_DIFFICULTY / REGTEST_DIFFICULTY_SCALE..=MAX_POOL_DIFFICULTY).contains(&difficulty)
 }
 
 /// Converts a pool difficulty into a big-endian 256-bit target, capped at the maximum.

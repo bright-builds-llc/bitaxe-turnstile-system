@@ -128,6 +128,7 @@ async fn miner_stats(State(state): State<ControlState>) -> Json<Value> {
         "rejected": state.stats.rejected.load(Ordering::Relaxed),
         "reconnects": state.stats.reconnects.load(Ordering::Relaxed),
         "staleAnswered": state.stats.stale_answered.load(Ordering::Relaxed),
+        "difficultyRefused": state.stats.difficulty_refused.load(Ordering::Relaxed),
     }))
 }
 

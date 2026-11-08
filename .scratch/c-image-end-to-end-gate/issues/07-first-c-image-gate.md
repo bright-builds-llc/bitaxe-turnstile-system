@@ -109,3 +109,14 @@ Follow [run-sheet-07.md](../run-sheet-07.md).
   - The proxy now answers a job it dropped with "Stale job" and one it never
     sent with "Job not found", both error 21, and logs them as `stale_job` and
     `unknown_job`. The board's rejected-share list shows which one happened.
+- 2026-11-08: the third mainnet run had every share rejected.
+  - The regtest patch was applied to the mainnet build too. Hydra advertised its
+    difficulty divided by 10^10 but enforced 4096. ESP-Miner ignores a difficulty
+    below 0.0001, so the board stayed at 1 and Hydra refused every share. The
+    same patch's fast vardiff likely drove run 1's 19.1M difficulty.
+  - Mainnet Hydra now gets only the Job Admission and block-submission patches,
+    and its difficulty is pinned at 4096. Every stack start checks Hydra's
+    set_difficulty against the configured one and stops on a mismatch.
+  - Regtest still needs the scaling: at 0.0001 every regtest share is a block.
+    The rehearsal miner now ignores out-of-range difficulty like ESP-Miner, with
+    its floor scaled by the same factor.

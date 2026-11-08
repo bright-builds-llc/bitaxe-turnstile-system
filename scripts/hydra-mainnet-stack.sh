@@ -100,6 +100,7 @@ source "$repo_root/scripts/hydra-regtest-stack.sh"
 # shellcheck source=scripts/hydra-external-node.sh
 source "$repo_root/scripts/hydra-external-node.sh"
 bitcoin_chain_arg="-chain=main"
+hydra_build=mainnet
 rpc_wait_seconds=1800
 process_exit_attempts=3000
 

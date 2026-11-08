@@ -54,7 +54,11 @@ Credentials and payout identities are never logged.
 
 [`provenance.json`](../../integration/hydra-solo/provenance.json) pins the exact upstream source,
 license, Bitcoin Core artifact, deterministic regtest patch, production Job Admission patch, and
-every SHA-256 digest. Run:
+every SHA-256 digest. Mainnet Hydra gets only the Job Admission and block-submission patches. The
+regtest patch is applied last and only to regtest builds; it scales the advertised difficulty and
+speeds up vardiff, which would make mainnet Hydra advertise less than it enforces. Every stack
+start subscribes once and stops if Hydra's `mining.set_difficulty` differs from its configured
+start difficulty (scaled on regtest) or, on mainnet, falls below ESP-Miner's 0.0001 floor. Run:
 
 ```bash
 scripts/verify-hydra-solo-integration.sh

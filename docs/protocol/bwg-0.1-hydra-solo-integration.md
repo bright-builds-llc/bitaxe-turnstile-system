@@ -25,13 +25,15 @@ Run:
 scripts/verify-hydra-solo-integration.sh
 ```
 
-The macOS-arm64 runner verifies checksums, builds the exact external source with the isolated
-regtest patch and production Job Admission patch, launches Bitcoin Core 28.1 and Hydra out of
-process, and executes the ignored
+The macOS-arm64 runner verifies checksums, builds the exact external source with the production
+Job Admission and block-submission patches and then the isolated regtest patch, launches Bitcoin
+Core 28.1 and Hydra out of process, and executes the ignored
 real-integration test twice across a Hydra restart. The standard Worker traverses the real TCP
 proxy, receives subscribe, difficulty, and notify messages, submits accepted work, and observes no
 BWG extension. The test proves:
 
+- the mainnet build carries no regtest patch: Hydra's own vardiff tests and unscaled
+  `mining.set_difficulty` tests pass on it;
 - the selected payout script is present in Hydra's actual coinbase;
 - Hydra's live variable-difficulty controller changes the assigned share target after rapid valid
   shares, and the Worker then satisfies the adjusted target;
