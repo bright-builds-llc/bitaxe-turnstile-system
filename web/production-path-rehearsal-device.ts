@@ -40,6 +40,9 @@ const FIRMWARE_SOURCE_COMMIT = "a".repeat(40);
 const APP_ELF_SHA256 = "b".repeat(64);
 const DEVICE_FILTER = { usbVendorId: 0x303a, usbProductId: 0x1001 };
 const HEARTBEAT_MILLISECONDS = 1_000;
+// A real board confirms restoration after its stop and cooling (about 47 s on hardware); the fake
+// stops mining at once and confirms past the 30 s ordinary command timeout.
+const RESTORE_CONFIRMATION_MILLISECONDS = 35_000;
 
 /** Where the fake device sends the grant's Stratum credentials, and when to stop. */
 export type RehearsalMiner = {
@@ -51,6 +54,7 @@ export type RehearsalDeviceLog = {
   commands: string[];
   renewals: number;
   restorationReason: string | undefined;
+  maybeRestorationConfirmedAfterMilliseconds?: number;
   /** The last frames each way, for diagnosing a failed rehearsal. */
   trace: string[];
 };
@@ -281,6 +285,15 @@ function fakeDevicePort(miner: RehearsalMiner, log: RehearsalDeviceLog): WorkerS
     log.renewals += 1;
     await reply(request, status(startedAt));
   }
+  async function restore(request: Record<string, unknown>) {
+    const requestedAt = now();
+    await stopMining(String((request.payload as { reason: string }).reason));
+    // Frames keep flowing while the confirmation waits, as heartbeats do on the board.
+    setTimeout(() => {
+      log.maybeRestorationConfirmedAfterMilliseconds = now() - requestedAt;
+      void reply(request, status());
+    }, RESTORE_CONFIRMATION_MILLISECONDS);
+  }
   function trace(entry: string) {
     log.trace.push(`${now()} ${entry}`);
     if (log.trace.length > 40) log.trace.shift();
@@ -303,7 +316,7 @@ function fakeDevicePort(miner: RehearsalMiner, log: RehearsalDeviceLog): WorkerS
     if (command === "renew_lease") return await renewLease(request);
     if (command === "pause") await stopMining("paused");
     if (command === "cancel") await stopMining("cancelled");
-    if (command === "restore") await stopMining(String((request.payload as { reason: string }).reason));
+    if (command === "restore") return await restore(request);
     await reply(request, status());
   }
   return {

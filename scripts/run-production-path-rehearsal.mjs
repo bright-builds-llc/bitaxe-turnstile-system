@@ -1,7 +1,8 @@
 // Drives the production-path rehearsal page (Ticket 06) through `playwright-cli run-code`.
 // From challenge to redeemed Gate Pass: consent, Start, at least one Renew while
 // shares are still being delivered, a new Bitcoin tip mid-lease that the lease
-// survives, the synthetic share across the Work Requirement, restoration as `challenge_satisfied`, DPoP redemption and a refused replay.
+// survives, the synthetic share across the Work Requirement, restoration as `challenge_satisfied`
+// confirmed after more than 30 s with no other command meanwhile, DPoP redemption and a refused replay.
 async (page) => {
   const WORK_TIMEOUT_MILLISECONDS = 120_000;
   const POLL_MILLISECONDS = 500;
@@ -107,6 +108,13 @@ async (page) => {
   if (final.maybeDevice.restorationReason !== "challenge_satisfied") {
     await fail("restoration confirmed", final.maybeDevice.restorationReason);
   }
+  const afterRestore = final.maybeDevice.commands.slice(final.maybeDevice.commands.indexOf("restore") + 1);
+  if (!(final.maybeDevice.maybeRestorationConfirmedAfterMilliseconds > 30_000) || afterRestore.length > 0) {
+    await fail("one slow restoration", JSON.stringify({
+      confirmedAfter: final.maybeDevice.maybeRestorationConfirmedAfterMilliseconds,
+      afterRestore,
+    }));
+  }
   if (!final.maybeRedemptionBody) await fail("redemption captured for replay", "missing");
   const replayStatus = await page.evaluate(async (body) => (await fetch("/account-creation/redeem", {
     method: "POST",
@@ -131,6 +139,7 @@ async (page) => {
     minerAccepted: miner.accepted,
     minerRejected: miner.rejected,
     restoration: final.maybeDevice.restorationReason,
+    restorationConfirmedAfterMilliseconds: final.maybeDevice.maybeRestorationConfirmedAfterMilliseconds,
     redemptionStatus: redeemed.status,
     replayStatus,
   };
