@@ -132,3 +132,18 @@ Follow [run-sheet-07.md](../run-sheet-07.md).
     rehearsal failed on exactly that.
   - The proxy now logs each refused submit with the pool's error code. Hydra
     sends errors as JSON-RPC objects, which ESP-Miner shows as "unknown".
+- 2026-11-08: the fifth mainnet run issued the Gate Pass, but the page never
+  redeemed it.
+  - The restore already waits for the 152 s restoration bound, not 30 s. The
+    board took about 47 s to stop and cool. Meanwhile the page still read
+    "running", so the `pass_issued` restore and the 20 s renewal each sent a
+    second serial command. The controller refused it locally and then ended its
+    own session, which failed the first restore. The terminal state was never
+    exposed.
+  - Now the client sends one restoration for all terminal events and no other
+    controller command after it starts. A failed confirmation still exposes the
+    terminal state and reports the error; renewals have stopped, so the lease
+    ends mining. The controller no longer ends its session over a command it
+    refused locally.
+  - The rehearsal's fake board now confirms restoration after 35 s, and the run
+    checks that no command followed the restore.

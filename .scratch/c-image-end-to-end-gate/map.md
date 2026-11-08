@@ -70,3 +70,6 @@ feed 09.
 - Ticket 07, on the owner's choice (2026-11-07): Hydra keeps each Stratum
   connection across a new tip and sends the new job with `clean_jobs`, so a block
   no longer ends a Work Lease. A closed connection still stops its Work Session.
+- Ticket 07 (2026-11-08): the client sends one restoration for all terminal
+  events and no other controller command once it has begun, so a slow board
+  restore no longer ends the serial session before redemption.

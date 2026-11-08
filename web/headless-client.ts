@@ -118,6 +118,11 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
   );
   let consentGeneration = 0;
   let lifecycle = restoredLifecycle(input);
+  // A Controller serves one command at a time and confirms restoration only after the device's
+  // stop and cooling, so every terminal event shares one restoration and nothing else reaches the
+  // Controller once it has begun.
+  let maybeTerminalRestoration: Promise<void> | undefined;
+  const controllable = () => maybeTerminalRestoration === undefined;
   const listeners = new Set<(event: HeadlessEvent) => void>();
   const emit = (event: HeadlessEvent) => {
     for (const listener of listeners) listener(structuredClone(event));
@@ -127,6 +132,7 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
     emit(next);
   };
   const pauseAfterControllerDisconnect = async () => {
+    if (!controllable()) return;
     if (lifecycle.challengeState !== "active" || lifecycle.controlState !== "running") return;
     await snapshot.transport.pause();
     if (lifecycle.challengeState === "active" && lifecycle.controlState === "running") {
@@ -151,11 +157,21 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       });
       return;
     }
-    const nextLifecycle = authorityLifecycleTransition(lifecycle, event.state);
+    authorityLifecycleTransition(lifecycle, event.state);
     const maybeRestorationReason = restorationReason(event.state);
+    let maybeRestorationFailure: unknown;
     if (snapshot.maybeWorkerController && maybeRestorationReason) {
-      await restoreWorkerController(snapshot.maybeWorkerController, maybeRestorationReason);
+      maybeTerminalRestoration ??= restoreWorkerController(
+        snapshot.maybeWorkerController,
+        maybeRestorationReason,
+      );
+      // The terminal state is exposed even when confirmation fails: restoration was requested,
+      // renewals have stopped, and the device stops mining when its Work Lease runs out.
+      await maybeTerminalRestoration.catch((error: unknown) => {
+        maybeRestorationFailure = error ?? new Error("Worker restoration failed");
+      });
     }
+    const nextLifecycle = authorityLifecycleTransition(lifecycle, event.state);
     if (
       lifecycle.challengeState === "issued" &&
       lifecycle.controlState === "awaiting_consent" &&
@@ -165,6 +181,7 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       consentGeneration += 1;
     }
     setLifecycle(nextLifecycle);
+    if (maybeRestorationFailure !== undefined) throw maybeRestorationFailure;
   });
 
   return {
@@ -214,7 +231,11 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
     },
     async start() {
       if (!maybeConsentReceipt) throw new ConsentRequiredError();
-      if (lifecycle.challengeState !== "issued" || lifecycle.controlState !== "ready") {
+      if (
+        !controllable() ||
+        lifecycle.challengeState !== "issued" ||
+        lifecycle.controlState !== "ready"
+      ) {
         throw new Error("lifecycle transition is forbidden");
       }
       const maybeAuthorizationContext = snapshot.maybeWorkerLeaseAuthorizationContext
@@ -236,7 +257,11 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       }
     },
     async pause() {
-      if (lifecycle.challengeState !== "active" || lifecycle.controlState !== "running") {
+      if (
+        !controllable() ||
+        lifecycle.challengeState !== "active" ||
+        lifecycle.controlState !== "running"
+      ) {
         throw new Error("lifecycle transition is forbidden");
       }
       await stopWorkerController(snapshot.maybeWorkerController, "pause", snapshot.transport);
@@ -245,7 +270,11 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       }
     },
     async resume() {
-      if (lifecycle.challengeState !== "active" || lifecycle.controlState !== "paused") {
+      if (
+        !controllable() ||
+        lifecycle.challengeState !== "active" ||
+        lifecycle.controlState !== "paused"
+      ) {
         throw new Error("lifecycle transition is forbidden");
       }
       const maybeAuthorizationContext = snapshot.maybeWorkerLeaseAuthorizationContext
@@ -264,7 +293,10 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       }
     },
     async cancel() {
-      if (lifecycle.challengeState !== "issued" && lifecycle.challengeState !== "active") {
+      if (
+        !controllable() ||
+        (lifecycle.challengeState !== "issued" && lifecycle.challengeState !== "active")
+      ) {
         throw new Error("lifecycle transition is forbidden");
       }
       consentGeneration += 1;
@@ -284,7 +316,11 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
         : undefined;
     },
     async renewWorkerLease() {
-      if (lifecycle.challengeState !== "active" || lifecycle.controlState !== "running") {
+      if (
+        !controllable() ||
+        lifecycle.challengeState !== "active" ||
+        lifecycle.controlState !== "running"
+      ) {
         throw new Error("lifecycle transition is forbidden");
       }
       const maybeController = snapshot.maybeWorkerController;
@@ -318,7 +354,11 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       unsubscribeAuthority();
       unsubscribeWorkerDisconnect?.();
       listeners.clear();
-      if (lifecycle.challengeState === "active" && lifecycle.controlState === "running") {
+      if (
+        controllable() &&
+        lifecycle.challengeState === "active" &&
+        lifecycle.controlState === "running"
+      ) {
         await shutdownWorkerController(
           snapshot.maybeWorkerController,
           "tab_closed",

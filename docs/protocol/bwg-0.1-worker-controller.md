@@ -68,7 +68,9 @@ closed reason category are the public confirmation; raw restored settings are ne
 through that interface. Authority transport Start/resume returns the authenticated Worker Lease;
 the SDK forwards it to the controller, renews through both public seams, and composes Pause/Cancel
 with baseline restoration. Terminal Authority lifecycle events request restoration before exposing
-the terminal client state. USB disconnect pauses the Authority after device-local restoration, and
+the terminal client state; later terminal events share that one restoration, and the client sends
+no other controller command once it has begun. A failed confirmation still exposes the terminal
+state and reports the failure; renewals have stopped, so the Work Lease ends mining. USB disconnect pauses the Authority after device-local restoration, and
 async client cleanup requests `tab_closed` restoration. Existing non-device clients may omit the
 controller.
 

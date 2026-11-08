@@ -232,3 +232,28 @@ test("graceful terminal acknowledgment after 130 seconds remains within the rest
   expect(result.ok).toBeTrue();
   await h.controller.close();
 });
+
+test("a command overlapping a slow restoration is refused without ending the session", async () => {
+  // Arrange
+  const h = await serialHarness();
+  await h.controller.requestPermission();
+  await h.controller.startLease(
+    await h.grant(
+      await h.controller.prepareWorkerLeaseAuthorizationContext("start"),
+    ),
+  );
+  h.holdRestore();
+  const restoring = h.controller.restore("challenge_satisfied").then(
+    (value) => ({ ok: true, value }),
+    () => ({ ok: false }),
+  );
+  await h.advance(1000);
+  // Act
+  const overlapping = h.controller.restore("challenge_satisfied");
+  // Assert
+  await expect(overlapping).rejects.toThrow("operation_active");
+  await h.advance(40000);
+  h.completeRestore();
+  expect((await restoring).ok).toBeTrue();
+  await h.controller.close();
+});

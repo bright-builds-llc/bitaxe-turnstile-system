@@ -467,7 +467,8 @@ export class BrowserSerialController implements WebSerialWorkerController {
       if (status.state === "baseline") this.#activeLease = false;
       return status;
     } catch (error) {
-      if (this.#diagnosticFenced && isWorkerRestorationPending(error)) throw error;
+      // A local refusal of an overlapping command sent nothing, so the pending one keeps its session.
+      if ((this.#diagnosticFenced && isWorkerRestorationPending(error)) || workerSerialFailureCategory(error) === "operation_active") throw error;
       const failure = serialFailureFor(error, "request_failed");
       if (generation === this.#generation || !this.#restart.active) this.#lost(failure);
       throw failure;
