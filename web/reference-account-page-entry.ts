@@ -37,7 +37,8 @@ connect.addEventListener("click", () => {
     }),
   }).then(
     () => {
-      status.textContent = "Connected";
+      status.textContent =
+        "Connected. You can switch tabs or minimize this window; keep this page open until restoration is confirmed.";
     },
     (error: unknown) => {
       connect.disabled = false;

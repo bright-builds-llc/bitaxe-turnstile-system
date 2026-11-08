@@ -9,7 +9,7 @@ export {
   type WebSerialWorkerControllerInput, type WebSerialWorkerController
 } from "./worker-serial-controller.types";
 
-/** Creates the direct foreground-only production adapter; construction performs no port effect. */
+/** Creates the direct open-page production adapter (ADR-0110); construction performs no port effect. */
 export function createWebSerialWorkerController(
   input: WebSerialWorkerControllerInput,
 ): WebSerialWorkerController {

@@ -262,7 +262,7 @@ test("device confirmation comes from actual status and is invalidated before eff
   expect(confirmed).toBeTrue();
   expect(inactive).toBeTrue();
   await controller.requestPermission();
-  await h.hide();
+  await h.leavePage();
   expect(confirmed).toBeFalse();
   expect(inactive).toBeFalse();
 });

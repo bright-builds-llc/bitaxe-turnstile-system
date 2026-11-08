@@ -79,12 +79,26 @@ test("actual signed Start and Renew compose through the admitted current serial 
   });
   await h.controller.close();
 });
-test("foreground loss stops heartbeats, releases ownership, and cannot automatically resume", async () => {
+test("hiding the page keeps heartbeats and the session", async () => {
+  // Arrange
+  const h = await serialHarness();
+  await h.controller.requestPermission();
+  const before = h.received.filter((frame) => frame.kind === "heartbeat").length;
+  // Act
+  await h.hide();
+  await h.advance(3000);
+  // Assert
+  expect(h.received.filter((frame) => frame.kind === "heartbeat").length).toBeGreaterThan(before);
+  await expect(h.controller.status()).resolves.toBeDefined();
+  expect(h.counts()).toMatchObject({ closed: 0, locked: true });
+  await h.controller.close();
+});
+test("leaving the page stops heartbeats, releases ownership, and cannot automatically resume", async () => {
   // Arrange
   const h = await serialHarness();
   await h.controller.requestPermission();
   // Act
-  await h.hide();
+  await h.leavePage();
   const heartbeats = h.received.filter(
     (frame) => frame.kind === "heartbeat",
   ).length;
@@ -159,7 +173,7 @@ test("qualification challenge activation starts only after human permission reso
   await controller.close();
 });
 
-test("graceful cooling keeps heartbeats but hiding aborts that wait and releases the port", async () => {
+test("graceful cooling keeps heartbeats but leaving the page aborts that wait and releases the port", async () => {
   // Arrange
   const h = await serialHarness();
   await h.controller.requestPermission();
@@ -182,7 +196,7 @@ test("graceful cooling keeps heartbeats but hiding aborts that wait and releases
   expect(
     h.received.filter((frame) => frame.kind === "heartbeat").length,
   ).toBeGreaterThan(initial);
-  await h.hide();
+  await h.leavePage();
   expect(await closing).toBe("unconfirmed");
   expect(h.counts()).toMatchObject({ closed: 1, locked: false });
 });

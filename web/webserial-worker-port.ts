@@ -1,3 +1,4 @@
+import { pageClock } from "./page-clock";
 import type { WorkerSerialRestartObserver } from "./worker-serial-restart-observer";
 import { workerSerialFailureCategory } from "./worker-serial-errors";
 import type { WorkerSerialDiagnostic } from "./worker-serial-diagnostics";
@@ -59,12 +60,15 @@ export async function selectWorkerPort(
 }
 export type WorkerSerialBrowserRuntime = {
   serial: WorkerSerialAccess;
+  /** Whether the page is visible; only the Connect gesture needs it (ADR-0110). */
   foreground(): boolean;
+  /** False once the page is leaving (`pagehide`); a hidden page is still open. */
+  pageOpen(): boolean;
   userActivation(): boolean;
   now(): number;
   maybeAfter?: (milliseconds: number, listener: () => void) => () => void;
   acquireLock(): Promise<() => void>;
-  subscribeForegroundLoss(listener: () => void): () => void;
+  subscribePageExit(listener: () => void): () => void;
   every(milliseconds: number, listener: () => void): () => void;
 };
 export const workerSerialTestRuntime = Symbol("workerSerialTestRuntime");
@@ -73,9 +77,15 @@ export function browserSerialRuntime(): WorkerSerialBrowserRuntime {
   if (typeof navigator === "undefined") throw serialFailure("unavailable");
   const access = navigator as Navigator & { serial?: WorkerSerialAccess };
   if (!access.serial || !navigator.locks) throw serialFailure("unavailable");
+  const clock = pageClock();
+  let leaving = false;
+  window.addEventListener("pagehide", () => { leaving = true; });
+  // A page restored from the back/forward cache may Connect again; nothing resumes by itself.
+  window.addEventListener("pageshow", () => { leaving = false; });
   return {
     serial: access.serial,
     foreground: () => document.visibilityState === "visible",
+    pageOpen: () => !leaving,
     userActivation: () => navigator.userActivation.isActive,
     now: () => performance.now(),
     acquireLock: () =>
@@ -90,21 +100,12 @@ export function browserSerialRuntime(): WorkerSerialBrowserRuntime {
           })
           .catch(() => reject(serialFailure("ownership")));
       }),
-    subscribeForegroundLoss: (listener) => {
-      const hidden = () => {
-        if (document.visibilityState !== "visible") listener();
-      };
-      document.addEventListener("visibilitychange", hidden);
+    subscribePageExit: (listener) => {
       window.addEventListener("pagehide", listener);
-      return () => {
-        document.removeEventListener("visibilitychange", hidden);
-        window.removeEventListener("pagehide", listener);
-      };
+      return () => window.removeEventListener("pagehide", listener);
     },
-    every: (milliseconds, listener) => {
-      const timer = setInterval(listener, milliseconds);
-      return () => clearInterval(timer);
-    },
+    maybeAfter: (milliseconds, listener) => clock.after(milliseconds, listener),
+    every: (milliseconds, listener) => clock.every(milliseconds, listener),
   };
 }
 /** Attach rejection handling before a concurrent native send can fail or be cancelled. */

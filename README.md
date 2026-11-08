@@ -36,10 +36,11 @@ The framework-independent browser SDK is exported as the package subpath `bwg-co
 
 The current local Worker contract is Controller 0.4 over fixed ESP32-S3 USB Serial/JTAG and direct
 Web Serial, documented in [Worker Serial 0.2](docs/protocol/bwg-worker-serial-0.2.md).
-`bwg-core/worker-controller` exports the foreground-only production adapter and strict parsers;
+`bwg-core/worker-controller` exports the open-page production adapter (ADR-0110) and strict parsers;
 `bwg-core/headless` exports `connectWebSerialHeadlessClient` to compose possession-bound device
-control with Authority Start/Renew flows. The device heartbeat cutoff is 2.8 seconds; changing tabs
-requires fresh explicit admission and never resumes mining automatically.
+control with Authority Start/Renew flows. The device heartbeat cutoff is 2.8 seconds. Switching tabs
+or minimizing keeps the session; leaving or reloading the page requires fresh explicit admission and
+never resumes mining automatically.
 
 Iterative qualification requires fresh owner-resource observations and at least 4096 bytes of
 owner stack headroom while running. [The headroom follow-up](.scratch/bwg-worker-serial/issues/13-enforce-worker-owner-stack-headroom.md)

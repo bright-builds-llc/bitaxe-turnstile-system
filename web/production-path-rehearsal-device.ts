@@ -71,6 +71,7 @@ export function rehearsalWorkerInput(input: {
   const runtime: WorkerSerialBrowserRuntime = {
     serial: { requestPort: async () => port, getPorts: async () => [] },
     foreground: () => true,
+    pageOpen: () => true,
     userActivation: () => true,
     now: () => performance.now(),
     maybeAfter(milliseconds, listener) {
@@ -84,7 +85,7 @@ export function rehearsalWorkerInput(input: {
         locked = false;
       };
     },
-    subscribeForegroundLoss: () => () => undefined,
+    subscribePageExit: () => () => undefined,
     every(milliseconds, listener) {
       const timer = setInterval(listener, milliseconds);
       return () => clearInterval(timer);

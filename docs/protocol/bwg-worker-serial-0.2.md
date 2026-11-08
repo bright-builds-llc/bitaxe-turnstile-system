@@ -111,6 +111,10 @@ waits and its final consumption acknowledgement. Do not restart it per chunk.
 After heartbeat admission, send a fresh heartbeat before a potentially long
 indivisible control record. Retain one-second heartbeats, the 2.8-second device
 deadline and the three-second gate-closure/shutdown-initiation requirement.
+The browser keeps this cadence while its page is hidden, on a dedicated Worker's
+timers; the manifest's `foregroundOnly: true` means one page admitted by a
+foreground gesture owns the session, and only leaving that page ends it
+([ADR-0110](../adr/0110-worker-serial-session-needs-an-open-page.md)).
 
 Assign output sequences only when a record is selected for transmission.
 Priority must never transmit a higher assigned sequence before a queued lower

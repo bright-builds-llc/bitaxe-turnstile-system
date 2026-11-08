@@ -15,3 +15,9 @@ The canonical wire and signature details are in `docs/protocol/bwg-worker-serial
 ADR 0096 succeeds only the serial 0.1 wire contract with serial 0.2 receive
 credit and exact payload integrity. This decision's fixed controller,
 authorization, identity and lifecycle requirements remain.
+
+## Open-page successor
+
+ADR 0110 replaces only the foreground clause above: after a foreground Connect,
+the session lasts while its page is open, and hiding the page no longer ends it.
+Leaving the page still ends the session, and nothing resumes on return.

@@ -24,6 +24,7 @@ import {
   type ProofSigner,
 } from "./reference-claimant-transport";
 import type { WebSerialWorkerControllerInput } from "./webserial-worker-controller";
+import { pageClock } from "./page-clock";
 
 /** The page renews on the Authority's healthy-continuity cadence (`WORK_LEASE_RENEWAL_SECONDS`). */
 export const RENEW_INTERVAL_MILLISECONDS = 20_000;
@@ -127,17 +128,18 @@ function scheduleRenew(client: HeadlessClient, notify: (event: ReferencePageEven
     running = event.challengeState === "active" && event.controlState === "running";
     finished = ["satisfied", "pass_issued", "cancelled", "expired"].includes(event.challengeState);
     if (finished) {
-      clearInterval(timer);
+      cancel();
       unsubscribe();
     }
   });
-  const timer = setInterval(() => {
+  // The Worker-driven clock keeps this cadence while the tab is hidden (ADR-0110).
+  const cancel = pageClock().every(RENEW_INTERVAL_MILLISECONDS, () => {
     if (!running || finished) return;
     client.renewWorkerLease().then(
       () => notify({ type: "renewed" }),
       (error: unknown) => notify({ type: "renew_failed", message: String(error) }),
     );
-  }, RENEW_INTERVAL_MILLISECONDS);
+  });
 }
 
 async function redeem(

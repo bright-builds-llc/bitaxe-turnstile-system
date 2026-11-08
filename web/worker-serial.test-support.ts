@@ -99,7 +99,7 @@ export async function serialHarness(
     sequence = 0,
     session = "",
     deviceLastHeartbeat = 0;
-  let foreground = true,
+  let foreground = true, pageOpen = true,
     locked = false,
     active = false,
     admitted = false,
@@ -119,7 +119,7 @@ export async function serialHarness(
   const callbacks = new Set<() => void>();
   const deadlines = new Set<{ at: number; call: () => void }>();
   let maybeDelayedRestore: Record<string, unknown> | undefined;
-  const hidden = new Set<() => void>();
+  const pageExits = new Set<() => void>();
   const received: { kind: string; command?: string }[] = [];
   let maybeLease: WorkerLeaseGrant | undefined;
   let maybeQualification: WorkerQualification | undefined;
@@ -438,6 +438,7 @@ export async function serialHarness(
       },
     },
     foreground: () => foreground,
+    pageOpen: () => pageOpen,
     userActivation: () => true,
     now: () => now,
     maybeAfter(milliseconds, call) {
@@ -454,9 +455,9 @@ export async function serialHarness(
         locked = false;
       };
     },
-    subscribeForegroundLoss(listener) {
-      hidden.add(listener);
-      return () => hidden.delete(listener);
+    subscribePageExit(listener) {
+      pageExits.add(listener);
+      return () => pageExits.delete(listener);
     },
     every(_ms, listener) {
       callbacks.add(listener);
@@ -534,14 +535,12 @@ export async function serialHarness(
         await flush();
       }
     },
-    async hide() {
-      foreground = false;
-      for (const callback of hidden) callback();
-      await flush();
-    },
-    show() {
-      foreground = true;
-    },
+    /** Hides the page; an admitted session carries on (ADR-0110). */
+    async hide() { foreground = false; await flush(); },
+    /** Leaves the page (`pagehide`), which ends the session. */
+    async leavePage() { pageOpen = false; for (const callback of pageExits) callback(); await flush(); },
+    /** Shows the page again, including a return from the back/forward cache. */
+    show() { foreground = true; pageOpen = true; },
     dropHeartbeats() {
       dropHeartbeats = true;
     },

@@ -132,8 +132,8 @@ export class BrowserSerialController implements WebSerialWorkerController {
       stage = "permission";
       const { port } = await selection;
       if (!port) throw serialFailure("permission_cancelled");
-      if (!this.runtime.foreground() || generation !== this.#generation)
-        throw serialFailure("foreground_lost");
+      if (!this.runtime.pageOpen() || generation !== this.#generation)
+        throw serialFailure("page_exit");
       stage = "device_filter";
       const info = port.getInfo();
       if (
@@ -155,11 +155,11 @@ export class BrowserSerialController implements WebSerialWorkerController {
         this.#continuity.challengeBindingSha256(),
         this.#continuity.maybeExpectedFingerprint(),
       ]);
-      if (!this.runtime.foreground() || generation !== this.#generation)
-        throw serialFailure("foreground_lost");
+      if (!this.runtime.pageOpen() || generation !== this.#generation)
+        throw serialFailure("page_exit");
       stage = "opening";
       await maybeOwner.open(port);
-      if (!this.runtime.foreground() || generation !== this.#generation) throw serialFailure("foreground_lost");
+      if (!this.runtime.pageOpen() || generation !== this.#generation) throw serialFailure("page_exit");
       stage = "hello";
       this.#maybeChannel = new WorkerSerialChannel(
         port,
@@ -169,8 +169,8 @@ export class BrowserSerialController implements WebSerialWorkerController {
         this.#maybeTraceEpoch,
       );
       maybeOwner.attach(this.#maybeChannel);
-      this.#maybeUnsubscribe = this.runtime.subscribeForegroundLoss(() =>
-        this.#lost(serialFailure("foreground_lost")),
+      this.#maybeUnsubscribe = this.runtime.subscribePageExit(() =>
+        this.#lost(serialFailure("page_exit")),
       );
       return await this.#admitSession(generation, value => { stage = value; });
     } catch (error) {
@@ -191,7 +191,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
   async #admitSession(generation: number, stage: (value: import("./worker-serial-controller.types").WorkerSerialAdmissionStage) => void) {
     const channel = this.#maybeChannel; if (!channel) throw serialFailure("channel_missing");
     return admitWorkerSerialSession({ channel, trustedUpdateKeys: this.input.trustedUpdateKeys, now: () => this.runtime.now(), stage,
-      current: () => this.runtime.foreground() && generation === this.#generation && this.#state === "admitting" && this.#maybePeer?.expired(this.runtime.now()) === false,
+      current: () => this.runtime.pageOpen() && generation === this.#generation && this.#state === "admitting" && this.#maybePeer?.expired(this.runtime.now()) === false,
       hello: value => { this.#maybeHello = value; }, acknowledged: (ack, began) => { this.#restart.freshAck(ack); this.#maybeAck = ack; this.#maybePeer = new WorkerSerialPeer(ack.sessionId, began); channel.admitReceiveCredit(); },
       recovery: value => this.maybeQualificationHook?.maybeObserveHelloRecovery?.(value),
       timer: () => { this.#maybeStopTimer = this.runtime.every(100, () => this.#tick()); }, discover: () => this.#request("discover", undefined, true),
@@ -200,7 +200,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
       establish: async () => {
         if (!this.#maybePossession) throw serialFailure("possession_missing");
         await this.#continuity.establish(this.#maybePossession.deviceIdentityFingerprint);
-        if (generation !== this.#generation || this.#state !== "admitting" || !this.runtime.foreground() || this.#maybePeer?.expired(this.runtime.now()) !== false) throw serialFailure("admission_lost");
+        if (generation !== this.#generation || this.#state !== "admitting" || !this.runtime.pageOpen() || this.#maybePeer?.expired(this.runtime.now()) !== false) throw serialFailure("admission_lost");
         const recovered = this.#maybeFingerprint !== undefined; this.#maybeFingerprint = this.#maybePossession.deviceIdentityFingerprint;
         this.#state = "ready"; return { status: "ready", recovered };
       },
@@ -402,7 +402,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
     this.#generation++; this.#heartbeatAdmitted = false; this.#maybeStopTimer?.(); this.#maybeStopTimer = undefined;
     this.#maybeHello?.reject(observer.interruptionError); this.#maybePending?.reject(observer.interruptionError);
     this.#maybeHello = undefined; this.#maybePending = undefined; this.#maybePeer = undefined; this.#maybeAck = undefined; this.#maybePossession = undefined;
-    const port = await this.#maybeOwner.reopenExpectedReset(() => { observer.remaining(); if (!this.runtime.foreground() || !observer.active) throw serialFailure("foreground_lost"); }); observer.reopened();
+    const port = await this.#maybeOwner.reopenExpectedReset(() => { observer.remaining(); if (!this.runtime.pageOpen() || !observer.active) throw serialFailure("page_exit"); }); observer.reopened();
     const channel = new WorkerSerialChannel(port, frame => this.#receive(frame), error => this.#lost(error), this.maybeQualificationHook?.maybeObserveDiagnostic, this.#maybeTraceEpoch);
     channel.observeExpectedRestart(observer); this.#maybeChannel = channel; this.#maybeOwner.attach(channel);
   }
@@ -519,14 +519,14 @@ export class BrowserSerialController implements WebSerialWorkerController {
     if (this.#readInterruption.active && !qualificationRead) throw serialFailure("operation_active");
     if (
       this.#state !== "ready" ||
-      !this.runtime.foreground() ||
+      !this.runtime.pageOpen() ||
       this.#maybePeer?.expired(this.runtime.now())
     )
       throw this.#maybeFailure ?? serialFailure("not_ready");
   }
   #tick() {
     if (
-      !this.runtime.foreground() ||
+      !this.runtime.pageOpen() ||
       this.#maybePeer?.expired(this.runtime.now())
     ) {
       this.#lost(serialFailure("liveness_lost"));
