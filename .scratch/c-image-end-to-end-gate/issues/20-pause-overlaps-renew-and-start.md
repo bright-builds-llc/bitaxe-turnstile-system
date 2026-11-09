@@ -68,8 +68,15 @@ Tests: `web/headless-control-overlap.test.ts` (all six failed before the fix), p
 `bun run test:webcrypto`, `bun run test:browser`, `bun run check:standards` and
 `bash scripts/rehearse-production-path.sh`.
 
-Non-claims: not yet rerun on hardware. The owner reruns Pause/Resume on a board before this lands.
-`close()` during a transitional state sends no `tab_closed` restoration. The board stops on its
+Non-claims: one board, one run of each case below. `close()` during a transitional state sends no `tab_closed` restoration. The board stops on its
 heartbeat deadline once the page is gone, as for a lost cable.
 
 ## Comments
+
+- 2026-11-09: rerun on the Ultra 205 through the deployed page at `eb475f9`, on the owner's
+  reference image of `247d2cd`. The page hid its control while Start was in flight and offered
+  Pause 11.2 s after the click. That Pause stopped the board with `restoration_requested` and
+  `ok=1`, and the page showed the work paused. After Resume the page renewed twice, and the run
+  completed and redeemed. A second Pause, 0.1 s after the board reported mining and then left
+  alone, sent no renewal; the challenge expired after 15 min with no Gate Pass, and the page
+  showed it expired. Landed on `main` on the owner's word.

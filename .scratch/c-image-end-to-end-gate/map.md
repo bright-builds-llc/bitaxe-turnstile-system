@@ -27,6 +27,7 @@ feed 09.
 | [18](issues/18-postgres-test-readiness.md) PostgreSQL test container is used before it accepts queries | bug | resolved | None |
 | [19](issues/19-deployment-policy-pages.md) Deployment serves its operator policy, privacy and terms pages | task | needs-triage | None |
 | [20](issues/20-pause-overlaps-renew-and-start.md) Pause overlapping a Renew or an in-flight Start | bug | resolved | None |
+| [21](issues/21-gate-negatives-harness.md) Gate negatives harness for the C image | task | needs-triage | 08 |
 
 ## Decisions so far
 
@@ -79,3 +80,7 @@ feed 09.
   no other command or Renew is sent meanwhile. A failed control command leaves
   the work `paused`. Renew reports refusals without ending, and stops only on
   terminal.
+- Ticket 08 (2026-11-09): the interruptions passed on the Ultra 205 through the
+  deployed page, Pause and expiry on Ticket 20's fix. The negatives, adapter
+  replay and `discardedReplies` need tooling the page lacks, so they move to
+  Ticket 21.
