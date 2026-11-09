@@ -110,11 +110,13 @@ test("a paused session skips Renew and renews again once resumed", async () => {
   expect(fake.renewals()).toBe(1);
 });
 
-test("a refusal is reported once and ends Renew", async () => {
+test("a refusal is reported and does not end Renew", async () => {
   // Arrange
   const time = manualClock();
+  let refusals = 0;
   const fake = fakeClient(running, async () => {
-    throw new Error("Work Session renew failed: 409");
+    refusals += 1;
+    if (refusals === 1) throw new Error("Work Session renew failed: 409");
   });
   const { outcomes } = start(fake.client, time.clock);
 
@@ -123,10 +125,24 @@ test("a refusal is reported once and ends Renew", async () => {
   await time.tick();
 
   // Assert
-  expect(fake.renewals()).toBe(1);
-  expect(outcomes).toEqual([{ type: "refused", message: "Work Session renew failed: 409" }]);
-  expect(time.armed()).toBe(0);
-  expect(fake.subscribed()).toBe(0);
+  expect(outcomes).toEqual([
+    { type: "refused", message: "Work Session renew failed: 409" },
+    { type: "renewed" },
+  ]);
+});
+
+test("Renew skips while a Pause is in flight", async () => {
+  // Arrange
+  const time = manualClock();
+  const fake = fakeClient(running);
+  start(fake.client, time.clock);
+
+  // Act
+  fake.emit({ type: "lifecycle", challengeState: "active", controlState: "pausing" });
+  await time.tick();
+
+  // Assert
+  expect(fake.renewals()).toBe(0);
 });
 
 test("the Authority's terminal report ends Renew before the terminal lifecycle is exposed", async () => {

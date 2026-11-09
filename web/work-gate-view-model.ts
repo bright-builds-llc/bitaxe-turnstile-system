@@ -25,10 +25,20 @@ export function presentationSemantics(mode: PresentationMode): {
 }
 
 export function lifecycleView(event: LifecycleEvent): LifecycleView {
+  // While a Start, Pause or Resume is in flight the board serves no other command, so none is offered.
+  if (event.controlState === "starting") {
+    return view("Starting Bitcoin work", "active", "none", false, false);
+  }
   if (event.challengeState === "issued") {
     return event.controlState === "awaiting_consent"
       ? view("Ready for your consent", "neutral", "consent_start", true, false)
       : view("Consent recorded", "neutral", "start", true, false);
+  }
+  if (event.controlState === "pausing") {
+    return view("Pausing Bitcoin work", "warning", "none", false, false);
+  }
+  if (event.controlState === "resuming") {
+    return view("Resuming Bitcoin work", "active", "none", false, false);
   }
   if (event.challengeState === "active") {
     return event.controlState === "running"

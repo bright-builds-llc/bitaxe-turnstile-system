@@ -30,6 +30,7 @@ import {
   type HeadlessEvent,
   type LifecycleEvent,
   type PoolSelectionInput,
+  type WorkControlState,
   type WorkConsentDisclosure,
   type WorkConsentReceipt,
   type TrustedConsentRequest,
@@ -147,12 +148,20 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
     lifecycle = next;
     emit(next);
   };
+  // Ends a control command's transitional state, unless the Authority has moved the lifecycle on.
+  const settleControl = (from: WorkControlState, next: LifecycleEvent) => {
+    if (lifecycle.controlState === from) setLifecycle(next);
+  };
+  // Pause waits for a Renew in flight, since the Controller serves one command at a time.
+  let maybeRenewalInFlight: Promise<void> | undefined;
+  const renewalMayCommand = () => controllable() && lifecycle.controlState === "running";
+  const authorityReportedActive = () => lifecycle.challengeState === "active";
   const pauseAfterControllerDisconnect = async () => {
     if (!controllable()) return;
     if (lifecycle.challengeState !== "active" || lifecycle.controlState !== "running") return;
     await snapshot.transport.pause();
     if (lifecycle.challengeState === "active" && lifecycle.controlState === "running") {
-      setLifecycle({ type: "lifecycle", challengeState: "active", controlState: "paused" });
+      setLifecycle(activeLifecycle("paused"));
     }
   };
   const unsubscribeWorkerDisconnect = snapshot.maybeWorkerController?.subscribeDisconnect?.(
@@ -258,23 +267,36 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       ) {
         throw new Error("lifecycle transition is forbidden");
       }
-      const maybeAuthorizationContext = snapshot.maybeWorkerLeaseAuthorizationContext
-        ? await snapshot.maybeWorkerLeaseAuthorizationContext
-            .prepareWorkerLeaseAuthorizationContext("start")
-        : undefined;
-      const maybeGrant = await snapshot.transport.start(
-        maybeConsentReceipt.maybeTrustedConsentReceipt,
-        maybeAuthorizationContext,
-      );
-      await startWorkerController(
-        snapshot.maybeWorkerController,
-        maybeGrant,
-        snapshot.challenge.challengeId,
-        snapshot.transport,
-      );
-      if (lifecycle.challengeState === "issued") {
-        setLifecycle({ type: "lifecycle", challengeState: "active", controlState: "running" });
+      const consentReceipt = maybeConsentReceipt;
+      setLifecycle({ type: "lifecycle", challengeState: "issued", controlState: "starting" });
+      let authorityStarted = false;
+      try {
+        const maybeAuthorizationContext = snapshot.maybeWorkerLeaseAuthorizationContext
+          ? await snapshot.maybeWorkerLeaseAuthorizationContext
+              .prepareWorkerLeaseAuthorizationContext("start")
+          : undefined;
+        const maybeGrant = await snapshot.transport.start(
+          consentReceipt.maybeTrustedConsentReceipt,
+          maybeAuthorizationContext,
+        );
+        authorityStarted = true;
+        await startWorkerController(
+          snapshot.maybeWorkerController,
+          maybeGrant,
+          snapshot.challenge.challengeId,
+          snapshot.transport,
+        );
+      } catch (error) {
+        // Once the Authority has started, a failure has paused it again (or never got a lease).
+        settleControl(
+          "starting",
+          authorityStarted || authorityReportedActive()
+            ? activeLifecycle("paused")
+            : { type: "lifecycle", challengeState: "issued", controlState: "ready" },
+        );
+        throw error;
       }
+      settleControl("starting", activeLifecycle("running"));
     },
     async pause() {
       if (
@@ -284,9 +306,13 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       ) {
         throw new Error("lifecycle transition is forbidden");
       }
-      await stopWorkerController(snapshot.maybeWorkerController, "pause", snapshot.transport);
-      if (lifecycle.challengeState === "active" && lifecycle.controlState === "running") {
-        setLifecycle({ type: "lifecycle", challengeState: "active", controlState: "paused" });
+      setLifecycle(activeLifecycle("pausing"));
+      try {
+        await Promise.allSettled([maybeRenewalInFlight]);
+        await stopWorkerController(snapshot.maybeWorkerController, "pause", snapshot.transport);
+      } finally {
+        // Even a failed Pause asked the Authority and the Worker to stop, so work no longer runs.
+        settleControl("pausing", activeLifecycle("paused"));
       }
     },
     async resume() {
@@ -297,29 +323,35 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       ) {
         throw new Error("lifecycle transition is forbidden");
       }
-      const maybeAuthorizationContext = snapshot.maybeWorkerLeaseAuthorizationContext
-        ? await snapshot.maybeWorkerLeaseAuthorizationContext
-            .prepareWorkerLeaseAuthorizationContext("start")
-        : undefined;
-      const maybeGrant = await snapshot.transport.resume(maybeAuthorizationContext);
-      await startWorkerController(
-        snapshot.maybeWorkerController,
-        maybeGrant,
-        snapshot.challenge.challengeId,
-        snapshot.transport,
-      );
-      if (lifecycle.challengeState === "active" && lifecycle.controlState === "paused") {
-        setLifecycle({ type: "lifecycle", challengeState: "active", controlState: "running" });
+      setLifecycle(activeLifecycle("resuming"));
+      try {
+        const maybeAuthorizationContext = snapshot.maybeWorkerLeaseAuthorizationContext
+          ? await snapshot.maybeWorkerLeaseAuthorizationContext
+              .prepareWorkerLeaseAuthorizationContext("start")
+          : undefined;
+        const maybeGrant = await snapshot.transport.resume(maybeAuthorizationContext);
+        await startWorkerController(
+          snapshot.maybeWorkerController,
+          maybeGrant,
+          snapshot.challenge.challengeId,
+          snapshot.transport,
+        );
+      } catch (error) {
+        settleControl("resuming", activeLifecycle("paused"));
+        throw error;
       }
+      settleControl("resuming", activeLifecycle("running"));
     },
     async cancel() {
       if (
         !controllable() ||
-        (lifecycle.challengeState !== "issued" && lifecycle.challengeState !== "active")
+        (lifecycle.challengeState !== "issued" && lifecycle.challengeState !== "active") ||
+        TRANSITIONAL_CONTROL_STATES.has(lifecycle.controlState)
       ) {
         throw new Error("lifecycle transition is forbidden");
       }
       consentGeneration += 1;
+      await Promise.allSettled([maybeRenewalInFlight]);
       await stopWorkerController(snapshot.maybeWorkerController, "cancel", snapshot.transport);
       await identityAccess.clearConsent(snapshot.challenge.challengeId);
       if (lifecycle.challengeState === "issued" || lifecycle.challengeState === "active") {
@@ -348,17 +380,33 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       if (!maybeController || !maybeRenew) {
         throw new Error("Worker Controller renewal is unavailable");
       }
-      const maybeAuthorizationContext = snapshot.maybeWorkerLeaseAuthorizationContext
-        ? await snapshot.maybeWorkerLeaseAuthorizationContext
-            .prepareWorkerLeaseAuthorizationContext("renew")
-        : undefined;
-      await renewWorkerController(
-        maybeController,
-        () => maybeRenew(maybeAuthorizationContext),
-        snapshot.challenge.challengeId,
-        snapshot.transport,
-        controllable,
-      );
+      const renewal = (async () => {
+        const maybeAuthorizationContext = snapshot.maybeWorkerLeaseAuthorizationContext
+          ? await snapshot.maybeWorkerLeaseAuthorizationContext
+              .prepareWorkerLeaseAuthorizationContext("renew")
+          : undefined;
+        try {
+          await renewWorkerController(
+            maybeController,
+            () => maybeRenew(maybeAuthorizationContext),
+            snapshot.challenge.challengeId,
+            snapshot.transport,
+            renewalMayCommand,
+          );
+        } catch (error) {
+          // A refusal while running rolled the Worker back and paused the Authority's session.
+          if (controllable()) {
+            settleControl("running", activeLifecycle("paused"));
+          }
+          throw error;
+        }
+      })();
+      maybeRenewalInFlight = renewal;
+      try {
+        await renewal;
+      } finally {
+        if (maybeRenewalInFlight === renewal) maybeRenewalInFlight = undefined;
+      }
     },
     subscribe(listener) {
       listeners.add(listener);
@@ -489,10 +537,14 @@ function authorityLifecycleTransition(
   }
   if (next === current.challengeState) return current;
   if (next === "active") {
+    // The Authority reports active before the Worker's Start completes; Start still owns the state.
+    if (current.challengeState === "issued" && current.controlState === "starting") {
+      return activeLifecycle("starting");
+    }
     if (current.challengeState !== "issued" || current.controlState !== "ready") {
       throw new Error("active work requires restored or recorded Work Consent");
     }
-    return { type: "lifecycle", challengeState: "active", controlState: "running" };
+    return activeLifecycle("running");
   }
   if (next === "satisfied" || next === "pass_issued") {
     return { type: "lifecycle", challengeState: next, controlState: "completed" };
@@ -504,6 +556,18 @@ function authorityLifecycleTransition(
     return { type: "lifecycle", challengeState: next, controlState: "expired" };
   }
   throw new Error("lifecycle transition is forbidden");
+}
+
+const TRANSITIONAL_CONTROL_STATES: ReadonlySet<WorkControlState> = new Set([
+  "starting",
+  "pausing",
+  "resuming",
+]);
+
+function activeLifecycle(
+  controlState: Extract<LifecycleEvent, { challengeState: "active" }>["controlState"],
+): LifecycleEvent {
+  return { type: "lifecycle", challengeState: "active", controlState };
 }
 
 function challengeTransitionAllowed(

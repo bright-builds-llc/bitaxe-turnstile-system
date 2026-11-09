@@ -202,11 +202,18 @@ export type HeadlessClientInput = {
   };
 };
 
+/**
+ * `starting`, `pausing` and `resuming` hold while that command is in flight to the Authority and the
+ * Worker, whose Start or stop can take tens of seconds; no other control command is accepted then.
+ */
 export type WorkControlState =
   | "awaiting_consent"
   | "ready"
+  | "starting"
   | "running"
+  | "pausing"
   | "paused"
+  | "resuming"
   | "completed"
   | "cancelled"
   | "expired";
@@ -223,12 +230,12 @@ export type LifecycleEvent =
   | {
       type: "lifecycle";
       challengeState: "issued";
-      controlState: "awaiting_consent" | "ready";
+      controlState: "awaiting_consent" | "ready" | "starting";
     }
   | {
       type: "lifecycle";
       challengeState: "active";
-      controlState: "running" | "paused";
+      controlState: "starting" | "running" | "pausing" | "paused" | "resuming";
     }
   | {
       type: "lifecycle";

@@ -1,7 +1,7 @@
 # C-image end-to-end Gate map
 
 [Spec](spec.md). The first Gate on the C Reference Firmware image through the
-production browser path. Tickets 01, 02, 06, 10, 11, 12 and 18 are resolved; the rest is still planning.
+production browser path. Tickets 01, 02, 06, 10, 11, 12, 17, 18 and 20 are resolved; the rest is still planning.
 The first Gate (06, 07) and onboarding (14, 03, 04, 05, 15) run apart, and both
 feed 09.
 
@@ -26,6 +26,7 @@ feed 09.
 | [17](issues/17-sdk-http-transport-and-renew.md) SDK claimant HTTP transport and component-owned Renew | task | resolved | 06 |
 | [18](issues/18-postgres-test-readiness.md) PostgreSQL test container is used before it accepts queries | bug | resolved | None |
 | [19](issues/19-deployment-policy-pages.md) Deployment serves its operator policy, privacy and terms pages | task | needs-triage | None |
+| [20](issues/20-pause-overlaps-renew-and-start.md) Pause overlapping a Renew or an in-flight Start | bug | resolved | None |
 
 ## Decisions so far
 
@@ -73,3 +74,8 @@ feed 09.
 - Ticket 07 (2026-11-08): the client sends one restoration for all terminal
   events and no other controller command once it has begun, so a slow board
   restore no longer ends the serial session before redemption.
+- Ticket 20 (2026-11-09): Start, Pause and Resume each hold a transitional
+  control state (`starting`, `pausing`, `resuming`) until the board answers, and
+  no other command or Renew is sent meanwhile. A failed control command leaves
+  the work `paused`. Renew reports refusals without ending, and stops only on
+  terminal.

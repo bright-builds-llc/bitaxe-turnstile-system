@@ -53,6 +53,32 @@ describe("lifecycle view", () => {
     ).toBe("resume");
   });
 
+  test("offers no control while a Start, Pause or Resume is in flight", () => {
+    // Arrange
+    const inFlight = [
+      { type: "lifecycle", challengeState: "issued", controlState: "starting" },
+      { type: "lifecycle", challengeState: "active", controlState: "starting" },
+      { type: "lifecycle", challengeState: "active", controlState: "pausing" },
+      { type: "lifecycle", challengeState: "active", controlState: "resuming" },
+    ] as const;
+
+    // Act
+    const views = inFlight.map((event) => lifecycleView(event));
+
+    // Assert
+    expect(views.map(({ primaryAction, canCancel }) => ({ primaryAction, canCancel }))).toEqual(
+      Array(4).fill({ primaryAction: "none", canCancel: false }),
+    );
+  });
+
+  test("never reports work as running while it pauses", () => {
+    // Arrange / Act
+    const view = lifecycleView({ type: "lifecycle", challengeState: "active", controlState: "pausing" });
+
+    // Assert
+    expect(view.status).toBe("Pausing Bitcoin work");
+  });
+
   test("offers Start after consent is durably recorded", () => {
     // Arrange / Act
     const view = lifecycleView({

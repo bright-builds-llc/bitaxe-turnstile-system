@@ -1,7 +1,9 @@
 /**
  * Renew while Worker continuity holds: the headless client renews its Worker Lease on the Authority's
- * healthy-continuity cadence while work runs, skips while paused, and stops for good on any refusal
- * or once the Authority reports a terminal state.
+ * healthy-continuity cadence while work runs, and skips while it starts, pauses, is paused or
+ * resumes. A refusal is reported and does not end Renew: a refusal while running leaves the client
+ * paused, and the lease a later Resume obtains is renewed in turn. Renew stops for good once the
+ * Authority reports a terminal state.
  */
 import type { HeadlessClient, HeadlessEvent } from "./headless-client.types";
 import { pageClock, type PageClock } from "./page-clock";
@@ -48,7 +50,6 @@ export function renewWorkerLeaseWhileRunning(input: WorkerLeaseRenewalInput): ()
         },
         (error: unknown) => {
           if (stopped) return;
-          stop();
           report({ type: "refused", message: error instanceof Error ? error.message : String(error) });
         },
       )

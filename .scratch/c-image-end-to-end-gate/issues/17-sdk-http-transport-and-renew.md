@@ -45,3 +45,6 @@ the page, the client still rolls back as for any refusal. That window is shorter
 than one event delivery and wasn't seen.
 
 ## Comments
+
+- 2026-11-09: Ticket 20 replaces "stops on any refusal". Renew now reports a refusal and keeps
+  ticking while running; a refusal while running leaves the client paused. It still stops on terminal.

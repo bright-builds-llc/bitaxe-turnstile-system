@@ -44,7 +44,11 @@ substitute its own digest because the eventual Authority receipt must match it.
 The caller supplies a narrow transport implementation for the public client, Pool Adapter, and
 Authority-event seams; the headless module never accepts a Relying Service credential. Start,
 Pause, resume, and terminal Cancel emit typed lifecycle events carrying the public challenge state
-and local control state. `verified_progress` can arrive only from the Authority event subscription
+and local control state. While a Start, Pause or Resume is in flight, the control state is
+`starting`, `pausing` or `resuming`, and the client refuses every other control command and Renew
+without reaching the Controller; an Authority `active` report during Start keeps `starting`. A
+failed Start (after the Authority started), Pause, Resume or Renew leaves the work `paused`, since
+each failure path has asked the Authority to pause. `verified_progress` can arrive only from the Authority event subscription
 and carries exact accepted hashes plus the immutable work requirement. `activity_estimate` is a
 separate non-authoritative event. The lifecycle event union contains only valid public/control-state
 pairs and uses completed, cancelled, and expired terminal states rather than implying resumability.
@@ -69,8 +73,8 @@ reads `verified_progress` and `challenge_lifecycle` from the challenge's event s
 issued Gate Pass with a Claimant Issuance Proof, and signs the DPoP proof that presents the pass to
 the Relying Service. `renewWorkerLeaseWhileRunning` renews on the Authority's 20-second
 healthy-continuity cadence while work runs, on the page clock so a hidden tab keeps the cadence
-(ADR-0110). It skips while paused and stops on any refusal or as soon as the client emits
-`terminal_reported`, which the client sends once when the Authority reports a terminal state, before
+(ADR-0110). It skips unless the control state is `running`, reports a refusal without ending, and
+stops for good only as soon as the client emits `terminal_reported`, which the client sends once when the Authority reports a terminal state, before
 a slow Worker restoration settles and the terminal lifecycle event follows. A Renew already in flight
 when terminal restoration begins sends nothing further to the Controller. The Rust Authority signer and this package's signer produce identical
 authorizations, which `conformance/bwg-worker-deployment-trust-0.2/authority-signer-vectors.json`
