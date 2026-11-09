@@ -43,7 +43,9 @@ export type ReferencePageEvent =
   | { type: "challenge_created"; challengeId: string; expiresAtUnixSeconds: number }
   | { type: "renewed" }
   | { type: "renew_failed"; message: string }
-  | { type: "redeemed"; status: number; body: unknown };
+  | { type: "redeemed"; status: number; body: unknown }
+  | { type: "released" }
+  | { type: "release_failed"; message: string };
 
 export type ReferencePageInput = {
   config: ReferencePageConfig;
@@ -112,7 +114,17 @@ export async function connectReferenceAccountPage(input: ReferencePageInput): Pr
     loadSession: async () => ({
       client,
       compatibleWorkerAvailable: true,
-      redeem: () => redeem(config.origin, challenge.challengeId, actionReference, signer, notify),
+      redeem: async () => {
+        try {
+          return await redeem(config.origin, challenge.challengeId, actionReference, signer, notify);
+        } finally {
+          // A Gate Pass exists only once restoration is confirmed, so the port can go back to other tools.
+          client.close().then(
+            () => notify({ type: "released" }),
+            (error: unknown) => notify({ type: "release_failed", message: String(error) }),
+          );
+        }
+      },
     }),
     alternatives: [],
     provenance: config.provenance,

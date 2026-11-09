@@ -55,6 +55,8 @@ export type RehearsalDeviceLog = {
   renewals: number;
   restorationReason: string | undefined;
   maybeRestorationConfirmedAfterMilliseconds?: number;
+  /** The page closed the port, handing it back to other tools. */
+  portClosed: boolean;
   /** The last frames each way, for diagnosing a failed rehearsal. */
   trace: string[];
 };
@@ -65,7 +67,7 @@ export function rehearsalWorkerInput(input: {
   retentionExpiryUnixSeconds: number;
   miner: RehearsalMiner;
 }): { worker: WebSerialWorkerControllerInput; log: RehearsalDeviceLog } {
-  const log: RehearsalDeviceLog = { commands: [], renewals: 0, restorationReason: undefined, trace: [] };
+  const log: RehearsalDeviceLog = { commands: [], renewals: 0, restorationReason: undefined, portClosed: false, trace: [] };
   const port = fakeDevicePort(input.miner, log);
   let locked = false;
   const runtime: WorkerSerialBrowserRuntime = {
@@ -359,6 +361,7 @@ function fakeDevicePort(miner: RehearsalMiner, log: RehearsalDeviceLog): WorkerS
     },
     async close() {
       trace("close");
+      log.portClosed = true;
       clearInterval(maybeHeartbeat);
       if (maybeLease) await stopMining("lost_continuity");
       maybeOutput = undefined;

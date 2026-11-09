@@ -2,7 +2,8 @@
 // From challenge to redeemed Gate Pass: consent, Start, at least one Renew while
 // shares are still being delivered, a new Bitcoin tip mid-lease that the lease
 // survives, the synthetic share across the Work Requirement, restoration as `challenge_satisfied`
-// confirmed after more than 30 s with no other command meanwhile, DPoP redemption and a refused replay.
+// confirmed after more than 30 s with no other command meanwhile, DPoP redemption, the serial port
+// released and a refused replay.
 async (page) => {
   const WORK_TIMEOUT_MILLISECONDS = 120_000;
   const POLL_MILLISECONDS = 500;
@@ -102,6 +103,7 @@ async (page) => {
     (await control(`/challenges/${created.challengeId}/synthetic-share`, {})).status() === 204);
   await until("Gate Pass redeemed", (state) =>
     state.pageEvents.find((event) => event.type === "redeemed"));
+  await until("serial port released after redemption", (state) => state.maybeDevice.portClosed);
   const final = await rehearsal();
   const redeemed = final.pageEvents.find((event) => event.type === "redeemed");
   if (redeemed.status !== 200) await fail("redemption accepted", JSON.stringify(redeemed));
@@ -141,6 +143,7 @@ async (page) => {
     restoration: final.maybeDevice.restorationReason,
     restorationConfirmedAfterMilliseconds: final.maybeDevice.maybeRestorationConfirmedAfterMilliseconds,
     redemptionStatus: redeemed.status,
+    portReleased: final.maybeDevice.portClosed,
     replayStatus,
   };
   return `rehearsal: passed\nrehearsal: evidence ${JSON.stringify(evidence)}`;

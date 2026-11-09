@@ -35,6 +35,10 @@ connect.addEventListener("click", () => {
         retentionExpiryUnixSeconds: scope.expiresAtUnixSeconds,
       },
     }),
+    maybeOnEvent: (event) => {
+      if (event.type === "released") status.textContent = "Restoration confirmed and the USB port released; you can close this page.";
+      if (event.type === "release_failed") status.textContent = `The USB port was not released: ${event.message}`;
+    },
   }).then(
     () => {
       status.textContent =
