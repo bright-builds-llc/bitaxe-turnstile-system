@@ -27,7 +27,7 @@ Follow [run-sheet-07.md](../run-sheet-07.md).
   `challenge_satisfied`, the Gate Pass redeemed once with DPoP and refused on reuse.
 - [x] Evidence: board, Gate and firmware commits, image and ELF digests, timings,
   non-claims, and nothing private, recorded in both repositories.
-- [ ] The Ultra 205, after the 601.
+- [x] The Ultra 205, after the 601.
 
 ## Answer
 
@@ -54,8 +54,17 @@ Both runs above had the page in a default-settings Chrome window minimized from
 first work to after redemption (ADR-0110). The second also released the board's
 port at redemption.
 
-Non-claims: the 205 hasn't run. On hardware, reuse was tried only with the same
-DPoP proof; a fresh proof on a spent pass is refused in
+The 205 passed on mainnet on 2026-11-09 at 04:08 UTC, on the same reference
+image, Hydra and node, with the Gate at `e86b3db` and the page minimized
+throughout. At 2^45 and about 440 GH/s, the Authority issued five renewals, the
+requirement was met 117 s into the lease, the board stopped in 30,080 ms with
+`restoration_requested` and `Lease stop finished ok=1`, the Gate Pass was
+redeemed once at 04:11:30, and the port was released within 1 s. The firmware
+repository's "Ticket 07 on the 205" has the record.
+
+Non-claims: one run on the 205, where reuse wasn't tried. On hardware, reuse
+was tried only on the 601 and with the same DPoP proof; a fresh proof on a
+spent pass is refused in
 `restart_rejects_consumed_pass_and_converges_new_pass_on_one_redemption`. The
 renewals rest on the lease sequence and the lease running on, since the board
 doesn't log them. In the later runs the agent launched the deployment at the
@@ -200,3 +209,6 @@ environments.
   launcher removes its tailnet serve on exit (`70f31cc`), and
   `--expected-hashes` asks for a Work Requirement within the Standard bounds
   (`d744e55`). A minimized run at 2^45 renewed twice, restored and redeemed.
+- 2026-11-09: the 205 reran the firmware's lifecycle steps on its test image,
+  then the reference image went back on and a minimized run at 2^45 renewed five
+  times, restored and redeemed.
