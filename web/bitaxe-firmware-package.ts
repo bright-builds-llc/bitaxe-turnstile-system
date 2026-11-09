@@ -18,12 +18,12 @@ export type UpdateAuthorityJwk = JsonWebKey & {
 
 /** Exact signed admission facts for one Reference Firmware image. */
 export type FirmwareManifest = {
-  profile: "bwg-reference-firmware/0.1";
+  profile: "bwg-reference-firmware/0.2";
   firmwareVersion: string;
   imageSha256: string;
   compatibleBoards: readonly { model: string; revisions: readonly string[] }[];
   partition: {
-    scheme: "esp32-ota-ab";
+    scheme: "esp32-factory-ota-ab";
     minimumAppSlotBytes: number;
     rollbackRequired: true;
   };
@@ -151,7 +151,7 @@ function parseManifest(input: unknown): FirmwareManifest {
   if (
     !hasExactKeys(value.partition, ["scheme", "minimumAppSlotBytes", "rollbackRequired"]) ||
     !hasExactKeys(value.settingsSchema, ["minimumReadable", "maximumReadable", "target"]) ||
-    value.profile !== "bwg-reference-firmware/0.1" ||
+    value.profile !== "bwg-reference-firmware/0.2" ||
     typeof value.firmwareVersion !== "string" ||
     value.firmwareVersion.length > 64 ||
     !/^\d+\.\d+\.\d+$/u.test(value.firmwareVersion) ||
@@ -170,7 +170,7 @@ function parseManifest(input: unknown): FirmwareManifest {
   const partition = value.partition as Record<string, unknown>;
   const settingsSchema = value.settingsSchema as Record<string, unknown>;
   if (
-    partition.scheme !== "esp32-ota-ab" ||
+    partition.scheme !== "esp32-factory-ota-ab" ||
     !Number.isSafeInteger(partition.minimumAppSlotBytes) ||
     Number(partition.minimumAppSlotBytes) <= 0 ||
     partition.rollbackRequired !== true ||
@@ -185,12 +185,12 @@ function parseManifest(input: unknown): FirmwareManifest {
     throw new Error("firmware manifest is invalid");
   }
   return {
-    profile: "bwg-reference-firmware/0.1",
+    profile: "bwg-reference-firmware/0.2",
     firmwareVersion: value.firmwareVersion,
     imageSha256: value.imageSha256,
     compatibleBoards,
     partition: {
-      scheme: "esp32-ota-ab",
+      scheme: "esp32-factory-ota-ab",
       minimumAppSlotBytes: Number(partition.minimumAppSlotBytes),
       rollbackRequired: true,
     },

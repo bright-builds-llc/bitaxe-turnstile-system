@@ -1,24 +1,43 @@
-import { canonicalJson } from "./headless-values";
 import type { WorkerControllerCapabilities } from "./worker-controller-semantics";
-import {
-  parseDeviceSnapshot,
-  parseVerification,
-} from "./bitaxe-onboarding-boundaries";
+import { parseDeviceSnapshot } from "./bitaxe-onboarding-boundaries";
 import {
   admitFirmwarePackage,
-  type FirmwareManifest,
   type FirmwarePackage,
   type UpdateAuthorityJwk,
 } from "./bitaxe-firmware-package";
-import { sha256Base64UrlBytes } from "./crypto-bytes";
 import {
+  decryptMigrationBackup,
   encryptMigrationBackup,
   MAXIMUM_MIGRATION_SETTINGS_BYTES,
 } from "./bitaxe-migration-backup";
+import {
+  parseNvsSettingEntries,
+  randomSettingsNonce,
+  settingsCategoryHmacs,
+  type NvsSettingEntry,
+  type SettingsCategoryHmac,
+} from "./bitaxe-settings-hmac";
+import {
+  inactiveSlot,
+  rollbackAndVerify,
+  verifyInstalledDevice,
+  type InstallRecord,
+} from "./bitaxe-onboarding-recovery";
 export {
   decryptMigrationBackup,
   MAXIMUM_MIGRATION_SETTINGS_BYTES,
 } from "./bitaxe-migration-backup";
+export {
+  SETTINGS_HMAC_NONCE_BYTES,
+  SETTINGS_HMAC_PROFILE,
+  SETTINGS_SCHEMA_KEYS,
+  settingsCategoryHmacs,
+  settingsCategoryMessage,
+  type NvsSettingEntry,
+  type NvsType,
+  type SettingsCategory,
+  type SettingsCategoryHmac,
+} from "./bitaxe-settings-hmac";
 
 export {
   MAXIMUM_FIRMWARE_IMAGE_BYTES,
@@ -27,54 +46,60 @@ export {
   type UpdateAuthorityJwk,
 } from "./bitaxe-firmware-package";
 
+/** App slots of upstream ESP-Miner's and the C image's `esp32-factory-ota-ab` table. */
+export type PartitionSlot = "factory" | "ota_0" | "ota_1";
+/** OTA slots the browser may write; `factory` is never written. */
+export type OtaSlot = Exclude<PartitionSlot, "factory">;
+
 /** Non-secret local facts needed to decide whether flashing can be safe. */
 export type BitaxeDeviceSnapshot = {
   capabilities: WorkerControllerCapabilities;
   settingsSchemaVersion: number;
   settingsReadable: boolean;
   partition: {
-    scheme: "esp32-ota-ab";
+    scheme: "esp32-factory-ota-ab";
     appSlotBytes: number;
     rollbackAvailable: boolean;
-    activeSlot: "ota_0" | "ota_1";
+    activeSlot: PartitionSlot;
     bootable: boolean;
   };
 };
 
-/** Redacted post-reboot proof that admitted setting categories were retained. */
+/** Redacted post-reboot proof, keyed by the nonce the browser sent, that settings were kept. */
 export type RedactedSettingsVerification = {
   preservationConfirmed: boolean;
   runningFirmwareVersion: string;
   settingsSchemaVersion: number;
-  activeSlot: "ota_0" | "ota_1";
+  activeSlot: PartitionSlot;
   bootable: boolean;
-  rollbackState: "available" | "confirmed";
-  categories: readonly {
-    category: "all" | "network" | "pool";
-    digestSha256: string;
-  }[];
+  /** The browser's nonce echoed as base64url; a reply under any other nonce is refused. */
+  nonce: string;
+  categories: readonly SettingsCategoryHmac[];
 };
-type RedactedSettingsCategories = RedactedSettingsVerification["categories"];
+
+/** Verified evidence returned to callers; the nonce stays inside onboarding. */
+export type VerifiedSettingsEvidence = Omit<RedactedSettingsVerification, "nonce">;
+
+/** The raw `nvs` partition read through ROM and its decoded `main` namespace entries. */
+export type MigrationSettings = {
+  nvsPartition: Uint8Array;
+  entries: readonly NvsSettingEntry[];
+};
 
 /** USB device operations required by the browser onboarding state machine. */
 export interface BitaxeOnboardingDevice {
   /** Reads a strict, non-secret snapshot without changing device state. */
   inspect(): Promise<BitaxeDeviceSnapshot>;
-  /** Returns a caller-owned settings copy no larger than `maximumBytes`. */
-  readMigrationSettings(maximumBytes: number): Promise<Uint8Array>;
-  /** Copies all input buffers before resolving after the irreversible slot write completes. */
-  flash(input: {
-    image: Uint8Array;
-    firmwareVersion: string;
-    targetSettingsSchema: number;
-    preservedSettings: Uint8Array;
-  }): Promise<void>;
+  /** Returns a caller-owned copy of the raw `nvs` partition, no larger than `maximumBytes`. */
+  readMigrationSettings(maximumBytes: number): Promise<MigrationSettings>;
+  /** Writes the image to the inactive OTA slot and sets `otadata` to boot it pending; never NVS. */
+  flash(input: { image: Uint8Array; firmwareVersion: string; targetSlot: OtaSlot }): Promise<void>;
   /** Reboots into the selected slot and resolves only after device continuity is restored. */
   reboot(): Promise<void>;
-  /** Returns strict redacted proof for the currently running firmware and settings. */
-  verifyRedactedSettings(): Promise<RedactedSettingsVerification>;
-  /** Restores the pre-flash slot and settings, rejecting unless recovery can be attempted. */
-  rollback(): Promise<void>;
+  /** Returns strict redacted proof with every category HMAC keyed by `nonce`. */
+  verifyRedactedSettings(nonce: Uint8Array): Promise<RedactedSettingsVerification>;
+  /** Points `otadata` at the untouched previous slot and writes the raw `nvs` partition back. */
+  rollback(input: { slot: PartitionSlot; nvsPartition: Uint8Array }): Promise<void>;
 }
 
 /** Strict non-secret inspection returned after the user selects a local device. */
@@ -82,6 +107,8 @@ export type BitaxeOnboardingInspection = {
   action: "ready" | "firmware_required";
   capabilities: WorkerControllerCapabilities;
   settingsSchemaVersion: number;
+  /** `recommended` for a first install from stock, where a later rollback needs the download. */
+  migrationBackup: "recommended" | "optional";
 };
 
 /** Terminal, redacted evidence that installation or verified rollback completed safely. */
@@ -89,19 +116,42 @@ export type BitaxeOnboardingResult = {
   status: "ready" | "rolled_back";
   rollback: "not_required" | "confirmed";
   firmwareVersion: string;
-  verification: RedactedSettingsVerification;
+  verification: VerifiedSettingsEvidence;
 };
+
+/**
+ * Whether a ready install can still be rolled back: `available` while the in-memory copy
+ * exists, `backup_required` once it is wiped but a Migration Backup was downloaded.
+ */
+export type BitaxeRollbackState = "available" | "backup_required" | "unavailable";
 
 /** Single-device, single-install onboarding lifecycle. */
 export type BitaxeOnboarding = {
   /** Explicit user-action seam that alone may request local USB device access. */
   connect(): Promise<BitaxeOnboardingInspection>;
-  /** Verifies, preserves, flashes, reboots, and redacted-verifies one admitted package. */
+  /** Verifies, reads, flashes, reboots, and redacted-verifies one admitted package. */
   install(
     firmwarePackage: FirmwarePackage,
     options?: { maybeBackupPassphrase?: string },
   ): Promise<BitaxeOnboardingResult>;
+  /** Reports whether the ready install can be rolled back, and with what. */
+  rollbackState(): BitaxeRollbackState;
+  /** Ends onboarding for the user and wipes the in-memory rollback copy. */
+  complete(): void;
+  /** Rolls a ready install back from the in-memory copy, or from the user's download. */
+  rollBack(options?: {
+    maybeMigrationBackup?: { encryptedBackup: Uint8Array; passphrase: string };
+  }): Promise<BitaxeOnboardingResult>;
 };
+
+type OnboardingState =
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "installing"
+  | "installed"
+  | "rolling_back"
+  | "completed";
 
 /** Creates accountless browser onboarding without network or mobile/account dependencies. */
 export function createBitaxeOnboarding(input: {
@@ -112,8 +162,25 @@ export function createBitaxeOnboarding(input: {
 }): BitaxeOnboarding {
   let maybeDevice: BitaxeOnboardingDevice | undefined;
   let maybeSnapshot: BitaxeDeviceSnapshot | undefined;
-  let state: "disconnected" | "connecting" | "connected" | "installing" | "completed" =
-    "disconnected";
+  let maybeInstall: InstallRecord | undefined;
+  let maybeRollbackCopy: Uint8Array | undefined;
+  let state: OnboardingState = "disconnected";
+
+  const wipeRollbackCopy = (): void => {
+    maybeRollbackCopy?.fill(0);
+    maybeRollbackCopy = undefined;
+  };
+
+  const recover = async (
+    device: BitaxeOnboardingDevice,
+    record: InstallRecord,
+    nvsPartition: Uint8Array,
+  ): Promise<BitaxeOnboardingResult> => {
+    const result = await rollbackAndVerify(device, record, nvsPartition);
+    maybeInstall = undefined;
+    return result;
+  };
+
   return {
     async connect() {
       if (state !== "disconnected") {
@@ -126,14 +193,15 @@ export function createBitaxeOnboarding(input: {
         maybeDevice = device;
         maybeSnapshot = snapshot;
         state = "connected";
+        const compatibility = snapshot.capabilities.compatibility;
         return {
           action:
-            snapshot.capabilities.compatibility.referenceFirmware &&
-            snapshot.capabilities.compatibility.settingsPreservation === "compatible"
+            compatibility.referenceFirmware && compatibility.settingsPreservation === "compatible"
               ? "ready"
               : "firmware_required",
           capabilities: structuredClone(snapshot.capabilities),
           settingsSchemaVersion: snapshot.settingsSchemaVersion,
+          migrationBackup: compatibility.referenceFirmware ? "optional" : "recommended",
         };
       } finally {
         if (state === "connecting") state = "disconnected";
@@ -142,200 +210,145 @@ export function createBitaxeOnboarding(input: {
     async install(firmwarePackage, options = {}) {
       if (state !== "connected") {
         throw new Error(
-          state === "installing" || state === "completed"
-            ? "Bitaxe onboarding install is already active"
-            : "Bitaxe USB connection is required",
+          state === "disconnected" || state === "connecting"
+            ? "Bitaxe USB connection is required"
+            : "Bitaxe onboarding install is already active",
         );
       }
       const device = maybeDevice;
       const snapshot = maybeSnapshot;
       if (!device || !snapshot) throw new Error("Bitaxe USB connection is required");
       state = "installing";
-      let completed = false;
       let irreversibleAttempted = false;
       try {
-        const trustedKeys = input.trustedUpdateKeys ?? [];
-        const admitted = await admitFirmwarePackage(firmwarePackage, trustedKeys, snapshot);
+        const admitted = await admitFirmwarePackage(
+          firmwarePackage,
+          input.trustedUpdateKeys ?? [],
+          snapshot,
+        );
         if (!snapshot.settingsReadable) {
           throw new Error("firmware package is not safely compatible");
         }
-        const preservedSettings = await device.readMigrationSettings(
-          MAXIMUM_MIGRATION_SETTINGS_BYTES,
-        );
-        if (preservedSettings.byteLength > MAXIMUM_MIGRATION_SETTINGS_BYTES) {
-          preservedSettings.fill(0);
+        const migration = await device.readMigrationSettings(MAXIMUM_MIGRATION_SETTINGS_BYTES);
+        maybeRollbackCopy = migration.nvsPartition;
+        if (migration.nvsPartition.byteLength > MAXIMUM_MIGRATION_SETTINGS_BYTES) {
           throw new Error("settings exceed the bounded migration window");
         }
+        const entries = parseNvsSettingEntries(migration.entries);
+        const nonce = randomSettingsNonce();
+        const target = admitted.manifest.settingsSchema.target;
+        const record: InstallRecord = {
+          snapshot,
+          nonce,
+          firmwareVersion: admitted.manifest.firmwareVersion,
+          expectedInstalled: await settingsCategoryHmacs(entries, target, nonce),
+          expectedRestored: await settingsCategoryHmacs(
+            entries,
+            snapshot.settingsSchemaVersion,
+            nonce,
+          ),
+          backupDownloaded: false,
+        };
+        const maybePassphrase = options.maybeBackupPassphrase;
+        if (maybePassphrase !== undefined) {
+          await downloadBackup(input.downloadMigrationBackup, migration.nvsPartition, maybePassphrase);
+          record.backupDownloaded = true;
+        }
+        let maybeInstallFailure: unknown;
         try {
-          const expectedVerification = await redactedSettingsVerification(preservedSettings);
-          const maybePassphrase = options.maybeBackupPassphrase;
-          if (maybePassphrase !== undefined) {
-            if (!input.downloadMigrationBackup) {
-              throw new Error("local Migration Backup download is unavailable");
-            }
-            const encrypted = await encryptMigrationBackup(preservedSettings, maybePassphrase);
-            try {
-              await input.downloadMigrationBackup(encrypted);
-            } finally {
-              encrypted.fill(0);
-            }
+          irreversibleAttempted = true;
+          const targetSlot = inactiveSlot(snapshot.partition.activeSlot);
+          await device.flash({
+            image: admitted.image,
+            firmwareVersion: record.firmwareVersion,
+            targetSlot,
+          });
+          await device.reboot();
+          const maybeVerification = await verifyInstalledDevice(device, {
+            firmwareVersion: record.firmwareVersion,
+            settingsSchema: target,
+            categories: record.expectedInstalled,
+            nonce,
+            slot: targetSlot,
+            firmwareName: "bright-builds-reference-firmware",
+            referenceFirmware: true,
+          });
+          if (maybeVerification) {
+            maybeInstall = record;
+            state = "installed";
+            return {
+              status: "ready",
+              rollback: "not_required",
+              firmwareVersion: record.firmwareVersion,
+              verification: maybeVerification,
+            };
           }
-          let maybeInstallFailure: unknown;
-          try {
-            irreversibleAttempted = true;
-            await device.flash({
-              image: admitted.image,
-              firmwareVersion: admitted.manifest.firmwareVersion,
-              targetSettingsSchema: admitted.manifest.settingsSchema.target,
-              preservedSettings,
-            });
-            await device.reboot();
-            const verification = await verifyInstalledDevice(
-              device,
-              admitted.manifest.firmwareVersion,
-              admitted.manifest.settingsSchema.target,
-              expectedVerification,
-              "available",
-              snapshot.partition.activeSlot === "ota_0" ? "ota_1" : "ota_0",
-              "bright-builds-reference-firmware",
-              true,
-            );
-            if (verification) {
-              completed = true;
-              return {
-                status: "ready",
-                rollback: "not_required",
-                firmwareVersion: admitted.manifest.firmwareVersion,
-                verification,
-              };
-            }
-          } catch (error) {
-            maybeInstallFailure = error;
-          }
-          maybeInstallFailure ??= new Error("post-reboot verification failed");
-          try {
-            const result = await rollbackAndVerify(device, snapshot, expectedVerification);
-            completed = true;
-            return result;
-          } catch (recoveryError) {
-            throw new AggregateError(
-              [maybeInstallFailure, recoveryError],
-              "Bitaxe installation and recovery both failed",
-            );
-          }
-        } finally {
-          preservedSettings.fill(0);
+        } catch (error) {
+          maybeInstallFailure = error;
+        }
+        maybeInstallFailure ??= new Error("post-reboot verification failed");
+        try {
+          return await recover(device, record, migration.nvsPartition);
+        } catch (recoveryError) {
+          throw new AggregateError(
+            [maybeInstallFailure, recoveryError],
+            "Bitaxe installation and recovery both failed",
+          );
         }
       } finally {
-        state = completed || irreversibleAttempted ? "completed" : "connected";
+        if (state !== "installed") {
+          wipeRollbackCopy();
+          state = irreversibleAttempted ? "completed" : "connected";
+        }
+      }
+    },
+    rollbackState() {
+      if (maybeRollbackCopy && maybeInstall) return "available";
+      return maybeInstall?.backupDownloaded ? "backup_required" : "unavailable";
+    },
+    complete() {
+      wipeRollbackCopy();
+      if (state === "installed" && !maybeInstall?.backupDownloaded) maybeInstall = undefined;
+      if (state === "installed" || state === "connected") state = "completed";
+    },
+    async rollBack(options = {}) {
+      const device = maybeDevice;
+      const record = maybeInstall;
+      if (state === "rolling_back") throw new Error("Bitaxe rollback is already active");
+      if (!device || !record) throw new Error("Bitaxe install cannot be rolled back");
+      const previousState = state;
+      state = "rolling_back";
+      let maybePartition: Uint8Array | undefined;
+      try {
+        maybePartition =
+          maybeRollbackCopy ?? (await decryptSuppliedBackup(options.maybeMigrationBackup));
+        return await recover(device, record, maybePartition);
+      } finally {
+        maybePartition?.fill(0);
+        wipeRollbackCopy();
+        state = maybeInstall ? previousState : "completed";
       }
     },
   };
 }
 
-async function rollbackAndVerify(
-  device: BitaxeOnboardingDevice,
-  snapshot: BitaxeDeviceSnapshot,
-  expected: RedactedSettingsCategories,
-): Promise<BitaxeOnboardingResult> {
-  await device.rollback();
-  await device.reboot();
-  const rolledBack = await verifyInstalledDevice(
-    device,
-    snapshot.capabilities.firmware.version,
-    snapshot.settingsSchemaVersion,
-    expected,
-    "confirmed",
-    snapshot.partition.activeSlot,
-    snapshot.capabilities.firmware.name,
-    snapshot.capabilities.compatibility.referenceFirmware,
-  );
-  if (!rolledBack) {
-    throw new Error("post-reboot recovery could not be established");
-  }
-  return {
-    status: "rolled_back",
-    rollback: "confirmed",
-    firmwareVersion: snapshot.capabilities.firmware.version,
-    verification: rolledBack,
-  };
-}
-
-function verificationMatches(
-  expected: RedactedSettingsCategories,
-  actual: RedactedSettingsVerification,
-): boolean {
-  return (
-    actual.preservationConfirmed &&
-    canonicalJson(actual.categories) === canonicalJson(expected)
-  );
-}
-
-async function verifyInstalledDevice(
-  device: BitaxeOnboardingDevice,
-  expectedFirmwareVersion: string,
-  expectedSettingsSchema: number,
-  expectedCategories: RedactedSettingsCategories,
-  rollbackState: "available" | "confirmed",
-  maybeExpectedSlot?: "ota_0" | "ota_1",
-  expectedFirmwareName?: string,
-  expectedReferenceFirmware?: boolean,
-): Promise<RedactedSettingsVerification | undefined> {
-  const snapshot = parseDeviceSnapshot(await device.inspect());
-  const verification = parseVerification(await device.verifyRedactedSettings());
-  const deviceStateMatches =
-    snapshot.capabilities.firmware.version === expectedFirmwareVersion &&
-    (expectedFirmwareName === undefined ||
-      snapshot.capabilities.firmware.name === expectedFirmwareName) &&
-    (expectedReferenceFirmware === undefined ||
-      snapshot.capabilities.compatibility.referenceFirmware === expectedReferenceFirmware) &&
-    snapshot.settingsSchemaVersion === expectedSettingsSchema &&
-    snapshot.partition.bootable &&
-    snapshot.partition.rollbackAvailable &&
-    (maybeExpectedSlot === undefined || snapshot.partition.activeSlot === maybeExpectedSlot);
-  const proofMatches =
-    verification.runningFirmwareVersion === expectedFirmwareVersion &&
-    verification.settingsSchemaVersion === expectedSettingsSchema &&
-    verification.activeSlot === snapshot.partition.activeSlot &&
-    verification.bootable &&
-    verification.rollbackState === rollbackState &&
-    verificationMatches(expectedCategories, verification);
-  return deviceStateMatches && proofMatches ? verification : undefined;
-}
-
-async function redactedSettingsVerification(
-  settings: Uint8Array,
-): Promise<RedactedSettingsCategories> {
-  let parsed: unknown;
+async function downloadBackup(
+  maybeDownload: ((encryptedBackup: Uint8Array) => Promise<void>) | undefined,
+  nvsPartition: Uint8Array,
+  passphrase: string,
+): Promise<void> {
+  if (!maybeDownload) throw new Error("local Migration Backup download is unavailable");
+  const encrypted = await encryptMigrationBackup(nvsPartition, passphrase);
   try {
-    parsed = JSON.parse(new TextDecoder().decode(settings));
-  } catch {
-    throw new Error("settings schema cannot be safely preserved");
+    await maybeDownload(encrypted);
+  } finally {
+    encrypted.fill(0);
   }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new Error("settings schema cannot be safely preserved");
-  }
-  const record = parsed as Record<string, unknown>;
-  const network = Object.fromEntries(
-    Object.entries(record).filter(([key]) => key.startsWith("wifi_")),
-  );
-  const pool = Object.fromEntries(Object.entries(record).filter(([key]) => key === "pool"));
-  return [
-    {
-      category: "all",
-      digestSha256: await sha256(new TextEncoder().encode(canonicalJson(record))),
-    },
-    {
-      category: "network",
-      digestSha256: await sha256(new TextEncoder().encode(canonicalJson(network))),
-    },
-    {
-      category: "pool",
-      digestSha256: await sha256(new TextEncoder().encode(canonicalJson(pool))),
-    },
-  ];
 }
 
-async function sha256(value: Uint8Array): Promise<string> {
-  return sha256Base64UrlBytes(value);
+async function decryptSuppliedBackup(
+  maybeBackup: { encryptedBackup: Uint8Array; passphrase: string } | undefined,
+): Promise<Uint8Array> {
+  if (!maybeBackup) throw new Error("Bitaxe rollback needs the Migration Backup download");
+  return decryptMigrationBackup(maybeBackup.encryptedBackup, maybeBackup.passphrase);
 }

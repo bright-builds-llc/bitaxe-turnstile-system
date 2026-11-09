@@ -1,13 +1,28 @@
 import {
   type BitaxeDeviceSnapshot,
   type BitaxeOnboardingDevice,
+  type MigrationSettings,
+  type OtaSlot,
+  type PartitionSlot,
   type RedactedSettingsVerification,
 } from "./bitaxe-onboarding";
-import { canonicalJson } from "./headless-values";
-import { sha256Base64UrlBytes } from "./crypto-bytes";
+import {
+  parseNvsSettingEntries,
+  settingsCategoryHmacs,
+  type NvsSettingEntry,
+} from "./bitaxe-settings-hmac";
+import { encodeBase64Url } from "./crypto-bytes";
 
 /** Complete non-secret initial device state accepted by the deterministic simulator. */
 export type SimulatedBitaxeSnapshot = BitaxeDeviceSnapshot;
+
+/** Deterministic fault controls for the simulated device. */
+export type SimulatedBitaxeOptions = {
+  failFirstVerification?: boolean;
+  failFlashAfterWrite?: boolean;
+  /** Settings the device holds once the image boots, as if the new image changed NVS. */
+  maybeSettingsAfterFlash?: readonly NvsSettingEntry[];
+};
 
 /** Deterministic explicit-device-selection seam for browser and package consumers. */
 export class SimulatedBitaxeConnector {
@@ -16,8 +31,8 @@ export class SimulatedBitaxeConnector {
 
   constructor(
     snapshot: SimulatedBitaxeSnapshot,
-    settings: Uint8Array,
-    options: { failFirstVerification?: boolean; failFlashAfterWrite?: boolean } = {},
+    settings: readonly NvsSettingEntry[],
+    options: SimulatedBitaxeOptions = {},
   ) {
     this.#device = new SimulatedBitaxeDevice(snapshot, settings, options);
   }
@@ -39,29 +54,29 @@ export class SimulatedBitaxeConnector {
   }
 }
 
-/** In-memory A/B firmware and settings device with deterministic recovery controls. */
+/**
+ * In-memory `esp32-factory-ota-ab` device. Its simulated `nvs` partition is the JSON of its
+ * `main` entries, not the ESP-IDF page format, which the production device parses instead.
+ */
 export class SimulatedBitaxeDevice implements BitaxeOnboardingDevice {
   #snapshot: SimulatedBitaxeSnapshot;
-  #settings: Uint8Array;
-  #maybeRollbackSnapshot?: SimulatedBitaxeSnapshot;
-  #maybeRollbackSettings?: Uint8Array;
+  #settings: readonly NvsSettingEntry[];
+  #maybePreviousSnapshot: SimulatedBitaxeSnapshot | undefined;
   #flashCount = 0;
   #rollbackCount = 0;
   #maximumPlaintextBytes = 0;
-  #failFirstVerification: boolean;
-  #failFlashAfterWrite: boolean;
-  #rollbackConfirmed = false;
+  #options: SimulatedBitaxeOptions;
   #maybeFlashedImage?: Uint8Array;
+  #verificationNonces: string[] = [];
 
   constructor(
     snapshot: SimulatedBitaxeSnapshot,
-    settings: Uint8Array,
-    options: { failFirstVerification?: boolean; failFlashAfterWrite?: boolean },
+    settings: readonly NvsSettingEntry[],
+    options: SimulatedBitaxeOptions,
   ) {
     this.#snapshot = structuredClone(snapshot);
-    this.#settings = settings.slice();
-    this.#failFirstVerification = options.failFirstVerification === true;
-    this.#failFlashAfterWrite = options.failFlashAfterWrite === true;
+    this.#settings = structuredClone(settings);
+    this.#options = { ...options };
   }
 
   /** Returns a defensive copy of the current strict device snapshot. */
@@ -69,30 +84,30 @@ export class SimulatedBitaxeDevice implements BitaxeOnboardingDevice {
     return structuredClone(this.#snapshot);
   }
 
-  /** Returns bounded migration settings or rejects before allocating a caller copy. */
-  async readMigrationSettings(maximumBytes: number): Promise<Uint8Array> {
-    if (this.#settings.byteLength > maximumBytes) {
+  /** Returns the bounded simulated `nvs` partition and its decoded entries. */
+  async readMigrationSettings(maximumBytes: number): Promise<MigrationSettings> {
+    const nvsPartition = simulatedPartition(this.#settings);
+    if (nvsPartition.byteLength > maximumBytes) {
+      nvsPartition.fill(0);
       throw new Error("settings exceed the bounded migration window");
     }
-    this.#maximumPlaintextBytes = Math.max(this.#maximumPlaintextBytes, this.#settings.byteLength);
-    return this.#settings.slice();
+    this.#maximumPlaintextBytes = Math.max(this.#maximumPlaintextBytes, nvsPartition.byteLength);
+    return { nvsPartition, entries: structuredClone(this.#settings) };
   }
 
-  /** Simulates writing an admitted image and preserved settings to the inactive A/B slot. */
+  /** Simulates writing an admitted image to the inactive OTA slot; NVS is untouched. */
   async flash(input: {
     image: Uint8Array;
     firmwareVersion: string;
-    targetSettingsSchema: number;
-    preservedSettings: Uint8Array;
+    targetSlot: OtaSlot;
   }): Promise<void> {
     if (input.image.byteLength === 0) throw new Error("firmware image is empty");
-    this.#maybeRollbackSnapshot = structuredClone(this.#snapshot);
-    this.#maybeRollbackSettings = this.#settings.slice();
-    this.#settings = input.preservedSettings.slice();
+    if (input.targetSlot === this.#snapshot.partition.activeSlot) {
+      throw new Error("the running slot cannot be written");
+    }
+    this.#maybePreviousSnapshot = structuredClone(this.#snapshot);
     this.#maybeFlashedImage = input.image.slice();
-    this.#snapshot.settingsSchemaVersion = input.targetSettingsSchema;
-    this.#snapshot.partition.activeSlot =
-      this.#snapshot.partition.activeSlot === "ota_0" ? "ota_1" : "ota_0";
+    this.#snapshot.partition.activeSlot = input.targetSlot;
     this.#snapshot.partition.bootable = true;
     this.#snapshot.capabilities.firmware = {
       name: "bright-builds-reference-firmware",
@@ -100,9 +115,12 @@ export class SimulatedBitaxeDevice implements BitaxeOnboardingDevice {
     };
     this.#snapshot.capabilities.compatibility.referenceFirmware = true;
     this.#snapshot.capabilities.compatibility.settingsPreservation = "compatible";
+    if (this.#options.maybeSettingsAfterFlash) {
+      this.#settings = structuredClone(this.#options.maybeSettingsAfterFlash);
+    }
     this.#flashCount += 1;
-    if (this.#failFlashAfterWrite) {
-      this.#failFlashAfterWrite = false;
+    if (this.#options.failFlashAfterWrite) {
+      this.#options.failFlashAfterWrite = false;
       throw new Error("simulated flash interruption");
     }
   }
@@ -110,37 +128,54 @@ export class SimulatedBitaxeDevice implements BitaxeOnboardingDevice {
   /** Simulates a reboot after flashing or rollback. */
   async reboot(): Promise<void> {}
 
-  /** Returns strict redacted state and settings evidence for the running slot. */
-  async verifyRedactedSettings(): Promise<RedactedSettingsVerification> {
+  /** Returns strict redacted state with category HMACs keyed by the browser's nonce. */
+  async verifyRedactedSettings(nonce: Uint8Array): Promise<RedactedSettingsVerification> {
+    const echoedNonce = encodeBase64Url(nonce);
+    this.#verificationNonces.push(echoedNonce);
     const proof = {
       runningFirmwareVersion: this.#snapshot.capabilities.firmware.version,
       settingsSchemaVersion: this.#snapshot.settingsSchemaVersion,
       activeSlot: this.#snapshot.partition.activeSlot,
       bootable: this.#snapshot.partition.bootable,
-      rollbackState: this.#rollbackConfirmed ? "confirmed" as const : "available" as const,
-      categories: await categoryDigests(this.#settings),
+      nonce: echoedNonce,
+      categories: await settingsCategoryHmacs(
+        this.#settings,
+        this.#snapshot.settingsSchemaVersion,
+        nonce,
+      ),
     };
-    if (this.#failFirstVerification) {
-      this.#failFirstVerification = false;
+    if (this.#options.failFirstVerification) {
+      this.#options.failFirstVerification = false;
       return { preservationConfirmed: false, ...proof };
     }
     return { preservationConfirmed: true, ...proof };
   }
 
-  /** Restores the exact pre-flash slot, firmware identity, and settings. */
-  async rollback(): Promise<void> {
-    if (!this.#maybeRollbackSnapshot || !this.#maybeRollbackSettings) {
+  /** Points `otadata` back at the untouched previous slot and writes the `nvs` copy back. */
+  async rollback(input: { slot: PartitionSlot; nvsPartition: Uint8Array }): Promise<void> {
+    const maybePrevious = this.#maybePreviousSnapshot;
+    if (!maybePrevious || maybePrevious.partition.activeSlot !== input.slot) {
       throw new Error("rollback image is unavailable");
     }
-    this.#snapshot = this.#maybeRollbackSnapshot;
-    this.#settings = this.#maybeRollbackSettings;
+    this.#settings = parseSimulatedPartition(input.nvsPartition);
+    this.#snapshot = maybePrevious;
+    this.#maybePreviousSnapshot = undefined;
     this.#rollbackCount += 1;
-    this.#rollbackConfirmed = true;
   }
 
   /** Returns a defensive settings copy for conformance assertions. */
-  settingsForTest(): Uint8Array {
-    return this.#settings.slice();
+  settingsForTest(): readonly NvsSettingEntry[] {
+    return structuredClone(this.#settings);
+  }
+
+  /** Replaces the device's settings, as if the running image changed NVS. */
+  replaceSettingsForTest(settings: readonly NvsSettingEntry[]): void {
+    this.#settings = structuredClone(settings);
+  }
+
+  /** Returns every nonce a verification was asked under, as base64url. */
+  verificationNoncesForTest(): readonly string[] {
+    return [...this.#verificationNonces];
   }
 
   /** Returns the number of simulated image writes. */
@@ -164,21 +199,11 @@ export class SimulatedBitaxeDevice implements BitaxeOnboardingDevice {
   }
 }
 
-async function categoryDigests(
-  settings: Uint8Array,
-): Promise<readonly { category: "all" | "network" | "pool"; digestSha256: string }[]> {
-  const parsed = JSON.parse(new TextDecoder().decode(settings)) as Record<string, unknown>;
-  const network = Object.fromEntries(
-    Object.entries(parsed).filter(([key]) => key.startsWith("wifi_")),
-  );
-  const pool = Object.fromEntries(Object.entries(parsed).filter(([key]) => key === "pool"));
-  return [
-    { category: "all", digestSha256: await digest(canonicalJson(parsed)) },
-    { category: "network", digestSha256: await digest(canonicalJson(network)) },
-    { category: "pool", digestSha256: await digest(canonicalJson(pool)) },
-  ];
+/** Serializes entries into the simulator's stand-in for a raw `nvs` partition. */
+export function simulatedPartition(settings: readonly NvsSettingEntry[]): Uint8Array {
+  return new TextEncoder().encode(JSON.stringify(settings));
 }
 
-async function digest(value: string): Promise<string> {
-  return sha256Base64UrlBytes(new TextEncoder().encode(value));
+function parseSimulatedPartition(nvsPartition: Uint8Array): readonly NvsSettingEntry[] {
+  return parseNvsSettingEntries(JSON.parse(new TextDecoder().decode(nvsPartition)));
 }

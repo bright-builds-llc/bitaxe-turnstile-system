@@ -202,8 +202,8 @@ try {
   assertEqual(onboardingFixture.connector.device().flashCount(), 1, "bitaxe_flash_count");
   assertEqual(maybeOnboardingResult?.status, "ready", "bitaxe_onboarding_ready");
   assertEqual(
-    new TextDecoder().decode(onboardingFixture.connector.device().settingsForTest()),
-    new TextDecoder().decode(onboardingFixture.settings),
+    JSON.stringify(onboardingFixture.connector.device().settingsForTest()),
+    JSON.stringify(onboardingFixture.settings),
     "bitaxe_settings_preserved",
   );
   assertEqual(

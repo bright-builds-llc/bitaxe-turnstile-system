@@ -3,24 +3,13 @@ import { describe, expect, test } from "bun:test";
 import {
   createBitaxeOnboarding,
   decryptMigrationBackup,
-  type FirmwareManifest,
-  type FirmwarePackage,
-  type UpdateAuthorityJwk,
 } from "./bitaxe-onboarding";
-import {
-  SimulatedBitaxeConnector,
-  type SimulatedBitaxeSnapshot,
-} from "./simulated-bitaxe-onboarding";
-import { canonicalJson } from "./headless-values";
+import { SimulatedBitaxeConnector, simulatedPartition } from "./simulated-bitaxe-onboarding";
 import {
   encryptMigrationBackup,
   MAXIMUM_MIGRATION_SETTINGS_BYTES,
 } from "./bitaxe-migration-backup";
-
-const image = new TextEncoder().encode("reference-firmware-image-v2");
-const settings = new TextEncoder().encode(
-  JSON.stringify({ wifi_ssid: "secret-network", wifi_password: "secret-password", pool: "pool" }),
-);
+import { firmwarePackage, settings, snapshot } from "./bitaxe-onboarding-test-fixtures";
 
 describe("Bitaxe onboarding admission", () => {
   test("USB access occurs only after explicit connect and compatible firmware proceeds", async () => {
@@ -60,7 +49,7 @@ describe("Bitaxe onboarding admission", () => {
       "network",
       "pool",
     ]);
-    expect(JSON.stringify(result)).not.toMatch(/secret-network|secret-password|wifi_ssid|private/i);
+    expect(JSON.stringify(result)).not.toMatch(/secret-network|secret-password|wifipass|private/i);
     expect(connector.device().settingsForTest()).toEqual(settings);
     expect(connector.device().flashCount()).toBe(1);
   });
@@ -69,7 +58,7 @@ describe("Bitaxe onboarding admission", () => {
     ["board", { compatibleBoards: [{ model: "bitaxe-ultra", revisions: ["999"] }] }],
     ["Gamma 601 board", { compatibleBoards: [{ model: "bitaxe-gamma", revisions: ["601"] }] }],
     ["Ultra 205 board", { compatibleBoards: [{ model: "bitaxe-ultra", revisions: ["205"] }] }],
-    ["partition", { partition: { scheme: "esp32-ota-ab", minimumAppSlotBytes: 9_999_999, rollbackRequired: true } }],
+    ["partition", { partition: { scheme: "esp32-factory-ota-ab", minimumAppSlotBytes: 9_999_999, rollbackRequired: true } }],
     ["schema", { settingsSchema: { minimumReadable: 5, maximumReadable: 6, target: 6 } }],
   ] as const)("rejects incompatible %s before flashing", async (_name, overrides) => {
     // Arrange
@@ -309,12 +298,10 @@ describe("Bitaxe migration backup and recovery", () => {
 
     // Assert
     expect(downloads).toHaveLength(1);
-    expect(downloads[0]?.byteLength).toBeGreaterThan(settings.byteLength);
     expect(new TextDecoder().decode(downloads[0])).not.toContain("secret-password");
     expect(
       await decryptMigrationBackup(downloads[0] ?? new Uint8Array(), "correct horse battery"),
-    ).toEqual(settings);
-    expect(connector.device().maximumPlaintextBytesObserved()).toBe(settings.byteLength);
+    ).toEqual(simulatedPartition(settings));
   });
 
   test("wipes the encrypted transfer buffer when local download fails", async () => {
@@ -359,7 +346,9 @@ describe("Bitaxe migration backup and recovery", () => {
 
   test("oversized settings stop before backup or flashing", async () => {
     // Arrange
-    const oversized = new Uint8Array(65_537);
+    const oversized = [
+      { key: "swarmconfig", type: "blob" as const, value: Buffer.alloc(60_000).toString("base64url") },
+    ];
     const connector = new SimulatedBitaxeConnector(snapshot(), oversized);
     const signed = await firmwarePackage();
     const onboarding = createBitaxeOnboarding({
@@ -448,8 +437,8 @@ describe("Bitaxe migration backup and recovery", () => {
       requestDevice: async () => new Proxy(device, {
         get(target, property, receiver) {
           if (property === "verifyRedactedSettings") {
-            return async () => ({
-              ...(await target.verifyRedactedSettings()),
+            return async (nonce: Uint8Array) => ({
+              ...(await target.verifyRedactedSettings(nonce)),
               wifiPassword: "must-not-leak",
             });
           }
@@ -469,89 +458,3 @@ describe("Bitaxe migration backup and recovery", () => {
     expect(connector.device().rollbackCount()).toBe(1);
   });
 });
-
-function snapshot(
-  overrides: Partial<SimulatedBitaxeSnapshot> & { referenceFirmware?: boolean } = {},
-): SimulatedBitaxeSnapshot {
-  const { referenceFirmware = false, ...snapshotOverrides } = overrides;
-  return {
-    capabilities: {
-      protocolVersion: "bwg-worker-controller/0.4",
-      board: { model: "bitaxe-gamma", revision: "204", usbTransport: "web_serial" },
-      firmware: { name: "stock-firmware", version: "1.0.0" },
-      compatibility: {
-        referenceFirmware,
-        workLease: "supported",
-        miningBaselineRestoration: "supported",
-        settingsPreservation: referenceFirmware ? "compatible" : "upgrade_required",
-      },
-    },
-    settingsSchemaVersion: 2,
-    settingsReadable: true,
-    partition: {
-      scheme: "esp32-ota-ab",
-      appSlotBytes: 2_000_000,
-      rollbackAvailable: true,
-      activeSlot: "ota_0",
-      bootable: true,
-    },
-    ...snapshotOverrides,
-  };
-}
-
-async function firmwarePackage(
-  overrides: Partial<FirmwareManifest> = {},
-): Promise<{ package: FirmwarePackage; publicKey: UpdateAuthorityJwk }> {
-  const keys = await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]);
-  const publicKey = {
-    ...(await crypto.subtle.exportKey("jwk", keys.publicKey)),
-    kid: "update-fixture-a",
-    alg: "Ed25519",
-    use: "sig",
-    key_ops: ["verify"],
-  } as UpdateAuthorityJwk;
-  const manifest: FirmwareManifest = {
-    profile: "bwg-reference-firmware/0.1",
-    firmwareVersion: "2.0.0",
-    imageSha256: await sha256(image),
-    compatibleBoards: [{ model: "bitaxe-gamma", revisions: ["204"] }],
-    partition: {
-      scheme: "esp32-ota-ab",
-      minimumAppSlotBytes: 1_500_000,
-      rollbackRequired: true,
-    },
-    settingsSchema: { minimumReadable: 1, maximumReadable: 3, target: 3 },
-    sourceUrl: "https://github.com/bright-builds-llc/bitaxe-esp-miner",
-    ...overrides,
-  };
-  const header = encode(JSON.stringify({ alg: "Ed25519", typ: "bwg-firmware-manifest+jws", kid: publicKey.kid }));
-  const payload = encode(canonicalJson(manifest));
-  const signingInput = `${header}.${payload}`;
-  const signature = await crypto.subtle.sign(
-    "Ed25519",
-    keys.privateKey,
-    new TextEncoder().encode(signingInput).buffer,
-  );
-  return {
-    package: {
-      manifest,
-      image: image.slice(),
-      signature: `${signingInput}.${encodeBytes(new Uint8Array(signature))}`,
-    },
-    publicKey,
-  };
-}
-
-async function sha256(value: Uint8Array): Promise<string> {
-  return encodeBytes(
-    new Uint8Array(await crypto.subtle.digest("SHA-256", value.slice().buffer)),
-  );
-}
-
-function encode(value: string): string {
-  return encodeBytes(new TextEncoder().encode(value));
-}
-
-function encodeBytes(value: Uint8Array): string {
-  return Buffer.from(value).toString("base64url");
-}

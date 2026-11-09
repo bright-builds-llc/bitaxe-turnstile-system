@@ -2,11 +2,12 @@ import { createBitaxeOnboarding } from "../../dist/bitaxe-onboarding/bitaxe-onbo
 import { SimulatedBitaxeConnector } from "../../dist/bitaxe-onboarding-simulator/bitaxe-onboarding-simulator-entry.js";
 
 export async function bitaxeOnboardingFixture(manifestOverrides = {}) {
-  const settings = new TextEncoder().encode(JSON.stringify({
-    wifi_ssid: "secret-network",
-    wifi_password: "secret-password",
-    pool: "pool.example",
-  }));
+  const settings = [
+    { key: "wifissid", type: "str", value: "secret-network" },
+    { key: "wifipass", type: "str", value: "secret-password" },
+    { key: "pool_1", type: "str", value: '{"url":"pool.example","port":3333}' },
+    { key: "prim_idx", type: "u16", value: "0" },
+  ];
   const connector = new SimulatedBitaxeConnector(bitaxeSnapshot(), settings);
   const signed = await signedFirmwarePackage(manifestOverrides);
   return {
@@ -33,13 +34,13 @@ function bitaxeSnapshot() {
         settingsPreservation: "upgrade_required",
       },
     },
-    settingsSchemaVersion: 2,
+    settingsSchemaVersion: 1,
     settingsReadable: true,
     partition: {
-      scheme: "esp32-ota-ab",
+      scheme: "esp32-factory-ota-ab",
       appSlotBytes: 2_000_000,
       rollbackAvailable: true,
-      activeSlot: "ota_0",
+      activeSlot: "factory",
       bootable: true,
     },
   };
@@ -56,17 +57,17 @@ async function signedFirmwarePackage(overrides = {}) {
     key_ops: ["verify"],
   };
   const manifest = {
-    profile: "bwg-reference-firmware/0.1",
+    profile: "bwg-reference-firmware/0.2",
     firmwareVersion: "2.0.0",
     imageSha256: await digestBase64Url(image),
     compatibleBoards: [{ model: "bitaxe-gamma", revisions: ["204"] }],
     partition: {
-      scheme: "esp32-ota-ab",
+      scheme: "esp32-factory-ota-ab",
       minimumAppSlotBytes: 1_500_000,
       rollbackRequired: true,
     },
-    settingsSchema: { minimumReadable: 1, maximumReadable: 3, target: 3 },
-    sourceUrl: "https://github.com/bright-builds-llc/bitaxe-esp-miner",
+    settingsSchema: { minimumReadable: 1, maximumReadable: 1, target: 1 },
+    sourceUrl: "https://github.com/bright-builds-llc/bitaxe-esp-miner-c",
     ...overrides,
   };
   const header = encodeBase64Url(new TextEncoder().encode(JSON.stringify({

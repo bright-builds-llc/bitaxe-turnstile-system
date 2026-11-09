@@ -1,7 +1,7 @@
 # C-image end-to-end Gate map
 
 [Spec](spec.md). The first Gate on the C Reference Firmware image through the
-production browser path. Tickets 01, 02, 06, 10, 11, 12, 13, 17, 18 and 20 are resolved; the rest is still planning.
+production browser path. Tickets 01, 02, 06, 10, 11, 12, 13, 14, 17, 18 and 20 are resolved; the rest is still planning.
 The first Gate (06, 07) and onboarding (14, 03, 04, 05, 15) run apart, and both
 feed 09.
 
@@ -9,7 +9,7 @@ feed 09.
 | --- | --- | --- | --- |
 | [01](issues/01-authority-worker-lease-grants.md) Authority issues signed Worker Lease grants and renewals | task | resolved | None |
 | [02](issues/02-c-image-onboarding-contract.md) Agree the C image's onboarding contract | grilling | resolved | None |
-| [14](issues/14-gate-onboarding-contract-for-the-c-image.md) Gate onboarding contract matches the C image | task | ready-for-agent | 02 |
+| [14](issues/14-gate-onboarding-contract-for-the-c-image.md) Gate onboarding contract matches the C image | task | resolved | 02 |
 | [03](issues/03-c-image-onboarding-commands.md) C image reports onboarding facts and guards its own boot | task | ready-for-agent | 02, 14 |
 | [04](issues/04-web-serial-onboarding-device.md) Browser onboarding device over the ROM bootloader | task | ready-for-agent | 03 |
 | [05](issues/05-signed-c-image-package.md) Owner signs the C image's firmware package | task | ready-for-human | 03, 04 |
@@ -88,3 +88,10 @@ feed 09.
   deployed page, Pause and expiry on Ticket 20's fix. The negatives, adapter
   replay and `discardedReplies` need tooling the page lacks, so they move to
   Ticket 21.
+- Ticket 14, ADR-0111 (amends ADR-0046): the manifest profile is
+  `bwg-reference-firmware/0.2` with scheme `esp32-factory-ota-ab`, and `factory` may be
+  active. Schema `1` names exact `main` keys per category, and every category digest is
+  an HMAC under a per-onboarding nonce (`bwg-settings-hmac/1`), with shared vectors in
+  `conformance/bwg-bitaxe-onboarding-0.2/`. The raw `nvs` copy lives in browser memory
+  until `complete()` or any failure; then a rollback needs the optional download. Ticket 04
+  must say how stock, which has no Worker Serial, is inspected and checked after rollback.

@@ -20,6 +20,7 @@
     "README.md",
     "conformance/bwg-worker-controller-0.4",
     "conformance/bwg-worker-serial-0.2",
+    "conformance/bwg-bitaxe-onboarding-0.2",
     "conformance/bwg-worker-possession-0.2",
     "conformance/bwg-worker-deployment-trust-0.2",
     "docs/protocol/bwg-worker-serial-0.2.md"
@@ -74,6 +75,9 @@
     "./bitaxe-onboarding-simulator": {
       "types": "./dist/bitaxe-onboarding-simulator/bitaxe-onboarding-simulator-entry.d.ts",
       "import": "./dist/bitaxe-onboarding-simulator/bitaxe-onboarding-simulator-entry.js"
+    },
+    "./bitaxe-onboarding-conformance/settings-hmac-vectors": {
+      "default": "./conformance/bwg-bitaxe-onboarding-0.2/settings-hmac-vectors.json"
     },
     "./worker-serial-conformance/fixtures": {
       "default": "./conformance/bwg-worker-serial-0.2/fixtures.json"

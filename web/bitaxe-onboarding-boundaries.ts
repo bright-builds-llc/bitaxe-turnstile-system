@@ -1,8 +1,12 @@
 import { parseWorkerControllerCapabilities } from "./worker-controller-semantics";
 import type {
   BitaxeDeviceSnapshot,
+  PartitionSlot,
   RedactedSettingsVerification,
 } from "./bitaxe-onboarding";
+import { SETTINGS_CATEGORIES, type SettingsCategory } from "./bitaxe-settings-hmac";
+
+const PARTITION_SLOTS: readonly string[] = ["factory", "ota_0", "ota_1"];
 
 /** Reconstructs the exact non-secret USB snapshot admitted by onboarding. */
 export function parseDeviceSnapshot(input: unknown): BitaxeDeviceSnapshot {
@@ -21,11 +25,11 @@ export function parseDeviceSnapshot(input: unknown): BitaxeDeviceSnapshot {
     !Number.isSafeInteger(value.settingsSchemaVersion) ||
     Number(value.settingsSchemaVersion) <= 0 ||
     typeof value.settingsReadable !== "boolean" ||
-    partition.scheme !== "esp32-ota-ab" ||
+    partition.scheme !== "esp32-factory-ota-ab" ||
     !Number.isSafeInteger(partition.appSlotBytes) ||
     Number(partition.appSlotBytes) <= 0 ||
     typeof partition.rollbackAvailable !== "boolean" ||
-    !["ota_0", "ota_1"].includes(String(partition.activeSlot)) ||
+    !PARTITION_SLOTS.includes(String(partition.activeSlot)) ||
     typeof partition.bootable !== "boolean"
   ) {
     throw new Error("Bitaxe onboarding snapshot is invalid");
@@ -35,17 +39,23 @@ export function parseDeviceSnapshot(input: unknown): BitaxeDeviceSnapshot {
     settingsSchemaVersion: Number(value.settingsSchemaVersion),
     settingsReadable: value.settingsReadable,
     partition: {
-      scheme: "esp32-ota-ab",
+      scheme: "esp32-factory-ota-ab",
       appSlotBytes: Number(partition.appSlotBytes),
       rollbackAvailable: partition.rollbackAvailable,
-      activeSlot: partition.activeSlot as "ota_0" | "ota_1",
+      activeSlot: partition.activeSlot as PartitionSlot,
       bootable: partition.bootable,
     },
   };
 }
 
-/** Reconstructs the exact redacted proof returned after reboot. */
-export function parseVerification(input: unknown): RedactedSettingsVerification {
+/**
+ * Reconstructs the exact redacted proof returned after reboot, refusing plain SHA-256
+ * digests and any reply that does not echo `expectedNonce`.
+ */
+export function parseVerification(
+  input: unknown,
+  expectedNonce: string,
+): RedactedSettingsVerification {
   const value = exactRecord(
     input,
     [
@@ -54,7 +64,7 @@ export function parseVerification(input: unknown): RedactedSettingsVerification 
       "settingsSchemaVersion",
       "activeSlot",
       "bootable",
-      "rollbackState",
+      "nonce",
       "categories",
     ],
     "redacted settings verification is invalid",
@@ -65,19 +75,19 @@ export function parseVerification(input: unknown): RedactedSettingsVerification 
   const categories = value.categories.map((item) => {
     const category = exactRecord(
       item,
-      ["category", "digestSha256"],
+      ["category", "hmacSha256"],
       "redacted settings verification is invalid",
     );
     if (
-      !["all", "network", "pool"].includes(String(category.category)) ||
-      typeof category.digestSha256 !== "string" ||
-      !/^[A-Za-z0-9_-]{43}$/u.test(category.digestSha256)
+      !(SETTINGS_CATEGORIES as readonly string[]).includes(String(category.category)) ||
+      typeof category.hmacSha256 !== "string" ||
+      !/^[A-Za-z0-9_-]{43}$/u.test(category.hmacSha256)
     ) {
       throw new Error("redacted settings verification is invalid");
     }
     return {
-      category: category.category as "all" | "network" | "pool",
-      digestSha256: category.digestSha256,
+      category: category.category as SettingsCategory,
+      hmacSha256: category.hmacSha256,
     };
   });
   if (
@@ -86,20 +96,24 @@ export function parseVerification(input: unknown): RedactedSettingsVerification 
     !/^\d+\.\d+\.\d+$/u.test(value.runningFirmwareVersion) ||
     !Number.isSafeInteger(value.settingsSchemaVersion) ||
     Number(value.settingsSchemaVersion) <= 0 ||
-    !["ota_0", "ota_1"].includes(String(value.activeSlot)) ||
+    !PARTITION_SLOTS.includes(String(value.activeSlot)) ||
     typeof value.bootable !== "boolean" ||
-    !["available", "confirmed"].includes(String(value.rollbackState)) ||
-    categories.map((item) => item.category).join(",") !== "all,network,pool"
+    typeof value.nonce !== "string" ||
+    !/^[A-Za-z0-9_-]{43}$/u.test(value.nonce) ||
+    categories.map((item) => item.category).join(",") !== SETTINGS_CATEGORIES.join(",")
   ) {
     throw new Error("redacted settings verification is invalid");
+  }
+  if (value.nonce !== expectedNonce) {
+    throw new Error("redacted settings verification is under another nonce");
   }
   return {
     preservationConfirmed: value.preservationConfirmed,
     runningFirmwareVersion: value.runningFirmwareVersion,
     settingsSchemaVersion: Number(value.settingsSchemaVersion),
-    activeSlot: value.activeSlot as "ota_0" | "ota_1",
+    activeSlot: value.activeSlot as PartitionSlot,
     bootable: value.bootable,
-    rollbackState: value.rollbackState as "available" | "confirmed",
+    nonce: value.nonce,
     categories,
   };
 }
