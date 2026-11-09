@@ -156,7 +156,7 @@ fi
 authority_pid=""
 reference_pid=""
 front_pid=""
-serve_pid=""
+serve_configured=false
 postgres_container=""
 sequence_seeded=false
 
@@ -207,7 +207,9 @@ cleanup() {
   command_exit=$?
   trap - EXIT INT TERM
   set +e
-  stop_process "$serve_pid"
+  if [[ "$serve_configured" == true ]]; then
+    tailscale serve --https=443 off >>"$run_dir/tailscale-serve.log" 2>&1 || command_exit=1
+  fi
   stop_process "$front_pid"
   stop_process "$reference_pid"
   stop_process "$authority_pid"
@@ -330,8 +332,11 @@ front_pid=$!
 wait_for_port 127.0.0.1 "$front_port"
 
 if [[ -z "$loopback_origin" ]]; then
-  tailscale serve --https=443 "http://127.0.0.1:$front_port" > >(redact >"$run_dir/tailscale-serve.log") 2>&1 &
-  serve_pid=$!
+  # The serve is set in tailscaled and removed on exit: the `tailscale` command
+  # may be a wrapper script, and killing it would leave the real CLI serving.
+  serve_configured=true
+  tailscale serve --bg --https=443 "http://127.0.0.1:$front_port" > >(redact >"$run_dir/tailscale-serve.log") 2>&1 ||
+    refuse "tailscale serve failed; see $run_dir/tailscale-serve.log"
   for _attempt in $(seq 1 60); do
     if curl --fail --silent --output /dev/null "$origin/reference/account-creation.html"; then
       break
@@ -348,6 +353,6 @@ printf 'Gate Pass kid %s; Work Lease kid %s, sequence seeded at %s (stored %s + 
 printf 'Open %s/reference/account-creation.html; logs are in %s\n' "$origin" "$run_dir"
 printf 'gate_deployment=ready front_port=%s postgres_container=%s\n' "$front_port" "$postgres_container"
 printf 'Holding the Gate deployment; press Ctrl-C to stop.\n'
-wait -n "$authority_pid" "$reference_pid" "$front_pid" ${serve_pid:+"$serve_pid"}
+wait -n "$authority_pid" "$reference_pid" "$front_pid"
 printf 'A Gate process exited; stopping the deployment\n' >&2
 exit 1
