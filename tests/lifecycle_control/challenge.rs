@@ -304,7 +304,7 @@ async fn connected_lifecycle_sse_emits_expiry_at_the_absolute_deadline()
             WorkerClock::new("boot_lifecycle_sse_expiry_01", 1_000)?,
         )
         .await?;
-    let deadline = current_unix_seconds()? + 1;
+    let deadline = current_unix_seconds()? + SSE_EXPIRY_LEAD_SECONDS;
     let pool = sqlx::PgPool::connect(fixture._database.database_url()).await?;
     sqlx::query(
         "UPDATE gate_authority.work_challenges
@@ -329,12 +329,27 @@ async fn connected_lifecycle_sse_emits_expiry_at_the_absolute_deadline()
     ))
     .await?;
     read_sse_until(&mut second_stream, "\"state\":\"active\"").await?;
+    if current_unix_seconds()? >= deadline {
+        return Err("both streams must subscribe before the deadline; raise the lead".into());
+    }
 
     // Act
-    let expired = read_sse_until(&mut stream, "\"state\":\"expired\"").await?;
-    let second_expired = read_sse_until(&mut second_stream, "\"state\":\"expired\"").await?;
+    let expired = read_sse_until_within(
+        &mut stream,
+        "\"state\":\"expired\"",
+        SSE_EXPIRY_READ_TIMEOUT,
+    )
+    .await?;
+    let expired_observed_at = current_unix_seconds()?;
+    let second_expired = read_sse_until_within(
+        &mut second_stream,
+        "\"state\":\"expired\"",
+        SSE_EXPIRY_READ_TIMEOUT,
+    )
+    .await?;
 
     // Assert
+    assert!(expired_observed_at >= deadline);
     assert!(active.contains("event: challenge_lifecycle"));
     assert!(expired.contains("event: challenge_lifecycle"));
     assert!(expired.contains("\"authorization_eligible\":false"));
@@ -463,11 +478,27 @@ async fn challenge_expiry_ends_leases_and_makes_progress_ineligible() -> Result<
     Ok(())
 }
 
+/// Wall-clock seconds between arranging the deadline and reaching it: enough for a loaded
+/// machine to open both SSE streams while the challenge is still `active`.
+const SSE_EXPIRY_LEAD_SECONDS: u64 = 3;
+/// The expiry task wakes on whole seconds, up to one second after the deadline, then reads
+/// the database; the read must outlast the remaining lead plus that wake-up slack.
+const SSE_EXPIRY_READ_TIMEOUT: Duration = Duration::from_secs(SSE_EXPIRY_LEAD_SECONDS + 3);
+const SSE_READ_TIMEOUT: Duration = Duration::from_secs(2);
+
 async fn read_sse_until(
     response: &mut reqwest::Response,
     needle: &str,
 ) -> Result<String, Box<dyn Error>> {
-    tokio::time::timeout(Duration::from_secs(2), async {
+    read_sse_until_within(response, needle, SSE_READ_TIMEOUT).await
+}
+
+async fn read_sse_until_within(
+    response: &mut reqwest::Response,
+    needle: &str,
+    timeout: Duration,
+) -> Result<String, Box<dyn Error>> {
+    tokio::time::timeout(timeout, async {
         let mut received = String::new();
         loop {
             let chunk = response

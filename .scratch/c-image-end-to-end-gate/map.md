@@ -1,7 +1,7 @@
 # C-image end-to-end Gate map
 
 [Spec](spec.md). The first Gate on the C Reference Firmware image through the
-production browser path. Tickets 01, 02, 06, 10, 11, 12, 17, 18 and 20 are resolved; the rest is still planning.
+production browser path. Tickets 01, 02, 06, 10, 11, 12, 13, 17, 18 and 20 are resolved; the rest is still planning.
 The first Gate (06, 07) and onboarding (14, 03, 04, 05, 15) run apart, and both
 feed 09.
 
@@ -21,7 +21,7 @@ feed 09.
 | [08](issues/08-interruptions-and-negatives.md) Interruptions and negatives on the C image | task | ready-for-human | 07, 17 |
 | [09](issues/09-core-mvp-evidence-map.md) Map C-image evidence onto the Core MVP | task | ready-for-agent | 08, 15 |
 | [10](issues/10-pool-adapter-claimant-intake-and-renewal.md) Pool Adapter takes claimant Pool Selection and extends Stratum sessions on Renew | task | resolved | 01 |
-| [13](issues/13-flaky-sse-expiry-test.md) Lifecycle SSE expiry test flakes under load | bug | ready-for-agent | None |
+| [13](issues/13-flaky-sse-expiry-test.md) Lifecycle SSE expiry test flakes under load | bug | resolved | None |
 | [16](issues/16-pool-adapter-grpc-process.md) Pool Adapter runs as its own process over gRPC | task | ready-for-agent | None |
 | [17](issues/17-sdk-http-transport-and-renew.md) SDK claimant HTTP transport and component-owned Renew | task | resolved | 06 |
 | [18](issues/18-postgres-test-readiness.md) PostgreSQL test container is used before it accepts queries | bug | resolved | None |
@@ -75,6 +75,10 @@ feed 09.
 - Ticket 07 (2026-11-08): the client sends one restoration for all terminal
   events and no other controller command once it has begun, so a slow board
   restore no longer ends the serial session before redemption.
+- Ticket 13 (2026-11-09): the lifecycle SSE expiry test gives itself a 3 s lead
+  before the deadline and waits 6 s for `expired`. It failed 7 of 100 runs before
+  and 0 of 100 after. Production code is unchanged, but a subscribe-after-snapshot
+  window is noted on the ticket.
 - Ticket 20 (2026-11-09): Start, Pause and Resume each hold a transitional
   control state (`starting`, `pausing`, `resuming`) until the board answers, and
   no other command or Renew is sent meanwhile. A failed control command leaves
