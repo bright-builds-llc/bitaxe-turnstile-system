@@ -19,8 +19,8 @@ use crate::{
 
 mod http;
 use http::ApiError;
-pub(crate) use http::CreateChallengeRequest;
 pub use http::router;
+pub(crate) use http::{ChallengeOverridesRequest, CreateChallengeRequest};
 
 use crate::authority_application::WorkSessionOperation;
 pub use crate::authority_application::{

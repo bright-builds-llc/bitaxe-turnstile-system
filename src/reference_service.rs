@@ -10,7 +10,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::{
-    authority::{CLIENT_ID_HEADER, CreateChallengeRequest},
+    authority::{CLIENT_ID_HEADER, ChallengeOverridesRequest, CreateChallengeRequest},
     challenge::{ActionPolicy, WorkChallengeDescriptor},
     crypto_profile::{AuthorityJwkWire, AuthorityKeySet},
     redemption::{RedemptionRecord, RedemptionRequest},
@@ -75,6 +75,7 @@ pub struct Config {
     redemption_url: AuthorityEndpointUrl,
     maybe_account_creation_executor: Option<AccountCreationExecutor>,
     outcome_lookup_window_seconds: u64,
+    maybe_expected_hashes_override: Option<u64>,
 }
 
 impl Config {
@@ -101,6 +102,7 @@ impl Config {
             trusted_authority,
             maybe_account_creation_executor: None,
             outcome_lookup_window_seconds: 24 * 60 * 60,
+            maybe_expected_hashes_override: None,
         })
     }
 
@@ -171,6 +173,28 @@ impl Config {
 
     pub(crate) fn outcome_lookup_window_seconds(&self) -> u64 {
         self.outcome_lookup_window_seconds
+    }
+
+    /// Asks the Authority for an exact Work Requirement within the Standard policy's override bounds.
+    pub fn with_expected_hashes_override(
+        mut self,
+        expected_hashes: u64,
+    ) -> Result<Self, ReferenceConfigError> {
+        let within_bounds = ActionPolicy::AccountCreationStandardV1
+            .maybe_expected_hash_override_bounds()
+            .is_some_and(|(minimum, maximum)| (minimum..=maximum).contains(&expected_hashes));
+        if !within_bounds {
+            return Err(ReferenceConfigError::ExpectedHashesOutsideBounds);
+        }
+        self.maybe_expected_hashes_override = Some(expected_hashes);
+        Ok(self)
+    }
+
+    pub(crate) fn maybe_challenge_overrides(&self) -> Option<ChallengeOverridesRequest> {
+        self.maybe_expected_hashes_override
+            .map(|expected_hashes| ChallengeOverridesRequest {
+                expected_hashes: expected_hashes.to_string(),
+            })
     }
 }
 
@@ -253,7 +277,7 @@ async fn create_account_challenge(
         action_policy: ActionPolicy::ACCOUNT_CREATION_STANDARD_V1.to_owned(),
         action_reference,
         claimant_key: request.claimant_key,
-        maybe_overrides: None,
+        maybe_overrides: state.application.config.maybe_challenge_overrides(),
     };
     let response = state
         .http_client
@@ -365,6 +389,8 @@ pub enum ReferenceConfigError {
     InvalidOutcomeLookupWindow,
     #[error("execution error class must be non-empty")]
     InvalidExecutionErrorClass,
+    #[error("expected hashes must be within the Standard policy's override bounds")]
+    ExpectedHashesOutsideBounds,
 }
 
 #[derive(Clone)]

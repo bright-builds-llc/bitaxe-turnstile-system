@@ -34,6 +34,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     if let Some(window) = maybe_window {
         config = config.with_outcome_lookup_window_seconds(window.parse()?)?;
     }
+    if let Ok(expected_hashes) = env::var("BWG_EXPECTED_HASHES_OVERRIDE") {
+        config = config.with_expected_hashes_override(expected_hashes.parse()?)?;
+    }
     let application = reference_service::ReferenceApplication::connect_postgres(
         config,
         &env::var("BWG_RELYING_SERVICE_DATABASE_URL")?,

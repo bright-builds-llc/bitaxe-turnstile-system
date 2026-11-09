@@ -148,6 +148,65 @@ fn outcome_lookup_window_is_configurable_and_positive() -> Result<(), Box<dyn st
     Ok(())
 }
 
+#[test]
+fn expected_hashes_override_is_sent_within_standard_bounds()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Arrange
+    let config = reference_config()?;
+
+    // Act
+    let configured = config.with_expected_hashes_override(1_u64 << 45)?;
+
+    // Assert
+    let maybe_overrides = configured.maybe_challenge_overrides();
+    assert_eq!(
+        maybe_overrides.map(|overrides| overrides.expected_hashes),
+        Some((1_u64 << 45).to_string())
+    );
+
+    Ok(())
+}
+
+#[test]
+fn expected_hashes_override_outside_standard_bounds_is_refused()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Arrange
+    let config = reference_config()?;
+
+    // Act
+    let result = config.with_expected_hashes_override(1_u64 << 46);
+
+    // Assert
+    assert!(matches!(
+        result,
+        Err(ReferenceConfigError::ExpectedHashesOutsideBounds)
+    ));
+
+    Ok(())
+}
+
+#[test]
+fn challenge_has_no_override_by_default() -> Result<(), Box<dyn std::error::Error>> {
+    // Arrange and Act
+    let config = reference_config()?;
+
+    // Assert
+    assert!(config.maybe_challenge_overrides().is_none());
+
+    Ok(())
+}
+
+fn reference_config() -> Result<Config, Box<dyn std::error::Error>> {
+    Ok(Config::new(
+        "https://authority.example",
+        "reference-service",
+        VALID_SECRET,
+        "https://relying.example",
+        "http://127.0.0.1:1/account-creation/redeem",
+        trusted_authority()?,
+    )?)
+}
+
 fn trusted_authority() -> Result<TrustedAuthority, Box<dyn std::error::Error>> {
     Ok(TrustedAuthority::new(
         "https://authority.example",

@@ -9,7 +9,7 @@
 # Usage: scripts/launch-gate-deployment.sh --keys-dir DIR --lease-authority-dir DIR
 #          --owner-trust FILE --image-dir DIR --run-dir DIR
 #          [--upstream HOST:PORT] [--proxy-port PORT] [--sequence-margin N]
-#          [--proxy-address ADDRESS] [--loopback-origin URL]
+#          [--proxy-address ADDRESS] [--loopback-origin URL] [--expected-hashes N]
 #   --keys-dir             output of scripts/gate-deployment-keys.ts
 #   --lease-authority-dir  the Work Lease Authority's lease-private.json and lease-sequence.json
 #   --owner-trust          the public Worker deployment trust the board's image embeds
@@ -21,6 +21,8 @@
 #   --proxy-address        the LAN address to bind instead of the default interface's
 #   --loopback-origin      regtest proofs only: skip Tailscale; the caller terminates
 #                          TLS for this origin (needs --proxy-address)
+#   --expected-hashes      each challenge's Work Requirement, within the Standard
+#                          policy's override bounds (default: the policy's own)
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "$0")/.." && pwd -P)
@@ -34,11 +36,12 @@ proxy_port=3334
 sequence_margin=1000
 loopback_origin=""
 proxy_address=""
+expected_hashes=""
 ACTION_POLICY="account-creation.standard.v1"
 POSTGRES_IMAGE="postgres:16-alpine"
 
 usage() {
-  sed -n '9,23p' "$0" >&2
+  sed -n '9,25p' "$0" >&2
   exit 2
 }
 
@@ -59,6 +62,7 @@ while [[ $# -gt 0 ]]; do
     --sequence-margin) sequence_margin=${2:-}; shift 2 ;;
     --loopback-origin) loopback_origin=${2:-}; shift 2 ;;
     --proxy-address) proxy_address=${2:-}; shift 2 ;;
+    --expected-hashes) expected_hashes=${2:-}; shift 2 ;;
     *) usage ;;
   esac
 done
@@ -71,6 +75,7 @@ fi
 [[ "$proxy_port" =~ ^[0-9]{1,5}$ ]] || refuse '--proxy-port must be a port number'
 [[ "$sequence_margin" =~ ^[0-9]{1,9}$ ]] || refuse '--sequence-margin must be a whole number'
 [[ "$upstream" =~ ^127\.0\.0\.1:[0-9]{1,5}$ ]] || refuse '--upstream must be 127.0.0.1:PORT'
+[[ -z "$expected_hashes" || "$expected_hashes" =~ ^[0-9]{1,20}$ ]] || refuse '--expected-hashes must be a whole number'
 
 outside_repo() {
   resolved=$(cd "$1" && pwd -P)
@@ -319,6 +324,7 @@ sequence_seeded=true
   export BWG_TRUSTED_AUTHORITY_ISSUER="$origin" BWG_TRUSTED_AUTHORITY_JWKS_JSON="$public_keys"
   export BWG_RELYING_SERVICE_AUDIENCE="$origin" BWG_REDEMPTION_URL="$origin/account-creation/redeem"
   export BWG_RELYING_SERVICE_DATABASE_URL="$database_base/relying_service" RUST_LOG=info
+  if [[ -n "$expected_hashes" ]]; then export BWG_EXPECTED_HASHES_OVERRIDE="$expected_hashes"; fi
   exec target/debug/reference-service
 ) > >(redact >"$run_dir/reference-service.log") 2>&1 &
 reference_pid=$!
