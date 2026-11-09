@@ -77,7 +77,8 @@ fn production_reference_page_does_not_import_the_rehearsal_device() {
     let production_page = [
         "web/reference-account-page.ts",
         "web/reference-account-page-entry.ts",
-        "web/reference-claimant-transport.ts",
+        "web/claimant-http-transport.ts",
+        "web/worker-lease-renewal.ts",
     ];
 
     // Act

@@ -46,15 +46,19 @@ export async function renewWorkerController(
   renewAuthorityLease: () => Promise<WorkerLeaseRenewal>,
   expectedChallengeId: string,
   transport: HeadlessTransport,
+  controllable: () => boolean,
 ): Promise<void> {
   try {
     const renewal = await renewAuthorityLease();
+    if (!controllable()) throw new Error("lifecycle transition is forbidden");
     validatedMiningStatus(
       await controller.renewLease(renewal),
       renewal.leaseId,
       expectedChallengeId,
     );
   } catch (error) {
+    // Once terminal restoration begins it owns the Controller; a rollback would be a second command.
+    if (!controllable()) throw error;
     await rollbackControllerOperation(error, controller, transport);
   }
 }

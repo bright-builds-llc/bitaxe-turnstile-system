@@ -63,7 +63,16 @@ context before renewal, then passes only that digest to the transport's authoriz
 stable `WorkerController` interface does not expose the context or change shape.
 A transport reaches the Authority through the claimant Work Session routes in
 [`bwg-0.1-lifecycle.md`](./bwg-0.1-lifecycle.md): Start and Resume return the grant to forward, and
-Renew returns the renewal. The Rust Authority signer and this package's signer produce identical
+Renew returns the renewal. `createClaimantHttpTransport` is that transport over HTTP: it signs each
+Work Session and Pool Selection request with a Work Session proof from the prepared Claimant key,
+reads `verified_progress` and `challenge_lifecycle` from the challenge's event stream, looks up the
+issued Gate Pass with a Claimant Issuance Proof, and signs the DPoP proof that presents the pass to
+the Relying Service. `renewWorkerLeaseWhileRunning` renews on the Authority's 20-second
+healthy-continuity cadence while work runs, on the page clock so a hidden tab keeps the cadence
+(ADR-0110). It skips while paused and stops on any refusal or as soon as the client emits
+`terminal_reported`, which the client sends once when the Authority reports a terminal state, before
+a slow Worker restoration settles and the terminal lifecycle event follows. A Renew already in flight
+when terminal restoration begins sends nothing further to the Controller. The Rust Authority signer and this package's signer produce identical
 authorizations, which `conformance/bwg-worker-deployment-trust-0.2/authority-signer-vectors.json`
 proves under a public RFC 8032 test key.
 The complete wire and simulator profile is documented in

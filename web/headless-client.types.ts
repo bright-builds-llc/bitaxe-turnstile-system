@@ -258,7 +258,15 @@ export type HeadlessEvent =
       workRequirement: string;
       satisfied: boolean;
     }
-  | ({ type: "activity_estimate" } & ActivityEstimateInput);
+  | ({ type: "activity_estimate" } & ActivityEstimateInput)
+  | {
+      /**
+       * The Authority reported a terminal state. Emitted once, before any Worker restoration settles
+       * and the terminal lifecycle event follows; renewals have ended.
+       */
+      type: "terminal_reported";
+      challengeState: "satisfied" | "pass_issued" | "cancelled" | "expired";
+    };
 
 export type HeadlessClient = {
   claimantPublicJwk(): JsonWebKey;

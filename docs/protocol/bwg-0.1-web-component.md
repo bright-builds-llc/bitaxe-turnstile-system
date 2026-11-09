@@ -39,6 +39,10 @@ session loader, Relying-Service-configured alternatives, and immutable build pro
 </script>
 ```
 
+The gate renews the session's Worker Lease with the headless `renewWorkerLeaseWhileRunning` while
+work runs and stops when the session ends, is replaced, or reaches a terminal state. An optional
+`maybeOnRenewal` callback hears each Renew and the refusal that ends them.
+
 Loading may create the public Work Challenge, but it never starts work. The first primary action is
 explicitly “Consent and start work.” Pause and resume retain the headless lifecycle; Cancel opens a
 focus-trapped terminal confirmation. Verified Progress uses a native closed-range `progress`

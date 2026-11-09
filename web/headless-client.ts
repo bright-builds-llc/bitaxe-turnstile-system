@@ -7,6 +7,19 @@ export {
 export { requestTrustedConsentWithPopup } from "./trusted-consent-popup";
 export { verifyTrustedConsentReceipt } from "./trusted-consent";
 export { verifyPoolOfferSet } from "./headless-pool-offer";
+export {
+  CLAIMANT_PROOF_HEADER,
+  createClaimantHttpTransport,
+  type ClaimantHttpTransport,
+  type ClaimantHttpTransportInput,
+  type GatePassRequest,
+} from "./claimant-http-transport";
+export {
+  renewWorkerLeaseWhileRunning,
+  WORKER_LEASE_RENEWAL_MILLISECONDS,
+  type RenewalOutcome,
+  type WorkerLeaseRenewalInput,
+} from "./worker-lease-renewal";
 import {
   ConsentRequiredError,
   TrustedConsentRequiredError,
@@ -42,6 +55,8 @@ import {
   stopWorkerController,
   validatedWorkerStatus,
 } from "./headless-worker-control";
+
+type TerminalChallengeState = Extract<HeadlessEvent, { type: "terminal_reported" }>["challengeState"];
 
 export async function createHeadlessClient(input: HeadlessClientInput): Promise<HeadlessClient> {
   const snapshot = snapshotInput(input);
@@ -122,6 +137,7 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
   // stop and cooling, so every terminal event shares one restoration and nothing else reaches the
   // Controller once it has begun.
   let maybeTerminalRestoration: Promise<void> | undefined;
+  let terminalReported = false;
   const controllable = () => maybeTerminalRestoration === undefined;
   const listeners = new Set<(event: HeadlessEvent) => void>();
   const emit = (event: HeadlessEvent) => {
@@ -159,6 +175,10 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
     }
     authorityLifecycleTransition(lifecycle, event.state);
     const maybeRestorationReason = restorationReason(event.state);
+    if (maybeRestorationReason && !terminalReported) {
+      terminalReported = true;
+      emit({ type: "terminal_reported", challengeState: event.state as TerminalChallengeState });
+    }
     let maybeRestorationFailure: unknown;
     if (snapshot.maybeWorkerController && maybeRestorationReason) {
       maybeTerminalRestoration ??= restoreWorkerController(
@@ -337,6 +357,7 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
         () => maybeRenew(maybeAuthorizationContext),
         snapshot.challenge.challengeId,
         snapshot.transport,
+        controllable,
       );
     },
     subscribe(listener) {

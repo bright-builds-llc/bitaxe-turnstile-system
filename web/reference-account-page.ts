@@ -1,33 +1,22 @@
 /**
  * Reference account-creation page (Ticket 06): `bwg-core/component` on the headless
  * SDK over direct Web Serial, with the Authority and Reference Relying Service
- * served from the page's own origin.
- *
- * The claimant HTTP transport and the 20-second Renew live here until Ticket 17
- * moves them into the SDK and the component.
+ * served from the page's own origin. The SDK's claimant HTTP transport carries the
+ * claimant routes, and the gate renews while work runs (Ticket 17).
  */
 import type { BwgWorkGateElement } from "./bwg-work-gate";
-import { encodeBase64Url, sha256Base64UrlBytes } from "./crypto-bytes";
 import {
   connectWebSerialHeadlessClient,
+  createClaimantHttpTransport,
   type AuthorityTrustInput,
+  type ClaimantHttpTransport,
   type HeadlessClient,
   type PoolOfferDisclosure,
   type WorkChallengeInput,
   type WorkerDisclosure,
 } from "./headless-client";
 import { prepareClaimantIdentity } from "./headless-key";
-import {
-  CLAIMANT_PROOF_HEADER,
-  createClaimantTransport,
-  signClaimantJwt,
-  type ProofSigner,
-} from "./reference-claimant-transport";
 import type { WebSerialWorkerControllerInput } from "./webserial-worker-controller";
-import { pageClock } from "./page-clock";
-
-/** The page renews on the Authority's healthy-continuity cadence (`WORK_LEASE_RENEWAL_SECONDS`). */
-export const RENEW_INTERVAL_MILLISECONDS = 20_000;
 
 export type ReferencePageConfig = {
   /** The one origin serving the page, the Authority and the Reference Relying Service. */
@@ -70,18 +59,10 @@ export async function connectReferenceAccountPage(input: ReferencePageInput): Pr
     challengeId: challenge.challengeId,
     expiresAtUnixSeconds: challenge.expiresAtUnixSeconds,
   });
-  let maybeClient: HeadlessClient | undefined;
-  const signer: ProofSigner = {
-    claimantKey: () => identity.claimantKey(),
-    sign(payload) {
-      if (!maybeClient) throw new Error("claimant client is not ready");
-      return maybeClient.signClaimantProof(payload);
-    },
-  };
-  const transport = createClaimantTransport({
+  const transport = createClaimantHttpTransport({
     authorityBaseUrl: config.origin,
     challengeId: challenge.challengeId,
-    signer,
+    claimantIdentity: identity,
   });
   const offers = poolOffers(descriptor);
   const selection = {
@@ -106,9 +87,7 @@ export async function connectReferenceAccountPage(input: ReferencePageInput): Pr
       expiresAtUnixSeconds: challenge.expiresAtUnixSeconds,
     }),
   });
-  maybeClient = client;
   await transport.selectPool(selection);
-  scheduleRenew(client, notify);
   const actionReference = stringField(descriptor, "action_reference");
   input.gate.configure({
     loadSession: async () => ({
@@ -116,7 +95,7 @@ export async function connectReferenceAccountPage(input: ReferencePageInput): Pr
       compatibleWorkerAvailable: true,
       redeem: async () => {
         try {
-          return await redeem(config.origin, challenge.challengeId, actionReference, signer, notify);
+          return await redeem(config.origin, transport, actionReference, notify);
         } finally {
           // A Gate Pass exists only once restoration is confirmed, so the port can go back to other tools.
           client.close().then(
@@ -126,60 +105,23 @@ export async function connectReferenceAccountPage(input: ReferencePageInput): Pr
         }
       },
     }),
+    maybeOnRenewal: (outcome) =>
+      notify(outcome.type === "renewed" ? outcome : { type: "renew_failed", message: outcome.message }),
     alternatives: [],
     provenance: config.provenance,
   });
   return client;
 }
 
-function scheduleRenew(client: HeadlessClient, notify: (event: ReferencePageEvent) => void): void {
-  let running = false;
-  let finished = false;
-  const unsubscribe = client.subscribe((event) => {
-    if (event.type !== "lifecycle") return;
-    running = event.challengeState === "active" && event.controlState === "running";
-    finished = ["satisfied", "pass_issued", "cancelled", "expired"].includes(event.challengeState);
-    if (finished) {
-      cancel();
-      unsubscribe();
-    }
-  });
-  // The Worker-driven clock keeps this cadence while the tab is hidden (ADR-0110).
-  const cancel = pageClock().every(RENEW_INTERVAL_MILLISECONDS, () => {
-    if (!running || finished) return;
-    client.renewWorkerLease().then(
-      () => notify({ type: "renewed" }),
-      (error: unknown) => notify({ type: "renew_failed", message: String(error) }),
-    );
-  });
-}
-
 async function redeem(
   origin: string,
-  challengeId: string,
+  transport: ClaimantHttpTransport,
   actionReference: string,
-  signer: ProofSigner,
   notify: (event: ReferencePageEvent) => void,
 ): Promise<{ message: string }> {
-  const lookupUrl = `${origin}/v0/challenges/${encodeURIComponent(challengeId)}/gate-pass`;
-  const issuanceProof = await signClaimantJwt(signer, "bwg-issuance-proof+jwt", {
-    jti: proofId(),
-    htm: "GET",
-    htu: lookupUrl,
-    iat: nowUnixSeconds(),
-    challenge_id: challengeId,
-  });
-  const lookup = await fetch(lookupUrl, { headers: { [CLAIMANT_PROOF_HEADER]: issuanceProof } });
-  if (!lookup.ok) throw new Error(`Gate Pass lookup failed: ${lookup.status}`);
-  const gatePass = stringField(await lookup.json(), "gate_pass");
+  const gatePass = await transport.gatePass();
   const redemptionUrl = `${origin}/account-creation/redeem`;
-  const dpopProof = await signClaimantJwt(signer, "dpop+jwt", {
-    jti: proofId(),
-    htm: "POST",
-    htu: redemptionUrl,
-    iat: nowUnixSeconds(),
-    ath: await sha256Base64UrlBytes(new TextEncoder().encode(gatePass)),
-  });
+  const dpopProof = await transport.gatePassDpopProof(gatePass, { method: "POST", url: redemptionUrl });
   const response = await fetch(redemptionUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -281,12 +223,4 @@ function stringField(value: Json, name: string): string {
   const field = value[name];
   if (typeof field !== "string") throw new Error(`${name} is missing`);
   return field;
-}
-
-function proofId(): string {
-  return `proof_${encodeBase64Url(crypto.getRandomValues(new Uint8Array(16)))}`;
-}
-
-function nowUnixSeconds(): number {
-  return Math.floor(Date.now() / 1000);
 }

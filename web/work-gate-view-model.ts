@@ -97,3 +97,11 @@ function formatGigahashes(hashrateHs: string): string {
   const wholeGigahashes = BigInt(hashrateHs) / 1_000_000_000n;
   return wholeGigahashes.toString();
 }
+
+export function primaryActionLabel(action: LifecycleView["primaryAction"]): string {
+  if (action === "consent_start") return "Consent and start work";
+  if (action === "start") return "Start work";
+  if (action === "pause") return "Pause work";
+  if (action === "resume") return "Resume work";
+  return "";
+}

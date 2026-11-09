@@ -6,6 +6,7 @@ import {
   HeadlessClient,
   HeadlessEvent,
   LifecycleEvent,
+  type RenewalOutcome,
   type TrustedConsentRequest,
   WorkConsentDisclosure,
 } from "./headless-client";
@@ -15,11 +16,12 @@ import {
   fallbackView,
   lifecycleView,
   presentationSemantics,
+  primaryActionLabel,
   progressView,
   type AlternativeAuthorization,
   type PresentationMode,
 } from "./work-gate-view-model";
-import { closeSessionDuringCleanup, replaceSessionAfterClosingPrevious } from "./work-gate-session";
+import { closeSessionDuringCleanup, followSession, replaceSessionAfterClosingPrevious } from "./work-gate-session";
 
 export type WorkGateSession = {
   client: HeadlessClient;
@@ -30,6 +32,8 @@ export type WorkGateSession = {
 export type WorkGateConfiguration = {
   loadSession(): Promise<WorkGateSession>;
   maybeOnboardBitaxe?: () => Promise<void>;
+  /** Told of each Renew the gate sends while work runs, and of the refusal that ends them. */
+  maybeOnRenewal?: (outcome: RenewalOutcome) => void;
   alternatives: readonly AlternativeAuthorization[];
   maybeRequestTrustedConsent?: (
     request: TrustedConsentRequest,
@@ -282,7 +286,7 @@ function createWorkGateView(
     setMaybeSession(session);
     setMaybeDisclosure(session.client.disclosure());
     setUnavailable(!session.compatibleWorkerAvailable);
-    maybeUnsubscribe = session.client.subscribe((event) => {
+    maybeUnsubscribe = followSession(session.client, configuration.maybeOnRenewal, (event) => {
       observeClientEvent(event);
       if (event.type === "lifecycle" && event.challengeState === "pass_issued") {
         void redeem(session);
@@ -368,7 +372,7 @@ function updateView(root: HTMLElement, state: ViewState): void {
   text(root, "[data-field=activity]", progress.activityLabel);
   const primary = requiredElement<HTMLButtonElement>(root, "[data-action=primary]");
   primary.hidden = lifecycleModel.primaryAction === "none";
-  primary.textContent = actionLabel(lifecycleModel.primaryAction);
+  primary.textContent = primaryActionLabel(lifecycleModel.primaryAction);
   const cancel = requiredElement<HTMLButtonElement>(root, "[data-action=cancel]");
   cancel.hidden = !lifecycleModel.canCancel;
 }
@@ -558,14 +562,6 @@ function setOptionalLink(
 
 function valueOrUnavailable(maybeValue: string | undefined): string {
   return maybeValue?.trim() ? maybeValue : "Unavailable";
-}
-
-function actionLabel(action: ReturnType<typeof lifecycleView>["primaryAction"]): string {
-  if (action === "consent_start") return "Consent and start work";
-  if (action === "start") return "Start work";
-  if (action === "pause") return "Pause work";
-  if (action === "resume") return "Resume work";
-  return "";
 }
 
 function trapModalFocus(event: KeyboardEvent, gate: HTMLElement, mode: PresentationMode): void {

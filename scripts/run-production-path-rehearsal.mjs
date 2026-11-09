@@ -2,7 +2,7 @@
 // From challenge to redeemed Gate Pass: consent, Start, at least one Renew while
 // shares are still being delivered, a new Bitcoin tip mid-lease that the lease
 // survives, the synthetic share across the Work Requirement, restoration as `challenge_satisfied`
-// confirmed after more than 30 s with no other command meanwhile, DPoP redemption, the serial port
+// confirmed after more than 30 s with no other command or refused Renew meanwhile, DPoP redemption, the serial port
 // released and a refused replay.
 async (page) => {
   const WORK_TIMEOUT_MILLISECONDS = 120_000;
@@ -117,6 +117,9 @@ async (page) => {
       afterRestore,
     }));
   }
+  // Renew stops on the Authority's terminal report, so no tick during the slow restore is refused.
+  const renewRefusals = final.pageEvents.filter((event) => event.type === "renew_failed");
+  if (renewRefusals.length > 0) await fail("Renew stops at the terminal state", JSON.stringify(renewRefusals));
   if (!final.maybeRedemptionBody) await fail("redemption captured for replay", "missing");
   const replayStatus = await page.evaluate(async (body) => (await fetch("/account-creation/redeem", {
     method: "POST",

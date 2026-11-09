@@ -1,3 +1,6 @@
+import type { HeadlessClient, HeadlessEvent } from "./headless-client.types";
+import { renewWorkerLeaseWhileRunning, type RenewalOutcome } from "./worker-lease-renewal";
+
 type ClosableSession = {
   client: { close(): Promise<void> };
 };
@@ -33,4 +36,21 @@ export function closeSessionDuringCleanup(session: ClosableSession | undefined):
   void maybeClose.catch(() => {
     console.error("Worker shutdown failed during component cleanup");
   });
+}
+
+/** Follows a session's events and renews its Worker Lease while work runs; the result ends both. */
+export function followSession(
+  client: HeadlessClient,
+  maybeOnRenewal: ((outcome: RenewalOutcome) => void) | undefined,
+  listener: (event: HeadlessEvent) => void,
+): () => void {
+  const unsubscribe = client.subscribe(listener);
+  const stopRenewal = renewWorkerLeaseWhileRunning({
+    client,
+    ...(maybeOnRenewal ? { maybeOnOutcome: maybeOnRenewal } : {}),
+  });
+  return () => {
+    stopRenewal();
+    unsubscribe();
+  };
 }
