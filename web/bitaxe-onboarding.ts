@@ -65,6 +65,9 @@ export type BitaxeDeviceSnapshot = {
   };
 };
 
+/** The C bootloader and C partition table, written once, only over upstream's table. */
+export type FirstInstallImages = { bootloader: Uint8Array; partitionTable: Uint8Array };
+
 /** Redacted post-reboot proof, keyed by the nonce the browser sent, that settings were kept. */
 export type RedactedSettingsVerification = {
   preservationConfirmed: boolean;
@@ -92,8 +95,16 @@ export interface BitaxeOnboardingDevice {
   inspect(): Promise<BitaxeDeviceSnapshot>;
   /** Returns a caller-owned copy of the raw `nvs` partition, no larger than `maximumBytes`. */
   readMigrationSettings(maximumBytes: number): Promise<MigrationSettings>;
-  /** Writes the image to the inactive OTA slot and sets `otadata` to boot it pending; never NVS. */
-  flash(input: { image: Uint8Array; firmwareVersion: string; targetSlot: OtaSlot }): Promise<void>;
+  /**
+   * Writes the image to the inactive OTA slot and sets `otadata` to boot it pending; never NVS.
+   * Over upstream's table it first writes `firstInstall` and reads both back.
+   */
+  flash(input: {
+    image: Uint8Array;
+    firmwareVersion: string;
+    targetSlot: OtaSlot;
+    firstInstall: FirstInstallImages;
+  }): Promise<void>;
   /** Reboots into the selected slot and resolves only after device continuity is restored. */
   reboot(): Promise<void>;
   /** Returns strict redacted proof with every category HMAC keyed by `nonce`. */
@@ -262,6 +273,7 @@ export function createBitaxeOnboarding(input: {
             image: admitted.image,
             firmwareVersion: record.firmwareVersion,
             targetSlot,
+            firstInstall: admitted.firstInstall,
           });
           await device.reboot();
           const maybeVerification = await verifyInstalledDevice(device, {

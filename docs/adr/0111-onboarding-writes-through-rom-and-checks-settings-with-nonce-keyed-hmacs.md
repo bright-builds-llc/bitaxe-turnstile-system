@@ -6,6 +6,9 @@ contract. It amends ADR-0046: settings digests are no longer plain SHA-256, and 
 rollback copy is kept in browser memory. The Migration Backup stays optional, local and
 encrypted, as ADR-0046 says.
 
+ADR-0112 (proposed 2026-11-11, Ticket 04) settles the consequences below that were left to
+Ticket 04, and adds the C bootloader and table digests to the signed `0.2` manifest.
+
 Onboarding installs the C Reference Firmware image (ADR-0105) on a Bitaxe from stock
 ESP-Miner or from an earlier reference image, and keeps the board's settings. The C image
 reported none of the facts onboarding needed, upstream's partition table fits no scheme

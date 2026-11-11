@@ -25,7 +25,8 @@ On a first install from stock, the browser reads the table at `0x8000`, refuses 
 upstream's known table or the C table before any write, then writes the C bootloader (app rollback
 on) and the C table once and reads both back before rebooting. A snapshot's `rollbackAvailable`
 means the previous slot stays untouched and bootable and a rollback can be driven; from stock it
-holds once the known table is confirmed, since the C bootloader is written before the image.
+holds once the known table is confirmed, since the C bootloader is written before `otadata`
+selects the image.
 
 ## Explicit connection and inspection
 
@@ -46,8 +47,16 @@ The complete manifest is authenticated by a uniquely trusted Ed25519 Update Auth
 - the exact SHA-256 image digest;
 - board model and revision allowlists;
 - the `esp32-factory-ota-ab` partition scheme, minimum slot size, and mandatory rollback;
-- minimum/maximum readable and target settings schemas; and
+- minimum/maximum readable and target settings schemas;
+- the SHA-256 digests of the C bootloader and C partition table a first install writes
+  (`firstInstall`); and
 - a public HTTPS source URL.
+
+The package carries the image, the bootloader and the table as bytes beside the manifest and its
+signature. The bootloader must start with the ESP image magic and fit below `0x8000`; the table must
+be the `0xC00`-byte region of exactly the C table. Every byte the browser can write to flash is
+therefore signed. The `firstInstall` block joined the `0.2` payload before any `0.2` manifest was
+signed (ADR-0112).
 
 Unknown manifest/header fields, private JWK material, ambiguous keys, signature/payload/digest drift,
 images outside the bounded browser window, oversized compact-JWS segments or compatibility lists,
@@ -128,17 +137,62 @@ random 16-byte salt and 12-byte IV. Only the encrypted versioned envelope reache
 caller-supplied local-download callback. The callback must persist or copy that borrowed buffer
 before returning because onboarding wipes it on success or failure.
 
-## Open in Ticket 04
+## Production device (Ticket 04)
 
-Stock ESP-Miner has no Worker Serial, so the production device must say how it inspects stock and
-how a rollback to stock is checked, and a rollback from the download in a later page needs the
-browser's own NVS parser. Both may revise this profile.
+`createUsbBitaxeOnboarding` builds the production `BitaxeOnboardingDevice`
+(`web/rom-bitaxe-onboarding-device.ts`) on the port the user's "Connect Bitaxe over USB" gesture
+grants, and `bitaxeUsbOnboardingAction` is the work gate's `maybeOnboardBitaxe` for it. ADR-0112
+records the choices below.
+
+- **One port.** The gesture selects the port (reusing a single granted port, as ADR-0101 does, or
+  Chrome's chooser). ROM sessions, onboarding's Worker Serial sessions and, after onboarding is
+  released, the Worker Controller's own Connect all use that grant; after a reset the device is
+  re-found among the granted ports. Each ROM session holds the `bwg-worker-serial` Web Lock.
+- **Inspection.** An image that answers a fresh Hello, Device Identity possession and
+  `onboarding_inspect` is inspected over Worker Serial, with `capabilities` from `discover`. Any
+  other image, including stock ESP-Miner, is inspected from flash through ROM: the table, the
+  `otadata` selection, the running slot's `esp_app_desc_t` (project name, and a release version
+  such as `v2.10.1` carried as `2.10.1`) and the board from NVS `boardversion` within ADR-0104's
+  closed set. It is never Reference Firmware and its preservation is `upgrade_required`.
+- **Write order.** The table is read and classified before any write. Then: the running slot's
+  MD5; the image into the target slot, checked by the ROM stub's MD5; from upstream's table only,
+  the C bootloader at `0x0` and the C table at `0x8000`, each read back byte for byte, and the
+  table classified again as C's; and last `otadata`, rewritten as `esp_ota_set_boot_partition`
+  does with state `NEW`, then read back. NVS is read, never written.
+- **Device is back.** After the reset, the device repeats a fresh Hello and possession, then
+  `onboarding_inspect` until the image reports `bootable`, which it does only after its own
+  startup check marks it valid. Every Worker Serial session after the first must prove the same
+  Device Identity. The window outlasts the image's 120 s startup check.
+- **Rollback.** `otadata` is pointed at the previous slot (`factory` erases it; an OTA slot gets
+  the next sequence as `VALID`), the `nvs` copy is written back, and each is read back; each is
+  written only when flash differs. The previous slot must still have the MD5 it had before the
+  install. The C bootloader and table stay, since they boot stock too.
+- **Rollback to stock.** Stock has no Worker Serial, so after the reset the device waits a fixed
+  pause and then inspects and verifies from flash through ROM: the selection, the app descriptor,
+  and its own HMACs over the NVS it reads back, under the onboarding's nonce. This proves what
+  flash holds, not that stock booted; the user checks the board's screen.
+- **NVS parser.** `web/esp-nvs.ts` decodes the `main` namespace of a raw partition as ESP-IDF's
+  NVS library does (written entries with a valid header CRC, the later page's copy of a key,
+  multi-chunk blobs), refusing a corrupt page header or value. A rollback from the download in a
+  later page can use it to check the decrypted copy.
+- **Bounds.** Every step has a deadline that ends in rollback or a clear error
+  (`PROPOSED_ROM_ONBOARDING_BOUNDS`). They are proposed, not yet measured on the Gamma 601.
+
+`conformance/bwg-bitaxe-onboarding-0.2/nvs-partition-vector.json` is an NVS partition built by
+ESP-IDF's own `nvs_partition_gen.py`, with the entries it must decode to.
 
 ## Verification
 
 `bun test web/bitaxe-settings-hmac.test.ts` checks the schema 1 keys, every message and HMAC
 against the shared vectors, and refused entries. `web/bitaxe-onboarding-boundaries.test.ts` covers
 the scheme, the `factory` slot, refused replies and refused manifests.
+`web/esp-flash-layout.test.ts` checks MD5 and the ROM CRC, the C table byte for byte against
+`gen_esp32part.py`'s output, table refusals, `otadata` sequences and states, the NVS vector and
+its corruptions, and app descriptors. `web/rom-bitaxe-onboarding-device.test.ts` drives the
+production device on a simulated board (flash, a rollback-on bootloader, stock and C images): the
+write order, unknown-table refusal before any write, `otadata`, rollback to stock checked from
+flash, rollback between reference images, and a changed previous slot.
+`web/bitaxe-usb-onboarding.test.ts` covers the one granted port and the gate action.
 `web/bitaxe-onboarding.test.ts` covers explicit USB access, signed admission, board, partition,
 schema, signature and digest negatives, immutable admission inputs, single-flight installation,
 bounded local encryption, undeclared secret fields, unreadable or oversized settings, interrupted
@@ -146,4 +200,5 @@ flashing and rollback recovery. `web/bitaxe-onboarding-rollback.test.ts` covers 
 nonce, HMAC mismatches, the rollback copy's lifetime, and rollback from the download. The real
 Chromium journey exercises the production onboarding state machine through the component, including
 fail-closed package admission. The package dry-run verifies both runtime and simulator subpaths and
-the vectors are distributable.
+the vectors are distributable. No board has been written by this device yet; Ticket 15 runs it on
+the Gamma 601.

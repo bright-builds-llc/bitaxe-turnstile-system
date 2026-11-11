@@ -1,0 +1,80 @@
+{
+  "description": "A raw ESP-IDF NVS partition built by ESP-IDF v6.0.2's nvs_partition_gen.py (format V2), so the browser's NVS parser is checked against Espressif's encoder. Test values only. The partition is partitionBytes long; bytes past prefixHex are 0xFF.",
+  "generator": "esp-idf v6.0.2 components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py generate settings.csv settings.bin 0x6000",
+  "sourceCsv": [
+    "key,type,encoding,value",
+    "main,namespace,,",
+    "wifissid,data,string,fixture-network",
+    "wifipass,data,string,fixture-passphrase",
+    "hostname,data,string,bitaxe",
+    "pool_1,data,string,\"{\"\"url\"\":\"\"pool.invalid\"\",\"\"port\"\":3333}\"",
+    "prim_idx,data,u16,0",
+    "asicvoltage,data,u16,1150",
+    "boardversion,data,string,601",
+    "temptarget,data,i32,-5",
+    "total_uptime,data,u64,18446744073709551615",
+    "oc_enabled,data,u8,1",
+    "swarmconfig,data,hex2bin,00ff10ab",
+    "other,namespace,,",
+    "wifissid,data,string,not-main"
+  ],
+  "partitionBytes": 24576,
+  "prefixHex": "feffffff00000000feffffffffffffffffffffffffffffffffffffff842dbab9aaaaaaaaaaeaffffffffffffffffffffffffffffffffffffffffffffffffffff000101ffeb43a8e66d61696e00000000000000000000000001ffffffffffffff012102ffb049e055776966697373696400000000000000001000ffffa30e5829666978747572652d6e6574776f726b00ffffffffffffffffffffffffffffffff012102ff374eac02776966697061737300000000000000001300ffff6a038059666978747572652d7061737370687261736500ffffffffffffffffffffffffff012102ff2c1cdf46686f73746e616d6500000000000000000700ffffc28c8d0162697461786500ffffffffffffffffffffffffffffffffffffffffffffffffff012103ff3200f199706f6f6c5f31000000000000000000002300ffff56bdbad27b2275726c223a22706f6f6c2e696e76616c6964222c22706f7274223a333333337d00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff010201ffbabe70317072696d5f69647800000000000000000000ffffffffffff010201ff6f22aa7161736963766f6c7461676500000000007e04ffffffffffff012102ffd097a447626f61726476657273696f6e000000000400ffffa0ba89c836303100ffffffffffffffffffffffffffffffffffffffffffffffffffffffff011401ff9bf6285d74656d70746172676574000000000000fbffffffffffffff010801fff9facbc8746f74616c5f757074696d6500000000ffffffffffffffff010101ff04e5efdb6f635f656e61626c656400000000000001ffffffffffffff0142020000bde0a5737761726d636f6e66696700000000000400ffff23a3a14a00ff10abffffffffffffffffffffffffffffffffffffffffffffffffffffffff014801ff02c3de34737761726d636f6e6669670000000000040000000100ffff000101ffed8789676f74686572000000000000000000000002ffffffffffffff022102ffe9bdd748776966697373696400000000000000000900ffff1260c09f6e6f742d6d61696e00",
+  "expectedMainEntries": [
+    {
+      "key": "asicvoltage",
+      "type": "u16",
+      "value": "1150"
+    },
+    {
+      "key": "boardversion",
+      "type": "str",
+      "value": "601"
+    },
+    {
+      "key": "hostname",
+      "type": "str",
+      "value": "bitaxe"
+    },
+    {
+      "key": "oc_enabled",
+      "type": "u8",
+      "value": "1"
+    },
+    {
+      "key": "pool_1",
+      "type": "str",
+      "value": "{\"url\":\"pool.invalid\",\"port\":3333}"
+    },
+    {
+      "key": "prim_idx",
+      "type": "u16",
+      "value": "0"
+    },
+    {
+      "key": "swarmconfig",
+      "type": "blob",
+      "value": "AP8Qqw"
+    },
+    {
+      "key": "temptarget",
+      "type": "i32",
+      "value": "-5"
+    },
+    {
+      "key": "total_uptime",
+      "type": "u64",
+      "value": "18446744073709551615"
+    },
+    {
+      "key": "wifipass",
+      "type": "str",
+      "value": "fixture-passphrase"
+    },
+    {
+      "key": "wifissid",
+      "type": "str",
+      "value": "fixture-network"
+    }
+  ]
+}

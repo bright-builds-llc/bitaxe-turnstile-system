@@ -11,7 +11,7 @@ feed 09.
 | [02](issues/02-c-image-onboarding-contract.md) Agree the C image's onboarding contract | grilling | resolved | None |
 | [14](issues/14-gate-onboarding-contract-for-the-c-image.md) Gate onboarding contract matches the C image | task | resolved | 02 |
 | [03](issues/03-c-image-onboarding-commands.md) C image reports onboarding facts and guards its own boot | task | ready-for-human | 02, 14 |
-| [04](issues/04-web-serial-onboarding-device.md) Browser onboarding device over the ROM bootloader | task | ready-for-agent | 03 |
+| [04](issues/04-web-serial-onboarding-device.md) Browser onboarding device over the ROM bootloader | task | ready-for-human | 03 |
 | [05](issues/05-signed-c-image-package.md) Owner signs the C image's firmware package | task | ready-for-human | 03, 04 |
 | [15](issues/15-c-image-onboarding-on-the-601.md) Onboarding on the 601, from stock and between reference images | task | ready-for-human | 05 |
 | [11](issues/11-late-work-delivery-after-renew.md) Authority judges a Work Event by the reading at which it was observed | task | resolved | 10 |
@@ -111,3 +111,11 @@ feed 09.
   redemption's `accepted_at_unix_seconds` as the service recorded it, not from the test's clock,
   and assert the executor's outcome. With the race induced, 4 tests failed in 10 of 10 runs
   before and 0 of 10 after. Production code is unchanged.
+- Ticket 04 (2026-11-11), ADR-0112 (proposed, for the owner): the production onboarding device
+  writes through esptool-js 0.7.0 and reads the C image over Worker Serial, on the one port the
+  user's gesture granted. Stock is inspected and a rollback to stock is checked from flash through
+  ROM. The order is table check, image, then the C bootloader and table (from stock only, read
+  back), then `otadata` as `NEW`. The signed `0.2` manifest gains `firstInstall` digests, and the
+  package carries the bootloader and table, so Ticket 05 signs every byte written. Onboarding's own
+  reconnects skip the gesture check but keep the full Hello and possession admission. Tested on
+  simulated boards only. Its bounds are proposed and wait for the 601 sitting.

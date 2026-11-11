@@ -46,8 +46,28 @@ function bitaxeSnapshot() {
   };
 }
 
+/** The C image's table as `gen_esp32part.py` built it at bitaxe-esp-miner-c `51e5af9`, before its `0xFF` fill. */
+const C_PARTITION_TABLE_HEX =
+  "aa50010200900000006000006e76730000000000000000000000000000000000" +
+  "aa50010100f00000001000007068795f696e6974000000000000000000000000" +
+  "aa5000000000010000004000666163746f727900000000000000000000000000" +
+  "aa50018200004100000030007777770000000000000000000000000000000000" +
+  "aa50001000007100000040006f74615f30000000000000000000000000000000" +
+  "aa5000110000b100000040006f74615f31000000000000000000000000000000" +
+  "aa5001000000f100002000006f74616461746100000000000000000000000000" +
+  "aa5001030020f10000e00e00636f726564756d70000000000000000000000000" +
+  "ebebffffffffffffffffffffffffffff3263d40fec2a495265671ec0d6d91d45";
+
+function cPartitionTable() {
+  const table = new Uint8Array(0xc00).fill(0xff);
+  table.set(C_PARTITION_TABLE_HEX.match(/../gu).map((pair) => Number.parseInt(pair, 16)));
+  return table;
+}
+
 async function signedFirmwarePackage(overrides = {}) {
   const image = new TextEncoder().encode("reference-firmware-browser-image");
+  const bootloader = new Uint8Array([0xe9, ...new TextEncoder().encode("browser-c-bootloader")]);
+  const partitionTable = cPartitionTable();
   const keys = await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]);
   const publicKey = {
     ...await crypto.subtle.exportKey("jwk", keys.publicKey),
@@ -67,6 +87,10 @@ async function signedFirmwarePackage(overrides = {}) {
       rollbackRequired: true,
     },
     settingsSchema: { minimumReadable: 1, maximumReadable: 1, target: 1 },
+    firstInstall: {
+      bootloaderSha256: await digestBase64Url(bootloader),
+      partitionTableSha256: await digestBase64Url(partitionTable),
+    },
     sourceUrl: "https://github.com/bright-builds-llc/bitaxe-esp-miner-c",
     ...overrides,
   };
@@ -87,6 +111,8 @@ async function signedFirmwarePackage(overrides = {}) {
     firmwarePackage: {
       manifest,
       image,
+      bootloader,
+      partitionTable,
       signature: `${signingInput}.${encodeBase64Url(signature)}`,
     },
   };

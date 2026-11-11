@@ -1,5 +1,6 @@
 import { canonicalJson } from "./headless-values";
-import type { BitaxeDeviceSnapshot } from "./bitaxe-onboarding";
+import type { BitaxeDeviceSnapshot, FirstInstallImages } from "./bitaxe-onboarding";
+import { classifyPartitionTable, MAXIMUM_BOOTLOADER_BYTES, PARTITION_TABLE_BYTES } from "./esp-partition-table";
 import {
   decodeBase64Url,
   sha256Base64UrlBytes,
@@ -28,13 +29,17 @@ export type FirmwareManifest = {
     rollbackRequired: true;
   };
   settingsSchema: { minimumReadable: number; maximumReadable: number; target: number };
+  /** Digests of the C bootloader and C table that a first install from stock writes. */
+  firstInstall: { bootloaderSha256: string; partitionTableSha256: string };
   sourceUrl: string;
 };
 
-/** Manifest, exact image bytes, and compact Update Authority signature. */
+/** Manifest, exact image, bootloader and table bytes, and compact Update Authority signature. */
 export type FirmwarePackage = {
   manifest: FirmwareManifest;
   image: Uint8Array;
+  bootloader: Uint8Array;
+  partitionTable: Uint8Array;
   signature: string;
 };
 
@@ -42,8 +47,8 @@ export async function admitFirmwarePackage(
   firmwarePackage: unknown,
   trustedKeys: readonly UpdateAuthorityJwk[],
   snapshot: BitaxeDeviceSnapshot,
-): Promise<{ manifest: FirmwareManifest; image: Uint8Array }> {
-  const { manifest, image, signature } = parseFirmwarePackage(firmwarePackage);
+): Promise<{ manifest: FirmwareManifest; image: Uint8Array; firstInstall: FirstInstallImages }> {
+  const { manifest, image, firstInstall, signature } = parseFirmwarePackage(firmwarePackage);
   const trustedKeySnapshot = trustedKeys.map(parseUpdateAuthorityKey);
   const compact = parseCompactJws(signature);
   const header = parseJsonRecord(
@@ -83,10 +88,17 @@ export async function admitFirmwarePackage(
   if ((await sha256Base64UrlBytes(image)) !== manifest.imageSha256) {
     throw new Error("firmware image digest is invalid");
   }
+  if (
+    (await sha256Base64UrlBytes(firstInstall.bootloader)) !== manifest.firstInstall.bootloaderSha256 ||
+    (await sha256Base64UrlBytes(firstInstall.partitionTable)) !==
+      manifest.firstInstall.partitionTableSha256
+  ) {
+    throw new Error("firmware first-install digest is invalid");
+  }
   if (!compatible(manifest, snapshot)) {
     throw new Error("firmware package is not safely compatible");
   }
-  return { manifest, image };
+  return { manifest, image, firstInstall };
 }
 
 function compatible(manifest: FirmwareManifest, snapshot: BitaxeDeviceSnapshot): boolean {
@@ -110,9 +122,10 @@ function compatible(manifest: FirmwareManifest, snapshot: BitaxeDeviceSnapshot):
 function parseFirmwarePackage(input: unknown): {
   manifest: FirmwareManifest;
   image: Uint8Array;
+  firstInstall: FirstInstallImages;
   signature: string;
 } {
-  if (!hasExactKeys(input, ["manifest", "image", "signature"])) {
+  if (!hasExactKeys(input, ["manifest", "image", "bootloader", "partitionTable", "signature"])) {
     throw new Error("firmware package is invalid");
   }
   const value = input as Record<string, unknown>;
@@ -129,8 +142,28 @@ function parseFirmwarePackage(input: unknown): {
   return {
     manifest: parseManifest(value.manifest),
     image,
+    firstInstall: parseFirstInstall(value.bootloader, value.partitionTable),
     signature: value.signature,
   };
+}
+
+/** The bootloader must fit before `0x8000`; the table must be exactly the C table's region. */
+function parseFirstInstall(bootloader: unknown, partitionTable: unknown): FirstInstallImages {
+  if (
+    !(bootloader instanceof Uint8Array) ||
+    bootloader.byteLength === 0 ||
+    bootloader.byteLength > MAXIMUM_BOOTLOADER_BYTES ||
+    bootloader[0] !== 0xe9 ||
+    !(partitionTable instanceof Uint8Array) ||
+    partitionTable.byteLength !== PARTITION_TABLE_BYTES
+  ) {
+    throw new Error("firmware first-install images are invalid");
+  }
+  const table = partitionTable.slice();
+  if (classifyPartitionTable(table) !== "c") {
+    throw new Error("firmware first-install table is not the C table");
+  }
+  return { bootloader: bootloader.slice(), partitionTable: table };
 }
 
 function parseManifest(input: unknown): FirmwareManifest {
@@ -142,6 +175,7 @@ function parseManifest(input: unknown): FirmwareManifest {
       "compatibleBoards",
       "partition",
       "settingsSchema",
+      "firstInstall",
       "sourceUrl",
     ])
   ) {
@@ -150,6 +184,7 @@ function parseManifest(input: unknown): FirmwareManifest {
   const value = input as Record<string, unknown>;
   if (
     !hasExactKeys(value.partition, ["scheme", "minimumAppSlotBytes", "rollbackRequired"]) ||
+    !hasExactKeys(value.firstInstall, ["bootloaderSha256", "partitionTableSha256"]) ||
     !hasExactKeys(value.settingsSchema, ["minimumReadable", "maximumReadable", "target"]) ||
     value.profile !== "bwg-reference-firmware/0.2" ||
     typeof value.firmwareVersion !== "string" ||
@@ -169,7 +204,12 @@ function parseManifest(input: unknown): FirmwareManifest {
   const compatibleBoards = value.compatibleBoards.map(parseCompatibleBoard);
   const partition = value.partition as Record<string, unknown>;
   const settingsSchema = value.settingsSchema as Record<string, unknown>;
+  const firstInstall = value.firstInstall as Record<string, unknown>;
   if (
+    typeof firstInstall.bootloaderSha256 !== "string" ||
+    !/^[A-Za-z0-9_-]{43}$/u.test(firstInstall.bootloaderSha256) ||
+    typeof firstInstall.partitionTableSha256 !== "string" ||
+    !/^[A-Za-z0-9_-]{43}$/u.test(firstInstall.partitionTableSha256) ||
     partition.scheme !== "esp32-factory-ota-ab" ||
     !Number.isSafeInteger(partition.minimumAppSlotBytes) ||
     Number(partition.minimumAppSlotBytes) <= 0 ||
@@ -198,6 +238,10 @@ function parseManifest(input: unknown): FirmwareManifest {
       minimumReadable: Number(settingsSchema.minimumReadable),
       maximumReadable: Number(settingsSchema.maximumReadable),
       target: Number(settingsSchema.target),
+    },
+    firstInstall: {
+      bootloaderSha256: firstInstall.bootloaderSha256,
+      partitionTableSha256: firstInstall.partitionTableSha256,
     },
     sourceUrl: value.sourceUrl,
   };

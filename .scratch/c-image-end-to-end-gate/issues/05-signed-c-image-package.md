@@ -25,3 +25,9 @@ and check the signed one; they never handle the owner's keys.
   Gate's package admission.
 
 ## Comments
+
+- 2026-11-11 (Ticket 04, ADR-0112): the package now carries the C bootloader
+  (`build/bootloader/bootloader.bin`) and the C table's `0xC00`-byte
+  `partition-table.bin` beside the image. The manifest binds their SHA-256 digests in
+  `firstInstall: { bootloaderSha256, partitionTableSha256 }`. Admission refuses a table that
+  isn't exactly the C table. The unsigned manifest must include the block.

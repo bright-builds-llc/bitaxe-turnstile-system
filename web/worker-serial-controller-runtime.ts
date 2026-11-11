@@ -438,6 +438,17 @@ export class BrowserSerialController implements WebSerialWorkerController {
       payload => this.#request("transport_probe", payload), error => this.#lost(error));
   }
 
+  /** C image `onboarding_inspect` (Ticket 03): read-only, answered without a lease. The caller parses it. */
+  async onboardingInspect(): Promise<unknown> {
+    if (!this.#maybePossession) throw serialFailure("probe_admission");
+    return this.#request("onboarding_inspect");
+  }
+  /** C image `onboarding_verify` under the browser's base64url nonce. The caller parses the reply. */
+  async onboardingVerify(nonce: string): Promise<unknown> {
+    if (!this.#maybePossession) throw serialFailure("probe_admission");
+    return this.#request("onboarding_verify", { nonce });
+  }
+
   async status() { return this.#statusRequest("status"); }
   async pause() { return this.#restoreCommand("pause", "paused"); }
   async cancel() {

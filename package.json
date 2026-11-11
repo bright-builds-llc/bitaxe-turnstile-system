@@ -116,6 +116,7 @@
     "ajv": "8.17.1"
   },
   "dependencies": {
+    "esptool-js": "0.7.0",
     "solid-js": "1.9.15"
   }
 }

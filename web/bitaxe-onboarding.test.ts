@@ -10,6 +10,7 @@ import {
   MAXIMUM_MIGRATION_SETTINGS_BYTES,
 } from "./bitaxe-migration-backup";
 import { firmwarePackage, settings, snapshot } from "./bitaxe-onboarding-test-fixtures";
+import { encodePartitionTable, KNOWN_PARTITION_TABLES } from "./esp-partition-table";
 
 describe("Bitaxe onboarding admission", () => {
   test("USB access occurs only after explicit connect and compatible firmware proceeds", async () => {
@@ -126,6 +127,44 @@ describe("Bitaxe onboarding admission", () => {
 
     // Assert
     await expect(install).rejects.toThrow("firmware image digest is invalid");
+    expect(connector.device().flashCount()).toBe(0);
+  });
+
+  test("rejects a bootloader that differs from its signed digest before flashing", async () => {
+    // Arrange
+    const connector = new SimulatedBitaxeConnector(snapshot(), settings);
+    const signed = await firmwarePackage();
+    signed.package.bootloader[4] = (signed.package.bootloader[4] ?? 0) ^ 1;
+    const onboarding = createBitaxeOnboarding({
+      requestDevice: () => connector.requestDevice(),
+      trustedUpdateKeys: [signed.publicKey],
+    });
+    await onboarding.connect();
+
+    // Act
+    const install = onboarding.install(signed.package);
+
+    // Assert
+    await expect(install).rejects.toThrow("firmware first-install digest is invalid");
+    expect(connector.device().flashCount()).toBe(0);
+  });
+
+  test("rejects a signed first-install table that is not the C table", async () => {
+    // Arrange
+    const connector = new SimulatedBitaxeConnector(snapshot(), settings);
+    const signed = await firmwarePackage();
+    signed.package.partitionTable = encodePartitionTable(KNOWN_PARTITION_TABLES.upstream);
+    const onboarding = createBitaxeOnboarding({
+      requestDevice: () => connector.requestDevice(),
+      trustedUpdateKeys: [signed.publicKey],
+    });
+    await onboarding.connect();
+
+    // Act
+    const install = onboarding.install(signed.package);
+
+    // Assert
+    await expect(install).rejects.toThrow("first-install table is not the C table");
     expect(connector.device().flashCount()).toBe(0);
   });
 

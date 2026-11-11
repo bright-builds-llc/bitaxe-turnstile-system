@@ -6,8 +6,13 @@ import type {
 } from "./bitaxe-onboarding";
 import type { SimulatedBitaxeSnapshot } from "./simulated-bitaxe-onboarding";
 import { canonicalJson } from "./headless-values";
+import { encodePartitionTable, KNOWN_PARTITION_TABLES } from "./esp-partition-table";
 
 export const image = new TextEncoder().encode("reference-firmware-image-v2");
+/** A stand-in C bootloader: only its image magic is checked before the digest. */
+export const bootloader = new Uint8Array([0xe9, 0x03, 0x02, 0x4f, ...new TextEncoder().encode("c-bootloader")]);
+/** The C partition table's `0xC00` region, as `gen_esp32part.py` encodes it. */
+export const partitionTable = encodePartitionTable(KNOWN_PARTITION_TABLES.c);
 
 /** Schema 1 `main` entries shaped like upstream ESP-Miner's NVS. */
 export const settings: readonly NvsSettingEntry[] = [
@@ -53,6 +58,7 @@ export function snapshot(
 /** Signs a schema-1 manifest with a fresh fixture Update Authority key. */
 export async function firmwarePackage(
   overrides: Partial<FirmwareManifest> = {},
+  packageImage: Uint8Array = image,
 ): Promise<{ package: FirmwarePackage; publicKey: UpdateAuthorityJwk }> {
   const keys = await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]);
   const publicKey = {
@@ -65,7 +71,7 @@ export async function firmwarePackage(
   const manifest: FirmwareManifest = {
     profile: "bwg-reference-firmware/0.2",
     firmwareVersion: "2.0.0",
-    imageSha256: await sha256(image),
+    imageSha256: await sha256(packageImage),
     compatibleBoards: [{ model: "bitaxe-gamma", revisions: ["204"] }],
     partition: {
       scheme: "esp32-factory-ota-ab",
@@ -73,16 +79,21 @@ export async function firmwarePackage(
       rollbackRequired: true,
     },
     settingsSchema: { minimumReadable: 1, maximumReadable: 1, target: 1 },
+    firstInstall: {
+      bootloaderSha256: await sha256(bootloader),
+      partitionTableSha256: await sha256(partitionTable),
+    },
     sourceUrl: "https://github.com/bright-builds-llc/bitaxe-esp-miner-c",
     ...overrides,
   };
-  return { package: await signedPackage(manifest, keys.privateKey), publicKey };
+  return { package: await signedPackage(manifest, keys.privateKey, packageImage), publicKey };
 }
 
 /** Signs any manifest-shaped value, so tests can present payloads the parser must refuse. */
 export async function signedPackage(
   manifest: unknown,
   privateKey: CryptoKey,
+  packageImage: Uint8Array = image,
 ): Promise<FirmwarePackage> {
   const header = encode(
     JSON.stringify({ alg: "Ed25519", typ: "bwg-firmware-manifest+jws", kid: "update-fixture-a" }),
@@ -96,7 +107,9 @@ export async function signedPackage(
   );
   return {
     manifest: manifest as FirmwareManifest,
-    image: image.slice(),
+    image: packageImage.slice(),
+    bootloader: bootloader.slice(),
+    partitionTable: partitionTable.slice(),
     signature: `${signingInput}.${encodeBytes(new Uint8Array(signature))}`,
   };
 }
