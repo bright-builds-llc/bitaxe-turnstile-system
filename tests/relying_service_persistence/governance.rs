@@ -1,4 +1,4 @@
-use std::process::Command;
+use std::process::{Command, Output};
 
 use super::*;
 
@@ -75,7 +75,7 @@ async fn outcome_lookup_survives_marker_retirement_until_aggregate_retention_flo
         pending.database.database_url(),
         &["plan-retention", "--as-of", &now.to_string()],
     )?;
-    let marker_manifest = serde_json::from_slice::<Value>(&marker_plan.stdout)?;
+    let marker_manifest = manifest_from(&marker_plan)?;
     let marker_apply = apply_governance(pending.database.database_url(), &marker_manifest)?;
     let restarted_application = ReferenceApplication::connect_postgres(
         pending.config.clone().with_account_creation_executor(),
@@ -113,7 +113,7 @@ async fn outcome_lookup_survives_marker_retirement_until_aggregate_retention_flo
         pending.database.database_url(),
         &["plan-retention", "--as-of", &now.to_string()],
     )?;
-    let aggregate_manifest = serde_json::from_slice::<Value>(&aggregate_plan.stdout)?;
+    let aggregate_manifest = manifest_from(&aggregate_plan)?;
     let aggregate_apply = apply_governance(pending.database.database_url(), &aggregate_manifest)?;
     let after_aggregate_proof = pending.claimant.sign_outcome_proof(
         &lookup_url,
@@ -133,13 +133,21 @@ async fn outcome_lookup_survives_marker_retirement_until_aggregate_retention_flo
         marker_manifest["planned_counts"][0]["record_class"],
         "pass_consumption"
     );
-    assert!(marker_apply.status.success());
+    assert!(
+        marker_apply.status.success(),
+        "{}",
+        describe_output(&marker_apply)
+    );
     assert_eq!(after_marker, before);
     assert_eq!(
         aggregate_manifest["planned_counts"][0]["record_class"],
         "relying_service_operational"
     );
-    assert!(aggregate_apply.status.success());
+    assert!(
+        aggregate_apply.status.success(),
+        "{}",
+        describe_output(&aggregate_apply)
+    );
     assert_eq!(after_aggregate.status(), reqwest::StatusCode::NOT_FOUND);
     assert_eq!(
         after_aggregate.json::<Value>().await?["error"],
@@ -149,10 +157,7 @@ async fn outcome_lookup_survives_marker_retirement_until_aggregate_retention_flo
     Ok(())
 }
 
-fn run_governance(
-    database_url: &str,
-    arguments: &[&str],
-) -> Result<std::process::Output, Box<dyn Error>> {
+fn run_governance(database_url: &str, arguments: &[&str]) -> Result<Output, Box<dyn Error>> {
     Ok(
         Command::new(env!("CARGO_BIN_EXE_reference-service-governance"))
             .args(arguments)
@@ -163,10 +168,25 @@ fn run_governance(
     )
 }
 
-fn apply_governance(
-    database_url: &str,
-    manifest: &Value,
-) -> Result<std::process::Output, Box<dyn Error>> {
+/// Parses a plan's manifest, or fails with the plan run's own exit status and output.
+fn manifest_from(plan: &Output) -> Result<Value, Box<dyn Error>> {
+    if !plan.status.success() {
+        return Err(describe_output(plan).into());
+    }
+    Ok(serde_json::from_slice::<Value>(&plan.stdout)?)
+}
+
+/// Renders a governance run's exit status and output for an assertion message.
+fn describe_output(output: &Output) -> String {
+    format!(
+        "governance exited with {}\nstdout: {}\nstderr: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+}
+
+fn apply_governance(database_url: &str, manifest: &Value) -> Result<Output, Box<dyn Error>> {
     run_governance(
         database_url,
         &[
