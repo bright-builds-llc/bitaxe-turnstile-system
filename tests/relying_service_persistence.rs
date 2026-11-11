@@ -1,6 +1,6 @@
 use std::{
     error::Error,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use bwg_core::{
@@ -23,6 +23,8 @@ use tokio::{net::TcpListener, task::JoinHandle};
 mod authority_key_support;
 #[path = "support/claimant.rs"]
 mod claimant_support;
+#[path = "relying_service_persistence/durable_consumption.rs"]
+mod durable_consumption;
 #[path = "relying_service_persistence/governance.rs"]
 mod governance;
 #[path = "support/http.rs"]
@@ -32,6 +34,7 @@ mod postgres_support;
 
 use authority_key_support::authority_keys;
 use claimant_support::Claimant;
+use durable_consumption::{wait_until_outcome_proof_consumed, wait_until_pass_consumed};
 use http_support::{send_get_without_reading_response, send_json_post_without_reading_response};
 use postgres_support::PostgresTestDatabase;
 
@@ -143,7 +146,7 @@ async fn restart_rejects_consumed_pass_and_converges_new_pass_on_one_redemption(
             "action_reference": action_reference
         }),
     )?;
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    wait_until_pass_consumed(database.database_url(), AUTHORITY_ISSUER, "pass_durable_01").await?;
     drop(lost_response_stream);
     first_reference.stop();
 
@@ -297,7 +300,8 @@ async fn outcome_lookup_returns_durable_success_without_reexecution() -> Result<
     // Act
     let lost_response_stream =
         send_get_without_reading_response(&lookup_url, CLAIMANT_PROOF_HEADER, &proof)?;
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    wait_until_outcome_proof_consumed(pending.database.database_url(), "proof_outcome_lookup_01")
+        .await?;
     drop(lost_response_stream);
     let replay = reqwest::Client::new()
         .get(&lookup_url)

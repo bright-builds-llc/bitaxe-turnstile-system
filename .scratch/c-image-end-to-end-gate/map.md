@@ -1,7 +1,7 @@
 # C-image end-to-end Gate map
 
 [Spec](spec.md). The first Gate on the C Reference Firmware image through the
-production browser path. Tickets 01, 02, 06, 10, 11, 12, 13, 14, 17, 18, 20 and 22 are resolved; the rest is still planning.
+production browser path. Tickets 01, 02, 06, 10, 11, 12, 13, 14, 17, 18, 20, 22 and 23 are resolved; the rest is still planning.
 The first Gate (06, 07) and onboarding (14, 03, 04, 05, 15) run apart, and both
 feed 09.
 
@@ -29,6 +29,7 @@ feed 09.
 | [20](issues/20-pause-overlaps-renew-and-start.md) Pause overlapping a Renew or an in-flight Start | bug | resolved | None |
 | [21](issues/21-gate-negatives-harness.md) Gate negatives harness for the C image | task | needs-triage | 08 |
 | [22](issues/22-sse-subscribe-after-snapshot.md) Challenge events SSE can miss an update sent while it subscribes | bug | resolved | None |
+| [23](issues/23-relying-service-restart-replay-flake.md) Relying-service restart test replays a pass that was never consumed | bug | resolved | None |
 
 ## Decisions so far
 
@@ -100,3 +101,7 @@ feed 09.
   snapshot, and reads the lifecycle clock after subscribing, so an expiry or progress update sent
   meanwhile is delivered, at worst twice. `ChallengeChannels` in
   `src/authority_application/challenge_channels.rs` owns both channel maps.
+- Ticket 23 (2026-11-11): before restarting, the relying-service restart test waits
+  until the first redemption's consumption is committed, instead of sleeping 50 ms.
+  The lost outcome-lookup test waits for its committed proof the same way. The test
+  failed 3 of 190 loop runs before and 0 of 190 after. Production code is unchanged.
