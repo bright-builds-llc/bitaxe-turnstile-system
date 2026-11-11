@@ -14,12 +14,18 @@ async fn outcome_lookup_survives_marker_retirement_until_aggregate_retention_flo
         pending.database.database_url(),
     )
     .await?;
-    executor
+    let executed = executor
         .process_next_action(
             &ActionWorkerId::try_from("action_worker_governance_01".to_owned())?,
             pending.accepted_at,
         )
         .await?;
+    assert_eq!(
+        executed,
+        ActionProcessingOutcome::Succeeded {
+            redemption_id: pending.redemption_id.clone()
+        }
+    );
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     let terminal_at = now - 31 * 24 * 60 * 60;
     let pool = sqlx::PgPool::connect(pending.database.database_url()).await?;

@@ -1,7 +1,7 @@
 # C-image end-to-end Gate map
 
 [Spec](spec.md). The first Gate on the C Reference Firmware image through the
-production browser path. Tickets 01, 02, 06, 10, 11, 12, 13, 14, 17, 18, 20, 22 and 23 are resolved; the rest is still planning.
+production browser path. Tickets 01, 02, 06, 10, 11, 12, 13, 14, 17, 18, 20, 22, 23 and 24 are resolved; the rest is still planning.
 The first Gate (06, 07) and onboarding (14, 03, 04, 05, 15) run apart, and both
 feed 09.
 
@@ -30,6 +30,7 @@ feed 09.
 | [21](issues/21-gate-negatives-harness.md) Gate negatives harness for the C image | task | needs-triage | 08 |
 | [22](issues/22-sse-subscribe-after-snapshot.md) Challenge events SSE can miss an update sent while it subscribes | bug | resolved | None |
 | [23](issues/23-relying-service-restart-replay-flake.md) Relying-service restart test replays a pass that was never consumed | bug | resolved | None |
+| [24](issues/24-relying-service-accepted-at-flake.md) Relying-service tests run the action worker before the service's acceptance second | bug | resolved | None |
 
 ## Decisions so far
 
@@ -105,3 +106,7 @@ feed 09.
   until the first redemption's consumption is committed, instead of sleeping 50 ms.
   The lost outcome-lookup test waits for its committed proof the same way. The test
   failed 3 of 190 loop runs before and 0 of 190 after. Production code is unchanged.
+- Ticket 24 (2026-11-11): the relying-service persistence tests step the action worker from the
+  redemption's `accepted_at_unix_seconds` as the service recorded it, not from the test's clock,
+  and assert the executor's outcome. With the race induced, 4 tests failed in 10 of 10 runs
+  before and 0 of 10 after. Production code is unchanged.
