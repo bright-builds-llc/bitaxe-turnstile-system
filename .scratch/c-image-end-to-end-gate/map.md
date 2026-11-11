@@ -10,7 +10,7 @@ feed 09.
 | [01](issues/01-authority-worker-lease-grants.md) Authority issues signed Worker Lease grants and renewals | task | resolved | None |
 | [02](issues/02-c-image-onboarding-contract.md) Agree the C image's onboarding contract | grilling | resolved | None |
 | [14](issues/14-gate-onboarding-contract-for-the-c-image.md) Gate onboarding contract matches the C image | task | resolved | 02 |
-| [03](issues/03-c-image-onboarding-commands.md) C image reports onboarding facts and guards its own boot | task | ready-for-agent | 02, 14 |
+| [03](issues/03-c-image-onboarding-commands.md) C image reports onboarding facts and guards its own boot | task | ready-for-human | 02, 14 |
 | [04](issues/04-web-serial-onboarding-device.md) Browser onboarding device over the ROM bootloader | task | ready-for-agent | 03 |
 | [05](issues/05-signed-c-image-package.md) Owner signs the C image's firmware package | task | ready-for-human | 03, 04 |
 | [15](issues/15-c-image-onboarding-on-the-601.md) Onboarding on the 601, from stock and between reference images | task | ready-for-human | 05 |
