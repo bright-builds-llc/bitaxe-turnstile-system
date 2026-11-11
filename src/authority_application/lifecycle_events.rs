@@ -2,37 +2,35 @@ use std::time::Duration;
 
 use tokio::sync::broadcast;
 
-use super::{
-    AuthorityApplication, AuthorityApplicationError, PROGRESS_CHANNEL_CAPACITY,
-    current_unix_seconds,
-};
+use super::{AuthorityApplication, AuthorityApplicationError, current_unix_seconds};
 use crate::{challenge::ChallengeId, lifecycle::ChallengeLifecycle, progress::WorkSessionId};
 
 impl AuthorityApplication {
+    /// Subscribes to the challenge's lifecycle updates and reads its current lifecycle.
+    ///
+    /// The clock is read only after subscribing, so an expiry notified before the
+    /// subscription is already reflected in the snapshot.
     pub(crate) async fn subscribe_lifecycle(
         &self,
         challenge_id: &ChallengeId,
-        now: u64,
     ) -> Result<
         (ChallengeLifecycle, broadcast::Receiver<ChallengeLifecycle>),
         AuthorityApplicationError,
     > {
-        let snapshot = self.challenge_lifecycle(challenge_id, now).await?;
+        let (snapshot, receiver) = self
+            .lifecycle_channels
+            .subscribe_then_read(challenge_id, || async {
+                self.challenge_lifecycle(challenge_id, current_unix_seconds()?)
+                    .await
+            })
+            .await?;
         if snapshot.authorization_eligible() {
             self.schedule_lifecycle_expiry(
                 challenge_id.clone(),
                 snapshot.lifecycle_deadline_unix_seconds(),
             );
         }
-        let mut channels = self
-            .lifecycle_channels
-            .lock()
-            .map_err(|_| AuthorityApplicationError::StateUnavailable)?;
-        let channel = channels.entry(challenge_id.clone()).or_insert_with(|| {
-            let (updates, _receiver) = broadcast::channel(PROGRESS_CHANNEL_CAPACITY);
-            updates
-        });
-        Ok((snapshot, channel.subscribe()))
+        Ok((snapshot, receiver))
     }
 
     pub(super) fn notify_lifecycle(
@@ -40,21 +38,7 @@ impl AuthorityApplication {
         challenge_id: &ChallengeId,
         lifecycle: ChallengeLifecycle,
     ) -> Result<(), AuthorityApplicationError> {
-        let maybe_updates = self
-            .lifecycle_channels
-            .lock()
-            .map_err(|_| AuthorityApplicationError::StateUnavailable)?
-            .get(challenge_id)
-            .cloned();
-        let Some(updates) = maybe_updates else {
-            return Ok(());
-        };
-        if updates.receiver_count() > 0
-            && let Err(error) = updates.send(lifecycle)
-        {
-            tracing::debug!(%error, "lifecycle subscriber disconnected before notification");
-        }
-        Ok(())
+        self.lifecycle_channels.notify(challenge_id, lifecycle)
     }
 
     pub(super) async fn notify_lifecycle_for_session(

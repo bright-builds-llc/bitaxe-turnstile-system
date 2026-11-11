@@ -1,7 +1,7 @@
 # C-image end-to-end Gate map
 
 [Spec](spec.md). The first Gate on the C Reference Firmware image through the
-production browser path. Tickets 01, 02, 06, 10, 11, 12, 13, 14, 17, 18 and 20 are resolved; the rest is still planning.
+production browser path. Tickets 01, 02, 06, 10, 11, 12, 13, 14, 17, 18, 20 and 22 are resolved; the rest is still planning.
 The first Gate (06, 07) and onboarding (14, 03, 04, 05, 15) run apart, and both
 feed 09.
 
@@ -28,6 +28,7 @@ feed 09.
 | [19](issues/19-deployment-policy-pages.md) Deployment serves its operator policy, privacy and terms pages | task | needs-triage | None |
 | [20](issues/20-pause-overlaps-renew-and-start.md) Pause overlapping a Renew or an in-flight Start | bug | resolved | None |
 | [21](issues/21-gate-negatives-harness.md) Gate negatives harness for the C image | task | needs-triage | 08 |
+| [22](issues/22-sse-subscribe-after-snapshot.md) Challenge events SSE can miss an update sent while it subscribes | bug | resolved | None |
 
 ## Decisions so far
 
@@ -95,3 +96,7 @@ feed 09.
   `conformance/bwg-bitaxe-onboarding-0.2/`. The raw `nvs` copy lives in browser memory
   until `complete()` or any failure; then a rollback needs the optional download. Ticket 04
   must say how stock, which has no Worker Serial, is inspected and checked after rollback.
+- Ticket 22 (2026-11-10): the `/events` stream subscribes to each channel before it reads the
+  snapshot, and reads the lifecycle clock after subscribing, so an expiry or progress update sent
+  meanwhile is delivered, at worst twice. `ChallengeChannels` in
+  `src/authority_application/challenge_channels.rs` owns both channel maps.

@@ -38,11 +38,14 @@ use crate::{
 };
 
 mod accepted_work;
+mod challenge_channels;
 mod claimant_pool_selection;
 mod lifecycle_events;
 mod pool_adapter;
 mod trusted_consent;
 mod worker_lease;
+
+use challenge_channels::ChallengeChannels;
 pub use pool_adapter::SimulatedPoolAdapter;
 use trusted_consent::authority_origin;
 pub(crate) use worker_lease::{ClaimantWorkSessionRequest, WorkSessionOperation};
@@ -61,8 +64,8 @@ const ISSUANCE_PROOF_FRESHNESS_SECONDS: u64 = 60;
 pub struct AuthorityApplication {
     pub(crate) config: Config,
     repository: Arc<dyn AuthorityRepository>,
-    progress_channels: Arc<Mutex<HashMap<ChallengeId, broadcast::Sender<ProgressUpdate>>>>,
-    lifecycle_channels: Arc<Mutex<HashMap<ChallengeId, broadcast::Sender<ChallengeLifecycle>>>>,
+    progress_channels: ChallengeChannels<ProgressUpdate>,
+    lifecycle_channels: ChallengeChannels<ChallengeLifecycle>,
     lifecycle_expiry_deadlines: Arc<Mutex<HashMap<ChallengeId, u64>>>,
     trusted_consent_verifier: Arc<dyn TrustedConsentWebauthnVerifier>,
     maybe_worker_leases: Option<WorkerLeaseIssuance>,
@@ -99,8 +102,8 @@ impl AuthorityApplication {
         Ok(Self {
             config,
             repository: Arc::new(repository),
-            progress_channels: Arc::new(Mutex::new(HashMap::new())),
-            lifecycle_channels: Arc::new(Mutex::new(HashMap::new())),
+            progress_channels: ChallengeChannels::new(),
+            lifecycle_channels: ChallengeChannels::new(),
             lifecycle_expiry_deadlines: Arc::new(Mutex::new(HashMap::new())),
             trusted_consent_verifier,
             maybe_worker_leases: None,
@@ -326,21 +329,16 @@ impl AuthorityApplication {
         challenge_id: &ChallengeId,
     ) -> Result<(ProgressUpdate, broadcast::Receiver<ProgressUpdate>), AuthorityApplicationError>
     {
-        let progress = self.repository.progress(challenge_id).await?;
-        let snapshot = ProgressUpdate::persisted(
-            progress.challenge_id,
-            progress.verified_progress,
-            progress.work_requirement,
-        );
-        let mut channels = self
-            .progress_channels
-            .lock()
-            .map_err(|_| AuthorityApplicationError::StateUnavailable)?;
-        let channel = channels.entry(challenge_id.clone()).or_insert_with(|| {
-            let (updates, _receiver) = broadcast::channel(PROGRESS_CHANNEL_CAPACITY);
-            updates
-        });
-        Ok((snapshot, channel.subscribe()))
+        self.progress_channels
+            .subscribe_then_read(challenge_id, || async {
+                let progress = self.repository.progress(challenge_id).await?;
+                Ok(ProgressUpdate::persisted(
+                    progress.challenge_id,
+                    progress.verified_progress,
+                    progress.work_requirement,
+                ))
+            })
+            .await
     }
 
     fn notify_progress(
@@ -348,21 +346,7 @@ impl AuthorityApplication {
         challenge_id: &ChallengeId,
         update: ProgressUpdate,
     ) -> Result<(), AuthorityApplicationError> {
-        let maybe_updates = self
-            .progress_channels
-            .lock()
-            .map_err(|_| AuthorityApplicationError::StateUnavailable)?
-            .get(challenge_id)
-            .cloned();
-        let Some(updates) = maybe_updates else {
-            return Ok(());
-        };
-        if updates.receiver_count() > 0
-            && let Err(error) = updates.send(update)
-        {
-            tracing::debug!(%error, "progress subscriber disconnected before notification");
-        }
-        Ok(())
+        self.progress_channels.notify(challenge_id, update)
     }
 }
 

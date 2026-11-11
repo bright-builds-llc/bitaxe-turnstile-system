@@ -303,10 +303,8 @@ async fn challenge_progress(
     let challenge_id = ChallengeId::try_from(challenge_id)?;
     let (progress_snapshot, progress_receiver) =
         state.application.subscribe_progress(&challenge_id).await?;
-    let (lifecycle_snapshot, lifecycle_receiver) = state
-        .application
-        .subscribe_lifecycle(&challenge_id, current_unix_seconds()?)
-        .await?;
+    let (lifecycle_snapshot, lifecycle_receiver) =
+        state.application.subscribe_lifecycle(&challenge_id).await?;
     let initial = tokio_stream::iter([
         Event::default()
             .event("verified_progress")
