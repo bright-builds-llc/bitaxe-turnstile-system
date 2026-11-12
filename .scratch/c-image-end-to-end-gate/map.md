@@ -119,3 +119,10 @@ feed 09.
   package carries the bootloader and table, so Ticket 05 signs every byte written. Onboarding's own
   reconnects skip the gesture check but keep the full Hello and possession admission. Tested on
   simulated boards only. Its bounds are proposed and wait for the 601 sitting.
+- Ticket 05 (2026-11-12): the agent half is done, and the ticket waits on the owner's signature
+  ([signing-handoff-05.md](signing-handoff-05.md)). C `51e5af9` is built with the owner's trust.
+  `esp-miner.bin` SHA-256 starts `b8104b945f195032`, and the ELF starts `dc8b8319c1f5fcda`. The
+  unsigned `0.2` manifest passes admission's parser, and a throwaway-key dry run of the whole
+  admission. The manifest stays at `0.1.0` to match the signed capabilities, and Ticket 03 changed
+  nothing they sign. `sourceUrl` is the owner's placeholder. `sign-firmware-manifest` in
+  `scripts/worker-development-authority.ts` is the owner's signing command.

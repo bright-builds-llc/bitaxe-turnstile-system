@@ -34,6 +34,7 @@ import {
   writeExclusiveJson,
   type SequenceDocument,
 } from "./worker-development-authority-files";
+import { signFirmwareManifest } from "./worker-development-authority-firmware";
 
 type AuthorityState = {
   update: PrivateAuthority;
@@ -104,6 +105,22 @@ async function main(args: readonly string[]): Promise<void> {
       ),
     );
     console.log(`worker_capability=signed board=${board.revision}`);
+    return;
+  }
+  if (command === "sign-firmware-manifest") {
+    const parsed = exactOptions(options, ["--directory", "--input", "--output"]);
+    const directory = resolve(parsed["--directory"]);
+    const signed = await withAuthorityLock(directory, async () => {
+      const input = await readJson(resolve(parsed["--input"]));
+      const update = await privateAuthority(
+        join(directory, "update-private.json"),
+        "update_authority",
+      );
+      const result = await signFirmwareManifest(input, update);
+      await writeExclusiveJson(resolve(parsed["--output"]), result, 0o644);
+      return result;
+    });
+    console.log(`firmware_manifest=signed version=${signed.manifest.firmwareVersion}`);
     return;
   }
   if (command === "rotate") {

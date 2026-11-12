@@ -140,7 +140,7 @@ function parseFirmwarePackage(input: unknown): {
     throw new Error("firmware manifest signature is invalid");
   }
   return {
-    manifest: parseManifest(value.manifest),
+    manifest: parseFirmwareManifest(value.manifest),
     image,
     firstInstall: parseFirstInstall(value.bootloader, value.partitionTable),
     signature: value.signature,
@@ -166,7 +166,8 @@ function parseFirstInstall(bootloader: unknown, partitionTable: unknown): FirstI
   return { bootloader: bootloader.slice(), partitionTable: table };
 }
 
-function parseManifest(input: unknown): FirmwareManifest {
+/** Parses a `bwg-reference-firmware/0.2` manifest exactly as admission does, before any signature. */
+export function parseFirmwareManifest(input: unknown): FirmwareManifest {
   if (
     !hasExactKeys(input, [
       "profile",
