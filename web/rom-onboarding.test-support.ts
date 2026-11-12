@@ -11,13 +11,14 @@ import {
   type PartitionEntry,
 } from "./esp-partition-table";
 import { settingsCategoryHmacs } from "./bitaxe-settings-hmac";
-import type {
-  OnboardingClock,
-  OnboardingSerialLink,
-  OnboardingSerialSession,
-  RomAccess,
-  RomOnboardingBounds,
-  RomSession,
+import {
+  NoWorkerSerialHelloError,
+  type OnboardingClock,
+  type OnboardingSerialLink,
+  type OnboardingSerialSession,
+  type RomAccess,
+  type RomOnboardingBounds,
+  type RomSession,
 } from "./rom-onboarding-seams";
 import type { WorkerControllerCapabilities } from "./worker-controller-semantics";
 
@@ -68,6 +69,8 @@ export class FakeBoard {
   maybeVerifyOverride: ((reply: Record<string, unknown>) => Record<string, unknown>) | undefined;
   /** When true, a C image never answers Hello: as if it never booted. */
   silent = false;
+  /** When true, the running image answers Hello and then fails Device Identity possession. */
+  possessionFails = false;
   #inRom = false;
   #inspects = 0;
 
@@ -99,7 +102,8 @@ export class FakeBoard {
     return {
       connect: async () => {
         this.log.push({ op: "connect" });
-        if (this.#inRom || this.silent || !this.#runningCImage()) throw new Error("no Hello");
+        if (this.#inRom || this.silent || !this.#runningCImage()) throw new NoWorkerSerialHelloError();
+        if (this.possessionFails) throw new Error("possession_failed");
         return this.#serialSession(capabilities);
       },
     };

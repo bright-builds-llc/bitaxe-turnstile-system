@@ -32,8 +32,24 @@ export interface OnboardingSerialSession {
   close(): Promise<void>;
 }
 
+/**
+ * The running image sent no Hello acknowledgment, as stock ESP-Miner, which has no Worker Serial,
+ * doesn't. Only this failure lets the device inspect the image from flash instead.
+ */
+export class NoWorkerSerialHelloError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("the running image did not answer Worker Serial Hello", options);
+    this.name = "NoWorkerSerialHelloError";
+  }
+}
+
 /** Opens Worker Serial sessions on the granted port; each needs a fresh Hello and possession. */
 export interface OnboardingSerialLink {
+  /**
+   * Rejects with `NoWorkerSerialHelloError` when no Hello acknowledgment arrived. Any other
+   * rejection means admission failed for another reason, such as an image that answered Hello
+   * and then failed possession; that is a real failure, not a sign of stock.
+   */
   connect(): Promise<OnboardingSerialSession>;
 }
 

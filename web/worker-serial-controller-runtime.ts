@@ -52,7 +52,7 @@ import {
 import { WorkerSerialChannel, selectWorkerPort, type WorkerSerialBrowserRuntime } from "./webserial-worker-port";
 import {
   type WorkerSerialQualificationHook, type WebSerialWorkerControllerInput, type WebSerialWorkerController,
-  type Ack, type PendingResponse,
+  type Ack, type PendingResponse, type WorkerSerialAdmissionStage,
 } from "./worker-serial-controller.types";
 export class BrowserSerialController implements WebSerialWorkerController {
   readonly #restart = new WorkerSerialRestart();
@@ -87,6 +87,9 @@ export class BrowserSerialController implements WebSerialWorkerController {
   #generation = 0;
   #admission = 0;
   #maybeFailure: Error | undefined;
+  #maybeAdmissionFailureStage: WorkerSerialAdmissionStage | undefined;
+  /** Where the last `requestPermission` failed: `hello` means no Hello acknowledgment arrived. */
+  get maybeAdmissionFailureStage(): WorkerSerialAdmissionStage | undefined { return this.#maybeAdmissionFailureStage; }
   constructor(
     readonly input: WebSerialWorkerControllerInput,
     readonly runtime: WorkerSerialBrowserRuntime,
@@ -116,6 +119,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
     this.#maybeFailure = undefined;
     const generation = this.#generation;
     const admission = ++this.#admission;
+    this.#maybeAdmissionFailureStage = undefined;
     // Selection starts in the original user-activation task; a chooser fallback stays
     // within that transient activation. Reuse grants nothing: checks below still apply.
     const selection = selectWorkerPort(this.runtime.serial, this.input.deviceFilter);
@@ -175,6 +179,7 @@ export class BrowserSerialController implements WebSerialWorkerController {
       return await this.#admitSession(generation, value => { stage = value; });
     } catch (error) {
       if (admission === this.#admission) {
+        this.#maybeAdmissionFailureStage = stage;
         this.maybeQualificationHook?.maybeObserveAdmissionFailure?.(stage);
         this.maybeQualificationHook?.maybeObserveSerialFailure?.(workerSerialFailureCategory(error));
       }

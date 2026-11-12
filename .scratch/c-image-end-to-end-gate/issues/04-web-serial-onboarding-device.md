@@ -75,20 +75,22 @@ are this ticket's, not the owner's, and the owner accepts or amends them before 
   by ESP-IDF's `nvs_partition_gen.py`
   (`conformance/bwg-bitaxe-onboarding-0.2/nvs-partition-vector.json`, test values only).
 - **Inspecting stock.** An image that answers a fresh Hello, possession and
-  `onboarding_inspect` is inspected over Worker Serial. Any other image is inspected from
-  flash: the `otadata` selection, the running slot's `esp_app_desc_t` (a release version
-  such as `v2.10.1` becomes `2.10.1`; a `git describe` suffix is refused), and the board
-  from NVS `boardversion` within ADR-0104's set. Such an image is never Reference
-  Firmware.
+  `onboarding_inspect` is inspected over Worker Serial. Only an image that sends no Hello
+  acknowledgment at all is inspected from flash; one that answers Hello and then fails a
+  later step stops onboarding. From flash: the `otadata` selection, the running slot's
+  `esp_app_desc_t` (a release version such as `v2.10.1` becomes `2.10.1`; a `git describe`
+  suffix is refused), and the board from NVS `boardversion` within ADR-0104's set. Such an
+  image is never Reference Firmware.
 - **Device is back.** After the reset, the device runs a fresh Hello and possession, then
   `onboarding_inspect` until the image reports `bootable`, which it does only after its
   startup check. It retries until the deadline, and every session after the first must
   prove the same Device Identity. It waits past the image's 120 s check; otherwise the
   install rolls back.
-- **Rollback.** `otadata` points at the previous slot: `factory` erases it, and an OTA slot
-  gets the next sequence as `VALID`. The `nvs` copy is written back. Each is read back, and
-  each is written only when flash differs. The previous slot must still have its
-  pre-install MD5. The C bootloader and table stay, since they boot stock too.
+- **Rollback.** The previous slot must still have its pre-install MD5, checked before
+  anything is written. Then `otadata` points at the previous slot: `factory` erases it, and
+  an OTA slot gets the next sequence as `VALID`. The `nvs` copy is written back. Each is read
+  back, and each is written only when flash differs. The C bootloader and table stay, since
+  they boot stock too.
 - **Rollback to stock.** Stock has no Worker Serial. After the reset the device waits a
   fixed pause, re-enters ROM, and reports the selection, the descriptor and its own
   nonce-keyed HMACs over the NVS it reads back. The state machine compares these with the
@@ -156,3 +158,9 @@ Run under the fork handoff's process rules, with a base-MAC match before any ROM
 - 2026-11-11: built the production device, the ROM flash formats, the signed first-install
   bytes and the gate action, on simulated boards only. What remains is the 601 sitting
   above, then Ticket 05's signed package with the bootloader and table, then Ticket 15.
+- 2026-11-11 (owner review of `da4f27b`): two fixes. Inspection falls back to flash only
+  when the image sends no Hello acknowledgment (`NoWorkerSerialHelloError` at the serial
+  seam, from the Controller's failed admission stage `hello`); an image that answers Hello
+  and then fails possession or `onboarding_inspect` now stops onboarding instead of passing
+  for stock. `rollback()` checks the previous slot's MD5 before it writes `otadata` or NVS,
+  so a changed slot leaves both untouched. Tests cover each case.

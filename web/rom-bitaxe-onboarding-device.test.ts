@@ -178,6 +178,17 @@ describe("RomBitaxeOnboardingDevice from stock", () => {
     );
     expect(afterRollback.some((entry) => entry.op === "verify" || entry.op === "inspect")).toBe(false);
   });
+
+  test("falls back to ROM only after the image sent no Hello acknowledgment", async () => {
+    // Arrange
+    const { board, onboarding } = await setUp();
+
+    // Act
+    await onboarding.connect();
+
+    // Assert
+    expect(board.log.slice(0, 2)).toEqual([{ op: "connect" }, { op: "enter_rom" }]);
+  });
 });
 
 describe("RomBitaxeOnboardingDevice between reference images", () => {
@@ -239,18 +250,39 @@ describe("RomBitaxeOnboardingDevice between reference images", () => {
     expect(selectedBootSlot(board.region(LAYOUT.otadata.offset, LAYOUT.otadata.size)).slot).toBe("ota_0");
   });
 
-  test("refuses to call a rollback confirmed when the previous slot changed", async () => {
+  test("stops onboarding when the image answers Hello and then fails possession", async () => {
+    // Arrange
+    const { board, onboarding } = await cBoardOnOta0();
+    board.possessionFails = true;
+
+    // Act
+    const connecting = onboarding.connect();
+
+    // Assert
+    await expect(connecting).rejects.toThrow("possession_failed");
+    expect(board.log).toEqual([{ op: "connect" }]);
+  });
+
+  test("refuses a changed previous slot before it touches otadata or NVS", async () => {
     // Arrange
     const { board, onboarding, firmwarePackage } = await cBoardOnOta0();
     await onboarding.connect();
     await onboarding.install(firmwarePackage);
     board.flash[LAYOUT.ota_0.offset + 0x1000] = 0x00;
+    const changedNvs = board.region(LAYOUT.nvs.offset, LAYOUT.nvs.size);
+    flipBits(changedNvs, 100, 0xff);
+    board.flash.set(changedNvs, LAYOUT.nvs.offset);
+    const otadataBefore = board.region(LAYOUT.otadata.offset, LAYOUT.otadata.size);
+    board.log.length = 0;
 
     // Act
     const rollingBack = rollBack(onboarding);
 
     // Assert
     await expect(rollingBack).rejects.toThrow("previous slot changed");
+    expect(board.writes()).toEqual([]);
+    expect(board.region(LAYOUT.otadata.offset, LAYOUT.otadata.size)).toEqual(otadataBefore);
+    expect(board.region(LAYOUT.nvs.offset, LAYOUT.nvs.size)).toEqual(changedNvs);
   });
 
   test("rolls back when the new image reports settings it did not keep", async () => {

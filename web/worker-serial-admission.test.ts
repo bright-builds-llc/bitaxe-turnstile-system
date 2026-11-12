@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { serialHarness } from "./worker-serial.test-support";
 import { createWebSerialWorkerController, workerSerialQualificationHook, type WorkerSerialQualificationHook } from "./webserial-worker-controller";
 import { workerSerialTestRuntime } from "./webserial-worker-port";
+import { BrowserSerialController } from "./worker-serial-controller-runtime";
 
 async function admissionFixture() {
   const h = await serialHarness();
@@ -74,6 +75,25 @@ test("silent application reports hello failure while retaining local startup obs
   expect(observations).toEqual([{ category: "startup", authoritative: false, stage: "network", state: "entered", first_failure: "none", uptime_ms: 123 }]);
   expect(closed).toBe(1);
   expect(f.ownership).toEqual([false, true]);
+});
+
+test("a silent application leaves its failed admission at hello without any qualification hook", async () => {
+  // Arrange
+  const h = await serialHarness();
+  const { runtime, continuity } = h.input[workerSerialTestRuntime];
+  runtime.serial.requestPort = async () => ({
+    getInfo: () => h.input.deviceFilter,
+    readable: new ReadableStream<Uint8Array>(),
+    writable: new WritableStream<Uint8Array>(),
+    async open() { },
+    async close() { },
+  });
+  const controller = new BrowserSerialController(h.input, runtime, continuity);
+  // Act
+  const admission = controller.requestPermission();
+  // Assert
+  await expect(admission).rejects.toThrow();
+  expect(controller.maybeAdmissionFailureStage).toBe("hello");
 });
 
 test("asynchronous reader failure preserves its admission stage after lifecycle closure", async () => {

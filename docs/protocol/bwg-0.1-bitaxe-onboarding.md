@@ -149,11 +149,14 @@ records the choices below.
   released, the Worker Controller's own Connect all use that grant; after a reset the device is
   re-found among the granted ports. Each ROM session holds the `bwg-worker-serial` Web Lock.
 - **Inspection.** An image that answers a fresh Hello, Device Identity possession and
-  `onboarding_inspect` is inspected over Worker Serial, with `capabilities` from `discover`. Any
-  other image, including stock ESP-Miner, is inspected from flash through ROM: the table, the
-  `otadata` selection, the running slot's `esp_app_desc_t` (project name, and a release version
-  such as `v2.10.1` carried as `2.10.1`) and the board from NVS `boardversion` within ADR-0104's
-  closed set. It is never Reference Firmware and its preservation is `upgrade_required`.
+  `onboarding_inspect` is inspected over Worker Serial, with `capabilities` from `discover`. An
+  image that sends no Hello acknowledgment at all, such as stock ESP-Miner, is inspected from
+  flash through ROM. An image that answers Hello and then fails possession, `discover` or
+  `onboarding_inspect` stops onboarding with that error; it is never taken for stock. From
+  flash: the table, the `otadata` selection, the running slot's `esp_app_desc_t` (project name,
+  and a release version such as `v2.10.1` carried as `2.10.1`) and the board from NVS
+  `boardversion` within ADR-0104's closed set. It is never Reference Firmware and its
+  preservation is `upgrade_required`.
 - **Write order.** The table is read and classified before any write. Then: the running slot's
   MD5; the image into the target slot, checked by the ROM stub's MD5; from upstream's table only,
   the C bootloader at `0x0` and the C table at `0x8000`, each read back byte for byte, and the
@@ -163,10 +166,11 @@ records the choices below.
   `onboarding_inspect` until the image reports `bootable`, which it does only after its own
   startup check marks it valid. Every Worker Serial session after the first must prove the same
   Device Identity. The window outlasts the image's 120 s startup check.
-- **Rollback.** `otadata` is pointed at the previous slot (`factory` erases it; an OTA slot gets
-  the next sequence as `VALID`), the `nvs` copy is written back, and each is read back; each is
-  written only when flash differs. The previous slot must still have the MD5 it had before the
-  install. The C bootloader and table stay, since they boot stock too.
+- **Rollback.** The previous slot must still have the MD5 it had before the install; a changed
+  slot is refused before anything is written. Then `otadata` is pointed at the previous slot
+  (`factory` erases it; an OTA slot gets the next sequence as `VALID`), the `nvs` copy is written
+  back, and each is read back; each is written only when flash differs. The C bootloader and
+  table stay, since they boot stock too.
 - **Rollback to stock.** Stock has no Worker Serial, so after the reset the device waits a fixed
   pause and then inspects and verifies from flash through ROM: the selection, the app descriptor,
   and its own HMACs over the NVS it reads back, under the onboarding's nonce. This proves what
@@ -191,7 +195,8 @@ the scheme, the `factory` slot, refused replies and refused manifests.
 its corruptions, and app descriptors. `web/rom-bitaxe-onboarding-device.test.ts` drives the
 production device on a simulated board (flash, a rollback-on bootloader, stock and C images): the
 write order, unknown-table refusal before any write, `otadata`, rollback to stock checked from
-flash, rollback between reference images, and a changed previous slot.
+flash, rollback between reference images, ROM inspection only after no Hello, a possession
+failure after Hello that stops onboarding, and a changed previous slot refused before any write.
 `web/bitaxe-usb-onboarding.test.ts` covers the one granted port and the gate action.
 `web/bitaxe-onboarding.test.ts` covers explicit USB access, signed admission, board, partition,
 schema, signature and digest negatives, immutable admission inputs, single-flight installation,

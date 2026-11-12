@@ -17,19 +17,20 @@ after each reboot, minutes after the user's click.
 ## Decision
 
 - **Stock is inspected from flash.** An image that answers a fresh Hello, Device Identity
-  possession and `onboarding_inspect` is inspected over Worker Serial. Any other is inspected
-  through ROM: the table at `0x8000`, the `otadata` selection, the running slot's
-  `esp_app_desc_t` and NVS. The board is NVS `boardversion` within ADR-0104's closed set, the
-  firmware is the descriptor's project name and release version, and the snapshot is never
-  Reference Firmware (`upgrade_required`). The snapshot keeps the Controller capability shape,
-  whose fixed literals say nothing about stock, as Ticket 14's fixtures already did; the contract
-  types are unchanged.
-- **A rollback to stock is checked from flash.** The device writes `otadata` and NVS, reads both
-  back and requires the previous slot's pre-install MD5. After the reset it waits a fixed pause and
-  re-enters ROM, then reports the selection, the descriptor and its own nonce-keyed HMACs over the
-  NVS it reads, which the state machine compares with the pre-install HMACs as for any rollback.
-  This proves what flash holds, not that stock booted. Stock's boot is not observable over USB, so
-  the user confirms it on the board.
+  possession and `onboarding_inspect` is inspected over Worker Serial. Only an image that sends
+  no Hello acknowledgment at all is inspected through ROM; one that answers Hello and then fails
+  a later step stops onboarding, so a failing C image is never taken for stock. From ROM: the
+  table at `0x8000`, the `otadata` selection, the running slot's `esp_app_desc_t` and NVS. The
+  board is NVS `boardversion` within ADR-0104's closed set, the firmware is the descriptor's
+  project name and release version, and the snapshot is never Reference Firmware
+  (`upgrade_required`). The snapshot keeps the Controller capability shape, whose fixed literals
+  say nothing about stock, as Ticket 14's fixtures already did; the contract types are unchanged.
+- **A rollback to stock is checked from flash.** The device requires the previous slot's
+  pre-install MD5 before writing anything, then writes `otadata` and NVS and reads both back.
+  After the reset it waits a fixed pause and re-enters ROM, then reports the selection, the
+  descriptor and its own nonce-keyed HMACs over the NVS it reads, which the state machine
+  compares with the pre-install HMACs as for any rollback. This proves what flash holds, not that
+  stock booted. Stock's boot is not observable over USB, so the user confirms it on the board.
 - **The package signs every byte written.** The signed manifest gains
   `firstInstall: { bootloaderSha256, partitionTableSha256 }`, and the package carries the C
   bootloader and C table bytes beside the image. Admission checks both digests, that the

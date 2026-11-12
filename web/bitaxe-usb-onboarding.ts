@@ -9,6 +9,7 @@ import { encodeBase64Url } from "./crypto-bytes";
 import { esptoolRomAccess } from "./esptool-rom-access";
 import { RomBitaxeOnboardingDevice } from "./rom-bitaxe-onboarding-device";
 import {
+  NoWorkerSerialHelloError,
   PAGE_ONBOARDING_CLOCK,
   pause,
   PROPOSED_ROM_ONBOARDING_BOUNDS,
@@ -158,7 +159,13 @@ function workerSerialLink(
         onboardingRuntime,
         continuity,
       );
-      await controller.requestPermission();
+      try {
+        await controller.requestPermission();
+      } catch (error) {
+        // Admission leaves `hello` only once a Hello acknowledgment frame has arrived.
+        if (controller.maybeAdmissionFailureStage === "hello") throw new NoWorkerSerialHelloError({ cause: error });
+        throw error;
+      }
       try {
         const capabilities = await controller.discover();
         return {

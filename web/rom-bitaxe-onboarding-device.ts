@@ -15,6 +15,7 @@ import {
 } from "./esp-partition-table";
 import { inspectFlash, verifyFlash, type RomFlashView } from "./bitaxe-rom-snapshot";
 import {
+  NoWorkerSerialHelloError,
   pause,
   withinBound,
   type OnboardingClock,
@@ -57,7 +58,7 @@ export class RomBitaxeOnboardingDevice implements BitaxeOnboardingDevice {
     private readonly clock: OnboardingClock,
   ) {}
 
-  /** Worker Serial when the image answers Hello, possession and `onboarding_inspect`; else flash. */
+  /** Worker Serial when the image answers Hello; flash only when it doesn't answer Hello at all. */
   async inspect(): Promise<BitaxeDeviceSnapshot> {
     if (this.#maybeOriginalObservation === undefined) {
       const maybeSnapshot = await this.#maybeWorkerSerialSnapshot();
@@ -139,9 +140,9 @@ export class RomBitaxeOnboardingDevice implements BitaxeOnboardingDevice {
   }
 
   /**
-   * Points `otadata` back at `slot`, writes the `nvs` copy back, and reads both back; each is
-   * written only when flash differs. The previous slot must still have the MD5 it had before
-   * the install. Bootloader and table stay C's, which boot stock as well.
+   * Requires the previous slot to still have the MD5 it had before the install, then points
+   * `otadata` back at `slot`, writes the `nvs` copy back, and reads both back; each is written
+   * only when flash differs. Bootloader and table stay C's, which boot stock as well.
    */
   async rollback(input: { slot: PartitionSlot; nvsPartition: Uint8Array }): Promise<void> {
     await this.#closeSession();
@@ -150,16 +151,16 @@ export class RomBitaxeOnboardingDevice implements BitaxeOnboardingDevice {
     if (input.nvsPartition.byteLength !== layout.nvs.size) {
       throw new Error("the settings copy does not match the nvs partition");
     }
+    const maybePrevious = this.#maybePreviousSlot;
+    if (maybePrevious?.slot === input.slot && (await this.#slotMd5(rom, layout, input.slot)) !== maybePrevious.md5) {
+      throw new Error("the previous slot changed during onboarding");
+    }
     const otadata = await this.#read(rom, layout.otadata.offset, layout.otadata.size);
     const restored = otadataBooting(otadata, input.slot, OTA_IMAGE_STATE.valid);
     await this.#writeIfChanged(rom, layout.otadata.offset, otadata, restored, "otadata write");
     const nvs = await this.#read(rom, layout.nvs.offset, layout.nvs.size);
     await this.#writeIfChanged(rom, layout.nvs.offset, nvs, input.nvsPartition, "nvs restore");
     nvs.fill(0);
-    const maybePrevious = this.#maybePreviousSlot;
-    if (maybePrevious?.slot === input.slot && (await this.#slotMd5(rom, layout, input.slot)) !== maybePrevious.md5) {
-      throw new Error("the previous slot changed during onboarding");
-    }
     this.#nextObservation = this.#maybeOriginalObservation ?? "rom";
   }
 
@@ -175,17 +176,25 @@ export class RomBitaxeOnboardingDevice implements BitaxeOnboardingDevice {
     return this.bounds.helloMilliseconds;
   }
 
+  /**
+   * `undefined` only when the image sent no Hello acknowledgment; an image that answered Hello
+   * and then failed possession or `onboarding_inspect` stops onboarding instead of passing for stock.
+   */
   async #maybeWorkerSerialSnapshot(): Promise<BitaxeDeviceSnapshot | undefined> {
-    let maybeSession: OnboardingSerialSession | undefined;
+    let session: OnboardingSerialSession;
     try {
-      maybeSession = await this.#bounded("Hello and possession", this.helloBound, this.link.connect());
-      const snapshot = await this.#bounded("onboarding_inspect", this.helloBound, sessionSnapshot(maybeSession));
-      this.#maybeSession = maybeSession;
+      session = await this.#bounded("Hello and possession", this.helloBound, this.link.connect());
+    } catch (error) {
+      if (error instanceof NoWorkerSerialHelloError) return undefined;
+      throw error;
+    }
+    try {
+      const snapshot = await this.#bounded("onboarding_inspect", this.helloBound, sessionSnapshot(session));
+      this.#maybeSession = session;
       return snapshot;
-    } catch {
-      // No Hello, no possession or no onboarding commands: the image is inspected from flash.
-      await maybeSession?.close();
-      return undefined;
+    } catch (error) {
+      await session.close();
+      throw error;
     }
   }
 
