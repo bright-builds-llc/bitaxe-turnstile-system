@@ -74,3 +74,12 @@ and check the signed one; they never handle the owner's keys.
   - For Ticket 15: inspection calls any reference board that reports `compatible` `ready`, without
     comparing versions. A 601 on `247d2cd` reports `0.1.0` but lacks `onboarding_inspect`, so
     onboarding stops there, after Hello.
+- 2026-11-13 (owner review of `fa9cbbe`: "Fix, then land"): the Ticket 15 note above is fixed.
+  - A board on `247d2cd` is admitted, found to lack `onboarding_inspect` by the controller's own
+    `command_rejected`/`invalid_request` reply, then inspected from flash under its signed
+    capability.
+  - The install writes the image and the signed C bootloader, because `247d2cd`'s bootloader has app
+    rollback off. It then verifies `51e5af9` over Worker Serial.
+  - A rollback returns to `247d2cd` and is checked from flash.
+  - Details are on Ticket 04. The manifest and image are unchanged. The owner signs from `main` once
+    this branch lands.

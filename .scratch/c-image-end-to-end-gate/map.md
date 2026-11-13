@@ -126,3 +126,9 @@ feed 09.
   admission. The manifest stays at `0.1.0` to match the signed capabilities, and Ticket 03 changed
   nothing they sign. `sourceUrl` is the owner's placeholder. `sign-firmware-manifest` in
   `scripts/worker-development-authority.ts` is the owner's signing command.
+- Ticket 05 review (2026-11-13), amending ADR-0112: onboarding from a pre-Ticket 03 reference image
+  (`247d2cd`) no longer stops after Hello.
+  - The image's `command_rejected`/`invalid_request` reply to `onboarding_inspect` is a typed
+    "unsupported" result. The device then inspects from flash under the image's signed capability.
+  - Install writes the signed bootloader and table wherever flash differs, because `247d2cd`'s
+    bootloader has app rollback off.

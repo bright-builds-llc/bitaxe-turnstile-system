@@ -1,7 +1,7 @@
 import { encodeBase64Url } from "./crypto-bytes";
 import { parseDeviceSnapshot, parseVerification } from "./bitaxe-onboarding-boundaries";
 import { md5Hex } from "./esp-flash-digests";
-import { APP_DESCRIPTOR_READ_BYTES } from "./esp-app-image";
+import { APP_DESCRIPTOR_READ_BYTES, maybeAppDescriptor } from "./esp-app-image";
 import { parseNvsPartition } from "./esp-nvs";
 import { OTA_IMAGE_STATE, otadataBooting, selectedBootSlot } from "./esp-otadata";
 import {
@@ -13,9 +13,10 @@ import {
   type KnownPartitionTable,
   type PartitionLayout,
 } from "./esp-partition-table";
-import { inspectFlash, verifyFlash, type RomFlashView } from "./bitaxe-rom-snapshot";
+import { inspectFlash, verifyFlash, type AdmittedImage, type RomFlashView } from "./bitaxe-rom-snapshot";
 import {
   NoWorkerSerialHelloError,
+  OnboardingCommandsUnsupportedError,
   pause,
   withinBound,
   type OnboardingClock,
@@ -34,6 +35,7 @@ import type {
   PartitionSlot,
   RedactedSettingsVerification,
 } from "./bitaxe-onboarding";
+import type { WorkerControllerCapabilities } from "./worker-controller-semantics";
 
 /** How the image that runs next is inspected and verified. */
 type Observation = "worker_serial" | "rom";
@@ -41,7 +43,8 @@ type Observation = "worker_serial" | "rom";
 /**
  * The production onboarding device (ADR-0111, ADR-0112). It writes only through the ROM
  * bootloader and reads the C image's facts and proof over Worker Serial. An image without
- * Worker Serial, such as stock ESP-Miner, is inspected and verified from flash through ROM.
+ * Worker Serial, such as stock ESP-Miner, or a reference image without the onboarding commands,
+ * is inspected and verified from flash through ROM.
  */
 export class RomBitaxeOnboardingDevice implements BitaxeOnboardingDevice {
   #maybeSession: OnboardingSerialSession | undefined;
@@ -50,6 +53,9 @@ export class RomBitaxeOnboardingDevice implements BitaxeOnboardingDevice {
   #nextObservation: Observation = "worker_serial";
   #maybePreviousSlot: { slot: PartitionSlot; md5: string } | undefined;
   #maybeLastAttemptError: unknown;
+  /** Signed capabilities of an admitted image without onboarding commands, until bound to its descriptor. */
+  #maybeAdmittedCapabilities: WorkerControllerCapabilities | undefined;
+  #maybeAdmitted: AdmittedImage | undefined;
 
   constructor(
     private readonly rom: RomAccess,
@@ -58,7 +64,10 @@ export class RomBitaxeOnboardingDevice implements BitaxeOnboardingDevice {
     private readonly clock: OnboardingClock,
   ) {}
 
-  /** Worker Serial when the image answers Hello; flash only when it doesn't answer Hello at all. */
+  /**
+   * Worker Serial when the image answers `onboarding_inspect`; flash when it sends no Hello, or when
+   * it is admitted but doesn't support the command (a reference image before Ticket 03).
+   */
   async inspect(): Promise<BitaxeDeviceSnapshot> {
     if (this.#maybeOriginalObservation === undefined) {
       const maybeSnapshot = await this.#maybeWorkerSerialSnapshot();
@@ -70,7 +79,11 @@ export class RomBitaxeOnboardingDevice implements BitaxeOnboardingDevice {
       const session = this.#requireSession();
       return this.#bounded("onboarding_inspect", this.helloBound, sessionSnapshot(session));
     }
-    return this.#withRomThenApp(async (rom) => inspectFlash(await this.#flashView(rom)).snapshot);
+    return this.#withRomThenApp(async (rom) => {
+      const view = await this.#flashView(rom);
+      this.#bindAdmittedImage(view);
+      return inspectFlash(view, this.#maybeAdmitted).snapshot;
+    });
   }
 
   /** Reads the raw `nvs` partition through ROM and leaves the chip in download mode to flash. */
@@ -85,8 +98,9 @@ export class RomBitaxeOnboardingDevice implements BitaxeOnboardingDevice {
 
   /**
    * Checks the table, records the running slot's MD5, writes the image to `targetSlot` and checks
-   * its MD5; from upstream's table, writes and reads back the C bootloader and C table; then
-   * points `otadata` at `targetSlot` as `NEW`, so the C bootloader boots it pending.
+   * its MD5; writes and reads back the signed C bootloader and C table wherever flash differs, as
+   * from stock or from a reference image built before app rollback; then points `otadata` at
+   * `targetSlot` as `NEW`, so the C bootloader boots it pending.
    */
   async flash(input: {
     image: Uint8Array;
@@ -106,11 +120,9 @@ export class RomBitaxeOnboardingDevice implements BitaxeOnboardingDevice {
     }
     this.#maybePreviousSlot = { slot: running, md5: await this.#slotMd5(rom, layout, running) };
     await this.#bounded("image write", this.bounds.romImageWriteMilliseconds, writeImage(rom, target.offset, input.image));
-    if (table === "upstream") {
-      await this.#writeExact(rom, BOOTLOADER_OFFSET, input.firstInstall.bootloader, "bootloader write");
-      await this.#writeExact(rom, PARTITION_TABLE_OFFSET, input.firstInstall.partitionTable, "partition table write");
-      if ((await this.#readTable(rom)) !== "c") throw new Error("the written partition table is not the C table");
-    }
+    await this.#writeWhereDifferent(rom, BOOTLOADER_OFFSET, input.firstInstall.bootloader, "bootloader write");
+    await this.#writeWhereDifferent(rom, PARTITION_TABLE_OFFSET, input.firstInstall.partitionTable, "partition table write");
+    if ((await this.#readTable(rom)) !== "c") throw new Error("the written partition table is not the C table");
     const pending = otadataBooting(otadata, input.targetSlot, OTA_IMAGE_STATE.new);
     await this.#writeExact(rom, layout.otadata.offset, pending, "otadata write");
     this.#nextObservation = "worker_serial";
@@ -136,7 +148,7 @@ export class RomBitaxeOnboardingDevice implements BitaxeOnboardingDevice {
       const reply = await this.#bounded("onboarding_verify", this.helloBound, session.verify(echoed));
       return parseVerification(reply, echoed);
     }
-    return this.#withRomThenApp(async (rom) => verifyFlash(await this.#flashView(rom), nonce));
+    return this.#withRomThenApp(async (rom) => verifyFlash(await this.#flashView(rom), nonce, this.#maybeAdmitted));
   }
 
   /**
@@ -177,8 +189,9 @@ export class RomBitaxeOnboardingDevice implements BitaxeOnboardingDevice {
   }
 
   /**
-   * `undefined` only when the image sent no Hello acknowledgment; an image that answered Hello
-   * and then failed possession or `onboarding_inspect` stops onboarding instead of passing for stock.
+   * `undefined` when the image sent no Hello acknowledgment, or was admitted but doesn't support
+   * `onboarding_inspect`; that session is closed and its signed capabilities kept for the flash
+   * view. Failed possession, or any other `onboarding_inspect` failure, stops onboarding.
    */
   async #maybeWorkerSerialSnapshot(): Promise<BitaxeDeviceSnapshot | undefined> {
     let session: OnboardingSerialSession;
@@ -194,8 +207,18 @@ export class RomBitaxeOnboardingDevice implements BitaxeOnboardingDevice {
       return snapshot;
     } catch (error) {
       await session.close();
-      throw error;
+      if (!(error instanceof OnboardingCommandsUnsupportedError)) throw error;
+      this.#maybeAdmittedCapabilities = session.capabilities;
+      return undefined;
     }
+  }
+
+  /** Ties the admitted image's capabilities to the descriptor in its slot, before any write. */
+  #bindAdmittedImage(view: RomFlashView): void {
+    const maybeCapabilities = this.#maybeAdmittedCapabilities;
+    if (!maybeCapabilities || this.#maybeAdmitted) return;
+    const maybeDescriptor = maybeAppDescriptor(view.runningSlotStart);
+    if (maybeDescriptor) this.#maybeAdmitted = { capabilities: maybeCapabilities, descriptor: maybeDescriptor };
   }
 
   async #awaitBootableImage(): Promise<OnboardingSerialSession> {
@@ -287,6 +310,10 @@ export class RomBitaxeOnboardingDevice implements BitaxeOnboardingDevice {
   #slotMd5(rom: RomSession, layout: PartitionLayout, slot: PartitionSlot): Promise<string> {
     const region = layout[slot];
     return this.#bounded("slot MD5", this.bounds.romSlotMd5Milliseconds, rom.flashMd5Hex(region.offset, region.size));
+  }
+
+  async #writeWhereDifferent(rom: RomSession, offset: number, wanted: Uint8Array, step: string): Promise<void> {
+    await this.#writeIfChanged(rom, offset, await this.#read(rom, offset, wanted.byteLength), wanted, step);
   }
 
   async #writeIfChanged(rom: RomSession, offset: number, current: Uint8Array, wanted: Uint8Array, step: string): Promise<void> {

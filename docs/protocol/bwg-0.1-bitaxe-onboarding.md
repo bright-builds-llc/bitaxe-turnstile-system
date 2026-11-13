@@ -21,9 +21,11 @@ adds no flash-writing command; Worker Serial carries only inspection and post-re
 Upstream ESP-Miner's table and the C image's table are scheme `esp32-factory-ota-ab`: app slots
 `factory`, `ota_0` and `ota_1`, any of which may be active. An install writes `ota_0`, or `ota_1`
 when `ota_0` is running, and sets `otadata` so the image boots pending; `factory` is never written.
-On a first install from stock, the browser reads the table at `0x8000`, refuses anything but
-upstream's known table or the C table before any write, then writes the C bootloader (app rollback
-on) and the C table once and reads both back before rebooting. A snapshot's `rollbackAvailable`
+The browser reads the table at `0x8000` and refuses anything but upstream's known table or the C
+table before any write. It then writes the signed C bootloader (app rollback on) and the C table
+wherever flash differs from them, and reads both back before rebooting. That covers a first install
+from stock, and an install over a reference image built before Ticket 03, whose bootloader had app
+rollback off. A snapshot's `rollbackAvailable`
 means the previous slot stays untouched and bootable and a rollback can be driven; from stock it
 holds once the known table is confirmed, since the C bootloader is written before `otadata`
 selects the image.
@@ -149,18 +151,33 @@ records the choices below.
   released, the Worker Controller's own Connect all use that grant; after a reset the device is
   re-found among the granted ports. Each ROM session holds the `bwg-worker-serial` Web Lock.
 - **Inspection.** An image that answers a fresh Hello, Device Identity possession and
-  `onboarding_inspect` is inspected over Worker Serial, with `capabilities` from `discover`. An
-  image that sends no Hello acknowledgment at all, such as stock ESP-Miner, is inspected from
-  flash through ROM. An image that answers Hello and then fails possession, `discover` or
-  `onboarding_inspect` stops onboarding with that error; it is never taken for stock. From
-  flash: the table, the `otadata` selection, the running slot's `esp_app_desc_t` (project name,
-  and a release version such as `v2.10.1` carried as `2.10.1`) and the board from NVS
-  `boardversion` within ADR-0104's closed set. It is never Reference Firmware and its
-  preservation is `upgrade_required`.
+  `onboarding_inspect` is inspected over Worker Serial, with `capabilities` from `discover`. Two
+  kinds of image are inspected from flash through ROM instead:
+  - An image that sends no Hello acknowledgment at all, such as stock ESP-Miner.
+  - An image that passes Hello, possession and `discover` but doesn't route `onboarding_inspect`,
+    such as a reference image built before Ticket 03 (`247d2cd`). Its controller answers a command
+    it doesn't route with `command_rejected`/`invalid_request`. Ticket 03's image sends that reply
+    to a payload-free `onboarding_inspect` only when it has no onboarding commands. The link raises
+    it as `OnboardingCommandsUnsupportedError`, and the device closes the session before entering
+    ROM.
+
+  Any other failure of possession, `discover` or `onboarding_inspect` stops onboarding with that
+  error, so a failing image is never taken for stock. From flash the device reads:
+  - the table;
+  - the `otadata` selection;
+  - the running slot's `esp_app_desc_t`: the project name, and a release version such as `v2.10.1`,
+    carried as `2.10.1`;
+  - the board, from NVS `boardversion` within ADR-0104's closed set.
+
+  The snapshot is never Reference Firmware, and its preservation is `upgrade_required`. The one
+  exception is an image admitted without the onboarding commands: while its slot carries the same
+  descriptor, the snapshot takes the firmware and the Reference Firmware claim from that image's
+  signed capabilities, because a `git describe` descriptor names no release. Its board must match
+  NVS, and its preservation stays `upgrade_required`.
 - **Write order.** The table is read and classified before any write. Then: the running slot's
-  MD5; the image into the target slot, checked by the ROM stub's MD5; from upstream's table only,
-  the C bootloader at `0x0` and the C table at `0x8000`, each read back byte for byte, and the
-  table classified again as C's; and last `otadata`, rewritten as `esp_ota_set_boot_partition`
+  MD5; the image into the target slot, checked by the ROM stub's MD5; the signed C bootloader at
+  `0x0` and the C table at `0x8000`, each written only where flash differs and read back byte for
+  byte, and the table classified again as C's; and last `otadata`, rewritten as `esp_ota_set_boot_partition`
   does with state `NEW`, then read back. NVS is read, never written.
 - **Device is back.** After the reset, the device repeats a fresh Hello and possession, then
   `onboarding_inspect` until the image reports `bootable`, which it does only after its own
@@ -171,10 +188,11 @@ records the choices below.
   (`factory` erases it; an OTA slot gets the next sequence as `VALID`), the `nvs` copy is written
   back, and each is read back; each is written only when flash differs. The C bootloader and
   table stay, since they boot stock too.
-- **Rollback to stock.** Stock has no Worker Serial, so after the reset the device waits a fixed
+- **Rollback to an image inspected from flash.** Stock has no Worker Serial, and a reference image
+  from before Ticket 03 has no `onboarding_verify`. So after the reset the device waits a fixed
   pause and then inspects and verifies from flash through ROM: the selection, the app descriptor,
   and its own HMACs over the NVS it reads back, under the onboarding's nonce. This proves what
-  flash holds, not that stock booted; the user checks the board's screen.
+  flash holds, not that the image booted; the user checks the board's screen.
 - **NVS parser.** `web/esp-nvs.ts` decodes the `main` namespace of a raw partition as ESP-IDF's
   NVS library does (written entries with a valid header CRC, the later page's copy of a key,
   multi-chunk blobs), refusing a corrupt page header or value. A rollback from the download in a
@@ -193,11 +211,20 @@ the scheme, the `factory` slot, refused replies and refused manifests.
 `web/esp-flash-layout.test.ts` checks MD5 and the ROM CRC, the C table byte for byte against
 `gen_esp32part.py`'s output, table refusals, `otadata` sequences and states, the NVS vector and
 its corruptions, and app descriptors. `web/rom-bitaxe-onboarding-device.test.ts` drives the
-production device on a simulated board (flash, a rollback-on bootloader, stock and C images): the
-write order, unknown-table refusal before any write, `otadata`, rollback to stock checked from
-flash, rollback between reference images, ROM inspection only after no Hello, a possession
-failure after Hello that stops onboarding, and a changed previous slot refused before any write.
-`web/bitaxe-usb-onboarding.test.ts` covers the one granted port and the gate action.
+production device on a simulated board with flash, a rollback-on bootloader, and stock, pre-Ticket 03
+and C images. It covers:
+- the write order, and an unknown table refused before any write;
+- `otadata`;
+- a rollback to stock checked from flash, and a rollback between reference images;
+- ROM inspection only after no Hello, or after an admitted image without `onboarding_inspect`;
+- an install over a pre-Ticket 03 image that writes the C bootloader, and its rollback checked from
+  flash;
+- a possession failure, or an `onboarding_inspect` error from an image that supports the command,
+  that stops onboarding before any write;
+- a changed previous slot refused before any write.
+
+`web/bitaxe-usb-onboarding.test.ts` covers the one granted port, the gate action, and the mapping
+of the unknown-command rejection.
 `web/bitaxe-onboarding.test.ts` covers explicit USB access, signed admission, board, partition,
 schema, signature and digest negatives, immutable admission inputs, single-flight installation,
 bounded local encryption, undeclared secret fields, unreadable or oversized settings, interrupted

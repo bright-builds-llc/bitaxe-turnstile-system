@@ -164,3 +164,19 @@ Run under the fork handoff's process rules, with a base-MAC match before any ROM
   and then fails possession or `onboarding_inspect` now stops onboarding instead of passing
   for stock. `rollback()` checks the previous slot's MD5 before it writes `otadata` or NVS,
   so a changed slot leaves both untouched. Tests cover each case.
+- 2026-11-13 (owner review of Ticket 05's `fa9cbbe`, fixed on Ticket 05's branch): a reference
+  image built before Ticket 03 (`247d2cd`) answers Hello and possession but has no
+  `onboarding_inspect`, so the review fix above stopped onboarding on it after Hello.
+  - The device now also inspects from flash when the link raises
+    `OnboardingCommandsUnsupportedError`. The link raises it only for the controller's
+    `command_rejected`/`invalid_request` reply to a payload-free `onboarding_inspect`, which is
+    `247d2cd`'s answer to an unknown command. The admitted session is closed first.
+  - Failed possession, and any other `onboarding_inspect` error, still stop onboarding.
+  - That image's descriptor (`v2.15.2rc0-80-g247d2cd`) names no release. So while its slot carries
+    the same descriptor, its flash snapshot takes the firmware from its signed capability, and
+    stays `upgrade_required`.
+  - Its bootloader was built with app rollback off. So the install now writes the signed bootloader
+    and table wherever flash differs, instead of from upstream's table only.
+  - ADR-0112 and the protocol doc are amended. Tests cover the fallback, the install with the C
+    bootloader, the rollback checked from flash, a failed possession, and a supported
+    `onboarding_inspect` that errors.

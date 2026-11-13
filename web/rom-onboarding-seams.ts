@@ -25,7 +25,10 @@ export interface RomAccess {
  */
 export interface OnboardingSerialSession {
   readonly capabilities: WorkerControllerCapabilities;
-  /** `onboarding_inspect`: the snapshot without `capabilities`. */
+  /**
+   * `onboarding_inspect`: the snapshot without `capabilities`. Rejects with
+   * `OnboardingCommandsUnsupportedError` when the admitted image doesn't route the command.
+   */
   inspect(): Promise<unknown>;
   /** `onboarding_verify` with the base64url nonce. */
   verify(nonce: string): Promise<unknown>;
@@ -40,6 +43,20 @@ export class NoWorkerSerialHelloError extends Error {
   constructor(options?: ErrorOptions) {
     super("the running image did not answer Worker Serial Hello", options);
     this.name = "NoWorkerSerialHelloError";
+  }
+}
+
+/**
+ * The running image answered Hello and passed possession but doesn't route `onboarding_inspect`:
+ * a reference image built before Ticket 03, such as `247d2cd`. Its controller answers any command
+ * it doesn't route with `command_rejected`/`invalid_request`, which the C image from Ticket 03 sends
+ * for a payload-free `onboarding_inspect` only when it has no onboarding commands. Only this
+ * failure, besides `NoWorkerSerialHelloError`, lets the device inspect the image from flash.
+ */
+export class OnboardingCommandsUnsupportedError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("the running image does not support onboarding_inspect", options);
+    this.name = "OnboardingCommandsUnsupportedError";
   }
 }
 

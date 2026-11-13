@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createBitaxeOnboarding, type BitaxeOnboarding } from "./bitaxe-onboarding";
-import { firmwarePackage, partitionTable } from "./bitaxe-onboarding-test-fixtures";
+import { bootloader, firmwarePackage, partitionTable } from "./bitaxe-onboarding-test-fixtures";
 import { OTA_IMAGE_STATE, selectedBootSlot } from "./esp-otadata";
 import { KNOWN_PARTITION_TABLES, partitionLayout, type PartitionEntry } from "./esp-partition-table";
 import { RomBitaxeOnboardingDevice } from "./rom-bitaxe-onboarding-device";
@@ -10,6 +10,7 @@ import {
   FakeBoard,
   flipBits,
   instantClock,
+  PRE_ONBOARDING_VERSION,
   TEST_BOUNDS,
   vectorNvsPartition,
 } from "./rom-onboarding.test-support";
@@ -106,8 +107,10 @@ describe("RomBitaxeOnboardingDevice from stock", () => {
       "md5:factory",
       "write:ota_0",
       "md5:ota_0",
+      "read:bootloader",
       "write:bootloader",
       "read:bootloader",
+      "read:partition_table",
       "write:partition_table",
       "read:partition_table",
       "read:partition_table",
@@ -196,6 +199,7 @@ describe("RomBitaxeOnboardingDevice between reference images", () => {
     const setup = await setUp(KNOWN_PARTITION_TABLES.c);
     setup.board.flash.set(new TextEncoder().encode(`${C_IMAGE_PREFIX}-image-v1`), LAYOUT.ota_0.offset);
     setup.board.flash.set(validOtadataFor(1), LAYOUT.otadata.offset);
+    setup.board.flash.set(bootloader, 0);
     return setup;
   }
 
@@ -263,6 +267,19 @@ describe("RomBitaxeOnboardingDevice between reference images", () => {
     expect(board.log).toEqual([{ op: "connect" }]);
   });
 
+  test("stops onboarding when an image with onboarding_inspect answers it with an error", async () => {
+    // Arrange
+    const { board, onboarding } = await cBoardOnOta0();
+    board.inspectFails = true;
+
+    // Act
+    const connecting = onboarding.connect();
+
+    // Assert
+    await expect(connecting).rejects.toThrow("persistence_failed");
+    expect(board.log).toEqual([{ op: "connect" }, { op: "inspect" }, { op: "close" }]);
+  });
+
   test("refuses a changed previous slot before it touches otadata or NVS", async () => {
     // Arrange
     const { board, onboarding, firmwarePackage } = await cBoardOnOta0();
@@ -304,6 +321,85 @@ describe("RomBitaxeOnboardingDevice between reference images", () => {
     // Assert
     expect(result.status).toBe("rolled_back");
     expect(selectedBootSlot(board.region(LAYOUT.otadata.offset, LAYOUT.otadata.size)).slot).toBe("ota_0");
+  });
+});
+
+describe("RomBitaxeOnboardingDevice from a reference image before Ticket 03", () => {
+  async function preOnboardingBoard() {
+    const setup = await setUp(KNOWN_PARTITION_TABLES.c);
+    setup.board.flash.set(appImage("esp-miner", PRE_ONBOARDING_VERSION), LAYOUT.factory.offset);
+    return setup;
+  }
+
+  test("closes the admitted session and inspects from flash when the image has no onboarding_inspect", async () => {
+    // Arrange
+    const { board, onboarding } = await preOnboardingBoard();
+
+    // Act
+    const inspection = await onboarding.connect();
+
+    // Assert
+    expect(inspection).toEqual({
+      action: "firmware_required",
+      capabilities: {
+        ...C_CAPABILITIES,
+        compatibility: { ...C_CAPABILITIES.compatibility, settingsPreservation: "upgrade_required" },
+      },
+      settingsSchemaVersion: 1,
+      migrationBackup: "optional",
+    });
+    expect(board.log.slice(0, 4)).toEqual([
+      { op: "connect" },
+      { op: "inspect" },
+      { op: "close" },
+      { op: "enter_rom" },
+    ]);
+  });
+
+  test("installs the image and the signed C bootloader, then verifies the C image over Worker Serial", async () => {
+    // Arrange
+    const { board, onboarding, firmwarePackage } = await preOnboardingBoard();
+    await onboarding.connect();
+    board.log.length = 0;
+
+    // Act
+    const result = await onboarding.install(firmwarePackage);
+
+    // Assert
+    expect(result.status).toBe("ready");
+    expect(board.writes()).toEqual(["ota_0", "bootloader", "otadata"]);
+    expect(board.region(0, bootloader.byteLength)).toEqual(bootloader);
+    expect(board.log.some((entry) => entry.op === "verify")).toBe(true);
+  });
+
+  test("rolls back to the earlier reference image and checks it from flash", async () => {
+    // Arrange
+    const { board, onboarding, firmwarePackage } = await preOnboardingBoard();
+    await onboarding.connect();
+    await onboarding.install(firmwarePackage);
+    board.log.length = 0;
+
+    // Act
+    const result = await rollBack(onboarding);
+
+    // Assert
+    expect(result).toMatchObject({ status: "rolled_back", rollback: "confirmed", firmwareVersion: FIRMWARE_VERSION });
+    expect(selectedBootSlot(board.region(LAYOUT.otadata.offset, LAYOUT.otadata.size)).slot).toBe("factory");
+    expect(board.log.some((entry) => entry.op === "verify" || entry.op === "inspect")).toBe(false);
+  });
+
+  test("stops onboarding and writes nothing when the image fails possession", async () => {
+    // Arrange
+    const { board, onboarding } = await preOnboardingBoard();
+    board.possessionFails = true;
+
+    // Act
+    const connecting = onboarding.connect();
+
+    // Assert
+    await expect(connecting).rejects.toThrow("possession_failed");
+    expect(board.log).toEqual([{ op: "connect" }]);
+    expect(board.writes()).toEqual([]);
   });
 });
 

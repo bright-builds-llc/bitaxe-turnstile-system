@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { BitaxeOnboarding, BitaxeOnboardingResult, FirmwarePackage } from "./bitaxe-onboarding";
-import { bitaxeUsbOnboardingAction, GrantedBitaxePort } from "./bitaxe-usb-onboarding";
+import { bitaxeUsbOnboardingAction, GrantedBitaxePort, inspectOnboarding } from "./bitaxe-usb-onboarding";
+import { OnboardingCommandsUnsupportedError } from "./rom-onboarding-seams";
+import { parseWorkerControlResult } from "./worker-control-rejection";
 import type { WorkGateConfiguration } from "./bwg-work-gate";
 import { instantClock } from "./rom-onboarding.test-support";
 import type { WorkerSerialAccess, WorkerSerialPort } from "./webserial-worker-port";
@@ -179,5 +181,41 @@ describe("bitaxeUsbOnboardingAction", () => {
     // Assert
     await expect(running).rejects.toThrow("runs its previous firmware");
     expect(calls.at(-1)).toBe("release");
+  });
+});
+
+describe("inspectOnboarding", () => {
+  /** The controller's reply to `onboarding_inspect`, rejected with `category`. */
+  function rejectedWith(category: string) {
+    return async () =>
+      parseWorkerControlResult({
+        protocolVersion: "bwg-worker-controller/0.4",
+        requestId: "serial_browser_2",
+        ok: false,
+        error: { code: "command_rejected", message: category },
+      });
+  }
+
+  test("reports the rejection a controller sends for a command it doesn't route as unsupported", async () => {
+    // Arrange
+    const inspect = rejectedWith("invalid_request");
+
+    // Act
+    const inspecting = inspectOnboarding(inspect);
+
+    // Assert
+    await expect(inspecting).rejects.toBeInstanceOf(OnboardingCommandsUnsupportedError);
+  });
+
+  test("keeps any other rejection of onboarding_inspect as a failure", async () => {
+    // Arrange
+    const inspect = rejectedWith("persistence_failed");
+
+    // Act
+    const inspecting = inspectOnboarding(inspect);
+
+    // Assert
+    await expect(inspecting).rejects.not.toBeInstanceOf(OnboardingCommandsUnsupportedError);
+    await expect(inspecting).rejects.toThrow("command_rejected");
   });
 });

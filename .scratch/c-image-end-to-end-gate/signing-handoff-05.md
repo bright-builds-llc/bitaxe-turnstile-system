@@ -64,7 +64,8 @@ The key role is the **Update Authority** (`update_authority`), the same key that
 capabilities. The command signs with your authority directory's active update key. Both of your
 update kids are in the image's embedded trust.
 
-From a turnstile checkout of branch `claude/ticket-05-package-87fc3d`, where the command was added:
+From a turnstile checkout of `main`, once branch `claude/ticket-05-package-87fc3d` has landed. That
+branch adds the command, and the onboarding fix for boards on `247d2cd`:
 
 ```bash
 bun scripts/worker-development-authority.ts sign-firmware-manifest --directory <your authority directory> --input ~/.bitaxe-fork-private/reference/package-51e5af9/unsigned-manifest.json --output ~/.bitaxe-fork-private/reference/package-51e5af9/signed-manifest.json

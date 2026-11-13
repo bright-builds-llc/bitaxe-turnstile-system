@@ -10,6 +10,7 @@ import { esptoolRomAccess } from "./esptool-rom-access";
 import { RomBitaxeOnboardingDevice } from "./rom-bitaxe-onboarding-device";
 import {
   NoWorkerSerialHelloError,
+  OnboardingCommandsUnsupportedError,
   PAGE_ONBOARDING_CLOCK,
   pause,
   PROPOSED_ROM_ONBOARDING_BOUNDS,
@@ -18,6 +19,7 @@ import {
   type OnboardingSerialSession,
   type RomOnboardingBounds,
 } from "./rom-onboarding-seams";
+import { maybeWorkerControlRejectionCategory } from "./worker-control-rejection";
 import { createMemoryWorkerContinuityAccess } from "./worker-continuity-store";
 import { BrowserSerialController } from "./worker-serial-controller-runtime";
 import {
@@ -170,7 +172,7 @@ function workerSerialLink(
         const capabilities = await controller.discover();
         return {
           capabilities,
-          inspect: () => controller.onboardingInspect(),
+          inspect: () => inspectOnboarding(() => controller.onboardingInspect()),
           verify: (nonce) => controller.onboardingVerify(nonce),
           close: () => controller.close(),
         };
@@ -180,6 +182,23 @@ function workerSerialLink(
       }
     },
   };
+}
+
+/**
+ * `onboarding_inspect`, where the controller's own `command_rejected`/`invalid_request` reply means
+ * the image doesn't route the command: `247d2cd`'s controller sends it for any unknown command,
+ * and Ticket 03's image sends it for a payload-free `onboarding_inspect` only without onboarding
+ * commands. Every other failure stays a failure.
+ */
+export async function inspectOnboarding(inspect: () => Promise<unknown>): Promise<unknown> {
+  try {
+    return await inspect();
+  } catch (error) {
+    if (maybeWorkerControlRejectionCategory(error) === "invalid_request") {
+      throw new OnboardingCommandsUnsupportedError({ cause: error });
+    }
+    throw error;
+  }
 }
 
 /** What the page asks the user for during one onboarding. */

@@ -13,6 +13,7 @@ import {
 import { settingsCategoryHmacs } from "./bitaxe-settings-hmac";
 import {
   NoWorkerSerialHelloError,
+  OnboardingCommandsUnsupportedError,
   type OnboardingClock,
   type OnboardingSerialLink,
   type OnboardingSerialSession,
@@ -26,6 +27,10 @@ const FLASH_BYTES = 0x100_0000;
 const LAYOUT = partitionLayout("c");
 /** Prefix by which the fake board recognises a C image, which answers Worker Serial. */
 export const C_IMAGE_PREFIX = "reference-firmware";
+/** The descriptor version of a reference image built before Ticket 03, such as `247d2cd`'s. */
+export const PRE_ONBOARDING_VERSION = "v2.15.2rc0-80-g247d2cd";
+/** Stand-in for a bootloader that isn't the signed C one, such as stock's or a pre-Ticket 03 image's. */
+export const OTHER_BOOTLOADER = new Uint8Array([0xe9, 0x03, 0x02, 0x4f, ...new TextEncoder().encode("older-bootloader")]);
 
 /** The NVS vector built by ESP-IDF's own generator: a Gamma 601's `main` namespace. */
 export function vectorNvsPartition(): Uint8Array {
@@ -71,6 +76,8 @@ export class FakeBoard {
   silent = false;
   /** When true, the running image answers Hello and then fails Device Identity possession. */
   possessionFails = false;
+  /** When true, a C image rejects `onboarding_inspect` as one that supports it but failed. */
+  inspectFails = false;
   #inRom = false;
   #inspects = 0;
 
@@ -78,6 +85,7 @@ export class FakeBoard {
     this.flash.set(encodePartitionTable(table), PARTITION_TABLE_OFFSET);
     this.flash.set(vectorNvsPartition(), LAYOUT.nvs.offset);
     this.flash.set(appImage("esp-miner", "v2.10.1"), LAYOUT.factory.offset);
+    this.flash.set(OTHER_BOOTLOADER, 0);
   }
 
   region(offset: number, length: number): Uint8Array {
@@ -102,9 +110,10 @@ export class FakeBoard {
     return {
       connect: async () => {
         this.log.push({ op: "connect" });
-        if (this.#inRom || this.silent || !this.#runningCImage()) throw new NoWorkerSerialHelloError();
+        const kind = this.#runningKind();
+        if (this.#inRom || this.silent || kind === "stock") throw new NoWorkerSerialHelloError();
         if (this.possessionFails) throw new Error("possession_failed");
-        return this.#serialSession(capabilities);
+        return kind === "c" ? this.#serialSession(capabilities) : this.#preOnboardingSession(capabilities);
       },
     };
   }
@@ -153,10 +162,31 @@ export class FakeBoard {
     else if (selection.state === OTA_IMAGE_STATE.pendingVerify) view.setUint32(0, OTA_IMAGE_STATE.aborted, true);
   }
 
-  #runningCImage(): boolean {
+  /** The C image by its prefix; a pre-Ticket 03 reference image by its descriptor version; else stock. */
+  #runningKind(): "stock" | "pre_onboarding" | "c" {
     const selection = selectedBootSlot(this.region(LAYOUT.otadata.offset, LAYOUT.otadata.size));
-    const start = this.region(LAYOUT[selection.slot].offset, C_IMAGE_PREFIX.length);
-    return new TextDecoder().decode(start) === C_IMAGE_PREFIX;
+    const start = this.region(LAYOUT[selection.slot].offset, 0x400);
+    if (new TextDecoder().decode(start.subarray(0, C_IMAGE_PREFIX.length)) === C_IMAGE_PREFIX) return "c";
+    const version = new TextDecoder().decode(start.subarray(48, 48 + PRE_ONBOARDING_VERSION.length));
+    return version === PRE_ONBOARDING_VERSION ? "pre_onboarding" : "stock";
+  }
+
+  /** A reference image before Ticket 03: admitted over Worker Serial, without the onboarding commands. */
+  #preOnboardingSession(capabilities: WorkerControllerCapabilities): OnboardingSerialSession {
+    return {
+      capabilities: structuredClone(capabilities),
+      inspect: async () => {
+        this.log.push({ op: "inspect" });
+        throw new OnboardingCommandsUnsupportedError();
+      },
+      verify: async () => {
+        this.log.push({ op: "verify" });
+        throw new OnboardingCommandsUnsupportedError();
+      },
+      close: async () => {
+        this.log.push({ op: "close" });
+      },
+    };
   }
 
   #facts() {
@@ -171,6 +201,7 @@ export class FakeBoard {
       capabilities: structuredClone(capabilities),
       inspect: async () => {
         this.log.push({ op: "inspect" });
+        if (this.inspectFails) throw new Error("persistence_failed");
         this.#inspects += 1;
         const { selection } = this.#facts();
         if (selection.slot !== "factory" && this.#inspects >= this.startupInspects) {
