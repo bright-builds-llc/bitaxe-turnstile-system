@@ -1,7 +1,7 @@
 # C-image end-to-end Gate map
 
 [Spec](spec.md). The first Gate on the C Reference Firmware image through the
-production browser path. Tickets 01, 02, 06, 10, 11, 12, 13, 14, 17, 18, 20, 22, 23 and 24 are resolved; the rest is still planning.
+production browser path. Tickets 01, 02, 06, 08, 10, 11, 12, 13, 14, 17, 18, 20, 22, 23 and 24 are resolved; the rest is still planning.
 The first Gate (06, 07) and onboarding (14, 03, 04, 05, 15) run apart, and both
 feed 09.
 
@@ -18,8 +18,8 @@ feed 09.
 | [12](issues/12-terminal-refusal-of-uncreditable-work.md) Authority refuses uncreditable work terminally, and delivery stops retrying it | task | resolved | 11 |
 | [06](issues/06-production-path-rehearsal.md) Compose and rehearse the production path | task | resolved | 12 |
 | [07](issues/07-first-c-image-gate.md) First end-to-end Gate on the C image | task | ready-for-human | 06 |
-| [08](issues/08-interruptions-and-negatives.md) Interruptions and negatives on the C image | task | ready-for-human | 07, 17 |
-| [09](issues/09-core-mvp-evidence-map.md) Map C-image evidence onto the Core MVP | task | ready-for-agent | 08, 15 |
+| [08](issues/08-interruptions-and-negatives.md) Interruptions and negatives on the C image | task | resolved | 07, 17 |
+| [09](issues/09-core-mvp-evidence-map.md) Map C-image evidence onto the Core MVP | task | ready-for-agent | 08, 15, 27, 28 |
 | [10](issues/10-pool-adapter-claimant-intake-and-renewal.md) Pool Adapter takes claimant Pool Selection and extends Stratum sessions on Renew | task | resolved | 01 |
 | [13](issues/13-flaky-sse-expiry-test.md) Lifecycle SSE expiry test flakes under load | bug | resolved | None |
 | [16](issues/16-pool-adapter-grpc-process.md) Pool Adapter runs as its own process over gRPC | task | ready-for-agent | None |
@@ -27,11 +27,14 @@ feed 09.
 | [18](issues/18-postgres-test-readiness.md) PostgreSQL test container is used before it accepts queries | bug | resolved | None |
 | [19](issues/19-deployment-policy-pages.md) Deployment serves its operator policy, privacy and terms pages | task | needs-triage | None |
 | [20](issues/20-pause-overlaps-renew-and-start.md) Pause overlapping a Renew or an in-flight Start | bug | resolved | None |
-| [21](issues/21-gate-negatives-harness.md) Gate negatives harness for the C image | task | needs-triage | 08 |
+| [21](issues/21-gate-negatives-harness.md) Gate negatives harness for the C image | task | ready-for-agent | None |
 | [22](issues/22-sse-subscribe-after-snapshot.md) Challenge events SSE can miss an update sent while it subscribes | bug | resolved | None |
 | [23](issues/23-relying-service-restart-replay-flake.md) Relying-service restart test replays a pass that was never consumed | bug | resolved | None |
 | [24](issues/24-relying-service-accepted-at-flake.md) Relying-service tests run the action worker before the service's acceptance second | bug | resolved | None |
 | [25](issues/25-governance-apply-exit-unexplained.md) Relying-service governance test hides why an Apply run exited non-zero | bug | needs-info | None |
+| [26](issues/26-release-port-after-cancel-and-expiry.md) Gate page keeps the USB port after a Cancel or an expiry | bug | ready-for-agent | None |
+| [27](issues/27-adapter-restart-replay-test.md) An adapter restart replays nothing creditable twice | task | ready-for-agent | None |
+| [28](issues/28-negatives-on-both-boards.md) Negatives on both boards through the deployed page | task | ready-for-human | 21, 26 |
 
 ## Decisions so far
 
@@ -132,3 +135,15 @@ feed 09.
     "unsupported" result. The device then inspects from flash under the image's signed capability.
   - Install writes the signed bootloader and table wherever flash differs, because `247d2cd`'s
     bootloader has app rollback off.
+- Ticket 21 triage (2026-11-14), on the owner's choices:
+  - The authorization negatives use CDP interception of the Authority's grant
+    responses on the deployed page. No production hook is added, and the dev
+    lease authority stays in the launcher. Ticket 21 builds the harness and proves
+    it on the rehearsal, and Ticket 28 runs it on both boards.
+  - The page closes the port after a confirmed Cancel or expiry restoration
+    (Ticket 26).
+  - Adapter replay is a Rust restart test with a hardware non-claim (Ticket 27),
+    run again under Ticket 16.
+  - `discardedReplies` is checked on the acceptance page, not the deployed page,
+    and a 0 is recorded with the firmware's reason (Ticket 28).
+  - Ticket 08 is resolved. Its open items live in 21, 26, 27 and 28.

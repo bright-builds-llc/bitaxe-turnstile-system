@@ -1,7 +1,7 @@
 # Interruptions and negatives on the C image
 
 Type: task
-Status: ready-for-human
+Status: resolved
 Blocked by: 07, 17
 
 ## Objective
@@ -22,6 +22,15 @@ restoration.
 - [ ] A fresh admission after abrupt loss reports a positive
   `helloRecovery.discardedReplies`, which no firmware has shown yet
   (moved from `bwg-worker-serial` Ticket 15, then to 21).
+
+## Answer
+
+The interruptions passed on the Ultra 205 through the deployed page (comments
+below). Ticket 21's triage on 2026-11-14 moved the open items:
+- authorization negatives to Ticket 21 (harness) and Ticket 28 (both boards);
+- `discardedReplies` and the stale-job watch to Ticket 28;
+- adapter replay to Ticket 27;
+- the port kept after Cancel or expiry to Ticket 26.
 
 ## Comments
 

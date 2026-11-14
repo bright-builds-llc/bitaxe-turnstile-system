@@ -20,5 +20,7 @@ gRPC boundary that ADR-0055 and ADR-0022 call for.
   `accepted-work-refusal-vectors.json`, and the claimant routes of ADR-0106 and
   ADR-0107 are unchanged.
 - [ ] The rehearsal (Ticket 06) runs against the separate process.
+- [ ] Ticket 27's restart test runs against the separate process, restarting
+  only the adapter.
 
 ## Comments
