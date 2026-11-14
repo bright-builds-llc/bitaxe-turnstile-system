@@ -1,7 +1,7 @@
 # C-image end-to-end Gate map
 
 [Spec](spec.md). The first Gate on the C Reference Firmware image through the
-production browser path. Tickets 01, 02, 06, 08, 10, 11, 12, 13, 14, 17, 18, 20, 22, 23, 24, 26 and 27 are resolved; the rest is still planning.
+production browser path. Tickets 01, 02, 06, 08, 10, 11, 12, 13, 14, 17, 18, 20, 21, 22, 23, 24, 26 and 27 are resolved; the rest is still planning.
 The first Gate (06, 07) and onboarding (14, 03, 04, 05, 15) run apart, and both
 feed 09.
 
@@ -27,7 +27,7 @@ feed 09.
 | [18](issues/18-postgres-test-readiness.md) PostgreSQL test container is used before it accepts queries | bug | resolved | None |
 | [19](issues/19-deployment-policy-pages.md) Deployment serves its operator policy, privacy and terms pages | task | needs-triage | None |
 | [20](issues/20-pause-overlaps-renew-and-start.md) Pause overlapping a Renew or an in-flight Start | bug | resolved | None |
-| [21](issues/21-gate-negatives-harness.md) Gate negatives harness for the C image | task | ready-for-agent | None |
+| [21](issues/21-gate-negatives-harness.md) Gate negatives harness for the C image | task | resolved | None |
 | [22](issues/22-sse-subscribe-after-snapshot.md) Challenge events SSE can miss an update sent while it subscribes | bug | resolved | None |
 | [23](issues/23-relying-service-restart-replay-flake.md) Relying-service restart test replays a pass that was never consumed | bug | resolved | None |
 | [24](issues/24-relying-service-accepted-at-flake.md) Relying-service tests run the action worker before the service's acceptance second | bug | resolved | None |
@@ -159,3 +159,14 @@ feed 09.
   on the same database. The reclaimed event is credited once, and the
   acknowledged one is not delivered again. No production change and no hardware.
   Ticket 16 reruns it restarting only the adapter.
+- Ticket 21 (2026-11-14): `scripts/gate-negatives-harness.ts` drives the reference page over raw
+  CDP and pauses the Authority's Start and Renew responses with Fetch. It withholds a Start grant,
+  holds one 65 s, or swaps two tabs' grants, then cancels through the page. All three passed on
+  the rehearsal (`scripts/rehearse-production-path.sh --negatives`):
+  - no lease, no Verified Progress, no Gate Pass, and the Authority ended each attempt `cancelled`;
+  - the only board-bound request field was `control_session_binding_sha256`;
+  - the fake board refuses a Start on a 60 s old context with `admission_required`, as the C board
+    does;
+  - a refused Start makes the page fail closed and drop the port.
+  A handed-over Start grant is refused by the page's challenge check before it reaches the other
+  board, so Ticket 28 can't observe the board's own context refusal through the page.

@@ -33,3 +33,14 @@ and the 205 in one sitting. It can share Ticket 15's 601 sitting.
 - `scripts/gate-deployment-page-config.ts` discloses only `bitaxe-601`. The 205
   may need adding to the disclosure list. Both boards run the same image, so the
   commit and ELF pin hold.
+- 2026-11-14, from Ticket 21: run `scripts/gate-negatives-harness.ts` with
+  `--browser`, `--origin` and `--payout-address-file`, in a Chrome started with
+  `--remote-debugging-port`. A person picks each tab's port when Chrome asks.
+  - A handed-over Start grant doesn't reach the other board: the page refuses it
+    at the grant's challenge, since the two tabs' challenges differ. "Refused
+    because their contexts differ" can't be seen on the board through the page.
+    What the run can show is that the two control-session bindings differ and
+    neither board mines.
+  - Any Start the board refuses makes the page fail closed and drop the port, so
+    the expired-context case ends with the port closed rather than a confirmed
+    `cancelled` restoration.
