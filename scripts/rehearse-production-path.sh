@@ -8,8 +8,10 @@
 # mid-lease checks that the lease survives a new Bitcoin tip.
 # macOS arm64 only, like the Hydra runner. Not part of `bun run verify`.
 #
-# Usage: scripts/rehearse-production-path.sh [--hold]
-#   --hold  start the stack, print its configuration and wait instead of the browser run.
+# Usage: scripts/rehearse-production-path.sh [--hold | --negatives]
+#   --hold       start the stack, print its configuration and wait instead of the browser run.
+#   --negatives  run the Gate negatives harness (Ticket 21) in headless Chrome over CDP instead
+#                of the passing run. `BWG_TEST_CHROME` overrides the Chrome binary.
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
@@ -17,10 +19,13 @@ integration_root=$(mktemp -d)
 playwright_cli="$repo_root/node_modules/.bin/playwright-cli"
 session_name="bwg-rehearsal-$$"
 hold=false
+negatives=false
 if [[ "${1:-}" == "--hold" ]]; then
   hold=true
+elif [[ "${1:-}" == "--negatives" ]]; then
+  negatives=true
 elif [[ $# -gt 0 ]]; then
-  printf 'Usage: %s [--hold]\n' "$0" >&2
+  printf 'Usage: %s [--hold | --negatives]\n' "$0" >&2
   exit 2
 fi
 
@@ -31,6 +36,7 @@ harness_pid=""
 authority_pid=""
 reference_pid=""
 server_pid=""
+chrome_pid=""
 kept_logs="$repo_root/target/rehearsal-logs"
 
 # Called from cleanup under `set +e`; a process that already exited needs no stop.
@@ -46,6 +52,7 @@ cleanup() {
   trap - EXIT INT TERM
   set +e
   "$playwright_cli" -s="$session_name" close >/dev/null 2>&1
+  stop_process "$chrome_pid"
   stop_process "$server_pid"
   stop_process "$reference_pid"
   stop_process "$authority_pid"
@@ -61,7 +68,7 @@ cleanup() {
     mkdir -p "$kept_logs"
     cp "$integration_root"/*.log "$kept_logs"/
     printf 'Logs kept in %s\n' "$kept_logs" >&2
-    for log_path in "$integration_root"/gate-authority.log "$integration_root"/browser.log; do
+    for log_path in "$integration_root"/gate-authority.log "$integration_root"/browser.log "$integration_root"/negatives.log; do
       if [[ -s "$log_path" ]]; then
         printf '%s (last 80 lines):\n' "$(basename "$log_path")" >&2
         tail -n 80 "$log_path" >&2
@@ -150,6 +157,38 @@ BWG_REHEARSAL_GATE="http://127.0.0.1:$gate_port" \
   bun scripts/serve-rehearsal-origin.ts >"$integration_root/server.log" 2>&1 &
 server_pid=$!
 wait_for_first_line "$integration_root/server.log" '^[0-9]+$' >/dev/null
+
+# Runs the Gate negatives harness against a throwaway headless Chrome profile (Ticket 21).
+run_negatives() {
+  chrome_binary=${BWG_TEST_CHROME:-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}
+  chrome_profile="$integration_root/chrome-profile"
+  "$chrome_binary" --headless=new --remote-debugging-port=0 --user-data-dir="$chrome_profile" \
+    --no-first-run --no-default-browser-check --ignore-certificate-errors \
+    --host-resolver-rules="MAP gate.rehearsal.test 127.0.0.1" about:blank \
+    >"$integration_root/chrome.log" 2>&1 &
+  chrome_pid=$!
+  for _attempt in $(seq 1 300); do
+    [[ -s "$chrome_profile/DevToolsActivePort" ]] && break
+    sleep 0.1
+  done
+  if [[ ! -s "$chrome_profile/DevToolsActivePort" ]]; then
+    printf 'Chrome did not open its DevTools port\n' >&2
+    return 1
+  fi
+  devtools="ws://127.0.0.1:$(sed -n 1p "$chrome_profile/DevToolsActivePort")$(sed -n 2p "$chrome_profile/DevToolsActivePort")"
+  # The harness prints cases, route templates and field names only, so its output can be shown.
+  if ! bun scripts/gate-negatives-harness.ts --browser "$devtools" --origin "$origin" --rehearsal \
+    >"$integration_root/negatives.log" 2>&1; then
+    printf 'Gate negatives did not pass\n' >&2
+    return 1
+  fi
+  cat "$integration_root/negatives.log"
+}
+
+if [[ "$negatives" == true ]]; then
+  run_negatives
+  exit 0
+fi
 
 if [[ "$hold" == true ]]; then
   printf 'origin=%s (resolve gate.rehearsal.test to 127.0.0.1)\n%s\n' "$origin" "$rehearsal_config"
