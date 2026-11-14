@@ -12,6 +12,7 @@ import signerVectors from "../conformance/bwg-worker-deployment-trust-0.2/author
 import possessionFixture from "../conformance/bwg-worker-possession-0.2/fixtures.json";
 import { decodeBase64Url, encodeBase64Url, sha256Base64UrlBytes } from "./crypto-bytes";
 import { canonicalJson } from "./headless-values";
+import { UNUSED_WORKER_LEASE_CONTEXT_MILLISECONDS } from "./worker-lease-admission";
 import {
   workerSerialTestRuntime,
   type WorkerSerialBrowserRuntime,
@@ -52,6 +53,10 @@ export type RehearsalMiner = {
 
 export type RehearsalDeviceLog = {
   commands: string[];
+  /** Start grants the board accepted and began mining under. */
+  leasesStarted: number;
+  /** The board's closed rejection category for each Start it refused, in order. */
+  startRejections: string[];
   renewals: number;
   restorationReason: string | undefined;
   maybeRestorationConfirmedAfterMilliseconds?: number;
@@ -66,9 +71,23 @@ export function rehearsalWorkerInput(input: {
   challengeId: string;
   retentionExpiryUnixSeconds: number;
   miner: RehearsalMiner;
+  /** The board's monotonic clock; unit tests move it to age the possession context. */
+  maybeDeviceClock?: () => number;
+  maybeRestoreConfirmationMilliseconds?: number;
 }): { worker: WebSerialWorkerControllerInput; log: RehearsalDeviceLog } {
-  const log: RehearsalDeviceLog = { commands: [], renewals: 0, restorationReason: undefined, portClosed: false, trace: [] };
-  const port = fakeDevicePort(input.miner, log);
+  const log: RehearsalDeviceLog = {
+    commands: [],
+    leasesStarted: 0,
+    startRejections: [],
+    renewals: 0,
+    restorationReason: undefined,
+    portClosed: false,
+    trace: [],
+  };
+  const port = fakeDevicePort(input.miner, log, {
+    now: input.maybeDeviceClock ?? (() => Math.floor(performance.now())),
+    restoreConfirmationMilliseconds: input.maybeRestoreConfirmationMilliseconds ?? RESTORE_CONFIRMATION_MILLISECONDS,
+  });
   let locked = false;
   const runtime: WorkerSerialBrowserRuntime = {
     serial: { requestPort: async () => port, getPorts: async () => [] },
@@ -121,7 +140,9 @@ export function rehearsalWorkerInput(input: {
   return { worker, log };
 }
 
-function fakeDevicePort(miner: RehearsalMiner, log: RehearsalDeviceLog): WorkerSerialPort {
+type FakeDeviceTiming = { now: () => number; restoreConfirmationMilliseconds: number };
+
+function fakeDevicePort(miner: RehearsalMiner, log: RehearsalDeviceLog, timing: FakeDeviceTiming): WorkerSerialPort {
   const leaseTrust = parseWorkLeaseAuthorityTrust(signerVectors.trust);
   let maybeOutput: ReadableStreamDefaultController<Uint8Array> | undefined;
   let maybeReadable: ReadableStream<Uint8Array> | null = null;
@@ -135,11 +156,13 @@ function fakeDevicePort(miner: RehearsalMiner, log: RehearsalDeviceLog): WorkerS
   let helloSeen = false;
   let admitted = false;
   let binding = "";
+  // Like the C board's admission, a possession context admits a Start only within 60 s.
+  let contextEstablishedAt = 0;
   let maybeLease: (WorkerLeaseGrant & { startedAt: number }) | undefined;
   let restorationReason = "reboot";
   let deviceIdentitySha256 = "";
 
-  const now = () => Math.floor(performance.now());
+  const now = timing.now;
   // Encoding is async, so frames go out one at a time to keep their sequence order.
   let outgoing: Promise<void> = Promise.resolve();
   function send(kind: WorkerSerialEnvelope["kind"], payload: Record<string, unknown>, ack = false) {
@@ -240,11 +263,21 @@ function fakeDevicePort(miner: RehearsalMiner, log: RehearsalDeviceLog): WorkerS
       response,
     })));
     admitted = true;
+    contextEstablishedAt = now();
     await send("control", response);
+  }
+  async function refuseStart(request: Record<string, unknown>, category: string) {
+    log.startRejections.push(category);
+    await reject(request, category);
   }
   async function startLease(request: Record<string, unknown>) {
     const grant = parseWorkerLeaseGrant(request.payload);
     const { authorization, ...unsigned } = grant;
+    // The C board answers an aged context before it verifies the grant (`prepare_start`).
+    if (now() - contextEstablishedAt >= UNUSED_WORKER_LEASE_CONTEXT_MILLISECONDS) {
+      await refuseStart(request, "admission_required");
+      return;
+    }
     try {
       await verifyWorkerLeaseAuthorization(authorization, {
         operation: "start",
@@ -253,16 +286,17 @@ function fakeDevicePort(miner: RehearsalMiner, log: RehearsalDeviceLog): WorkerS
         request: unsigned,
       }, leaseTrust);
     } catch {
-      await reject(request, "authentication_failed");
+      await refuseStart(request, "authentication_failed");
       return;
     }
     if (!("username" in grant.stratum)) {
-      await reject(request, "unsupported_transport");
+      await refuseStart(request, "unsupported_transport");
       return;
     }
     await miner.start(grant.stratum);
     const startedAt = now();
     maybeLease = { ...grant, startedAt };
+    log.leasesStarted += 1;
     await reply(request, status(startedAt));
   }
   async function renewLease(request: Record<string, unknown>) {
@@ -295,7 +329,7 @@ function fakeDevicePort(miner: RehearsalMiner, log: RehearsalDeviceLog): WorkerS
     setTimeout(() => {
       log.maybeRestorationConfirmedAfterMilliseconds = now() - requestedAt;
       void reply(request, status());
-    }, RESTORE_CONFIRMATION_MILLISECONDS);
+    }, timing.restoreConfirmationMilliseconds);
   }
   function trace(entry: string) {
     log.trace.push(`${now()} ${entry}`);
@@ -369,6 +403,16 @@ function fakeDevicePort(miner: RehearsalMiner, log: RehearsalDeviceLog): WorkerS
       maybeWritable = null;
     },
   };
+}
+
+/** Values tied to the fake board, which the Gate negatives harness checks never reach the Authority. */
+export async function rehearsalBoardValues(): Promise<string[]> {
+  return [
+    possessionFixture.fixtureIdentity.publicJwk.x,
+    FIRMWARE_SOURCE_COMMIT,
+    APP_ELF_SHA256,
+    await deviceIdentityDigest(),
+  ];
 }
 
 /** The preservation record names the fixture identity key's SHA-256, in hex. */
