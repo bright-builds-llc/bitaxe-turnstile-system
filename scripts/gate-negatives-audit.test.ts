@@ -135,7 +135,7 @@ test("ignores requests to other origins", () => {
   expect(result.violations).toEqual([]);
 });
 
-test("keeps each tab's bindings in the order they were sent", () => {
+test("keeps each tab's Start bindings in the order they were sent", () => {
   // Arrange
   const other = "B".repeat(43);
   const requests = [startRequest(BINDING, "a"), startRequest(other, "b")];
@@ -144,7 +144,33 @@ test("keeps each tab's bindings in the order they were sent", () => {
   const result = audit(requests);
 
   // Assert
-  expect(result.bindingsByTab).toEqual({ a: [BINDING], b: [other] });
+  expect(result.startBindingsByTab).toEqual({ a: [BINDING], b: [other] });
+});
+
+test("keeps a Renew's binding out of the Start bindings", () => {
+  // Arrange
+  const requests = [post("/v0/challenges/challenge_01/work-session/renew", { control_session_binding_sha256: BINDING, lease_id: "l" })];
+
+  // Act
+  const result = audit(requests);
+
+  // Assert
+  expect(result.startBindingsByTab).toEqual({});
+});
+
+test("flags a POST to a listed route whose body wasn't captured", () => {
+  // Arrange
+  const requests: SeenRequest[] = [{ tab: "a", method: "POST", url: `${ORIGIN}/v0/challenges/challenge_01/work-session/start`, headers: {} }];
+
+  // Act
+  const result = audit(requests);
+
+  // Assert
+  expect(result.violations).toEqual(["the body of POST /v0/challenges/{id}/work-session/start was not captured"]);
+});
+
+test("refuses to audit without a board value to search for", () => {
+  expect(() => auditAuthorityRequests([], { origin: ORIGIN, boardValues: [] })).toThrow("the audit needs at least one board value");
 });
 
 test("refuses a board value too short to search for safely", () => {

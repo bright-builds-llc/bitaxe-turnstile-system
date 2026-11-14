@@ -406,12 +406,12 @@ function fakeDevicePort(miner: RehearsalMiner, log: RehearsalDeviceLog, timing: 
 }
 
 /** Values tied to the fake board, which the Gate negatives harness checks never reach the Authority. */
-export async function rehearsalBoardValues(): Promise<string[]> {
+export async function rehearsalBoardValues(): Promise<{ label: string; value: string }[]> {
   return [
-    possessionFixture.fixtureIdentity.publicJwk.x,
-    FIRMWARE_SOURCE_COMMIT,
-    APP_ELF_SHA256,
-    await deviceIdentityDigest(),
+    { label: "Device Identity public key", value: possessionFixture.fixtureIdentity.publicJwk.x },
+    { label: "firmware source commit", value: FIRMWARE_SOURCE_COMMIT },
+    { label: "app ELF SHA-256", value: APP_ELF_SHA256 },
+    { label: "Device Identity key SHA-256", value: await deviceIdentityDigest() },
   ];
 }
 

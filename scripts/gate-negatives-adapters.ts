@@ -8,9 +8,12 @@ import { rehearsalBoardValues } from "../web/production-path-rehearsal-device";
 import type { BoardEvidence } from "./gate-negatives-cases";
 import { waitFor, type HarnessTab } from "./gate-negatives-tab";
 
+/** A value tied to the board, searched for in every request; only its label is ever printed. */
+export type BoardValue = { label: string; value: string };
+
 export type DeploymentAdapter = {
   pagePath: string;
-  boardValues: string[];
+  boardValues: BoardValue[];
   /** How long a person may take to pick the port and the page to show consent. */
   connectTimeoutMilliseconds: number;
   /** Opens the page in `tab`, ready for the Connect click. */
@@ -77,17 +80,24 @@ export async function rehearsalAdapter(): Promise<DeploymentAdapter> {
   };
 }
 
-/** A deployed reference page; the payout address and board values come from the owner's files. */
+/**
+ * A deployed reference page; the payout address and board values come from the owner's files. The
+ * board values file holds one value per line (Device Identity fingerprint, firmware commit, ELF
+ * digest, MAC and the like) and must not be empty, or the board-value search would check nothing.
+ */
 export async function deploymentAdapter(input: {
   pagePath: string;
   payoutAddressFile: string;
-  maybeBoardValuesFile?: string;
+  boardValuesFile: string;
   connectTimeoutMilliseconds: number;
 }): Promise<DeploymentAdapter> {
   const payoutAddress = (await readFile(input.payoutAddressFile, "utf8")).trim();
-  const boardValues = input.maybeBoardValuesFile
-    ? (await readFile(input.maybeBoardValuesFile, "utf8")).split("\n").map((line) => line.trim()).filter(Boolean)
-    : [];
+  const boardValues = (await readFile(input.boardValuesFile, "utf8"))
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((value, index) => ({ label: `board values file line ${index + 1}`, value }));
+  if (boardValues.length === 0) throw new Error("the board values file lists no values");
   return {
     pagePath: input.pagePath,
     boardValues,

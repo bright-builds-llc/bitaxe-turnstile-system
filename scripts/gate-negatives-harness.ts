@@ -16,8 +16,11 @@
  * Deployment (Ticket 28), against a Chrome started with `--remote-debugging-port`:
  *   bun scripts/gate-negatives-harness.ts --browser http://127.0.0.1:9222 \
  *     --origin <deployment origin> --payout-address-file <file> \
- *     [--board-values-file <file>] [--cases withheld,expired_context,handed_over]
+ *     --board-values-file <file> [--cases withheld,expired_context,handed_over]
  * A person picks each tab's port when Chrome asks; the handover's second tab is the second board.
+ * The board values file lists, one per line, values tied to the boards (Device Identity
+ * fingerprints, firmware commit, ELF digest, MACs); the audit searches every request for them.
+ * If a step fails, the harness still tries the page's Cancel so no challenge waits for expiry.
  */
 import { parseArgs } from "node:util";
 import { connectCdp, type CdpConnection } from "./cdp-connection";
@@ -43,9 +46,11 @@ const CONFIRM_CANCEL_BUTTON = ["bwg-work-gate", "[data-action=confirm-cancel]"];
 /** The page's rollback waits for the board's restoration, about 35 s on the fake and 47 s on a board. */
 const ROLLBACK_MILLISECONDS = 120_000;
 const LATE_EVENT_MILLISECONDS = 2_000;
+const CLEANUP_MILLISECONDS = 15_000;
 
 type CaseReport = {
   caseName: GateNegativeCase;
+  boardValuesSearched: string[];
   verdict: CaseVerdict;
   tabs: TabEvidence[];
   routes: AuditedRoute[];
@@ -58,7 +63,7 @@ try {
   for (const caseName of options.cases) {
     reports.push(await runCaseSafely(cdp, options.adapter, options.origin, caseName));
   }
-  for (const report of reports) printReport(report);
+  for (const report of reports) printReport(report, options.origin);
   const passed = reports.every((report) => report.verdict.passed);
   process.stdout.write(`negatives: ${passed ? "passed" : "failed"}\n`);
   process.exitCode = passed ? 0 : 1;
@@ -72,12 +77,36 @@ async function runCaseSafely(
   origin: string,
   caseName: GateNegativeCase,
 ): Promise<CaseReport> {
+  const tabs: HarnessTab[] = [];
   try {
-    return await runCase(connection, adapter, origin, caseName);
+    return await runCase(connection, adapter, origin, caseName, tabs);
   } catch (error) {
-    const message = redact(error instanceof Error ? error.message : String(error), origin);
-    return { caseName, tabs: [], routes: [], verdict: { passed: false, failures: [`harness step failed: ${message}`], startByTab: {} } };
+    const failures = [`harness step failed: ${errorText(error)}`, ...(await cancelLeftAttempts(tabs))];
+    return {
+      caseName,
+      boardValuesSearched: [],
+      tabs: [],
+      routes: [],
+      verdict: { passed: false, failures, startByTab: {} },
+    };
+  } finally {
+    await Promise.allSettled(tabs.map((tab) => tab.close()));
   }
+}
+
+/** After a failed step, a deployment's challenge shouldn't be left waiting for its expiry. */
+async function cancelLeftAttempts(tabs: readonly HarnessTab[]): Promise<string[]> {
+  const outcomes: string[] = [];
+  for (const tab of tabs) {
+    if (tab.authorityStates.at(-1) === "cancelled") continue;
+    try {
+      await cancelThroughPage(tab, CLEANUP_MILLISECONDS);
+      outcomes.push(`cleanup: tab ${tab.name} sent Cancel through the page`);
+    } catch (error) {
+      outcomes.push(`cleanup: tab ${tab.name} could not cancel (${errorText(error)}), so its challenge ends at expiry`);
+    }
+  }
+  return outcomes;
 }
 
 async function runCase(
@@ -85,27 +114,32 @@ async function runCase(
   adapter: DeploymentAdapter,
   origin: string,
   caseName: GateNegativeCase,
+  tabs: HarnessTab[],
 ): Promise<CaseReport> {
   const interceptor = grantInterceptor(caseName);
-  const tabs: HarnessTab[] = [];
-  try {
-    for (const name of caseTabs(caseName)) {
-      const tab = await openHarnessTab(connection, name, interceptor.onPaused);
-      tabs.push(tab);
-      await adapter.load(tab, origin);
-      await consentAndStart(tab, adapter);
-      await waitFor(`tab ${name}'s Start grant to be paused`, () => interceptor.pausedStart(name), 60_000);
-    }
-    await waitFor("every altered grant to be answered", () => interceptor.settled(), CONTEXT_HOLD_MILLISECONDS + 30_000);
-    for (const tab of tabs) await cancelThroughPage(tab);
-    for (const tab of tabs) await endedByAuthority(tab, adapter);
-    await Bun.sleep(LATE_EVENT_MILLISECONDS);
-    const evidence = await Promise.all(tabs.map(async (tab) => tabEvidence(tab, adapter, interceptor)));
-    const audit = auditAuthorityRequests(tabs.flatMap((tab) => tab.requests), { origin, boardValues: adapter.boardValues });
-    return { caseName, verdict: caseVerdict(caseName, evidence, audit), tabs: evidence, routes: audit.routes };
-  } finally {
-    await Promise.allSettled(tabs.map((tab) => tab.close()));
+  for (const name of caseTabs(caseName)) {
+    const tab = await openHarnessTab(connection, name, interceptor.onPaused);
+    tabs.push(tab);
+    await adapter.load(tab, origin);
+    await consentAndStart(tab, adapter);
+    await waitFor(`tab ${name}'s Start grant to be paused`, () => interceptor.pausedStart(name), 60_000);
   }
+  await waitFor("every altered grant to be answered", () => interceptor.settled(), CONTEXT_HOLD_MILLISECONDS + 30_000);
+  for (const tab of tabs) await cancelThroughPage(tab, ROLLBACK_MILLISECONDS);
+  for (const tab of tabs) await endedByAuthority(tab, adapter);
+  await Bun.sleep(LATE_EVENT_MILLISECONDS);
+  const evidence = await Promise.all(tabs.map(async (tab) => tabEvidence(tab, adapter, interceptor)));
+  const audit = auditAuthorityRequests(tabs.flatMap((tab) => tab.requests), {
+    origin,
+    boardValues: adapter.boardValues.map((boardValue) => boardValue.value),
+  });
+  return {
+    caseName,
+    boardValuesSearched: adapter.boardValues.map((boardValue) => boardValue.label),
+    verdict: caseVerdict(caseName, evidence, audit),
+    tabs: evidence,
+    routes: audit.routes,
+  };
 }
 
 async function consentAndStart(tab: HarnessTab, adapter: DeploymentAdapter): Promise<void> {
@@ -121,14 +155,14 @@ async function consentAndStart(tab: HarnessTab, adapter: DeploymentAdapter): Pro
   await tab.click(PRIMARY_BUTTON);
 }
 
-async function cancelThroughPage(tab: HarnessTab): Promise<void> {
+async function cancelThroughPage(tab: HarnessTab, offerTimeoutMilliseconds: number): Promise<void> {
   await waitFor(
     `tab ${tab.name}'s Cancel to be offered`,
     async () => {
       const state = await tab.elementState(CANCEL_BUTTON);
       return state.visible && state.enabled;
     },
-    ROLLBACK_MILLISECONDS,
+    offerTimeoutMilliseconds,
   );
   await tab.click(CANCEL_BUTTON);
   await waitFor(`tab ${tab.name}'s Cancel confirmation`, async () => (await tab.elementState(CONFIRM_CANCEL_BUTTON)).visible, 10_000);
@@ -156,18 +190,33 @@ async function tabEvidence(
     ...(maybeInterception ? { maybeInterception } : {}),
     authorityStates: [...tab.authorityStates],
     verifiedProgress: tab.verifiedProgress(),
+    progressEvents: tab.progressEvents(),
+    resyncRequired: tab.resyncRequired(),
+    recorderErrors: [...tab.recorderErrors],
     cancelAccepted: tab.cancelAccepted(),
     gatePassRequests: tab.gatePassRequests(),
     ...(maybeBoard ? { maybeBoard } : {}),
   };
 }
 
-function printReport(report: CaseReport): void {
+function printReport(report: CaseReport, origin: string): void {
   const { caseName, verdict } = report;
-  process.stdout.write(`negatives: ${caseName} ${verdict.passed ? "passed" : "failed"}\n`);
-  const evidence = { startByTab: verdict.startByTab, tabs: report.tabs, routes: report.routes };
-  process.stdout.write(`negatives: ${caseName} evidence ${JSON.stringify(evidence)}\n`);
-  for (const failure of verdict.failures) process.stdout.write(`negatives: ${caseName} failure ${failure}\n`);
+  const evidence = {
+    startByTab: verdict.startByTab,
+    boardValuesSearched: report.boardValuesSearched,
+    tabs: report.tabs,
+    routes: report.routes,
+  };
+  const lines = [
+    `${caseName} ${verdict.passed ? "passed" : "failed"}`,
+    `${caseName} evidence ${JSON.stringify(evidence)}`,
+    ...verdict.failures.map((failure) => `${caseName} failure ${failure}`),
+  ];
+  for (const line of lines) process.stdout.write(`negatives: ${redact(line, origin)}\n`);
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /** Error text can quote a URL; the record names no endpoints. */
@@ -189,7 +238,7 @@ async function parseCommandLine() {
     },
   });
   if (!values.browser || !values.origin) {
-    throw new Error("usage: gate-negatives-harness --browser <DevTools endpoint> --origin <deployment origin> (--rehearsal | --payout-address-file <file>)");
+    throw new Error("usage: gate-negatives-harness --browser <DevTools endpoint> --origin <deployment origin> (--rehearsal | --payout-address-file <file> --board-values-file <file>)");
   }
   const origin = new URL(values.origin).origin;
   const cases = parseGateNegativeCases(values.cases);
@@ -205,11 +254,13 @@ function deploymentFromOptions(values: {
 }): Promise<DeploymentAdapter> {
   const payoutAddressFile = values["payout-address-file"];
   if (!payoutAddressFile) throw new Error("a deployment run needs --payout-address-file");
-  const maybeBoardValuesFile = values["board-values-file"];
+  // Without board values the audit's board-value search would pass having searched for nothing.
+  const boardValuesFile = values["board-values-file"];
+  if (!boardValuesFile) throw new Error("a deployment run needs --board-values-file");
   return deploymentAdapter({
     pagePath: values.page,
     payoutAddressFile,
-    ...(maybeBoardValuesFile ? { maybeBoardValuesFile } : {}),
+    boardValuesFile,
     connectTimeoutMilliseconds: Number(values["connect-timeout-seconds"]) * 1000,
   });
 }

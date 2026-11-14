@@ -22,8 +22,8 @@ export type RequestAudit = {
   /** Distinct routes with the field names their bodies carried, for the evidence record. */
   routes: AuditedRoute[];
   violations: string[];
-  /** Each tab's control-session bindings, in order; compared, never printed. */
-  bindingsByTab: Record<string, string[]>;
+  /** Each tab's Start bindings, in order; compared, never printed. */
+  startBindingsByTab: Record<string, string[]>;
 };
 
 export type RequestAuditInput = {
@@ -34,6 +34,7 @@ export type RequestAuditInput = {
 };
 
 const BINDING_FIELD = "control_session_binding_sha256";
+const START_ROUTE = "POST /v0/challenges/{id}/work-session/start";
 const MINIMUM_BOARD_VALUE_LENGTH = 8;
 const SHA256_BASE64URL = /^[A-Za-z0-9_-]{43}$/u;
 const CHALLENGE_ROUTE = /^\/v0\/challenges\/[^/]+\/(work-session\/[a-z-]+|events|gate-pass)$/u;
@@ -69,13 +70,15 @@ export function auditAuthorityRequests(
   requests: readonly SeenRequest[],
   input: RequestAuditInput,
 ): RequestAudit {
+  // An empty list would let the board-value search pass without searching for anything.
+  if (input.boardValues.length === 0) throw new Error("the audit needs at least one board value");
   if (input.boardValues.some((value) => value.length < MINIMUM_BOARD_VALUE_LENGTH)) {
     throw new Error(`board values must be at least ${MINIMUM_BOARD_VALUE_LENGTH} characters`);
   }
   const origin = new URL(input.origin).origin;
   const violations: string[] = [];
   const routes = new Map<string, Set<string>>();
-  const bindingsByTab: Record<string, string[]> = {};
+  const startBindingsByTab: Record<string, string[]> = {};
   for (const request of requests) {
     const url = new URL(request.url);
     if (url.origin !== origin) continue;
@@ -84,7 +87,11 @@ export function auditAuthorityRequests(
     if (carriesBoardValue(request, input.boardValues)) {
       violations.push(`a board value reached the Authority on ${label}`);
     }
-    if (request.maybeBody === undefined) continue;
+    if (request.maybeBody === undefined) {
+      // A body the browser didn't hand over is unaudited, which must not read as clean.
+      if (maybeRoute && request.method === "POST") violations.push(`the body of ${label} was not captured`);
+      continue;
+    }
     if (!maybeRoute) {
       violations.push("a request body reached an unlisted route");
       continue;
@@ -98,9 +105,9 @@ export function auditAuthorityRequests(
     routes.set(label, seen);
     violations.push(...fieldViolations(label, maybeFields, seen));
     const maybeBinding = maybeFields[BINDING_FIELD];
-    if (typeof maybeBinding === "string") (bindingsByTab[request.tab] ??= []).push(maybeBinding);
+    if (label === START_ROUTE && typeof maybeBinding === "string") (startBindingsByTab[request.tab] ??= []).push(maybeBinding);
   }
-  return { routes: routeList(routes), violations, bindingsByTab };
+  return { routes: routeList(routes), violations, startBindingsByTab };
 }
 
 function fieldViolations(label: string, fields: Record<string, unknown>, seen: Set<string>): string[] {

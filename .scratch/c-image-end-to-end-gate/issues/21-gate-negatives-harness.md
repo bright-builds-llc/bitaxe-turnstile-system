@@ -115,3 +115,21 @@ Non-claims:
 - 2026-11-14, Ticket 21 done: the harness passed all three cases on the
   production-path rehearsal with test keys (the Answer above). Production code is
   unchanged; the fake board gained the 60 s unused-context expiry.
+- 2026-11-14, review fixes:
+  - A tab passes only if the audit saw its Start carry a binding, so a skipped
+    body or a wrong `--origin` can't pass unchecked.
+  - A POST to a listed route whose body wasn't captured is a violation.
+  - Each tab must receive a `verified_progress` event; the stream's snapshot
+    sends one, so progress `0` is observed, not assumed. A `resync_required`
+    event fails the case.
+  - The audit refuses an empty board-value list, and deployment runs require
+    `--board-values-file`. Evidence lists the labels of the values searched.
+  - Stream events are read by name before any JSON parse (`resync_required` is
+    plain text). Failures in the recorder, including an uncaptured body, become
+    case failures rather than unhandled rejections.
+  - Every printed line is redacted.
+  - After a failed step the harness tries the page's Cancel, so a deployment's
+    challenge isn't left to expire.
+  - All three cases passed again on the rehearsal, after rebasing onto Tickets 26
+    and 27. With Ticket 26, the page now also closes the port after each confirmed
+    Cancel (`portClosed: true` next to restoration `cancelled`).

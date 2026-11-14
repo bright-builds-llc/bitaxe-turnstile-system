@@ -51,6 +51,12 @@ export type TabEvidence = {
   maybeInterception?: { action: InterceptionAction; heldMilliseconds: number };
   authorityStates: string[];
   verifiedProgress: string;
+  /** `verified_progress` events received; the stream's snapshot sends one, so 0 means progress is unknown. */
+  progressEvents: number;
+  /** The stream reported skipped updates, so a progress update may be missing. */
+  resyncRequired: boolean;
+  /** Failures inside the harness's own event handlers; any one leaves the evidence incomplete. */
+  recorderErrors: string[];
   cancelAccepted: boolean;
   gatePassRequests: number;
   maybeBoard?: BoardEvidence;
@@ -129,10 +135,15 @@ export function decideGrant(
 export function caseVerdict(
   caseName: GateNegativeCase,
   tabs: readonly TabEvidence[],
-  audit: { violations: readonly string[]; bindingsByTab: Readonly<Record<string, readonly string[]>> },
+  audit: { violations: readonly string[]; startBindingsByTab: Readonly<Record<string, readonly string[]>> },
 ): CaseVerdict {
-  const failures = tabs.flatMap((tab) => [...attemptFailures(caseName, tab), ...boardFailures(caseName, tab)]);
-  if (caseName === "handed_over" && !distinctBindings(tabs, audit.bindingsByTab)) {
+  const failures = tabs.flatMap((tab) => [
+    ...attemptFailures(caseName, tab),
+    // Without a recorded Start the audit has checked nothing that matters, whatever else it found.
+    ...(audit.startBindingsByTab[tab.tab]?.length ? [] : [`tab ${tab.tab}: the audit saw no Start carrying a control-session binding`]),
+    ...boardFailures(caseName, tab),
+  ]);
+  if (caseName === "handed_over" && !distinctBindings(tabs, audit.startBindingsByTab)) {
     failures.push("the two tabs' control-session bindings are not distinct");
   }
   failures.push(...audit.violations);
@@ -153,6 +164,9 @@ function attemptFailures(caseName: GateNegativeCase, tab: TabEvidence): string[]
   ) {
     failures.push("the grant was held for less than the board's 60 s context");
   }
+  for (const error of tab.recorderErrors) failures.push(`the recorder failed: ${error}`);
+  if (tab.progressEvents === 0) failures.push("no verified_progress event arrived, so progress is unknown");
+  if (tab.resyncRequired) failures.push("the event stream skipped updates (resync_required)");
   if (tab.verifiedProgress !== "0") failures.push("the Authority reported Verified Progress");
   for (const state of ["satisfied", "pass_issued"]) {
     if (tab.authorityStates.includes(state)) failures.push(`the Authority reached ${state}`);
@@ -188,9 +202,9 @@ function onlyRejection(board: BoardEvidence, category: string): boolean {
 
 function distinctBindings(
   tabs: readonly TabEvidence[],
-  bindingsByTab: Readonly<Record<string, readonly string[]>>,
+  startBindingsByTab: Readonly<Record<string, readonly string[]>>,
 ): boolean {
-  const firstBindings = tabs.map((tab) => bindingsByTab[tab.tab]?.[0]);
+  const firstBindings = tabs.map((tab) => startBindingsByTab[tab.tab]?.[0]);
   if (firstBindings.some((binding) => binding === undefined)) return false;
   return new Set(firstBindings).size === firstBindings.length;
 }

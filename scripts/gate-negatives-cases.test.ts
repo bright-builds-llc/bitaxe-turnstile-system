@@ -20,6 +20,9 @@ function endedTab(tab: string, action: NonNullable<TabEvidence["maybeInterceptio
     maybeInterception: { action, heldMilliseconds: action === "held" ? 65_000 : 0 },
     authorityStates: ["issued", "active", "cancelled"],
     verifiedProgress: "0",
+    progressEvents: 1,
+    resyncRequired: false,
+    recorderErrors: [],
     cancelAccepted: true,
     gatePassRequests: 0,
     maybeBoard: {
@@ -34,7 +37,7 @@ function endedTab(tab: string, action: NonNullable<TabEvidence["maybeInterceptio
   };
 }
 
-const cleanAudit = { violations: [], bindingsByTab: { a: ["A".repeat(43)], b: ["B".repeat(43)] } };
+const cleanAudit = { violations: [], startBindingsByTab: { a: ["A".repeat(43)], b: ["B".repeat(43)] } };
 
 test("parses a comma-separated case list", () => {
   expect(parseGateNegativeCases("withheld,handed_over")).toEqual(["withheld", "handed_over"]);
@@ -158,6 +161,50 @@ test("fails a case that advanced Verified Progress", () => {
 
   // Assert
   expect(verdict.failures).toEqual(["tab a: the Authority reported Verified Progress"]);
+});
+
+test("fails a case in which the audit saw no Start binding from a tab", () => {
+  // Arrange
+  const audit = { violations: [], startBindingsByTab: {} };
+
+  // Act
+  const verdict = caseVerdict("withheld", [endedTab("a", "withheld")], audit);
+
+  // Assert
+  expect(verdict.failures).toEqual(["tab a: the audit saw no Start carrying a control-session binding"]);
+});
+
+test("fails a case whose event stream never reported Verified Progress", () => {
+  // Arrange
+  const tabs = [{ ...endedTab("a", "withheld"), progressEvents: 0 }];
+
+  // Act
+  const verdict = caseVerdict("withheld", tabs, cleanAudit);
+
+  // Assert
+  expect(verdict.failures).toEqual(["tab a: no verified_progress event arrived, so progress is unknown"]);
+});
+
+test("fails a case whose event stream skipped updates", () => {
+  // Arrange
+  const tabs = [{ ...endedTab("a", "withheld"), resyncRequired: true }];
+
+  // Act
+  const verdict = caseVerdict("withheld", tabs, cleanAudit);
+
+  // Assert
+  expect(verdict.failures).toEqual(["tab a: the event stream skipped updates (resync_required)"]);
+});
+
+test("fails a case whose recorder failed", () => {
+  // Arrange
+  const tabs = [{ ...endedTab("a", "withheld"), recorderErrors: ["the Authority's verified_progress event was malformed"] }];
+
+  // Act
+  const verdict = caseVerdict("withheld", tabs, cleanAudit);
+
+  // Assert
+  expect(verdict.failures).toEqual(["tab a: the recorder failed: the Authority's verified_progress event was malformed"]);
 });
 
 test("fails a case the Authority didn't end", () => {
@@ -294,7 +341,7 @@ test("accepts a handed-over grant the board refused as unauthenticated", () => {
 test("fails a handover between tabs that share a control-session binding", () => {
   // Arrange
   const tabs = [endedTab("a", "handed_over"), endedTab("b", "handed_over")];
-  const audit = { violations: [], bindingsByTab: { a: ["A".repeat(43)], b: ["A".repeat(43)] } };
+  const audit = { violations: [], startBindingsByTab: { a: ["A".repeat(43)], b: ["A".repeat(43)] } };
 
   // Act
   const verdict = caseVerdict("handed_over", tabs, audit);
@@ -305,7 +352,7 @@ test("fails a handover between tabs that share a control-session binding", () =>
 
 test("fails a case whose requests broke the audit", () => {
   // Arrange
-  const audit = { violations: ["a board value reached the Authority on POST /account-creation/challenge"], bindingsByTab: {} };
+  const audit = { ...cleanAudit, violations: ["a board value reached the Authority on POST /account-creation/challenge"] };
 
   // Act
   const verdict = caseVerdict("withheld", [endedTab("a", "withheld")], audit);
