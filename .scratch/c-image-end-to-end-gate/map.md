@@ -1,7 +1,7 @@
 # C-image end-to-end Gate map
 
 [Spec](spec.md). The first Gate on the C Reference Firmware image through the
-production browser path. Tickets 01, 02, 06, 08, 10, 11, 12, 13, 14, 17, 18, 20, 22, 23 and 24 are resolved; the rest is still planning.
+production browser path. Tickets 01, 02, 06, 08, 10, 11, 12, 13, 14, 17, 18, 20, 22, 23, 24 and 26 are resolved; the rest is still planning.
 The first Gate (06, 07) and onboarding (14, 03, 04, 05, 15) run apart, and both
 feed 09.
 
@@ -32,7 +32,7 @@ feed 09.
 | [23](issues/23-relying-service-restart-replay-flake.md) Relying-service restart test replays a pass that was never consumed | bug | resolved | None |
 | [24](issues/24-relying-service-accepted-at-flake.md) Relying-service tests run the action worker before the service's acceptance second | bug | resolved | None |
 | [25](issues/25-governance-apply-exit-unexplained.md) Relying-service governance test hides why an Apply run exited non-zero | bug | needs-info | None |
-| [26](issues/26-release-port-after-cancel-and-expiry.md) Gate page keeps the USB port after a Cancel or an expiry | bug | ready-for-agent | None |
+| [26](issues/26-release-port-after-cancel-and-expiry.md) Gate page keeps the USB port after a Cancel or an expiry | bug | resolved | None |
 | [27](issues/27-adapter-restart-replay-test.md) An adapter restart replays nothing creditable twice | task | ready-for-agent | None |
 | [28](issues/28-negatives-on-both-boards.md) Negatives on both boards through the deployed page | task | ready-for-human | 21, 26 |
 
@@ -147,3 +147,8 @@ feed 09.
   - `discardedReplies` is checked on the acceptance page, not the deployed page,
     and a 0 is recorded with the firmware's reason (Ticket 28).
   - Ticket 08 is resolved. Its open items live in 21, 26, 27 and 28.
+- Ticket 26 (2026-11-14): the headless client releases the Worker through `maybeReleaseWorker` once
+  a Cancel or expiry restoration is confirmed, and the serial entrypoint closes the port with that
+  reason. A confirmed Cancel is the terminal restoration, so the Authority's later report sends the
+  board nothing. Completion still lets go at redemption, and an unconfirmed restoration keeps the
+  controller's failure path. Tested on simulated boards only.

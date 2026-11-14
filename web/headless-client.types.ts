@@ -196,6 +196,11 @@ export type HeadlessClientInput = {
   transport: HeadlessTransport;
   maybeWorkerController?: WorkerController;
   maybeWorkerLeaseAuthorizationContext?: WorkerLeaseAuthorizationContextProvider;
+  /**
+   * Called once the Worker's restoration after a Cancel or an expiry is confirmed; the client sends
+   * the Worker nothing more. A satisfied challenge keeps the Worker until the integrator closes.
+   */
+  maybeReleaseWorker?: (reason: "cancelled" | "challenge_expired") => Promise<void>;
   maybeNowUnixSeconds?: () => number;
   maybeRestoration?: {
     challengeState: "issued" | "active" | "satisfied" | "pass_issued";

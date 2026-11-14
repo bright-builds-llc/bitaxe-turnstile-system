@@ -56,6 +56,7 @@ import {
   stopWorkerController,
   validatedWorkerStatus,
 } from "./headless-worker-control";
+import type { WorkerRestorationReason } from "./worker-controller";
 
 type TerminalChallengeState = Extract<HeadlessEvent, { type: "terminal_reported" }>["challengeState"];
 
@@ -140,6 +141,11 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
   let maybeTerminalRestoration: Promise<void> | undefined;
   let terminalReported = false;
   const controllable = () => maybeTerminalRestoration === undefined;
+  const releaseRestoredWorker = async (reason: WorkerRestorationReason) => {
+    if (reason === "cancelled" || reason === "challenge_expired") {
+      await snapshot.maybeReleaseWorker?.(reason);
+    }
+  };
   const listeners = new Set<(event: HeadlessEvent) => void>();
   const emit = (event: HeadlessEvent) => {
     for (const listener of listeners) listener(structuredClone(event));
@@ -189,6 +195,8 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       emit({ type: "terminal_reported", challengeState: event.state as TerminalChallengeState });
     }
     let maybeRestorationFailure: unknown;
+    // Only the event that began the shared restoration releases the Worker after it.
+    const beginsRestoration = maybeTerminalRestoration === undefined;
     if (snapshot.maybeWorkerController && maybeRestorationReason) {
       maybeTerminalRestoration ??= restoreWorkerController(
         snapshot.maybeWorkerController,
@@ -211,6 +219,9 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
     }
     setLifecycle(nextLifecycle);
     if (maybeRestorationFailure !== undefined) throw maybeRestorationFailure;
+    if (snapshot.maybeWorkerController && maybeRestorationReason && beginsRestoration) {
+      await releaseRestoredWorker(maybeRestorationReason);
+    }
   });
 
   return {
@@ -353,10 +364,14 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       consentGeneration += 1;
       await Promise.allSettled([maybeRenewalInFlight]);
       await stopWorkerController(snapshot.maybeWorkerController, "cancel", snapshot.transport);
+      // Cancel's confirmed restoration is the terminal one, so the Authority's report of it sends
+      // nothing to the released Worker.
+      maybeTerminalRestoration ??= Promise.resolve();
       await identityAccess.clearConsent(snapshot.challenge.challengeId);
       if (lifecycle.challengeState === "issued" || lifecycle.challengeState === "active") {
         setLifecycle({ type: "lifecycle", challengeState: "cancelled", controlState: "cancelled" });
       }
+      if (snapshot.maybeWorkerController) await releaseRestoredWorker("cancelled");
     },
     maybeWorkerCapabilities() {
       return maybeWorkerCapabilities ? structuredClone(maybeWorkerCapabilities) : undefined;
@@ -462,6 +477,7 @@ function snapshotInput(input: HeadlessClientInput): Omit<HeadlessClientInput, "c
     ...(input.maybeWorkerLeaseAuthorizationContext
       ? { maybeWorkerLeaseAuthorizationContext: input.maybeWorkerLeaseAuthorizationContext }
       : {}),
+    ...(input.maybeReleaseWorker ? { maybeReleaseWorker: input.maybeReleaseWorker } : {}),
     ...(input.maybeNowUnixSeconds ? { maybeNowUnixSeconds: input.maybeNowUnixSeconds } : {}),
     ...(input.maybeRestoration
       ? { maybeRestoration: structuredClone(input.maybeRestoration) }

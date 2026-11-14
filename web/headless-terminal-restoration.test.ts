@@ -50,6 +50,7 @@ function slowRestoringController(calls: string[]) {
 async function miningClient(
   controller: WorkerController,
   renewAuthorityLease: () => Promise<WorkerLeaseRenewal> = async () => fixtures.renewal as WorkerLeaseRenewal,
+  maybeReleaseWorker?: (reason: "cancelled" | "challenge_expired") => Promise<void>,
 ) {
   const authority = transportHarness();
   const transport = {
@@ -59,7 +60,11 @@ async function miningClient(
     },
     renewWorkerLease: renewAuthorityLease,
   };
-  const client = await createHeadlessClient({ ...(await headlessInput(transport)), maybeWorkerController: controller });
+  const client = await createHeadlessClient({
+    ...(await headlessInput(transport)),
+    maybeWorkerController: controller,
+    ...(maybeReleaseWorker ? { maybeReleaseWorker } : {}),
+  });
   await client.grantConsent();
   await client.start();
   const states: string[] = [];
@@ -116,6 +121,23 @@ test("a failed restoration still exposes the terminal state and reports the fail
   // Assert
   await expect(passIssued).rejects.toThrow("liveness_lost");
   expect(states.at(-1)).toBe("pass_issued");
+});
+
+test("an unconfirmed expiry restoration reports the failure and keeps the Worker", async () => {
+  // Arrange
+  const released: string[] = [];
+  const slow = slowRestoringController([]);
+  const { authority } = await miningClient(slow.controller, undefined, async (reason) => {
+    released.push(reason);
+  });
+
+  // Act
+  const expired = authority.emitAuthority({ type: "challenge_lifecycle", state: "expired" });
+  slow.fail(new Error("restoration_unconfirmed"));
+
+  // Assert
+  await expect(expired).rejects.toThrow("restoration_unconfirmed");
+  expect(released).toEqual([]);
 });
 
 test("the Authority's terminal report is emitted before a slow restoration settles", async () => {

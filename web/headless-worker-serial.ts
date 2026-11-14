@@ -12,7 +12,9 @@ import {
 export async function connectWebSerialHeadlessClient(input: {
   client: Omit<
     HeadlessClientInput,
-    "maybeWorkerController" | "maybeWorkerLeaseAuthorizationContext"
+    | "maybeWorkerController"
+    | "maybeWorkerLeaseAuthorizationContext"
+    | "maybeReleaseWorker"
   >;
   worker: WebSerialWorkerControllerInput;
 }): Promise<HeadlessClient> {
@@ -30,6 +32,8 @@ export async function connectWebSerialHeadlessClient(input: {
       ...input.client,
       maybeWorkerController: controller,
       maybeWorkerLeaseAuthorizationContext: controller,
+      // A confirmed Cancel or expiry hands the port back to other tools, as redemption does.
+      maybeReleaseWorker: (reason) => controller.close(reason),
     });
   } catch (error) {
     try {
