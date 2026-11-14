@@ -83,7 +83,7 @@ board's `prepare_start` does (unit tests in
   board-bound field was `control_session_binding_sha256` on `start`.
 
 Ticket 28 runs it against the deployment with `--browser`, `--origin`,
-`--payout-address-file` and optionally `--board-values-file`, a person picking
+`--payout-address-file` and `--board-values-file`, a person picking
 each tab's port. On a real board the harness can't read the board, so its
 verdict there rests on the page and the Authority, and the board's log is read
 by hand.

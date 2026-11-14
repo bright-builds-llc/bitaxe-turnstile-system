@@ -44,3 +44,10 @@ and the 205 in one sitting. It can share Ticket 15's 601 sitting.
   - Any Start the board refuses makes the page fail closed and drop the port, so
     the expired-context case ends with the port closed rather than a confirmed
     `cancelled` restoration.
+- 2026-11-14, prepared: [run-sheet-28.md](../run-sheet-28.md).
+  - The node answers through the tunnel. The acceptance page reaches
+    `configured` on the reference image with no board attached.
+  - The private board-values file holds 8 values. The boards' Device Identity
+    keys aren't among them, which is a non-claim.
+  - The disclosure list stays `bitaxe-601` only, because adding the 205 would
+    double the duration estimate.
