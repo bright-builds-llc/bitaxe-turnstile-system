@@ -30,6 +30,8 @@ use tokio::{
 #[path = "support/postgres.rs"]
 mod postgres_support;
 use postgres_support::PostgresTestDatabase;
+#[path = "stratum_v1_proxy/adapter_restart.rs"]
+mod adapter_restart;
 #[path = "stratum_v1_proxy/authority_delivery.rs"]
 mod authority_delivery;
 #[path = "stratum_v1_proxy/bounds.rs"]

@@ -35,49 +35,17 @@ async fn durable_proxy_event_advances_the_existing_authority_progress_path()
 -> Result<(), Box<dyn Error>> {
     // Arrange
     let database = PostgresTestDatabase::start().await?;
-    let application =
-        AuthorityApplication::connect_postgres(authority_config()?, database.database_url())
-            .await?;
-    let adapter = application.simulated_pool_adapter();
-    let authority_url = spawn_http(authority::router(application)).await?;
-    let challenge = reqwest::Client::new()
-        .post(format!("{authority_url}/v0/challenges"))
-        .header(CLIENT_ID_HEADER, CLIENT_ID)
-        .bearer_auth(SERVICE_SECRET)
-        .json(&json!({
-            "action_policy": "account-creation.light.v1",
-            "action_reference": "action_stratum_delivery_01",
-            "claimant_key": CLAIMANT_PUBLIC_JWK
-        }))
-        .send()
-        .await?
-        .error_for_status()?
-        .json::<Value>()
-        .await?;
-    let challenge_id = ChallengeId::try_from(
-        challenge["challenge_id"]
-            .as_str()
-            .ok_or("challenge response needs an identifier")?
-            .to_owned(),
-    )?;
-    let session_id = WorkSessionId::try_from("session_stratum_outbox_01".to_owned())?;
-    adapter
-        .consent_default_pool_offer_for_simulation(&challenge_id)
-        .await?;
-    adapter.register_session(&challenge_id, session_id).await?;
-    let lease = adapter
-        .start_lease(
-            &WorkSessionId::try_from("session_stratum_outbox_01".to_owned())?,
-            WorkerClock::new("boot_stratum_delivery_01", 0)?,
-        )
-        .await?;
-    let lease_context = StratumLeaseContext::new(
-        lease.lease_id().to_owned(),
-        "boot_stratum_delivery_01".to_owned(),
-        0,
-        lease.renew_at_monotonic_milliseconds(),
-        lease.expires_at_monotonic_milliseconds(),
-    )?;
+    let LeasedAuthority {
+        adapter,
+        lease_context,
+        ..
+    } = leased_authority(
+        &database,
+        "action_stratum_delivery_01",
+        "session_stratum_outbox_01",
+        "boot_stratum_delivery_01",
+    )
+    .await?;
     let event = persisted_event("event_stratum_authority_01", "share_stratum_authority_01")?;
     let outbox = PostgresAcceptedWorkOutbox::connect(database.database_url()).await?;
     outbox
@@ -155,6 +123,71 @@ async fn refused_event_is_recorded_once_and_never_redelivered() -> Result<(), Bo
     Ok(())
 }
 
+/// One Authority Work Session with a running Worker Lease, as the Pool Adapter knows it.
+pub(super) struct LeasedAuthority {
+    pub(super) adapter: SimulatedPoolAdapter,
+    pub(super) challenge_id: ChallengeId,
+    pub(super) session_id: WorkSessionId,
+    pub(super) lease_context: StratumLeaseContext,
+}
+
+/// Issues a challenge, registers `session` for it and starts its lease at reading 0.
+pub(super) async fn leased_authority(
+    database: &PostgresTestDatabase,
+    action_reference: &str,
+    session: &str,
+    continuity: &str,
+) -> Result<LeasedAuthority, Box<dyn Error>> {
+    let application =
+        AuthorityApplication::connect_postgres(authority_config()?, database.database_url())
+            .await?;
+    let adapter = application.simulated_pool_adapter();
+    let authority_url = spawn_http(authority::router(application)).await?;
+    let challenge = reqwest::Client::new()
+        .post(format!("{authority_url}/v0/challenges"))
+        .header(CLIENT_ID_HEADER, CLIENT_ID)
+        .bearer_auth(SERVICE_SECRET)
+        .json(&json!({
+            "action_policy": "account-creation.light.v1",
+            "action_reference": action_reference,
+            "claimant_key": CLAIMANT_PUBLIC_JWK
+        }))
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<Value>()
+        .await?;
+    let challenge_id = ChallengeId::try_from(
+        challenge["challenge_id"]
+            .as_str()
+            .ok_or("challenge response needs an identifier")?
+            .to_owned(),
+    )?;
+    let session_id = WorkSessionId::try_from(session.to_owned())?;
+    adapter
+        .consent_default_pool_offer_for_simulation(&challenge_id)
+        .await?;
+    adapter
+        .register_session(&challenge_id, session_id.clone())
+        .await?;
+    let lease = adapter
+        .start_lease(&session_id, WorkerClock::new(continuity, 0)?)
+        .await?;
+    let lease_context = StratumLeaseContext::new(
+        lease.lease_id().to_owned(),
+        continuity.to_owned(),
+        0,
+        lease.renew_at_monotonic_milliseconds(),
+        lease.expires_at_monotonic_milliseconds(),
+    )?;
+    Ok(LeasedAuthority {
+        adapter,
+        challenge_id,
+        session_id,
+        lease_context,
+    })
+}
+
 struct SimulatedAuthoritySink {
     adapter: SimulatedPoolAdapter,
     acknowledgements: Mutex<Vec<AcceptedWorkAcknowledgement>>,
@@ -180,7 +213,7 @@ impl AcceptedWorkSink for SimulatedAuthoritySink {
     }
 }
 
-fn authority_config() -> Result<Config, Box<dyn Error>> {
+pub(super) fn authority_config() -> Result<Config, Box<dyn Error>> {
     let credential = ServiceCredential::new(
         CLIENT_ID,
         SERVICE_SECRET,

@@ -1,7 +1,7 @@
 # C-image end-to-end Gate map
 
 [Spec](spec.md). The first Gate on the C Reference Firmware image through the
-production browser path. Tickets 01, 02, 06, 08, 10, 11, 12, 13, 14, 17, 18, 20, 22, 23, 24 and 26 are resolved; the rest is still planning.
+production browser path. Tickets 01, 02, 06, 08, 10, 11, 12, 13, 14, 17, 18, 20, 22, 23, 24, 26 and 27 are resolved; the rest is still planning.
 The first Gate (06, 07) and onboarding (14, 03, 04, 05, 15) run apart, and both
 feed 09.
 
@@ -33,7 +33,7 @@ feed 09.
 | [24](issues/24-relying-service-accepted-at-flake.md) Relying-service tests run the action worker before the service's acceptance second | bug | resolved | None |
 | [25](issues/25-governance-apply-exit-unexplained.md) Relying-service governance test hides why an Apply run exited non-zero | bug | needs-info | None |
 | [26](issues/26-release-port-after-cancel-and-expiry.md) Gate page keeps the USB port after a Cancel or an expiry | bug | resolved | None |
-| [27](issues/27-adapter-restart-replay-test.md) An adapter restart replays nothing creditable twice | task | ready-for-agent | None |
+| [27](issues/27-adapter-restart-replay-test.md) An adapter restart replays nothing creditable twice | task | resolved | None |
 | [28](issues/28-negatives-on-both-boards.md) Negatives on both boards through the deployed page | task | ready-for-human | 21, 26 |
 
 ## Decisions so far
@@ -152,3 +152,10 @@ feed 09.
   reason. A confirmed Cancel is the terminal restoration, so the Authority's later report sends the
   board nothing. Completion still lets go at redemption, and an unconfirmed restoration keeps the
   controller's failure path. Tested on simulated boards only.
+- Ticket 27 (2026-11-14): an in-process adapter restart replays nothing creditable twice.
+  `tests/stratum_v1_proxy/adapter_restart.rs` sends real shares through
+  `spawn_in_process_pool_adapter`. It stops after the Authority credits an event
+  but before the outbox acknowledges it, then restarts the Authority and adapter
+  on the same database. The reclaimed event is credited once, and the
+  acknowledged one is not delivered again. No production change and no hardware.
+  Ticket 16 reruns it restarting only the adapter.
