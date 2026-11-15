@@ -1,7 +1,7 @@
 # Browser onboarding device over the ROM bootloader
 
 Type: task
-Status: ready-for-human
+Status: resolved
 Blocked by: 03
 
 ## Objective
@@ -202,3 +202,4 @@ Run under the fork handoff's process rules, with a base-MAC match before any ROM
   hard reset with no chooser; the C bootloader booted stock `factory` under the C table; a real
   bootloader rollback returned to stock; the browser's HMACs matched the image's; and stock's
   table was classified as upstream's known table.
+- 2026-11-15: the owner closed the ticket, with every plan item done.

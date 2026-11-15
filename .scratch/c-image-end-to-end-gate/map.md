@@ -1,7 +1,7 @@
 # C-image end-to-end Gate map
 
 [Spec](spec.md). The first Gate on the C Reference Firmware image through the
-production browser path. Tickets 01, 02, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 17, 18, 20, 21, 22, 23, 24, 26, 27 and 28 are resolved; the rest is still planning.
+production browser path. Tickets 01, 02, 03, 04, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 17, 18, 20, 21, 22, 23, 24, 26, 27 and 28 are resolved; the rest is still planning.
 The first Gate (06, 07) and onboarding (14, 03, 04, 05, 15) run apart, and both
 feed 09.
 
@@ -10,8 +10,8 @@ feed 09.
 | [01](issues/01-authority-worker-lease-grants.md) Authority issues signed Worker Lease grants and renewals | task | resolved | None |
 | [02](issues/02-c-image-onboarding-contract.md) Agree the C image's onboarding contract | grilling | resolved | None |
 | [14](issues/14-gate-onboarding-contract-for-the-c-image.md) Gate onboarding contract matches the C image | task | resolved | 02 |
-| [03](issues/03-c-image-onboarding-commands.md) C image reports onboarding facts and guards its own boot | task | ready-for-human | 02, 14 |
-| [04](issues/04-web-serial-onboarding-device.md) Browser onboarding device over the ROM bootloader | task | ready-for-human | 03 |
+| [03](issues/03-c-image-onboarding-commands.md) C image reports onboarding facts and guards its own boot | task | resolved | 02, 14 |
+| [04](issues/04-web-serial-onboarding-device.md) Browser onboarding device over the ROM bootloader | task | resolved | 03 |
 | [05](issues/05-signed-c-image-package.md) Owner signs the C image's firmware package (signed; licence review left) | task | ready-for-human | 03, 04 |
 | [15](issues/15-c-image-onboarding-on-the-601.md) Onboarding on the 601, from stock and between reference images | task | resolved | 05 |
 | [11](issues/11-late-work-delivery-after-renew.md) Authority judges a Work Event by the reading at which it was observed | task | resolved | 10 |
@@ -198,3 +198,5 @@ feed 09.
 - Ticket 09 (2026-11-15): resolved. `spec.md`'s criteria table links every Core MVP criterion
   to its C-image evidence or names what is missing, and Core Tickets 23 and 25 carry the
   C-image evidence and non-claims.
+- Tickets 03 and 04 (2026-11-15): resolved. Ticket 15's sittings measured the onboarding bounds
+  on the 601, and both tickets record them.

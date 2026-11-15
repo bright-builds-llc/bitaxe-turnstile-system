@@ -1,7 +1,7 @@
 # C image reports onboarding facts and guards its own boot
 
 Type: task
-Status: ready-for-human
+Status: resolved
 Blocked by: 02, 14
 
 ## Objective
@@ -107,3 +107,4 @@ the 601, so this ticket waits for a hardware sitting with the owner. Nothing was
     each rollback the same held from flash.
   - **Slots.** The 601 on `247d2cd` runs from `factory`, so it is never on trial. Which slot the
     205 runs from still wasn't checked.
+- 2026-11-15: the owner closed the ticket, with every plan item done.
