@@ -14,6 +14,10 @@ bootloader in place. The first, second and fifth decisions below now cover it.
 Accepted 2026-11-14 by the owner, with one amendment: on the owner's boards, the base-MAC check is
 required, not optional. It is now the last decision below.
 
+Amended 2026-11-15 by the owner's choice at Ticket 15's dry run on the 601. esptool-js 0.7.0's
+ESP32-S3 stub stalls on flash reads over USB-Serial-JTAG, so reads no longer use its `readFlash`.
+The esptool-js decision below now covers that.
+
 ## Context
 
 ADR-0111 made the browser the one writer, through the ROM bootloader, and the C image the reporter,
@@ -73,9 +77,18 @@ after each reboot, minutes after the user's click.
   during the long image write leaves stock entirely untouched, and the C bootloader is in place
   before `otadata` selects the image. An interrupted bootloader write leaves a board that only ROM
   can start, which a rerun repairs.
-- **esptool-js 0.7.0**, pinned exactly. Every capability needed (read, write with `keep` flash
-  parameters, stub MD5, the USB-Serial-JTAG reset) is present, so no own ROM client is built. Its
-  log, which includes the MAC, is discarded.
+- **esptool-js 0.7.0**, pinned exactly. Writes with `keep` flash parameters, stub MD5 and the
+  USB-Serial-JTAG reset are its own. Its log, which includes the MAC, is discarded.
+  - Reads are not its own (owner's amendment, 2026-11-15). Its `readFlash` asks the stub for
+    4096-byte packets. On the 601, its bundled ESP32-S3 stub stopped sending after about 770 bytes
+    of one, every time. esptool.py 4.9 read the same bytes, and esptool.py's stub driven through
+    esptool-js did too, so the stub is at fault. 0.7.1 bundles the same behaviour (upstream
+    issue #273, fix unreleased).
+  - The adapter runs the stub's read exchange itself through esptool-js's command API: 256-byte
+    packets, one in flight, each acknowledged, then the stub's MD5, which is checked. Ten 24 KB
+    reads on the 601 completed this way; 512-byte packets still stalled once.
+  - That exchange is the only ROM client code of our own. When esptool-js ships a stub that
+    reads reliably, the pin moves and its `readFlash` returns.
 - **On the owner's boards, the base MAC must match before any write** (owner's amendment,
   2026-11-14). Every onboarding of the 205 or the 601 passes `maybeAdmitBaseMac`, from local
   configuration, and refuses a board whose base MAC isn't the one named for that run. The two
@@ -103,6 +116,10 @@ after each reboot, minutes after the user's click.
 - **Ask the user to click again after each reboot.** Faithful to the Connect gesture rule, but an
   install has up to three reconnects, and a missed click would leave the image on trial until its
   own 120 s rollback.
+- **Upload esptool.py's stub instead of esptool-js's.** It read correctly on the 601, but it puts a
+  GPL-licensed binary in the page bundle, which needs a licence review first.
+- **Wait for esptool-js to ship a fixed stub.** No ROM client code of our own, but Ticket 15 waits
+  on an unreleased upstream fix.
 - **Pin the bootloader and table digests in `bwg-core`.** Each C release would need a `bwg-core`
   release, and the owner's signature would not cover the bytes.
 - **Extend the snapshot type with a stock variant.** Cleaner types, but it would change the

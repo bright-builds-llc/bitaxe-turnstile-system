@@ -182,7 +182,8 @@ function workerSerialLink(
     foreground: () => true,
   };
   const scope = {
-    challengeId: `onboarding_${encodeBase64Url(crypto.getRandomValues(new Uint8Array(16)))}`,
+    // The continuity store admits only `challenge_` identifiers; this one names no Gate challenge.
+    challengeId: `challenge_onboarding_${encodeBase64Url(crypto.getRandomValues(new Uint8Array(16)))}`,
     retentionExpiryUnixSeconds: Math.floor(Date.now() / 1000) + 3_600,
   };
   const continuity = createMemoryWorkerContinuityAccess(scope);

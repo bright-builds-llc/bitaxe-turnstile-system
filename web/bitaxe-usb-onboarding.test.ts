@@ -1,13 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import type { BitaxeOnboarding, BitaxeOnboardingResult, FirmwarePackage } from "./bitaxe-onboarding";
-import { bitaxeUsbOnboardingAction, GrantedBitaxePort, inspectOnboarding, observeDeviceSteps } from "./bitaxe-usb-onboarding";
+import {
+  bitaxeUsbOnboardingAction,
+  createUsbBitaxeOnboarding,
+  GrantedBitaxePort,
+  inspectOnboarding,
+  observeDeviceSteps,
+} from "./bitaxe-usb-onboarding";
 import { settings, snapshot } from "./bitaxe-onboarding-test-fixtures";
 import { SimulatedBitaxeConnector } from "./simulated-bitaxe-onboarding";
 import { OnboardingCommandsUnsupportedError } from "./rom-onboarding-seams";
 import { parseWorkerControlResult } from "./worker-control-rejection";
 import type { WorkGateConfiguration } from "./bwg-work-gate";
 import { instantClock } from "./rom-onboarding.test-support";
-import type { WorkerSerialAccess, WorkerSerialPort } from "./webserial-worker-port";
+import type { WorkerSerialAccess, WorkerSerialBrowserRuntime, WorkerSerialPort } from "./webserial-worker-port";
 
 const FILTER = { usbVendorId: 0x303a, usbProductId: 0x1001 };
 
@@ -257,5 +263,29 @@ describe("observeDeviceSteps", () => {
     // Assert
     await expect(reading).rejects.toThrow();
     expect(observed).toEqual(["readMigrationSettings:failed"]);
+  });
+});
+
+describe("createUsbBitaxeOnboarding", () => {
+  test("builds the production onboarding without touching a port", () => {
+    // Arrange
+    const { access, calls } = serial([], port());
+    const runtime: WorkerSerialBrowserRuntime = {
+      serial: access,
+      foreground: () => true,
+      pageOpen: () => true,
+      userActivation: () => true,
+      now: () => 0,
+      acquireLock: async () => () => undefined,
+      subscribePageExit: () => () => undefined,
+      every: () => () => undefined,
+    };
+
+    // Act
+    const build = () => createUsbBitaxeOnboarding({ deviceFilter: FILTER, trustedUpdateKeys: [], maybeRuntime: runtime });
+
+    // Assert
+    expect(build).not.toThrow();
+    expect(calls.requestPort).toBe(0);
   });
 });

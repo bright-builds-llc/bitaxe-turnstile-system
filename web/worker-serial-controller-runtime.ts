@@ -19,7 +19,7 @@ import { WorkerMiningInterruptionOwner } from "./worker-mining-interruption";
 import { parseBrowserSerialTrace, parseDeviceSerialTrace } from "./worker-serial-trace-export";
 import { finishWorkerSerialClose } from "./worker-serial-close";
 import { runWorkerSerialExchange } from "./worker-serial-exchange";
-import { isWorkerRestorationPending } from "./worker-control-rejection";
+import { isWorkerRestorationPending, maybeWorkerControlRejectionCategory } from "./worker-control-rejection";
 import { rejectedStartGrant, runRejectedStart } from "./worker-rejected-start";
 import type { WorkLeaseAuthorityTrust, WorkerLeaseAuthorizationOperation } from "./worker-lease-authorization";
 import { parseBudgetCampaignId, parseWorkerBudgetReview } from "./worker-budget-review";
@@ -446,12 +446,24 @@ export class BrowserSerialController implements WebSerialWorkerController {
   /** C image `onboarding_inspect` (Ticket 03): read-only, answered without a lease. The caller parses it. */
   async onboardingInspect(): Promise<unknown> {
     if (!this.#maybePossession) throw serialFailure("probe_admission");
-    return this.#request("onboarding_inspect");
+    return this.#onboardingRequest("onboarding_inspect");
   }
   /** C image `onboarding_verify` under the browser's base64url nonce. The caller parses the reply. */
   async onboardingVerify(nonce: string): Promise<unknown> {
     if (!this.#maybePossession) throw serialFailure("probe_admission");
-    return this.#request("onboarding_verify", { nonce });
+    return this.#onboardingRequest("onboarding_verify", { nonce });
+  }
+  /**
+   * The C image ends the session after any request it rejects (`revoke_after_send`), so it would
+   * never credit a clean Close; the close that follows skips it, as after a rejected Start.
+   */
+  async #onboardingRequest(command: "onboarding_inspect" | "onboarding_verify", maybePayload?: unknown): Promise<unknown> {
+    try {
+      return await this.#request(command, maybePayload);
+    } catch (error) {
+      if (maybeWorkerControlRejectionCategory(error) !== undefined) this.#maybeFailure ??= serialFailure("command_rejected");
+      throw error;
+    }
   }
 
   async status() { return this.#statusRequest("status"); }
