@@ -18,7 +18,7 @@ the first Gate (07). This is criterion 3's evidence for Ticket 09.
   the signed package, offers "Connect Bitaxe over USB" through `bitaxeUsbOnboardingAction`, and
   passes `baseMacAdmission(registeredBaseMacDigest(registry, "601"))` to
   `createUsbBitaxeOnboarding`, with the digest loaded from private configuration.
-- [ ] Stock ESP-Miner installs the signed C package. The category digests match
+- [x] Stock ESP-Miner installs the signed C package. The category digests match
   before and after, and the device comes back with a fresh Hello and proof of
   possession.
 - [ ] A reference-to-reference update installs a newer signed package the same way.
@@ -186,3 +186,35 @@ the first Gate (07). This is criterion 3's evidence for Ticket 09.
     failed startup check and a rollback that restores changed NVS are still open; the install
     used no Migration Backup; this is one run on one board; the Chrome crash in attempt 2 is
     unexplained.
+- 2026-11-15, the stock install's contract (attempt 1 from stock on the 601), written before the
+  sitting:
+  - Staging: upstream's release image `esp-miner-factory-601-v2.15.4.bin` (from the
+    `bitaxeorg/ESP-Miner` v2.15.4 release, matching the digest the release publishes; its table
+    is the one onboarding names `upstream`, its app reports `v2.15.4`, and its OTA slots and
+    `otadata` are blank). After a base-MAC match and a verified backup of the whole flash, it was
+    written everywhere except `nvs`, and verified. The 601 then ran `v2.15.4` on its Wi-Fi.
+    Unlike a board from the field, its `nvs` still holds the 601's settings and Device Identity,
+    so the C image proves that identity rather than creating one.
+  - The sitting: the page from `70dc172`, Ticket 05's package, Connect (stock sends no Hello, so
+    inspection is from flash), Install with no Migration Backup, then the owner's choice. A
+    rollback to stock is checked from flash, and HTTP shows whether stock runs.
+  - Closed outcomes as in the earlier contract.
+- 2026-11-15, the stock install, attempt 1: installed and verified, waiting for the owner's
+  choice. Connect with inspection from flash took 4.28 s (stock sent no Hello): `firmware_required`,
+  `esp-miner` 2.15.4, not Reference Firmware, settings `upgrade_required` at schema 1, Migration
+  Backup recommended. Then the settings read 1.15 s, the flash step 36.6 s (with the C bootloader
+  and table), the reboot 10.2 s until a bootable session with a fresh Hello and possession,
+  inspection over Worker Serial 0.30 s and verification 0.31 s: `ready`, firmware 0.1.0 on
+  `ota_0`, bootable, the category HMACs matching for all, network and pool. The HTTP poll saw
+  `v2.15.4`, then `51e5af9`.
+- 2026-11-15, the stock install's outcome, `complete` for the stock item: the owner chose Roll
+  back. The rollback took 9.1 s; the reset into stock was unobserved (10.1 s, the fixed pause);
+  inspection from flash (1.44 s) and verification from flash (1.41 s) confirmed it: `rolled_back`,
+  rollback confirmed, `esp-miner` 2.15.4 in the factory slot, bootable, the category HMACs
+  matching for all, network and pool. HTTP then showed `v2.15.4` running, as the user's check of
+  the screen would. It was mining on the 601's saved pool, since stock has no `mineOnBoot` pause.
+  This is the first rollback to stock on hardware. The C bootloader and table stayed, and boot
+  stock.
+  - Non-claims: the Device Identity the C image proved was the 601's existing one, kept in
+    `nvs`, not one a board from the field would create; no Migration Backup was used; one run on
+    one board.
