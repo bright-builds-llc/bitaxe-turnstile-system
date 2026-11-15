@@ -26,7 +26,7 @@ the first Gate (07). This is criterion 3's evidence for Ticket 09.
   installs the package. It is admitted, inspected from flash, gets the C bootloader, and is
   verified over Worker Serial. A rollback returns to `247d2cd`, and is checked from flash.
 - [x] A board with any other partition table is refused before anything is written.
-- [ ] A failed startup check rolls back in the bootloader before mark-valid, and a
+- [x] A failed startup check rolls back in the bootloader before mark-valid, and a
   browser-driven rollback after it returns to the previous slot with NVS restored.
 - [ ] Evidence names the board, commits, image and ELF digests, timings and
   non-claims, and holds nothing private. The Migration Backup never leaves the
@@ -279,3 +279,57 @@ the first Gate (07). This is criterion 3's evidence for Ticket 09.
     no versions; the package carries `51e5af9`'s bootloader, so whether the update rewrote it is
     not observable here (the bytes were already equal); NVS wasn't changed between install and
     rollback, so a rollback restoring changed NVS is still open; one run on one board.
+- 2026-11-15, the failed startup check's contract, written before the sitting:
+  - Fault: the owner chose a staged identity fault over a deliberately failing signed image. After
+    a base-MAC match, the 601's `nvs` (as `247d2cd` left it) is written back with
+    `bwg_worker/device_seed`'s 32 data bytes zeroed and that entry's CRCs fixed, nothing else
+    changed. ESP-IDF's `nvs_tool` integrity check reports the same as for the original, and its
+    parser reads the seed as 32 zero bytes. The C image treats that as corruption ("Device identity
+    is unavailable"), so its link never starts, and its startup check should fail at 120 s.
+  - The sitting: the page from `70dc172`, Ticket 05's package (`51e5af9`) from `247d2cd`, no
+    Migration Backup, an HTTP poll alongside.
+  - Expected: install, then `51e5af9` boots without a link; the bootloader returns to `247d2cd`
+    before mark-valid (HTTP shows `51e5af9`, then `247d2cd`, before the page's 180 s reboot bound);
+    the reboot step times out; onboarding recovers by itself: `otadata` to the previous slot, the
+    `nvs` copy written back, inspection and verification from flash, `rolled_back` with the settings
+    categories matching the restored copy.
+  - Closed outcomes: `complete` if all of that holds; `stopped_on_boundary` if the fault is refused
+    earlier, the image somehow passes its check, or recovery fails, and the 601 is then restored
+    from its backup in every case.
+- 2026-11-15, the failed startup check, attempt 1: `stopped_on_boundary`, nothing written. The staged
+  `nvs` was written and verified after a base-MAC match, and `247d2cd` still booted with it. Connect
+  then stopped in inspection after 4.28 s: "running firmware version is not a release version".
+  `247d2cd` runs the Gate too, so the zero seed stopped its link as well; it sent no Hello, and
+  onboarding inspected it from flash as stock, where its `git describe` version is refused. The
+  install step was never offered. The fault was right; the starting image was wrong.
+- 2026-11-15, attempt 2's contract, written before the sitting: the same fault, from stock. After a
+  base-MAC match, upstream's v2.15.4 factory image for the 601 (the files the stock item staged) is
+  written everywhere except `nvs`, which keeps the zeroed seed; a parse confirms the seed is still
+  zero. Stock reads no Gate key, so it inspects as `esp-miner` 2.15.4. Then attempt 1's sitting and
+  expectations, with stock in place of `247d2cd`: the install writes the C bootloader and table and
+  `51e5af9`; `51e5af9` fails its startup check and the bootloader returns to stock (HTTP `v2.15.4`
+  before 180 s); the reboot step times out; onboarding recovers with the `nvs` copy and verifies
+  from flash. Closed outcomes as before, and the 601 is restored to `247d2cd` from its pre-install
+  backup afterwards.
+- 2026-11-15, the failed startup check, attempt 2: `complete`. Stock v2.15.4 was staged with the
+  zeroed seed kept, and verified; a parse showed the seed still zero, and HTTP showed `v2.15.4`.
+  - Connect with inspection from flash 4.36 s (`firmware_required`, `esp-miner` 2.15.4, settings
+    `upgrade_required`), the settings read 1.13 s, the flash step 36.7 s (the C bootloader, table
+    and `51e5af9`).
+  - HTTP showed `51e5af9` at 20:44:58 UTC, then `v2.15.4` again at 20:46:58, about 120 s after
+    `51e5af9` booted and nearly a minute before the page did anything. That is the startup check
+    failing and the bootloader returning to stock before mark-valid.
+  - The reboot step failed at 183 s: "the device was not back within 180000 ms ← the running image
+    did not answer Worker Serial Hello ← Worker Serial admission_failed".
+  - Onboarding then recovered by itself: the rollback 9.4 s, the reboot 10.1 s, inspection from
+    flash 1.48 s and verification from flash 1.48 s: `rolled_back`, rollback confirmed, `esp-miner`
+    2.15.4 in the factory slot, bootable, the settings categories matching the restored copy for
+    all, network and pool. HTTP showed `v2.15.4`.
+  - Afterwards the pre-install backup was written back after a base-MAC match and verified, which
+    also returned the 601's real seed; the 601 runs `247d2cd`, paused, `mineOnBoot` 0. The 205
+    wasn't touched.
+  - Non-claims: the fault was staged, not met in the field, and from stock, not from a reference
+    image (attempt 1 shows a zero seed also silences `247d2cd`); the bootloader rollback is
+    inferred from HTTP and timing, since the page held the serial port and no device log was read;
+    whether `51e5af9` changed `nvs` before it failed was not observed, so the restore is shown by
+    the categories matching, not by a before-and-after difference; one run on one board.
