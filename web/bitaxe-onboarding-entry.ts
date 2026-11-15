@@ -7,6 +7,7 @@ export {
   type UsbBitaxeOnboarding,
   type UsbBitaxeOnboardingInput,
 } from "./bitaxe-usb-onboarding";
+export { baseMacAdmission, baseMacDigest, registeredBaseMacDigest } from "./bitaxe-base-mac-admission";
 export {
   PROPOSED_ROM_ONBOARDING_BOUNDS,
   type RomOnboardingBounds,

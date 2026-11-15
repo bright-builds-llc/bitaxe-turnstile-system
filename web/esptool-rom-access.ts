@@ -16,10 +16,11 @@ export type EsptoolRomInput = {
   /** The `bwg-worker-serial` Web Lock, held for the whole ROM session. */
   acquireLock(): Promise<() => void>;
   /**
-   * Refuses a board before anything is written, given its factory base MAC. The 601 sitting
-   * passes the board's expected MAC from local configuration; it never reaches evidence.
+   * Refuses a board before anything is written, given its factory base MAC. Required on the
+   * owner's boards (ADR-0112): a sitting passes `baseMacAdmission` with the board's registered
+   * digest. Awaited, since the digest is computed with WebCrypto; it never reaches evidence.
    */
-  maybeAdmitBaseMac?: (baseMac: string) => boolean;
+  maybeAdmitBaseMac?: (baseMac: string) => boolean | Promise<boolean>;
 };
 
 /**
@@ -44,7 +45,7 @@ export function esptoolRomAccess(input: EsptoolRomInput): RomAccess {
           terminal: { clean: () => undefined, write: () => undefined, writeLine: () => undefined },
         });
         await loader.main("default_reset");
-        if (input.maybeAdmitBaseMac && !input.maybeAdmitBaseMac(await loader.chip.readMac(loader))) {
+        if (input.maybeAdmitBaseMac && !(await input.maybeAdmitBaseMac(await loader.chip.readMac(loader)))) {
           throw new Error("the board's base MAC is not the expected board's");
         }
         const session = esptoolSession(loader, transport, release);

@@ -94,7 +94,8 @@ export type UsbBitaxeOnboardingInput = {
   /** Update Authority keys: they verify both the package manifest and the C image's capability. */
   trustedUpdateKeys: readonly UpdateAuthorityJwk[];
   downloadMigrationBackup?: (encryptedBackup: Uint8Array) => Promise<void>;
-  maybeAdmitBaseMac?: (baseMac: string) => boolean;
+  /** Required on the owner's boards (ADR-0112): `baseMacAdmission` with the board's registered digest. */
+  maybeAdmitBaseMac?: (baseMac: string) => boolean | Promise<boolean>;
   maybeBounds?: RomOnboardingBounds;
   /** Tests replace the browser's serial runtime; production omits it. */
   maybeRuntime?: WorkerSerialBrowserRuntime;
