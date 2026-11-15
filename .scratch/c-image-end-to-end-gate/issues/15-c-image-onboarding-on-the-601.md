@@ -28,7 +28,7 @@ the first Gate (07). This is criterion 3's evidence for Ticket 09.
 - [x] A board with any other partition table is refused before anything is written.
 - [x] A failed startup check rolls back in the bootloader before mark-valid, and a
   browser-driven rollback after it returns to the previous slot with NVS restored.
-- [ ] Evidence names the board, commits, image and ELF digests, timings and
+- [x] Evidence names the board, commits, image and ELF digests, timings and
   non-claims, and holds nothing private. The Migration Backup never leaves the
   browser.
 
@@ -333,3 +333,13 @@ the first Gate (07). This is criterion 3's evidence for Ticket 09.
     inferred from HTTP and timing, since the page held the serial port and no device log was read;
     whether `51e5af9` changed `nvs` before it failed was not observed, so the restore is shown by
     the categories matching, not by a before-and-after difference; one run on one board.
+- 2026-11-15, the evidence: the C repository's `docs/project/gate-integration-evidence.md`,
+  "Ticket 15: onboarding on the 601", names the board, the page's commits, both packages' image,
+  ELF, bootloader and table digests, the stock image's digest, each case's step times and outcome,
+  and the non-claims. A scan of it and of `TASKS.md` found no MAC, address, credential or registry
+  digest. No run made a Migration Backup, and the sitting page's bundle has no network call (no
+  `fetch`, XHR, beacon, WebSocket or EventSource), so a backup can only be saved locally. The
+  fork's `task-onboarding-bounds-601` is closed by these runs (about 10.2 s from reset to a
+  bootable session against the 120 s bound, a failed check rolling back through the bootloader,
+  and the settings categories matching), and the Chrome crash is now `task-chrome-crash-onboarding`
+  there.
