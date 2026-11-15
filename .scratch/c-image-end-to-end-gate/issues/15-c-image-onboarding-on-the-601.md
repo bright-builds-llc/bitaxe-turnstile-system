@@ -242,3 +242,10 @@ the first Gate (07). This is criterion 3's evidence for Ticket 09.
   - Non-claims: one other table, upstream's from 2023, not a near miss such as a third coredump
     size (the unit tests cover exact-match refusal); a board from the field would boot its app
     and might write NVS, as `247d2cd` did here; one board.
+- 2026-11-15, the newer package for the reference-to-reference item, staged for the owner's
+  signature ([signing-handoff-15.md](../signing-handoff-15.md)). The image is fork `57b0841` (one
+  docs-only commit after `51e5af9`), built as Ticket 05's was. It carries `51e5af9`'s bootloader
+  and table, since `57b0841`'s bootloader differs only in its build timestamp. The version stays
+  `0.1.0`, so the capabilities need no new signature. The unsigned manifest differs from Ticket 05's
+  only in `imageSha256` and `sourceUrl`. A dry run under a throwaway key admits it for both boards,
+  from stock and from reference. Waits on the owner's signature.
