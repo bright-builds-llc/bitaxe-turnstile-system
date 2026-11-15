@@ -6,6 +6,10 @@ Blocked by: None
 
 ## Objective
 
+Optional (owner, 2026-11-14): the run on both boards doesn't block Ticket 09. Do it when both
+boards are out for another sitting.
+
+
 Ticket 28 couldn't run `handed_over`. The deployed page takes one site-wide Web
 Lock, `bwg-worker-serial` with `ifAvailable` (`web/webserial-worker-port.ts`),
 before admission. Two tabs in one profile therefore can't both hold a Worker

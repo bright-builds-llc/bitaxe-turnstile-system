@@ -17,9 +17,9 @@ feed 09.
 | [11](issues/11-late-work-delivery-after-renew.md) Authority judges a Work Event by the reading at which it was observed | task | resolved | 10 |
 | [12](issues/12-terminal-refusal-of-uncreditable-work.md) Authority refuses uncreditable work terminally, and delivery stops retrying it | task | resolved | 11 |
 | [06](issues/06-production-path-rehearsal.md) Compose and rehearse the production path | task | resolved | 12 |
-| [07](issues/07-first-c-image-gate.md) First end-to-end Gate on the C image | task | ready-for-human | 06 |
+| [07](issues/07-first-c-image-gate.md) First end-to-end Gate on the C image | task | resolved | 06 |
 | [08](issues/08-interruptions-and-negatives.md) Interruptions and negatives on the C image | task | resolved | 07, 17 |
-| [09](issues/09-core-mvp-evidence-map.md) Map C-image evidence onto the Core MVP | task | ready-for-agent | 08, 15, 27, 29 |
+| [09](issues/09-core-mvp-evidence-map.md) Map C-image evidence onto the Core MVP | task | ready-for-agent | 08, 15, 27 |
 | [10](issues/10-pool-adapter-claimant-intake-and-renewal.md) Pool Adapter takes claimant Pool Selection and extends Stratum sessions on Renew | task | resolved | 01 |
 | [13](issues/13-flaky-sse-expiry-test.md) Lifecycle SSE expiry test flakes under load | bug | resolved | None |
 | [16](issues/16-pool-adapter-grpc-process.md) Pool Adapter runs as its own process over gRPC | task | ready-for-agent | None |
@@ -35,7 +35,7 @@ feed 09.
 | [26](issues/26-release-port-after-cancel-and-expiry.md) Gate page keeps the USB port after a Cancel or an expiry | bug | resolved | None |
 | [27](issues/27-adapter-restart-replay-test.md) An adapter restart replays nothing creditable twice | task | resolved | None |
 | [28](issues/28-negatives-on-both-boards.md) Negatives on both boards through the deployed page | task | resolved | 21, 26 |
-| [29](issues/29-handed-over-in-two-profiles.md) Handed-over grants in two browser profiles | task | ready-for-agent | None |
+| [29](issues/29-handed-over-in-two-profiles.md) Handed-over grants in two browser profiles (optional) | task | ready-for-human | None |
 | [30](issues/30-second-tab-admission-reason.md) A second tab's refused admission gives no reason | bug | needs-triage | None |
 
 ## Decisions so far
@@ -181,3 +181,5 @@ feed 09.
 - Ticket 29 (2026-11-14): the harness opens `handed_over`'s tab b in its own browser context, the
   rehearsal now takes the page's real site-wide lock, and a real-browser test shows one profile
   admits one Worker Serial session. The run on both boards waits for a sitting with the owner.
+  The owner made that run optional: it no longer blocks Ticket 09, and runs only when both boards
+  are out for another sitting.

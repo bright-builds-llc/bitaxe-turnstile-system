@@ -2,7 +2,7 @@
 
 Type: task
 Status: ready-for-agent
-Blocked by: 08, 15, 27, 29
+Blocked by: 08, 15, 27
 
 ## Objective
 
@@ -18,3 +18,8 @@ switch.
 - [ ] Add the C-image evidence and its non-claims to Core Ticket 25.
 
 ## Comments
+
+- 2026-11-14, owner: Ticket 29 no longer blocks this ticket. Criterion 11 doesn't list the
+  handover, and a handed-over grant never reaches the other board through the page. Map the
+  handover to the rehearsal (two profiles, the real lock), `negative-cases.json` and the C host
+  tests (`test_lease_auth.c`), with "not run on hardware" as a non-claim unless Ticket 29 has run.
