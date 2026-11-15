@@ -22,7 +22,7 @@ the first Gate (07). This is criterion 3's evidence for Ticket 09.
   before and after, and the device comes back with a fresh Hello and proof of
   possession.
 - [ ] A reference-to-reference update installs a newer signed package the same way.
-- [ ] A board on a reference image from before Ticket 03 (`247d2cd`, which both boards run)
+- [x] A board on a reference image from before Ticket 03 (`247d2cd`, which both boards run)
   installs the package. It is admitted, inspected from flash, gets the C bootloader, and is
   verified over Worker Serial. A rollback returns to `247d2cd`, and is checked from flash.
 - [ ] A board with any other partition table is refused before anything is written.
@@ -123,3 +123,66 @@ the first Gate (07). This is criterion 3's evidence for Ticket 09.
   - Non-claims: no install, rollback or verification has run; the refusal of another board's MAC
     is proven only against the fake esptool-js; the read loop is proven on this 601's
     inspection reads, not on a full-image read or another board.
+- 2026-11-15, the install sitting's contract (attempt 1 on the 601, from `247d2cd`), written before
+  any write:
+  - Before the sitting: a base-MAC match, then esptool reads the whole flash to a private file and
+    verifies it, as the recovery point outside the browser.
+  - The sitting: the page from `0ce3b9f` with Ticket 05's package (`51e5af9`), Connect, the
+    base-MAC check, inspection, Install with no Migration Backup, then the owner's Keep C image or
+    Roll back. Each device step's time and outcome is recorded.
+  - Closed outcomes: `complete` (installed and verified, then the owner's choice confirmed from
+    the board); `continue_after_verified_fix` (a diagnosed defect gets one fix with a test, and a
+    fresh attempt); `stop_repeated_boundary` (the same failure after its fix);
+    `stop_hardware_blocker`. A failed install that the page recovers counts as a failure, not as
+    a rollback proven. If the board is left unbootable, esptool restores the backup.
+- 2026-11-15, attempt 1's outcome: a failure, recovered by the page. Connect and inspection
+  passed (1.59 s), the settings read took 1.14 s and the flash step 36.4 s, then the reboot step
+  failed at the 180 s bound. The page then rolled back on its own: the rollback took 9.3 s, the
+  reboot 10.1 s, inspection from flash 1.48 s and verification 1.52 s, ending `rolled_back` with
+  the rollback confirmed and settings preserved, on `247d2cd` in the factory slot. The recovery
+  hid the reboot step's error, so the failure has no signature yet. Attempt 2 is diagnostic: a
+  failed step now records its error and causes in the sitting's state, and an HTTP poll
+  alongside shows whether the C image booted during the wait.
+- 2026-11-15, attempt 2's outcome and the diagnosis:
+  - The flash step passed again, and the HTTP poll showed `51e5af9` up about 40 s after the
+    install began, staying up. The page never recorded the reboot: Chrome crashed about 40 s
+    after the C image booted (`EXC_BREAKPOINT` on its IO thread, Chrome 157, a browser assertion
+    with no script frames), while the page was reconnecting. The C image stayed installed,
+    marked valid by its startup check, with no browser verification and no owner choice.
+  - Loops without a write, on the C image now running: ten runs of onboarding's Worker Serial
+    reconnect (Hello and possession, discover, `onboarding_inspect`, close) all passed, each in
+    about 0.5 s, `bootable` on `ota_0`. The production reboot sequence without the flash step
+    (Worker Serial inspect, ROM entry for the settings read, reset) failed at the first
+    inspection with "Worker Controller public shape contains an unknown field".
+  - Cause: `discover()` returns the signed capability (`transportProfile` and `attestation`
+    around the semantic fields), and onboarding's snapshot parser accepts only the semantic
+    fields. Every post-reboot attempt failed that parse and reconnected, until the 180 s bound
+    (attempt 1) or until Chrome crashed in the reconnect loop (attempt 2). `247d2cd` never
+    reached the parse, since it rejects `onboarding_inspect`; the simulator's capabilities carry
+    no envelope, so no test saw it.
+  - Fix: onboarding's Worker Serial link drops the envelope that admission verified. A test
+    through `createUsbBitaxeOnboarding` on the fake serial board fails with the board's error
+    before the fix and passes after. At the real boundary, with no write, the sitting's Connect
+    on the C image now inspects over Worker Serial in 0.44 s: `ready`, settings `compatible`.
+    1,428 TypeScript tests, typecheck, the browser build and the standards check pass.
+  - Unexplained: the Chrome crash. The fix removes the reconnect loop that preceded it, so a
+    repeat would be a new signature.
+  - Next: write back the pre-install backup (after a base-MAC match) so the 601 is on `247d2cd`
+    again, then attempt 3, a `continue_after_verified_fix`.
+- 2026-11-15, attempt 3 (the fix above, uncommitted at the run; the 601 back on `247d2cd` from the
+  verified backup): installed and verified, waiting for the owner's choice. Connect and
+  inspection 1.62 s, the settings read 1.15 s, the flash step 36.5 s, the reboot 10.2 s until a
+  bootable session, inspection over Worker Serial 0.32 s and verification 0.33 s. The result:
+  `ready`, rollback not required, firmware 0.1.0 on `ota_0`, bootable, settings preservation
+  confirmed for all, network and pool. The HTTP poll saw `51e5af9` running.
+- 2026-11-15, attempt 3's outcome, `complete` for the `247d2cd` item: the owner chose Roll back.
+  The rollback took 9.2 s and the reboot 10.1 s; inspection from flash (1.42 s) and verification
+  from flash (1.44 s) confirmed it: `rolled_back`, rollback confirmed, settings preservation
+  confirmed for all, network and pool, the factory slot bootable. The 601 then ran `247d2cd`,
+  paused, `mineOnBoot` 0. Afterwards, read only after a base-MAC match, the 601's bootloader
+  region equals the package's C bootloader, which differs from the one in the pre-install backup,
+  so the install wrote it and the rollback kept it, as ADR-0112 says. The 205 wasn't touched.
+  - Non-claims: stock ESP-Miner, a reference-to-reference update, a refused partition table, a
+    failed startup check and a rollback that restores changed NVS are still open; the install
+    used no Migration Backup; this is one run on one board; the Chrome crash in attempt 2 is
+    unexplained.
