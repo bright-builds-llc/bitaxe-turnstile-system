@@ -46,13 +46,26 @@ export type ElementState = { present: boolean; visible: boolean; enabled: boolea
 export const GRANT_PATTERNS = ["*/work-session/start", "*/work-session/renew"];
 const POLL_MILLISECONDS = 250;
 
-/** Opens a blank tab, attaches to it and starts recording; `onPaused` receives its paused grants. */
+/**
+ * Opens a blank tab, attaches to it and starts recording; `onPaused` receives its paused grants.
+ * With `ownProfile` the tab opens in a new browser context, with its own Web Locks and no
+ * serial grants, as a second profile would. On macOS, Chrome must have been started through
+ * `open`: started from a shell, it aborts on the serial chooser's privacy check.
+ */
 export async function openHarnessTab(
   cdp: CdpConnection,
   name: string,
   onPaused: (tab: HarnessTab, event: FetchPausedEvent) => void,
+  options: { ownProfile?: boolean } = {},
 ): Promise<HarnessTab> {
-  const { targetId } = await cdp.send<{ targetId: string }>("Target.createTarget", { url: "about:blank", newWindow: true });
+  const maybeContextId = options.ownProfile
+    ? (await cdp.send<{ browserContextId: string }>("Target.createBrowserContext", {})).browserContextId
+    : undefined;
+  const { targetId } = await cdp.send<{ targetId: string }>("Target.createTarget", {
+    url: "about:blank",
+    newWindow: true,
+    ...(maybeContextId ? { browserContextId: maybeContextId } : {}),
+  });
   const { sessionId } = await cdp.send<{ sessionId: string }>("Target.attachToTarget", { targetId, flatten: true });
   const send = <T>(method: string, params: object = {}) => cdp.send<T>(method, params, sessionId);
   const recorder = networkRecorder(cdp, sessionId, name);
@@ -93,6 +106,7 @@ export async function openHarnessTab(
     async click(path) {
       const state = await tab.elementState(path);
       if (!state.visible || !state.enabled) throw new Error(`tab ${name}: ${path.join(" > ")} is not clickable`);
+      await bringWindowToFront(cdp, targetId);
       await send("Page.bringToFront");
       for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
         await send("Input.dispatchMouseEvent", { type, x: state.x, y: state.y, button: "left", clickCount: 1 });
@@ -102,6 +116,7 @@ export async function openHarnessTab(
       recorder.stop();
       stops.forEach((stop) => stop());
       await cdp.send("Target.closeTarget", { targetId });
+      if (maybeContextId) await cdp.send("Target.disposeBrowserContext", { browserContextId: maybeContextId });
     },
   };
   tab.on("Fetch.requestPaused", (params) => onPaused(tab, params as unknown as FetchPausedEvent));
@@ -112,6 +127,16 @@ export async function openHarnessTab(
     patterns: GRANT_PATTERNS.map((urlPattern) => ({ urlPattern, requestStage: "Response" })),
   });
   return tab;
+}
+
+/**
+ * Restores the tab's window and focuses it, so the chooser a click may open is in front of the
+ * person picking ports. In Ticket 28 the second tab's window stayed behind and hid its chooser.
+ */
+async function bringWindowToFront(cdp: CdpConnection, targetId: string): Promise<void> {
+  const { windowId } = await cdp.send<{ windowId: number }>("Browser.getWindowForTarget", { targetId });
+  await cdp.send("Browser.setWindowBounds", { windowId, bounds: { windowState: "normal" } });
+  await cdp.send("Target.activateTarget", { targetId });
 }
 
 /** Polls until `check` yields a value, failing with `label` after `timeoutMilliseconds`. */

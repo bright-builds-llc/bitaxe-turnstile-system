@@ -30,6 +30,7 @@ async function admittedBoard() {
     },
     maybeDeviceClock: () => Math.floor(performance.now()) + deviceClockOffset,
     maybeRestoreConfirmationMilliseconds: 10,
+    acquireLock: async () => () => undefined,
   });
   const controller = createWebSerialWorkerController(worker);
   closers.push(() => controller.close());

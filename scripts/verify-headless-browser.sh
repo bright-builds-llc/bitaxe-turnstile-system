@@ -121,6 +121,20 @@ if ! grep -q 'status.*passed' "$browser_output"; then
   exit 1
 fi
 
+# One browser profile admits one Worker Serial session (Ticket 29).
+: >"$browser_output"
+"$playwright_cli" -s="$session_name" goto \
+  "http://127.0.0.1:$server_port/conformance/bwg-worker-serial-0.2/lock-browser.html" \
+  >"$browser_output"
+"$playwright_cli" -s="$session_name" run-code \
+  --filename "$repository_root/scripts/run-worker-serial-lock-browser.mjs" \
+  >>"$browser_output"
+"$playwright_cli" -s="$session_name" snapshot >>"$browser_output"
+
+if ! grep -q 'status passed' "$browser_output"; then
+  exit 1
+fi
+
 # Exercise real Chromium trusted input against the qualification-only DOM guard.
 : >"$browser_output"
 "$playwright_cli" -s="$session_name" goto \

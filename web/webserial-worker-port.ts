@@ -88,18 +88,7 @@ export function browserSerialRuntime(): WorkerSerialBrowserRuntime {
     pageOpen: () => !leaving,
     userActivation: () => navigator.userActivation.isActive,
     now: () => performance.now(),
-    acquireLock: () =>
-      new Promise((resolve, reject) => {
-        void navigator.locks
-          .request("bwg-worker-serial", { ifAvailable: true }, (lock) => {
-            if (!lock) {
-              reject(serialFailure("already_owned"));
-              return;
-            }
-            return new Promise<void>((release) => resolve(release));
-          })
-          .catch(() => reject(serialFailure("ownership")));
-      }),
+    acquireLock: () => acquireWorkerSerialLock(navigator.locks),
     subscribePageExit: (listener) => {
       window.addEventListener("pagehide", listener);
       return () => window.removeEventListener("pagehide", listener);
@@ -108,6 +97,24 @@ export function browserSerialRuntime(): WorkerSerialBrowserRuntime {
     every: (milliseconds, listener) => clock.every(milliseconds, listener),
   };
 }
+/**
+ * Takes the site-wide `bwg-worker-serial` Web Lock, or fails `already_owned` while another
+ * page or tab of the same browser profile holds it. A second profile has its own locks.
+ */
+export function acquireWorkerSerialLock(locks: LockManager): Promise<() => void> {
+  return new Promise((resolve, reject) => {
+    void locks
+      .request("bwg-worker-serial", { ifAvailable: true }, (lock) => {
+        if (!lock) {
+          reject(serialFailure("already_owned"));
+          return;
+        }
+        return new Promise<void>((release) => resolve(release));
+      })
+      .catch(() => reject(serialFailure("ownership")));
+  });
+}
+
 /** Attach rejection handling before a concurrent native send can fail or be cancelled. */
 export function observeSerialOutcome<T>(operation: Promise<T>) {
   return operation.then(

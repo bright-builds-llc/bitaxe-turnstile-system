@@ -74,6 +74,8 @@ export function rehearsalWorkerInput(input: {
   /** The board's monotonic clock; unit tests move it to age the possession context. */
   maybeDeviceClock?: () => number;
   maybeRestoreConfirmationMilliseconds?: number;
+  /** The page's Worker Serial lock; the rehearsal page takes the real site-wide one, so it shows the same one-session limit. */
+  acquireLock: () => Promise<() => void>;
 }): { worker: WebSerialWorkerControllerInput; log: RehearsalDeviceLog } {
   const log: RehearsalDeviceLog = {
     commands: [],
@@ -88,7 +90,6 @@ export function rehearsalWorkerInput(input: {
     now: input.maybeDeviceClock ?? (() => Math.floor(performance.now())),
     restoreConfirmationMilliseconds: input.maybeRestoreConfirmationMilliseconds ?? RESTORE_CONFIRMATION_MILLISECONDS,
   });
-  let locked = false;
   const runtime: WorkerSerialBrowserRuntime = {
     serial: { requestPort: async () => port, getPorts: async () => [] },
     foreground: () => true,
@@ -99,13 +100,7 @@ export function rehearsalWorkerInput(input: {
       const timer = setTimeout(listener, milliseconds);
       return () => clearTimeout(timer);
     },
-    async acquireLock() {
-      if (locked) throw new Error("rehearsal serial lock is held");
-      locked = true;
-      return () => {
-        locked = false;
-      };
-    },
+    acquireLock: input.acquireLock,
     subscribePageExit: () => () => undefined,
     every(milliseconds, listener) {
       const timer = setInterval(listener, milliseconds);

@@ -9,6 +9,7 @@ import {
   rehearsalWorkerInput,
   type RehearsalDeviceLog,
 } from "./production-path-rehearsal-device";
+import { acquireWorkerSerialLock } from "./webserial-worker-port";
 import {
   connectReferenceAccountPage,
   type ReferencePageConfig,
@@ -57,6 +58,7 @@ connect.addEventListener("click", () => {
           start: (stratum) => page.bwgRehearsalMiner("start", stratum),
           stop: () => page.bwgRehearsalMiner("stop"),
         },
+        acquireLock: () => acquireWorkerSerialLock(navigator.locks),
       });
       state.maybeDevice = log;
       return worker;

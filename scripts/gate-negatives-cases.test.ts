@@ -8,6 +8,7 @@ import {
   parseGateNegativeCases,
   type PausedGrant,
   type TabEvidence,
+  type GateNegativeCase,
 } from "./gate-negatives-cases";
 
 function paused(tab: string, operation: PausedGrant["operation"] = "start", pausedAtMilliseconds = 1_000): PausedGrant {
@@ -48,7 +49,15 @@ test("refuses an unknown case", () => {
 });
 
 test("hands over between two tabs and runs the others in one", () => {
-  expect([caseTabs("withheld"), caseTabs("expired_context"), caseTabs("handed_over")]).toEqual([["a"], ["a"], ["a", "b"]]);
+  const names = (caseName: GateNegativeCase) => caseTabs(caseName).map((tab) => tab.name);
+  expect([names("withheld"), names("expired_context"), names("handed_over")]).toEqual([["a"], ["a"], ["a", "b"]]);
+});
+
+test("runs a handover's second tab in its own browser profile, since one profile admits one Worker Serial session", () => {
+  expect(caseTabs("handed_over")).toEqual([
+    { name: "a", ownProfile: false },
+    { name: "b", ownProfile: true },
+  ]);
 });
 
 test("passes a renewal through unchanged", () => {

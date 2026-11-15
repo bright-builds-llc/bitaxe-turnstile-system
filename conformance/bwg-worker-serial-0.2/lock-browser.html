@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Worker Serial lock conformance</title></head>
+<body>
+<h1>Worker Serial lock conformance</h1>
+<p>Takes the page's site-wide Worker Serial lock. No serial port is opened.</p>
+<output id="result">ready</output>
+<script type="module">
+import { acquireWorkerSerialLock, SerialFailure } from "/dist/test-worker-serial/webserial-worker-browser-test-entry.js";
+// "held" keeps the lock until the page closes; otherwise the failure's category.
+window.tryWorkerSerialLock = async () => {
+  try {
+    await acquireWorkerSerialLock(navigator.locks);
+    return "held";
+  } catch (error) {
+    return error instanceof SerialFailure ? error.category : "unexpected";
+  }
+};
+</script>
+</body>
+</html>

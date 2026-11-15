@@ -1,4 +1,6 @@
 export { bindWorkerQualificationConnect } from "./worker-qualification-gesture";
+export { acquireWorkerSerialLock } from "./webserial-worker-port";
+export { SerialFailure } from "./worker-serial-errors";
 import { runV2PageSerialConformance } from "./worker-v2-page.fixture";
 import { runNoisePageSerialConformance } from "./worker-noise-page.fixture";
 import { serialHarness } from "./worker-serial.test-support";

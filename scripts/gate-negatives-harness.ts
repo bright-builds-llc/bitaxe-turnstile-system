@@ -17,7 +17,9 @@
  *   bun scripts/gate-negatives-harness.ts --browser http://127.0.0.1:9222 \
  *     --origin <deployment origin> --payout-address-file <file> \
  *     --board-values-file <file> [--cases withheld,expired_context,handed_over]
- * A person picks each tab's port when Chrome asks; the handover's second tab is the second board.
+ * A person picks each tab's port when Chrome asks; the handover's second tab is the second board,
+ * in its own browser profile (Ticket 29), so its chooser asks every run. On macOS, start that
+ * Chrome through `open -na "Google Chrome" --args ...`; started from a shell it aborts on the chooser.
  * The board values file lists, one per line, values tied to the boards (Device Identity
  * fingerprints, firmware commit, ELF digest, MACs); the audit searches every request for them.
  * If a step fails, the harness still tries the page's Cancel so no challenge waits for expiry.
@@ -117,8 +119,8 @@ async function runCase(
   tabs: HarnessTab[],
 ): Promise<CaseReport> {
   const interceptor = grantInterceptor(caseName);
-  for (const name of caseTabs(caseName)) {
-    const tab = await openHarnessTab(connection, name, interceptor.onPaused);
+  for (const { name, ownProfile } of caseTabs(caseName)) {
+    const tab = await openHarnessTab(connection, name, interceptor.onPaused, { ownProfile });
     tabs.push(tab);
     await adapter.load(tab, origin);
     await consentAndStart(tab, adapter);

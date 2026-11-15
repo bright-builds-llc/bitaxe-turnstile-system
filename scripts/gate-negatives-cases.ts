@@ -90,9 +90,16 @@ export function parseGateNegativeCases(input: string): GateNegativeCase[] {
   });
 }
 
-/** The tabs a case drives; a handover needs a second tab, which in Ticket 28 is the second board. */
-export function caseTabs(caseName: GateNegativeCase): readonly string[] {
-  return caseName === "handed_over" ? ["a", "b"] : ["a"];
+/** A tab a case drives, and whether it needs a browser profile of its own. */
+export type CaseTab = { name: string; ownProfile: boolean };
+
+/**
+ * The tabs a case drives. A handover's second tab is the second board, in its own profile:
+ * the page's site-wide Web Lock admits one Worker Serial session per profile (Ticket 29).
+ */
+export function caseTabs(caseName: GateNegativeCase): readonly CaseTab[] {
+  const first = { name: "a", ownProfile: false };
+  return caseName === "handed_over" ? [first, { name: "b", ownProfile: true }] : [first];
 }
 
 export function emptyInterceptionState(): InterceptionState {
