@@ -11,6 +11,9 @@ onboarding commands, and its bootloader was built with app rollback off. Under t
 onboarding stopped after Hello on such a board. Had it gone on, the draft would also have left that
 bootloader in place. The first, second and fifth decisions below now cover it.
 
+Accepted 2026-11-14 by the owner, with one amendment: on the owner's boards, the base-MAC check is
+required, not optional. It is now the last decision below.
+
 ## Context
 
 ADR-0111 made the browser the one writer, through the ROM bootloader, and the C image the reporter,
@@ -72,8 +75,14 @@ after each reboot, minutes after the user's click.
   can start, which a rerun repairs.
 - **esptool-js 0.7.0**, pinned exactly. Every capability needed (read, write with `keep` flash
   parameters, stub MD5, the USB-Serial-JTAG reset) is present, so no own ROM client is built. Its
-  log, which includes the MAC, is discarded. The 601 sitting can refuse a board before any write
-  with `maybeAdmitBaseMac`, from local configuration.
+  log, which includes the MAC, is discarded.
+- **On the owner's boards, the base MAC must match before any write** (owner's amendment,
+  2026-11-14). Every onboarding of the 205 or the 601 passes `maybeAdmitBaseMac`, from local
+  configuration, and refuses a board whose base MAC isn't the one named for that run. The two
+  boards present identical USB descriptors, so the base MAC is the only thing that tells them
+  apart, and Ticket 28 ran tries on the wrong board. It also keeps the fork's hardware rule of a
+  base-MAC match before any ROM write. A public deployment has no list of boards, so the hook
+  stays optional in code.
 
 ## Consequences
 

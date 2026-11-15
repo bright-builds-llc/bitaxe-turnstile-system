@@ -11,6 +11,11 @@ the first Gate (07). This is criterion 3's evidence for Ticket 09.
 
 ## Plan
 
+- [ ] Before the sitting: the page or script that drives onboarding passes `maybeAdmitBaseMac`
+  (ADR-0112, required on the owner's boards) with the 601's base MAC from private local
+  configuration, and nothing commits or prints the MAC. Show it refusing a board whose MAC
+  differs before any write, on the 205 or a simulated loader. Today no page wires the hook:
+  `bitaxeUsbOnboardingAction` takes whatever `create` builds.
 - [ ] Stock ESP-Miner installs the signed C package. The category digests match
   before and after, and the device comes back with a fresh Hello and proof of
   possession.
@@ -39,3 +44,6 @@ the first Gate (07). This is criterion 3's evidence for Ticket 09.
   (`~/.bitaxe-fork-private/reference/package-51e5af9/signed-manifest.json`, with the image files in
   `image-51e5af9/`). Before the sitting, the owner accepts or amends ADR-0112. Ticket 05's licence
   reviews don't block this run, since installing on the owner's own board isn't distribution.
+- 2026-11-14: the owner accepted ADR-0112, amended so that a base-MAC match before any write is
+  required on the owner's boards. Ticket 15 has no remaining blocker; the first plan item is
+  preparation before the sitting.

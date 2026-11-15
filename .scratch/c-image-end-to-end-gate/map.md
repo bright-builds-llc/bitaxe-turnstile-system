@@ -116,7 +116,7 @@ feed 09.
   redemption's `accepted_at_unix_seconds` as the service recorded it, not from the test's clock,
   and assert the executor's outcome. With the race induced, 4 tests failed in 10 of 10 runs
   before and 0 of 10 after. Production code is unchanged.
-- Ticket 04 (2026-11-11), ADR-0112 (proposed, for the owner): the production onboarding device
+- Ticket 04 (2026-11-11), ADR-0112 (proposed then; accepted 2026-11-14): the production onboarding device
   writes through esptool-js 0.7.0 and reads the C image over Worker Serial, on the one port the
   user's gesture granted. Stock is inspected and a rollback to stock is checked from flash through
   ROM. The order is table check, image, then the C bootloader and table (from stock only, read
@@ -185,5 +185,8 @@ feed 09.
   are out for another sitting.
 - Ticket 05 (2026-11-14): the owner signed the C image's manifest with the source set to the fork's
   public commit, and the Gate's package admission accepts it against the owner's trust for both
-  boards. Ticket 15 can use the package now; its other precondition is ADR-0112's acceptance. The
+  boards. Ticket 15 can use the package now; ADR-0112 was accepted the same day. The
   licence reviews still block distributing the image to anyone else.
+- ADR-0112 (2026-11-14): the owner accepted it, amended so that onboarding the 205 or the 601 must
+  match the board's base MAC before any write. Ticket 15 is unblocked; wiring that check into the
+  page or script for the sitting is its first item.
