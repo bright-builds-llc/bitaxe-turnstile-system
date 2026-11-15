@@ -1,7 +1,7 @@
 # C-image end-to-end Gate map
 
 [Spec](spec.md). The first Gate on the C Reference Firmware image through the
-production browser path. Tickets 01, 02, 06, 07, 08, 10, 11, 12, 13, 14, 17, 18, 20, 21, 22, 23, 24, 26, 27 and 28 are resolved; the rest is still planning.
+production browser path. Tickets 01, 02, 06, 07, 08, 10, 11, 12, 13, 14, 15, 17, 18, 20, 21, 22, 23, 24, 26, 27 and 28 are resolved; the rest is still planning.
 The first Gate (06, 07) and onboarding (14, 03, 04, 05, 15) run apart, and both
 feed 09.
 
@@ -13,7 +13,7 @@ feed 09.
 | [03](issues/03-c-image-onboarding-commands.md) C image reports onboarding facts and guards its own boot | task | ready-for-human | 02, 14 |
 | [04](issues/04-web-serial-onboarding-device.md) Browser onboarding device over the ROM bootloader | task | ready-for-human | 03 |
 | [05](issues/05-signed-c-image-package.md) Owner signs the C image's firmware package (signed; licence review left) | task | ready-for-human | 03, 04 |
-| [15](issues/15-c-image-onboarding-on-the-601.md) Onboarding on the 601, from stock and between reference images | task | ready-for-human | 05 |
+| [15](issues/15-c-image-onboarding-on-the-601.md) Onboarding on the 601, from stock and between reference images | task | resolved | 05 |
 | [11](issues/11-late-work-delivery-after-renew.md) Authority judges a Work Event by the reading at which it was observed | task | resolved | 10 |
 | [12](issues/12-terminal-refusal-of-uncreditable-work.md) Authority refuses uncreditable work terminally, and delivery stops retrying it | task | resolved | 11 |
 | [06](issues/06-production-path-rehearsal.md) Compose and rehearse the production path | task | resolved | 12 |
@@ -190,3 +190,8 @@ feed 09.
 - ADR-0112 (2026-11-14): the owner accepted it, amended so that onboarding the 205 or the 601 must
   match the board's base MAC before any write. Ticket 15 is unblocked; wiring that check into the
   page or script for the sitting is its first item.
+- Ticket 15 (2026-11-15): resolved. On the 601 the sitting page installed the signed package from
+  `247d2cd` and from stock v2.15.4, updated `51e5af9` to `57b0841`, refused an unknown partition
+  table with nothing written, and recovered a failed startup check through the bootloader and the
+  page. Each install and rollback was verified, and the evidence is in the C repository's
+  `docs/project/gate-integration-evidence.md`. Ticket 09 can take criterion 3 from it.

@@ -1,7 +1,7 @@
 # Onboarding on the 601, from stock and between reference images
 
 Type: task
-Status: ready-for-human
+Status: resolved
 Blocked by: 05
 
 ## Objective
@@ -343,3 +343,4 @@ the first Gate (07). This is criterion 3's evidence for Ticket 09.
   bootable session against the 120 s bound, a failed check rolling back through the bootloader,
   and the settings categories matching), and the Chrome crash is now `task-chrome-crash-onboarding`
   there.
+- 2026-11-15: the owner closed the ticket, with every plan item done.
