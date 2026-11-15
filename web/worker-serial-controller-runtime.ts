@@ -23,7 +23,7 @@ import { isWorkerRestorationPending, maybeWorkerControlRejectionCategory } from 
 import { rejectedStartGrant, runRejectedStart } from "./worker-rejected-start";
 import type { WorkLeaseAuthorityTrust, WorkerLeaseAuthorizationOperation } from "./worker-lease-authorization";
 import { parseBudgetCampaignId, parseWorkerBudgetReview } from "./worker-budget-review";
-import { workerSerialFailureCategory } from "./worker-serial-errors";
+import { SerialFailure, workerSerialFailureCategory } from "./worker-serial-errors";
 import { maybeWorkerDiagnosticPayload } from "./worker-serial-diagnostics";
 import type { WorkerSerialHelloExchange } from "./worker-serial-hello";
 import { WorkerSerialPortOwner } from "./worker-serial-port-owner";
@@ -190,7 +190,8 @@ export class BrowserSerialController implements WebSerialWorkerController {
         if (admission === this.#admission) this.maybeQualificationHook?.maybeObserveAdmissionFailure?.("cleanup");
         throw serialFailure("cleanup_pending");
       }
-      throw serialFailure("admission_failed");
+      // A tab refused the site lock says so, so its page can tell the owner which tab to close.
+      throw error instanceof SerialFailure && error.category === "already_owned" ? error : serialFailure("admission_failed");
     }
   }
   async #admitSession(generation: number, stage: (value: import("./worker-serial-controller.types").WorkerSerialAdmissionStage) => void) {

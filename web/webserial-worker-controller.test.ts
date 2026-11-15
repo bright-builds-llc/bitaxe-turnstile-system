@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { serialHarness } from "./worker-serial.test-support";
+import { workerSerialTestRuntime } from "./webserial-worker-port";
 import { WORKER_TERMINAL_SEQUENCE_MILLISECONDS } from "./worker-restoration-bound";
 import {
   createWebSerialWorkerController,
@@ -270,4 +271,17 @@ test("a command overlapping a slow restoration is refused without ending the ses
   h.completeRestore();
   expect((await restoring).ok).toBeTrue();
   await h.controller.close();
+});
+
+test("a tab refused the site's Worker Serial lock is told another tab holds it", async () => {
+  // Arrange
+  const h = await serialHarness();
+  const release = await h.input[workerSerialTestRuntime].runtime.acquireLock();
+
+  // Act
+  const admitting = h.controller.requestPermission();
+
+  // Assert
+  await expect(admitting).rejects.toMatchObject({ category: "already_owned" });
+  release();
 });

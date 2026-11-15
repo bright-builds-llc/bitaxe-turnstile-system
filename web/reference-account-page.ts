@@ -17,6 +17,7 @@ import {
 } from "./headless-client";
 import { prepareClaimantIdentity } from "./headless-key";
 import type { WebSerialWorkerControllerInput } from "./webserial-worker-controller";
+import { SerialFailure } from "./worker-serial-errors";
 
 export type ReferencePageConfig = {
   /** The one origin serving the page, the Authority and the Reference Relying Service. */
@@ -223,4 +224,12 @@ function stringField(value: Json, name: string): string {
   const field = value[name];
   if (typeof field !== "string") throw new Error(`${name} is missing`);
   return field;
+}
+
+/** The status line after a failed Connect: a refused site lock names what to do, anything else keeps its own text. */
+export function connectFailureMessage(error: unknown): string {
+  if (error instanceof SerialFailure && error.category === "already_owned") {
+    return "Another tab of this site is already connected to a Bitaxe. Finish or close that tab, then connect again.";
+  }
+  return error instanceof Error ? error.message : "Connection failed";
 }

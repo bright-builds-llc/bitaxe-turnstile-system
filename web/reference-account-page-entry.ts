@@ -4,7 +4,7 @@
  * Worker Serial trust; the page holds no secrets.
  */
 import { registerBwgWorkGate, type BwgWorkGateElement } from "./bwg-work-gate";
-import { connectReferenceAccountPage, type ReferencePageConfig } from "./reference-account-page";
+import { connectFailureMessage, connectReferenceAccountPage, type ReferencePageConfig } from "./reference-account-page";
 import type { WebSerialWorkerControllerInput } from "./webserial-worker-controller";
 
 type DeploymentConfig = Omit<ReferencePageConfig, "origin"> & {
@@ -46,7 +46,7 @@ connect.addEventListener("click", () => {
     },
     (error: unknown) => {
       connect.disabled = false;
-      status.textContent = error instanceof Error ? error.message : "Connection failed";
+      status.textContent = connectFailureMessage(error);
     },
   );
 });

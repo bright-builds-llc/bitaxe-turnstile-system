@@ -1,7 +1,7 @@
 # A second tab's refused admission gives no reason
 
 Type: bug
-Status: needs-triage
+Status: ready-for-human
 Blocked by: None
 
 ## Objective
@@ -17,9 +17,9 @@ like a page that never offered consent. The lock's refusal is already typed,
 
 ## Plan
 
-- [ ] Decide what the second tab says, for example that the Bitaxe is in use in
-  another tab of this browser.
-- [ ] A test that fails before the change: the lock held elsewhere, Connect,
+- [x] Decide what the second tab says: "Another tab of this site is already
+  connected to a Bitaxe. Finish or close that tab, then connect again."
+- [x] A test that fails before the change: the lock held elsewhere, Connect,
   and the reason shown.
 
 ## Comments
@@ -37,3 +37,23 @@ like a page that never offered consent. The lock's refusal is already typed,
   category. Selection starts first on purpose, to keep the chooser within the
   click's user activation, so moving the lock ahead of it needs the lock taken
   without an `await` before `requestPort`.
+- 2026-11-15, the fix. Admission now
+  rethrows a refused lock's `already_owned` instead of `admission_failed`
+  (`requestPermission` in `web/worker-serial-controller-runtime.ts`), and the
+  reference page maps it to the sentence above through `connectFailureMessage`
+  in `web/reference-account-page.ts`. Any other failure keeps its own text.
+  `observableCategories` is unchanged, since the deployment-trust contract
+  enumerates it, so a qualification hook still records the refusal as
+  `operation_failed` at stage `ownership`. The test fixture's lock now fails
+  with `already_owned`, as the browser's does. Tests:
+  `web/webserial-worker-controller.test.ts` (the lock held, then Connect,
+  rejects with `already_owned`; it failed with `admission_failed` before the
+  change) and `web/reference-account-page.test.ts` (the message for
+  `already_owned`, and another failure's own text). `bun test` (1431 pass),
+  `bun run typecheck`, `bun run build:browser` and `bun run check:standards`
+  pass. Non-claims: not run in a real browser with two tabs; the chooser still
+  opens before the lock's answer, because selection must start within the
+  click's user activation; the work challenge created before Connect is left
+  to expire; a second tab still reuses the site's one grant, so a second board
+  can't be picked there; pages other than the reference account page still
+  show `Worker Serial already_owned`.

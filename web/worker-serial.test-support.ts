@@ -30,6 +30,7 @@ import {
   WorkerSerialFramer,
   exactSerialRecord,
   encodeWorkerSerialEnvelope,
+  serialFailure,
   type WorkerSerialEnvelope,
 } from "./worker-serial";
 import {
@@ -449,7 +450,7 @@ export async function serialHarness(
       };
     },
     async acquireLock() {
-      if (locked) throw new Error("fixture lock held");
+      if (locked) throw serialFailure("already_owned");
       locked = true;
       return () => {
         locked = false;
