@@ -118,6 +118,18 @@ impl WorkerStratumV1 {
             username,
         })
     }
+
+    pub(crate) fn endpoint(&self) -> &str {
+        &self.endpoint
+    }
+
+    pub(crate) fn username(&self) -> &str {
+        &self.username
+    }
+
+    pub(crate) fn password(&self) -> &str {
+        &self.password
+    }
 }
 
 /// Validates a `stratum+tcp://host:port/` endpoint with no user info or query.

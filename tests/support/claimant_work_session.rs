@@ -14,6 +14,10 @@ use bwg_core::{
         DeploymentEnvironment, ServiceCredential, WorkerLeaseIssuance, WorkerStratumCredentialPort,
     },
     challenge::{ActionPolicy, ChallengeId},
+    pool_adapter_grpc::{
+        self, ChannelToken, GrpcWorkerStratum, StratumSessionRegistryService,
+        stratum_session_registry_router,
+    },
     stratum_v1::{
         PoolAdapterWorkerStratum, PostgresStratumSessionRegistry, StratumCredentialIssuer,
     },
@@ -21,6 +25,7 @@ use bwg_core::{
 };
 use ring::signature;
 use serde_json::{Value, json};
+use tokio::net::TcpListener;
 use uuid::Uuid;
 
 use crate::{
@@ -193,10 +198,33 @@ pub(crate) async fn pool_adapter_stratum(
     )?)
 }
 
+/// The Authority reaches the Pool Adapter's registry over gRPC, as deployed (ADR-0113).
 pub(crate) async fn leased_application(
     database: &PostgresTestDatabase,
 ) -> Result<AuthorityApplication, Box<dyn Error>> {
-    application_with_stratum(database, Arc::new(pool_adapter_stratum(database).await?)).await
+    application_with_stratum(
+        database,
+        Arc::new(grpc_pool_adapter_stratum(database).await?),
+    )
+    .await
+}
+
+/// Serves the Pool Adapter's registry on loopback and connects the Authority's port to it.
+pub(crate) async fn grpc_pool_adapter_stratum(
+    database: &PostgresTestDatabase,
+) -> Result<GrpcWorkerStratum, Box<dyn Error>> {
+    let token = ChannelToken::generate()?;
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let address = listener.local_addr()?;
+    let router = stratum_session_registry_router(
+        StratumSessionRegistryService::new(pool_adapter_stratum(database).await?),
+        &token,
+    );
+    tokio::spawn(pool_adapter_grpc::serve(router, listener));
+    Ok(GrpcWorkerStratum::connect_lazy(
+        &format!("http://{address}"),
+        &token,
+    )?)
 }
 
 pub(crate) async fn application_with_stratum(

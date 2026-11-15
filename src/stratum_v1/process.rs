@@ -1,5 +1,7 @@
-//! The Pool Adapter's proxy, accepted-work delivery and Pool Selection expiry sweep,
-//! run in the Authority's process until its own gRPC process exists (ADR-0109).
+//! The Pool Adapter's proxy, accepted-work delivery and Pool Selection expiry sweep.
+//!
+//! The `pool-adapter` binary runs them with the gRPC port to the Authority (ADR-0113);
+//! tests may run them with the in-process port.
 
 use std::{
     sync::Arc,
@@ -22,8 +24,8 @@ const DELIVERY_INTERVAL: Duration = Duration::from_millis(250);
 const DELIVERY_LEASE_SECONDS: u64 = 30;
 const SWEEP_INTERVAL: Duration = Duration::from_secs(5);
 
-/// Where the in-process Pool Adapter listens and which Mining Pool it forwards to.
-pub struct InProcessPoolAdapterConfig {
+/// The Pool Adapter's database and the Mining Pool it forwards to.
+pub struct PoolAdapterConfig {
     /// The Pool Adapter's own database, with its own migrations.
     pub database_url: String,
     /// The Mining Pool's Stratum V1 address, as `host:port`.
@@ -34,9 +36,10 @@ pub struct InProcessPoolAdapterConfig {
 
 /// Starts the proxy on `listener`, delivery into `port` and the expiry sweep.
 ///
-/// The tasks run until the returned set is dropped.
-pub async fn spawn_in_process_pool_adapter<P>(
-    config: InProcessPoolAdapterConfig,
+/// The accept loop, delivery and sweep run until the returned set is dropped; a live
+/// Stratum session runs until its connection ends, so only the process's exit stops all.
+pub async fn spawn_pool_adapter<P>(
+    config: PoolAdapterConfig,
     listener: TcpListener,
     port: P,
 ) -> Result<JoinSet<()>, StratumV1Error>

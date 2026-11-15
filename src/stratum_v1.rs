@@ -11,10 +11,10 @@ use crate::progress::{
 mod credentials;
 mod delivery;
 mod error;
-pub mod in_process;
 mod jobs;
 mod pool_selection;
 mod postgres;
+pub mod process;
 mod retention;
 mod sessions;
 mod target;
@@ -37,7 +37,7 @@ use target::{
 };
 pub use tcp::StratumTcpProxy;
 use version_rolling::{negotiated_version_mask, rolled_version};
-pub use worker_grant::PoolAdapterWorkerStratum;
+pub use worker_grant::{PoolAdapterWorkerStratum, WorkerStratumLease};
 
 pub(crate) const MAXIMUM_STRATUM_FRAME_BYTES: usize = 16 * 1024;
 const MAXIMUM_OUTSTANDING_REQUESTS: usize = 64;

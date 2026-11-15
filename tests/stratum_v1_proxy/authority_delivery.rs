@@ -9,6 +9,10 @@ use bwg_core::{
     },
     challenge::{ActionPolicy, ChallengeId},
     lifecycle::WorkerClock,
+    pool_adapter_grpc::{
+        self, AcceptedWorkIngestService, ChannelToken, GrpcAuthorityPort,
+        accepted_work_ingest_router,
+    },
     progress::{
         AcceptedWorkAcknowledgement, AcceptedWorkEvent, AcceptedWorkRefusal, WorkSessionId,
     },
@@ -80,12 +84,89 @@ async fn durable_proxy_event_advances_the_existing_authority_progress_path()
 }
 
 #[tokio::test]
+async fn durable_proxy_event_over_grpc_advances_the_authority_progress_path()
+-> Result<(), Box<dyn Error>> {
+    // Arrange
+    let database = PostgresTestDatabase::start().await?;
+    let LeasedAuthority {
+        adapter,
+        challenge_id,
+        lease_context,
+        ..
+    } = leased_authority(
+        &database,
+        "action_stratum_delivery_grpc_01",
+        "session_stratum_outbox_01",
+        "boot_stratum_delivery_grpc_01",
+    )
+    .await?;
+    let event = persisted_event("event_stratum_grpc_01", "share_stratum_grpc_01")?;
+    let outbox = PostgresAcceptedWorkOutbox::connect(database.database_url()).await?;
+    outbox
+        .persist(
+            &event,
+            &lease_context,
+            r#"{"id":53,"result":true,"error":null}"#,
+        )
+        .await?;
+    let worker = AcceptedWorkDeliveryWorker::new(outbox, "delivery_worker_grpc".to_owned(), 30)?;
+    let port = grpc_authority_port(adapter).await?;
+
+    // Act
+    let outcome = worker.deliver_one(&port, 1_000).await?;
+
+    // Assert
+    assert_eq!(outcome, DeliveryOutcome::Acknowledged);
+    let pool = sqlx::PgPool::connect(database.database_url()).await?;
+    let progress: String = sqlx::query_scalar(
+        "SELECT verified_progress::text FROM gate_authority.work_challenges
+         WHERE challenge_id = $1",
+    )
+    .bind(challenge_id.as_str())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(progress, "4295032833");
+    Ok(())
+}
+
+#[tokio::test]
 async fn refused_event_is_recorded_once_and_never_redelivered() -> Result<(), Box<dyn Error>> {
     // Arrange
     let database = PostgresTestDatabase::start().await?;
     let application =
         AuthorityApplication::connect_postgres(authority_config()?, database.database_url())
             .await?;
+    let sink = application.simulated_pool_adapter();
+
+    // Act
+    let outcomes = deliver_unknown_lease_event_twice(&database, &sink).await?;
+
+    // Assert
+    assert_refused_once(&database, outcomes).await
+}
+
+#[tokio::test]
+async fn refused_event_over_grpc_is_recorded_once_and_never_redelivered()
+-> Result<(), Box<dyn Error>> {
+    // Arrange
+    let database = PostgresTestDatabase::start().await?;
+    let application =
+        AuthorityApplication::connect_postgres(authority_config()?, database.database_url())
+            .await?;
+    let port = grpc_authority_port(application.simulated_pool_adapter()).await?;
+
+    // Act
+    let outcomes = deliver_unknown_lease_event_twice(&database, &port).await?;
+
+    // Assert
+    assert_refused_once(&database, outcomes).await
+}
+
+/// Delivers an event naming no lease the Authority holds, then tries again an hour on.
+async fn deliver_unknown_lease_event_twice<S: AcceptedWorkSink>(
+    database: &PostgresTestDatabase,
+    sink: &S,
+) -> Result<(DeliveryOutcome, DeliveryOutcome), Box<dyn Error>> {
     let outbox = PostgresAcceptedWorkOutbox::connect(database.database_url()).await?;
     let event = persisted_event("event_stratum_refused_01", "share_stratum_refused_01")?;
     outbox
@@ -96,13 +177,15 @@ async fn refused_event_is_recorded_once_and_never_redelivered() -> Result<(), Bo
         )
         .await?;
     let worker = AcceptedWorkDeliveryWorker::new(outbox, "delivery_worker_refused".to_owned(), 30)?;
-    let sink = application.simulated_pool_adapter();
+    let refused = worker.deliver_one(sink, 1_000).await?;
+    let later = worker.deliver_one(sink, 1_000 + 3_600).await?;
+    Ok((refused, later))
+}
 
-    // Act
-    let refused = worker.deliver_one(&sink, 1_000).await?;
-    let later = worker.deliver_one(&sink, 1_000 + 3_600).await?;
-
-    // Assert
+async fn assert_refused_once(
+    database: &PostgresTestDatabase,
+    (refused, later): (DeliveryOutcome, DeliveryOutcome),
+) -> Result<(), Box<dyn Error>> {
     assert_eq!(
         refused,
         DeliveryOutcome::Refused(AcceptedWorkRefusal::UnknownWorkLease)
@@ -121,6 +204,21 @@ async fn refused_event_is_recorded_once_and_never_redelivered() -> Result<(), Bo
         ("refused", "unknown_work_lease", 1)
     );
     Ok(())
+}
+
+/// Serves `adapter` as the Authority's accepted-work ingest and connects a port to it.
+pub(super) async fn grpc_authority_port(
+    adapter: SimulatedPoolAdapter,
+) -> Result<GrpcAuthorityPort, Box<dyn Error>> {
+    let token = ChannelToken::generate()?;
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let address = listener.local_addr()?;
+    let router = accepted_work_ingest_router(AcceptedWorkIngestService::new(adapter), &token);
+    tokio::spawn(pool_adapter_grpc::serve(router, listener));
+    Ok(GrpcAuthorityPort::connect_lazy(
+        &format!("http://{address}"),
+        &token,
+    )?)
 }
 
 /// One Authority Work Session with a running Worker Lease, as the Pool Adapter knows it.

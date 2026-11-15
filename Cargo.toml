@@ -9,6 +9,7 @@ async-trait = "0.1.89"
 axum = "0.8.4"
 base64 = "0.23.1"
 bitcoin = "0.32.6"
+prost = "0.14.4"
 reqwest = { version = "0.12.23", default-features = false, features = ["json", "rustls-tls"] }
 ring = "0.17.14"
 serde = { version = "1.0.219", features = ["derive"] }
@@ -16,7 +17,9 @@ serde_json = "1.0.143"
 sqlx = { version = "0.8.6", default-features = false, features = ["json", "macros", "migrate", "postgres", "runtime-tokio-rustls", "uuid"] }
 thiserror = "2.0.16"
 tokio = { version = "1.47.1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
-tokio-stream = { version = "0.1.19", features = ["sync"] }
+tokio-stream = { version = "0.1.19", features = ["net", "sync"] }
+tonic = { version = "0.14.6", default-features = false, features = ["transport", "codegen", "router"] }
+tonic-prost = "0.14.6"
 tracing = "0.1.41"
 tracing-subscriber = "0.3.20"
 url = "2.5.8"
@@ -27,3 +30,7 @@ webauthn-rs = { version = "0.5.5", features = ["attestation", "danger-allow-stat
 testcontainers = "0.28.0"
 webauthn-authenticator-rs = { version = "0.5.5", features = ["softpasskey"] }
 webauthn-rs-device-catalog = "0.5.0-20230418"
+
+[build-dependencies]
+protoc-bin-vendored = "3.3.0"
+tonic-prost-build = "0.14.9"

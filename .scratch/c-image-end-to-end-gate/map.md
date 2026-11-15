@@ -161,6 +161,10 @@ feed 09.
   on the same database. The reclaimed event is credited once, and the
   acknowledged one is not delivered again. No production change and no hardware.
   Ticket 16 reruns it restarting only the adapter.
+- Ticket 16 (2026-11-15), ADR-0113, accepted by the owner: the Pool Adapter runs as the
+  `pool-adapter` binary behind a loopback gRPC boundary with a channel token. The
+  refusal vectors, claimant routes and Ticket 27's restart test pass through it,
+  and the launcher starts it as its own process.
 - Ticket 21 (2026-11-14): `scripts/gate-negatives-harness.ts` drives the reference page over raw
   CDP and pauses the Authority's Start and Renew responses with Fetch. It withholds a Start grant,
   holds one 65 s, or swaps two tabs' grants, then cancels through the page. All three passed on

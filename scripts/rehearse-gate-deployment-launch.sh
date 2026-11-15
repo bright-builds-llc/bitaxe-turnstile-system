@@ -192,6 +192,13 @@ for log_path in "$proof_root"/run/*.log; do
     fail "$(basename "$log_path") names the origin host"
   fi
 done
-grep -q 'LAN_ADDRESS' "$proof_root/run/gate-authority.log" || fail "the proxy address was not redacted"
+grep -q 'LAN_ADDRESS' "$proof_root/run/pool-adapter.log" || fail "the proxy address was not redacted"
+# The Authority holds neither the Pool Adapter's database nor its credential key (ADR-0113).
+if grep -Fq 'Stratum proxy listening' "$proof_root/run/gate-authority.log"; then
+  fail "gate-authority ran the Stratum proxy"
+fi
+grep -Fq 'Stratum proxy listening' "$proof_root/run/pool-adapter.log" || fail "pool-adapter never ran the Stratum proxy"
+grep -Fq 'accepted-work ingest listening' "$proof_root/run/gate-authority.log" ||
+  fail "gate-authority never served accepted-work ingest"
 printf 'No private value in the logs; the run logs redact the origin host and the LAN address\n'
 printf 'Gate deployment launch proof passed\n'

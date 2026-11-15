@@ -3,6 +3,9 @@
 Accepted 2026-11-06, on the owner's choice for `c-image-end-to-end-gate`
 Ticket 06. It defers part of ADR-0055 and ADR-0022, and changes no public route.
 
+Superseded by ADR-0113, accepted 2026-11-15, which runs the Pool Adapter as
+its own process behind a loopback gRPC boundary.
+
 ADR-0055 runs the Pool Adapter as its own process, and ADR-0022 puts the
 Authority-to-Pool Adapter boundary on gRPC. Neither is built yet. Until it is,
 the production-path rehearsal (Ticket 06) and the first Gate on the C image

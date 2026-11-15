@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Rehearses the production path on regtest with test keys only (Ticket 06).
 #
-# Starts pinned Bitcoin Core and Hydra, PostgreSQL, the production `gate-authority`
-# (with the in-process Stratum V1 proxy, delivery and sweep of ADR-0109) and
-# `reference-service` binaries behind one HTTPS origin, and drives the reference
+# Starts pinned Bitcoin Core and Hydra, PostgreSQL, the production `gate-authority`,
+# `pool-adapter` (the Stratum V1 proxy, delivery and sweep, over loopback gRPC to the
+# Authority, ADR-0113) and `reference-service` binaries behind one HTTPS origin, and drives the reference
 # page in Chromium with a fake serial Worker and a CPU miner. A regtest block mined
 # mid-lease checks that the lease survives a new Bitcoin tip.
 # macOS arm64 only, like the Hydra runner. Not part of `bun run verify`.
@@ -34,6 +34,7 @@ source "$repo_root/scripts/hydra-regtest-stack.sh"
 
 harness_pid=""
 authority_pid=""
+adapter_pid=""
 reference_pid=""
 server_pid=""
 chrome_pid=""
@@ -55,6 +56,7 @@ cleanup() {
   stop_process "$chrome_pid"
   stop_process "$server_pid"
   stop_process "$reference_pid"
+  stop_process "$adapter_pid"
   stop_process "$authority_pid"
   stop_process "$harness_pid"
   if ! stop_hydra; then
@@ -68,7 +70,7 @@ cleanup() {
     mkdir -p "$kept_logs"
     cp "$integration_root"/*.log "$kept_logs"/
     printf 'Logs kept in %s\n' "$kept_logs" >&2
-    for log_path in "$integration_root"/gate-authority.log "$integration_root"/browser.log "$integration_root"/negatives.log; do
+    for log_path in "$integration_root"/gate-authority.log "$integration_root"/pool-adapter.log "$integration_root"/browser.log "$integration_root"/negatives.log; do
       if [[ -s "$log_path" ]]; then
         printf '%s (last 80 lines):\n' "$(basename "$log_path")" >&2
         tail -n 80 "$log_path" >&2
@@ -103,17 +105,21 @@ start_hydra
 
 cd "$repo_root"
 bun run build:browser >"$integration_root/build.log" 2>&1
-cargo build --quiet --all-features --bin gate-authority --bin reference-service \
+cargo build --quiet --all-features --bin gate-authority --bin pool-adapter --bin reference-service \
   --example production-path-rehearsal
 front_port=$(free_port)
 gate_port=$(free_port)
 reference_port=$(free_port)
 proxy_port=$(free_port)
+authority_grpc_port=$(free_port)
+adapter_grpc_port=$(free_port)
 origin="https://gate.rehearsal.test:$front_port"
 BWG_REHEARSAL_ORIGIN="$origin" \
   BWG_REHEARSAL_GATE_ADDRESS="127.0.0.1:$gate_port" \
   BWG_REHEARSAL_REFERENCE_ADDRESS="127.0.0.1:$reference_port" \
   BWG_REHEARSAL_PROXY_ADDRESS="127.0.0.1:$proxy_port" \
+  BWG_REHEARSAL_AUTHORITY_GRPC_ADDRESS="127.0.0.1:$authority_grpc_port" \
+  BWG_REHEARSAL_POOL_ADAPTER_GRPC_ADDRESS="127.0.0.1:$adapter_grpc_port" \
   BWG_HYDRA_STRATUM_ADDR="127.0.0.1:$stratum_port" \
   BWG_REHEARSAL_BITCOIN_RPC_URL="http://127.0.0.1:$rpc_port/" \
   BWG_REHEARSAL_BITCOIN_RPC_USER="$rpc_user" \
@@ -137,7 +143,10 @@ start_binary() {
 start_binary gate-authority gateAuthority
 authority_pid=$!
 wait_for_port "$gate_port"
-wait_for_port "$proxy_port"
+wait_for_port "$authority_grpc_port"
+start_binary pool-adapter poolAdapter
+adapter_pid=$!
+wait_for_port "$adapter_grpc_port"
 start_binary reference-service referenceService
 reference_pid=$!
 wait_for_port "$reference_port"

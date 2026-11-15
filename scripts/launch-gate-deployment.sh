@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Launches a Gate deployment for Ticket 07, run by the owner in their own shell:
-# PostgreSQL, `gate-authority` with the in-process Pool Adapter (ADR-0109),
-# `reference-service` and the same-origin front, published on this Mac's tailnet
+# PostgreSQL, `gate-authority`, the `pool-adapter` process it reaches over
+# loopback gRPC (ADR-0113), `reference-service` and the same-origin front, published on this Mac's tailnet
 # name by `tailscale serve`. Private values are read from files at run time and
 # reach the binaries only through their environment, never a command line, the
 # repository or a log. Hydra runs separately (`scripts/hydra-mainnet-stack.sh`).
@@ -159,6 +159,7 @@ if [[ -n "$(git -C "$repo_root" status --porcelain)" ]]; then
 fi
 
 authority_pid=""
+adapter_pid=""
 reference_pid=""
 front_pid=""
 serve_configured=false
@@ -217,6 +218,7 @@ cleanup() {
   fi
   stop_process "$front_pid"
   stop_process "$reference_pid"
+  stop_process "$adapter_pid"
   stop_process "$authority_pid"
   if [[ "$sequence_seeded" == true ]] && ! record_lease_sequence; then
     printf 'Failed to record the lease sequence high-water mark\n' >&2
@@ -254,7 +256,7 @@ redact() {
 
 cd "$repo_root"
 bun run build:browser >"$run_dir/build.log" 2>&1
-cargo build --quiet --all-features --bin gate-authority --bin reference-service
+cargo build --quiet --all-features --bin gate-authority --bin pool-adapter --bin reference-service
 bun scripts/gate-deployment-page-config.ts --origin "$origin" \
   --public-keys "$keys_dir/gate-pass-public-keys.json" --owner-trust "$owner_trust" \
   --image-dir "$image_dir" --gate-commit "$gate_commit" >"$run_dir/page-config.json"
@@ -284,8 +286,12 @@ postgres_port=${postgres_port##*:}
 database_base="postgres://bwg:$postgres_password@127.0.0.1:$postgres_port"
 
 gate_port=$(free_port)
+authority_grpc_port=$(free_port)
+adapter_grpc_port=$(free_port)
 reference_port=$(free_port)
 front_port=$(free_port)
+# A fresh secret for this run's loopback gRPC boundary; only the two processes hold it.
+channel_token=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
 (
   export BWG_ENVIRONMENT=production BWG_LISTEN_ADDRESS="127.0.0.1:$gate_port"
   export BWG_SERVICE_CLIENT_ID="$service_client_id" BWG_SERVICE_CREDENTIAL="$service_credential"
@@ -298,15 +304,29 @@ front_port=$(free_port)
   export BWG_TERMS_URL="$origin/terms"
   export BWG_AUTHORITY_DATABASE_URL="$database_base/gate_authority"
   export BWG_WORK_LEASE_AUTHORITY_KID="$lease_kid" BWG_WORK_LEASE_AUTHORITY_ISSUER="$lease_issuer"
-  export BWG_WORK_LEASE_AUTHORITY_SEED="$lease_seed" BWG_STRATUM_CREDENTIAL_KEY="$stratum_key"
-  export BWG_POOL_ADAPTER_DATABASE_URL="$database_base/pool_adapter"
-  export BWG_WORKER_STRATUM_ENDPOINT="stratum+tcp://$proxy_address:$proxy_port/"
-  export BWG_STRATUM_PROXY_LISTEN_ADDRESS="$proxy_address:$proxy_port"
-  export BWG_POOL_UPSTREAM_STRATUM_ADDRESS="$upstream" BWG_POOL_UPSTREAM_PASSWORD=x RUST_LOG=info
+  export BWG_WORK_LEASE_AUTHORITY_SEED="$lease_seed"
+  export BWG_POOL_ADAPTER_GRPC_URL="http://127.0.0.1:$adapter_grpc_port"
+  export BWG_ACCEPTED_WORK_GRPC_LISTEN_ADDRESS="127.0.0.1:$authority_grpc_port"
+  export BWG_POOL_ADAPTER_CHANNEL_TOKEN="$channel_token" RUST_LOG=info
   exec target/debug/gate-authority
 ) > >(redact >"$run_dir/gate-authority.log") 2>&1 &
 authority_pid=$!
 wait_for_port 127.0.0.1 "$gate_port"
+wait_for_port 127.0.0.1 "$authority_grpc_port"
+
+(
+  export BWG_POOL_ADAPTER_DATABASE_URL="$database_base/pool_adapter"
+  export BWG_POOL_ADAPTER_CHANNEL_TOKEN="$channel_token"
+  export BWG_AUTHORITY_GRPC_URL="http://127.0.0.1:$authority_grpc_port"
+  export BWG_POOL_ADAPTER_GRPC_LISTEN_ADDRESS="127.0.0.1:$adapter_grpc_port"
+  export BWG_STRATUM_CREDENTIAL_KEY="$stratum_key"
+  export BWG_WORKER_STRATUM_ENDPOINT="stratum+tcp://$proxy_address:$proxy_port/"
+  export BWG_STRATUM_PROXY_LISTEN_ADDRESS="$proxy_address:$proxy_port"
+  export BWG_POOL_UPSTREAM_STRATUM_ADDRESS="$upstream" BWG_POOL_UPSTREAM_PASSWORD=x RUST_LOG=info
+  exec target/debug/pool-adapter
+) > >(redact >"$run_dir/pool-adapter.log") 2>&1 &
+adapter_pid=$!
+wait_for_port 127.0.0.1 "$adapter_grpc_port"
 wait_for_port "$proxy_address" "$proxy_port"
 
 # The Authority has run its migrations; nothing can reach it until the front starts.
@@ -359,6 +379,6 @@ printf 'Gate Pass kid %s; Work Lease kid %s, sequence seeded at %s (stored %s + 
 printf 'Open %s/reference/account-creation.html; logs are in %s\n' "$origin" "$run_dir"
 printf 'gate_deployment=ready front_port=%s postgres_container=%s\n' "$front_port" "$postgres_container"
 printf 'Holding the Gate deployment; press Ctrl-C to stop.\n'
-wait -n "$authority_pid" "$reference_pid" "$front_pid"
+wait -n "$authority_pid" "$adapter_pid" "$reference_pid" "$front_pid"
 printf 'A Gate process exited; stopping the deployment\n' >&2
 exit 1

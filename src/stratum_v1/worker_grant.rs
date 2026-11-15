@@ -12,6 +12,7 @@ use crate::{
         WorkerStratumUnavailable,
     },
     challenge::ChallengeId,
+    progress::WorkSessionId,
     work_lease_authorization::{WorkerStratumV1, valid_stratum_endpoint},
 };
 
@@ -39,17 +40,17 @@ impl PoolAdapterWorkerStratum {
         })
     }
 
-    async fn issue_registered(
+    /// Issues and registers credentials for one started lease, before its grant leaves.
+    pub async fn issue_lease(
         &self,
-        request: WorkerStratumRequest,
+        lease: WorkerStratumLease,
     ) -> Result<WorkerStratumV1, StratumV1Error> {
-        let lease_context = lease_context(&request)?;
         let credentials = self.issuer.issue_at_milliseconds(
-            request.session_id,
-            lease_context,
-            request.now_unix_milliseconds,
-            request.lease_expires_at_unix_seconds,
-            request.challenge_expires_at_unix_seconds,
+            lease.session_id,
+            lease.lease_context,
+            lease.now_unix_milliseconds,
+            lease.lease_expires_at_unix_seconds,
+            lease.challenge_expires_at_unix_seconds,
         )?;
         self.registry.register(&credentials).await?;
         WorkerStratumV1::new(
@@ -60,28 +61,50 @@ impl PoolAdapterWorkerStratum {
         .map_err(|_| StratumV1Error::InvalidSessionConfig)
     }
 
-    async fn extend_registered(&self, request: WorkerStratumRequest) -> Result<(), StratumV1Error> {
+    /// Extends a renewed lease's registered and live credentials, keeping the password.
+    pub async fn extend_lease(&self, lease: WorkerStratumLease) -> Result<(), StratumV1Error> {
         let extension = StratumSessionExtension::new(
-            request.session_id.clone(),
-            lease_context(&request)?,
-            request.now_unix_milliseconds,
-            request.lease_expires_at_unix_seconds,
-            request.challenge_expires_at_unix_seconds,
+            lease.session_id,
+            lease.lease_context,
+            lease.now_unix_milliseconds,
+            lease.lease_expires_at_unix_seconds,
+            lease.challenge_expires_at_unix_seconds,
         )?;
         self.registry
-            .extend(&extension, request.now_unix_milliseconds / 1_000)
+            .extend(&extension, lease.now_unix_milliseconds / 1_000)
             .await
     }
 }
 
-fn lease_context(request: &WorkerStratumRequest) -> Result<StratumLeaseContext, StratumV1Error> {
-    StratumLeaseContext::new(
-        request.lease.lease_id().to_owned(),
-        request.clock.continuity_id().to_owned(),
-        request.clock.monotonic_milliseconds(),
-        request.lease.renew_at_monotonic_milliseconds(),
-        request.lease.expires_at_monotonic_milliseconds(),
-    )
+/// The lease facts one Worker's credentials bind, as the Pool Adapter receives them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkerStratumLease {
+    pub session_id: WorkSessionId,
+    pub lease_context: StratumLeaseContext,
+    /// Authority wall-clock reading at which the lease context was taken.
+    pub now_unix_milliseconds: u64,
+    pub lease_expires_at_unix_seconds: u64,
+    pub challenge_expires_at_unix_seconds: u64,
+}
+
+impl TryFrom<&WorkerStratumRequest> for WorkerStratumLease {
+    type Error = StratumV1Error;
+
+    fn try_from(request: &WorkerStratumRequest) -> Result<Self, Self::Error> {
+        Ok(Self {
+            session_id: request.session_id.clone(),
+            lease_context: StratumLeaseContext::new(
+                request.lease.lease_id().to_owned(),
+                request.clock.continuity_id().to_owned(),
+                request.clock.monotonic_milliseconds(),
+                request.lease.renew_at_monotonic_milliseconds(),
+                request.lease.expires_at_monotonic_milliseconds(),
+            )?,
+            now_unix_milliseconds: request.now_unix_milliseconds,
+            lease_expires_at_unix_seconds: request.lease_expires_at_unix_seconds,
+            challenge_expires_at_unix_seconds: request.challenge_expires_at_unix_seconds,
+        })
+    }
 }
 
 #[async_trait]
@@ -90,14 +113,22 @@ impl WorkerStratumCredentialPort for PoolAdapterWorkerStratum {
         &self,
         request: WorkerStratumRequest,
     ) -> Result<WorkerStratumV1, WorkerStratumUnavailable> {
-        self.issue_registered(request).await.map_err(|error| {
+        let issued = match WorkerStratumLease::try_from(&request) {
+            Ok(lease) => self.issue_lease(lease).await,
+            Err(error) => Err(error),
+        };
+        issued.map_err(|error| {
             tracing::warn!(%error, "Worker Stratum credentials were not issued");
             WorkerStratumUnavailable
         })
     }
 
     async fn renew(&self, request: WorkerStratumRequest) -> Result<(), WorkerStratumUnavailable> {
-        self.extend_registered(request).await.map_err(|error| {
+        let extended = match WorkerStratumLease::try_from(&request) {
+            Ok(lease) => self.extend_lease(lease).await,
+            Err(error) => Err(error),
+        };
+        extended.map_err(|error| {
             tracing::warn!(%error, "Worker Stratum session was not extended");
             WorkerStratumUnavailable
         })

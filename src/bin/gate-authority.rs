@@ -1,6 +1,5 @@
-use std::{env, error::Error, sync::Arc};
+use std::{env, error::Error, future::IntoFuture as _, sync::Arc};
 
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use bwg_core::trusted_consent::{AttestedWebauthnVerifier, TrustedAttestationAnchorInput};
 use bwg_core::{
     authority::{
@@ -9,14 +8,14 @@ use bwg_core::{
     },
     challenge::ActionPolicy,
     crypto_profile::AuthorityJwkWire,
-    stratum_v1::{
-        PoolAdapterWorkerStratum, PostgresStratumSessionRegistry, StratumCredentialIssuer,
-        in_process::{InProcessPoolAdapterConfig, spawn_in_process_pool_adapter},
+    pool_adapter_grpc::{
+        self, AcceptedWorkIngestService, ChannelToken, GrpcWorkerStratum,
+        accepted_work_ingest_router, loopback_listen_address,
     },
     work_lease_authorization::WorkLeaseAuthoritySigner,
 };
 use serde::Deserialize;
-use tokio::{net::TcpListener, task::JoinSet};
+use tokio::{net::TcpListener, task::JoinHandle};
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -30,6 +29,7 @@ struct TrustedAttestationAnchorWire {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tracing_subscriber::fmt().try_init()?;
+    refuse_in_process_pool_adapter()?;
     let environment = env::var("BWG_ENVIRONMENT")?.parse::<DeploymentEnvironment>()?;
     let service_client_id = env::var("BWG_SERVICE_CLIENT_ID")?;
     let service_secret = env::var("BWG_SERVICE_CREDENTIAL")?;
@@ -93,7 +93,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         authority::AuthorityApplication::connect_postgres(config, &database_url).await?
     };
     let application = with_configured_worker_leases(application).await?;
-    let _maybe_pool_adapter = with_configured_pool_adapter(&application).await?;
+    let maybe_ingest = with_configured_accepted_work_ingest(&application).await?;
     let issuance_application = application.clone();
     let issuance_worker_id =
         IssuanceWorkerId::try_from(format!("worker_{}", Uuid::new_v4().simple()))?;
@@ -127,8 +127,36 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let listener = TcpListener::bind(&listen_address).await?;
     tracing::info!(%listen_address, "Gate Authority listening");
 
-    axum::serve(listener, authority::router(application)).await?;
+    let serve = axum::serve(listener, authority::router(application)).into_future();
+    let Some(ingest) = maybe_ingest else {
+        serve.await?;
+        return Ok(());
+    };
+    tokio::select! {
+        served = serve => served?,
+        ingested = ingest => {
+            ingested??;
+            return Err("accepted-work ingest stopped".into());
+        }
+    }
+    Ok(())
+}
 
+/// The proxy, delivery and sweep run in the `pool-adapter` binary (ADR-0113), so an
+/// ADR-0109 configuration stops here instead of starting without them.
+fn refuse_in_process_pool_adapter() -> Result<(), Box<dyn Error + Send + Sync>> {
+    for retired in [
+        "BWG_STRATUM_PROXY_LISTEN_ADDRESS",
+        "BWG_POOL_ADAPTER_DATABASE_URL",
+        "BWG_STRATUM_CREDENTIAL_KEY",
+        "BWG_WORKER_STRATUM_ENDPOINT",
+    ] {
+        if env::var_os(retired).is_some() {
+            return Err(
+                format!("{retired} belongs to the pool-adapter binary now (ADR-0113)").into(),
+            );
+        }
+    }
     Ok(())
 }
 
@@ -151,43 +179,44 @@ async fn with_configured_worker_leases(
         env::var("BWG_WORK_LEASE_AUTHORITY_ISSUER")?,
         &seed,
     )?;
-    let credential_key =
-        <[u8; 32]>::try_from(URL_SAFE_NO_PAD.decode(env::var("BWG_STRATUM_CREDENTIAL_KEY")?)?)
-            .map_err(|_| "BWG_STRATUM_CREDENTIAL_KEY must hold 32 base64url bytes")?;
-    let registry =
-        PostgresStratumSessionRegistry::connect(&env::var("BWG_POOL_ADAPTER_DATABASE_URL")?)
-            .await?;
-    let stratum = PoolAdapterWorkerStratum::new(
-        env::var("BWG_WORKER_STRATUM_ENDPOINT")?,
-        StratumCredentialIssuer::new(credential_key),
-        registry,
+    let stratum = GrpcWorkerStratum::connect_lazy(
+        &env::var("BWG_POOL_ADAPTER_GRPC_URL")?,
+        &channel_token()?,
     )?;
     Ok(application
         .with_worker_lease_issuance(WorkerLeaseIssuance::new(signer, Arc::new(stratum)))?)
 }
 
-/// Runs the Pool Adapter's proxy, delivery and expiry sweep in this process when its
-/// listener is deployed (ADR-0109), delivering through the in-process port.
-async fn with_configured_pool_adapter(
+/// Serves accepted-work delivery and Worker disconnects to the Pool Adapter process
+/// when its loopback listener is deployed.
+async fn with_configured_accepted_work_ingest(
     application: &AuthorityApplication,
-) -> Result<Option<JoinSet<()>>, Box<dyn Error + Send + Sync>> {
-    let listen_address = match env::var("BWG_STRATUM_PROXY_LISTEN_ADDRESS") {
-        Ok(address) => address,
+) -> Result<
+    Option<JoinHandle<Result<(), pool_adapter_grpc::PoolAdapterGrpcError>>>,
+    Box<dyn Error + Send + Sync>,
+> {
+    let listen_address = match env::var("BWG_ACCEPTED_WORK_GRPC_LISTEN_ADDRESS") {
+        Ok(address) => loopback_listen_address(&address)?,
         Err(env::VarError::NotPresent) => {
-            tracing::info!("Stratum proxy is not configured; the Pool Adapter runs elsewhere");
+            tracing::info!("accepted-work ingest is not configured; no Pool Adapter delivers here");
             return Ok(None);
         }
         Err(error) => return Err(error.into()),
     };
-    let config = InProcessPoolAdapterConfig {
-        database_url: env::var("BWG_POOL_ADAPTER_DATABASE_URL")?,
-        upstream_address: env::var("BWG_POOL_UPSTREAM_STRATUM_ADDRESS")?,
-        upstream_password: env::var("BWG_POOL_UPSTREAM_PASSWORD")?,
-    };
-    let listener = TcpListener::bind(&listen_address).await?;
-    tracing::info!(%listen_address, "Stratum proxy listening");
-    let tasks =
-        spawn_in_process_pool_adapter(config, listener, application.simulated_pool_adapter())
-            .await?;
-    Ok(Some(tasks))
+    let router = accepted_work_ingest_router(
+        AcceptedWorkIngestService::new(application.simulated_pool_adapter()),
+        &channel_token()?,
+    );
+    let listener = TcpListener::bind(listen_address).await?;
+    tracing::info!(%listen_address, "accepted-work ingest listening");
+    Ok(Some(tokio::spawn(pool_adapter_grpc::serve(
+        router, listener,
+    ))))
+}
+
+/// The secret both processes present on every boundary call.
+fn channel_token() -> Result<ChannelToken, Box<dyn Error + Send + Sync>> {
+    Ok(ChannelToken::try_from(env::var(
+        "BWG_POOL_ADAPTER_CHANNEL_TOKEN",
+    )?)?)
 }

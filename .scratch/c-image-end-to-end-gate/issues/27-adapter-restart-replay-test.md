@@ -31,6 +31,10 @@ No test restarts the in-process adapter from end to end. The owner chose
 
 ## Comments
 
+- 2026-11-15, Ticket 16: the test now runs the separate `pool-adapter` process
+  and restarts only it, so the steps below describe the earlier in-process
+  version.
+
 ## Answer
 
 No double credit. Only tests changed.

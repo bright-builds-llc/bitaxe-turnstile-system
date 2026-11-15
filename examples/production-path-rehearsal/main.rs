@@ -1,8 +1,8 @@
-//! Production-path rehearsal harness (Ticket 06, ADR-0109). Test keys only.
+//! Production-path rehearsal harness (Ticket 06, ADR-0113). Test keys only.
 //!
 //! Starts PostgreSQL with the Authority, Reference Relying Service and Pool Adapter
-//! databases, prints the test-key environment for the production `gate-authority`
-//! and `reference-service` binaries, and serves a loopback control listener for the
+//! databases, prints the test-key environment for the production `gate-authority`,
+//! `pool-adapter` and `reference-service` binaries, and serves a loopback control listener for the
 //! local CPU miner and the rehearsal's synthetic share. The binaries never see the
 //! control listener, and no production binary or route can reach the synthetic share.
 
@@ -12,7 +12,7 @@ use std::{
 };
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use bwg_core::stratum_v1::PostgresAcceptedWorkOutbox;
+use bwg_core::{service_auth::ServiceSecret, stratum_v1::PostgresAcceptedWorkOutbox};
 use ring::rand::{SecureRandom as _, SystemRandom};
 use serde_json::{Value, json};
 use sqlx::postgres::PgPoolOptions;
@@ -45,6 +45,8 @@ struct Addresses {
     reference: String,
     proxy: String,
     hydra: String,
+    authority_grpc: String,
+    pool_adapter_grpc: String,
 }
 
 impl Addresses {
@@ -56,6 +58,8 @@ impl Addresses {
             reference: var("BWG_REHEARSAL_REFERENCE_ADDRESS")?,
             proxy: var("BWG_REHEARSAL_PROXY_ADDRESS")?,
             hydra: var("BWG_HYDRA_STRATUM_ADDR")?,
+            authority_grpc: var("BWG_REHEARSAL_AUTHORITY_GRPC_ADDRESS")?,
+            pool_adapter_grpc: var("BWG_REHEARSAL_POOL_ADAPTER_GRPC_ADDRESS")?,
         })
     }
 }
@@ -94,6 +98,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     });
     let keys = serde_json::to_string(&authority_keys()?)?;
+    let channel_token = ServiceSecret::generate()?;
+    let channel_token = channel_token.expose_secret();
     println!(
         "{}",
         json!({
@@ -101,7 +107,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             "control": format!("http://{control_address}"),
             "authorityTrust": { "issuer": addresses.origin, "trustedKeys": authority_keys()? },
             "env": {
-                "gateAuthority": gate_authority_env(&addresses, &databases, &keys)?,
+                "gateAuthority": gate_authority_env(&addresses, &databases, &keys, channel_token)?,
+                "poolAdapter": pool_adapter_env(&addresses, &databases, channel_token)?,
                 "referenceService": reference_service_env(&addresses, &databases, &keys),
             },
         })
@@ -115,6 +122,7 @@ fn gate_authority_env(
     addresses: &Addresses,
     databases: &Databases,
     keys: &str,
+    channel_token: &str,
 ) -> Result<Value, Box<dyn Error>> {
     let origin = &addresses.origin;
     Ok(json!({
@@ -137,8 +145,24 @@ fn gate_authority_env(
         "BWG_WORK_LEASE_AUTHORITY_KID": WORK_LEASE_AUTHORITY,
         "BWG_WORK_LEASE_AUTHORITY_ISSUER": WORK_LEASE_AUTHORITY,
         "BWG_WORK_LEASE_AUTHORITY_SEED": test_work_lease_seed()?,
-        "BWG_STRATUM_CREDENTIAL_KEY": URL_SAFE_NO_PAD.encode(random_key()?),
+        "BWG_POOL_ADAPTER_GRPC_URL": format!("http://{}", addresses.pool_adapter_grpc),
+        "BWG_ACCEPTED_WORK_GRPC_LISTEN_ADDRESS": addresses.authority_grpc,
+        "BWG_POOL_ADAPTER_CHANNEL_TOKEN": channel_token,
+    }))
+}
+
+/// The Pool Adapter process (ADR-0113), reaching the Authority over loopback gRPC.
+fn pool_adapter_env(
+    addresses: &Addresses,
+    databases: &Databases,
+    channel_token: &str,
+) -> Result<Value, Box<dyn Error>> {
+    Ok(json!({
         "BWG_POOL_ADAPTER_DATABASE_URL": databases.pool_adapter,
+        "BWG_POOL_ADAPTER_CHANNEL_TOKEN": channel_token,
+        "BWG_AUTHORITY_GRPC_URL": format!("http://{}", addresses.authority_grpc),
+        "BWG_POOL_ADAPTER_GRPC_LISTEN_ADDRESS": addresses.pool_adapter_grpc,
+        "BWG_STRATUM_CREDENTIAL_KEY": URL_SAFE_NO_PAD.encode(random_key()?),
         "BWG_WORKER_STRATUM_ENDPOINT": format!("stratum+tcp://{}/", addresses.proxy),
         "BWG_STRATUM_PROXY_LISTEN_ADDRESS": addresses.proxy,
         "BWG_POOL_UPSTREAM_STRATUM_ADDRESS": addresses.hydra,
@@ -161,7 +185,7 @@ fn reference_service_env(addresses: &Addresses, databases: &Databases, keys: &st
     })
 }
 
-/// Each bounded context keeps its own database (ADR-0109), here in one container.
+/// Each bounded context keeps its own database (ADR-0113), here in one container.
 async fn separate_database(database_url: &str, name: &str) -> Result<String, Box<dyn Error>> {
     let pool = PgPoolOptions::new()
         .max_connections(1)

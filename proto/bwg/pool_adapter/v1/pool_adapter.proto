@@ -1,0 +1,144 @@
+// The Gate Authority to Pool Adapter boundary (ADR-0022, ADR-0055, ADR-0113).
+//
+// Each side serves one service and calls the other's. Every call carries the
+// deployment's channel token as `authorization: Bearer <token>`. Delivery
+// refusals are typed and terminal, with the reasons and order of
+// conformance/bwg-0.1/accepted-work-refusal-vectors.json; any gRPC status other
+// than OK is an outage the caller retries.
+syntax = "proto3";
+
+package bwg.pool_adapter.v1;
+
+// Served by the Gate Authority; the Pool Adapter calls it.
+service AcceptedWorkIngest {
+  // Credits one durably recorded Accepted Work Event, or refuses it for good.
+  rpc DeliverAcceptedWork(DeliverAcceptedWorkRequest) returns (DeliverAcceptedWorkResponse);
+  // Reports that an authenticated Worker's Stratum connection ended.
+  rpc ReportWorkerDisconnect(ReportWorkerDisconnectRequest) returns (ReportWorkerDisconnectResponse);
+}
+
+// Served by the Pool Adapter; the Gate Authority calls it.
+//
+// A refusal here is INVALID_ARGUMENT for input the adapter rejects and
+// UNAVAILABLE for an outage. The Authority treats both as the Pool Adapter
+// being unable to serve the Worker, as it does in process.
+service StratumSessionRegistry {
+  // Issues and registers lease-scoped Stratum V1 credentials for one started lease.
+  rpc IssueWorkerCredentials(IssueWorkerCredentialsRequest) returns (IssueWorkerCredentialsResponse);
+  // Extends a renewed lease's registered and live credentials, keeping the password.
+  rpc RenewWorkerSession(RenewWorkerSessionRequest) returns (RenewWorkerSessionResponse);
+  // Stores the raw payout choice the Pool-facing identity derives from (ADR-0107).
+  rpc RecordPoolSelection(RecordPoolSelectionRequest) returns (RecordPoolSelectionResponse);
+  // Deletes a terminal challenge's raw payout choice.
+  rpc ReleasePoolSelection(ReleasePoolSelectionRequest) returns (ReleasePoolSelectionResponse);
+}
+
+// The Authority-issued lease and Worker continuity values carried with work.
+message StratumLeaseContext {
+  string lease_id = 1;
+  string continuity_id = 2;
+  uint64 last_monotonic_milliseconds = 3;
+  uint64 renew_at_monotonic_milliseconds = 4;
+  uint64 expires_at_monotonic_milliseconds = 5;
+}
+
+enum NetworkTargetOutcome {
+  NETWORK_TARGET_OUTCOME_UNSPECIFIED = 0;
+  NETWORK_TARGET_OUTCOME_BELOW_NETWORK_TARGET = 1;
+  NETWORK_TARGET_OUTCOME_NETWORK_TARGET_MET = 2;
+}
+
+message AcceptedWorkEvent {
+  string event_id = 1;
+  string work_session_id = 2;
+  // The assigned share target, 32 big-endian bytes.
+  bytes assigned_target = 3;
+  uint64 received_at_unix_seconds = 4;
+  string share_fingerprint = 5;
+  NetworkTargetOutcome network_target_outcome = 6;
+}
+
+message DeliverAcceptedWorkRequest {
+  AcceptedWorkEvent event = 1;
+  StratumLeaseContext lease_context = 2;
+}
+
+// Why the Authority will never credit an event (ADR-0108), in vector order.
+enum AcceptedWorkRefusalReason {
+  ACCEPTED_WORK_REFUSAL_REASON_UNSPECIFIED = 0;
+  ACCEPTED_WORK_REFUSAL_REASON_UNKNOWN_WORK_LEASE = 1;
+  ACCEPTED_WORK_REFUSAL_REASON_WORK_LEASE_ENDED = 2;
+  ACCEPTED_WORK_REFUSAL_REASON_WORKER_CONTINUITY_LOST = 3;
+  ACCEPTED_WORK_REFUSAL_REASON_WORK_LEASE_EXPIRED = 4;
+  ACCEPTED_WORK_REFUSAL_REASON_CHALLENGE_SATISFIED = 5;
+  ACCEPTED_WORK_REFUSAL_REASON_CHALLENGE_CANCELLED = 6;
+  ACCEPTED_WORK_REFUSAL_REASON_CHALLENGE_DEADLINE_PASSED = 7;
+  ACCEPTED_WORK_REFUSAL_REASON_CONFLICTING_EVENT_REPLAY = 8;
+}
+
+message AcceptedWorkCredited {}
+
+message AcceptedWorkRefused {
+  AcceptedWorkRefusalReason reason = 1;
+}
+
+message DeliverAcceptedWorkResponse {
+  oneof outcome {
+    // The Authority took the event, or had taken it before; the outbox acknowledges it.
+    AcceptedWorkCredited credited = 1;
+    // Terminal: the outbox records the refusal and never delivers the event again.
+    AcceptedWorkRefused refused = 2;
+  }
+}
+
+message ReportWorkerDisconnectRequest {
+  string work_session_id = 1;
+}
+
+message ReportWorkerDisconnectResponse {}
+
+// Lease facts the Pool Adapter binds into one Worker's Stratum V1 credentials.
+message WorkerStratumLease {
+  string work_session_id = 1;
+  StratumLeaseContext lease_context = 2;
+  // The Authority's wall-clock reading for `lease_context`, ordering credential generations.
+  uint64 now_unix_milliseconds = 3;
+  uint64 lease_expires_at_unix_seconds = 4;
+  uint64 challenge_expires_at_unix_seconds = 5;
+}
+
+message IssueWorkerCredentialsRequest {
+  WorkerStratumLease lease = 1;
+}
+
+message IssueWorkerCredentialsResponse {
+  string endpoint = 1;
+  string username = 2;
+  string password = 3;
+}
+
+message RenewWorkerSessionRequest {
+  WorkerStratumLease lease = 1;
+}
+
+message RenewWorkerSessionResponse {}
+
+message RecordPoolSelectionRequest {
+  string work_session_id = 1;
+  string challenge_id = 2;
+  string pool_offer_id = 3;
+  oneof payout {
+    string bitcoin_mainnet_address = 4;
+    string approved_beneficiary_id = 5;
+  }
+  uint64 challenge_expires_at_unix_seconds = 6;
+  uint64 now_unix_seconds = 7;
+}
+
+message RecordPoolSelectionResponse {}
+
+message ReleasePoolSelectionRequest {
+  string challenge_id = 1;
+}
+
+message ReleasePoolSelectionResponse {}

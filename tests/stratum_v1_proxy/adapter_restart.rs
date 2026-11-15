@@ -1,30 +1,23 @@
-//! An adapter restart that keeps its outbox credits nothing twice (Ticket 27).
+//! An adapter restart that keeps its outbox credits nothing twice (Tickets 27 and 16).
 //!
-//! Under ADR-0109 the Pool Adapter runs inside `gate-authority`, so a restart
-//! stops the proxy, delivery and the Authority together and starts them again on
-//! the same database.
+//! The Pool Adapter runs as its own `pool-adapter` process (ADR-0113). The
+//! Authority keeps running while the adapter is killed right after the Authority
+//! credits an event, before the adapter hears the answer, and a new adapter
+//! process starts on the same database.
 
 use std::{
     error::Error,
     net::SocketAddr,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use async_trait::async_trait;
 use bwg_core::{
-    authority::{AuthorityApplication, SimulatedPoolAdapter},
     challenge::ChallengeId,
+    pool_adapter_grpc::{AcceptedWorkIngestService, ChannelToken},
     pool_offer::PoolSelection,
-    progress::{AcceptedWorkEvent, WorkSessionId},
+    service_auth::ServiceSecret,
     stratum_v1::{
-        AcceptedWorkSink, AcceptedWorkSinkError, PostgresStratumSessionRegistry,
-        StratumCredentialIssuer, StratumLeaseContext, StratumSessionCredentials,
-        WorkSessionDisconnectSink, WorkSessionDisconnectSinkError,
-        in_process::{InProcessPoolAdapterConfig, spawn_in_process_pool_adapter},
+        PostgresStratumSessionRegistry, StratumCredentialIssuer, StratumSessionCredentials,
     },
 };
 use serde_json::Value;
@@ -35,21 +28,20 @@ use tokio::{
         TcpListener, TcpStream,
         tcp::{OwnedReadHalf, OwnedWriteHalf},
     },
-    sync::Notify,
-    task::JoinSet,
 };
 
 use super::{
     PostgresTestDatabase,
-    authority_delivery::{LeasedAuthority, authority_config, leased_authority},
+    adapter_process::{
+        AdapterLaunch, CREDENTIAL_KEY, CrashingAuthority, WAIT_POLL, WAIT_TIMEOUT, serve_authority,
+    },
+    authority_delivery::{LeasedAuthority, leased_authority},
     fixtures::{StratumJobFields, hex_target, worked_nonce, write_line},
 };
 
-/// `in_process::DELIVERY_LEASE_SECONDS`: how long a claim outlives its process.
+/// `process::DELIVERY_LEASE_SECONDS`: how long a claim outlives its process.
 const DELIVERY_LEASE_SECONDS: i64 = 30;
-const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
-const WAIT_POLL: Duration = Duration::from_millis(20);
-/// Several of `in_process::DELIVERY_INTERVAL`, so a replay would have been delivered.
+/// Several of `process::DELIVERY_INTERVAL`, so a replay would have been delivered.
 const QUIET_PERIOD: Duration = Duration::from_secs(1);
 const SESSION: &str = "session_adapter_restart_01";
 const PAYOUT_ADDRESS: &str = "1BoatSLRHtKNngkdXEeobR76b53LETtpyT";
@@ -80,30 +72,36 @@ async fn restarted_adapter_credits_its_reclaimed_event_once_and_never_replays_ac
     .await?;
     let credentials = register_worker(&database, &leased).await?;
     let pool_address = spawn_mining_pool().await?;
-    let first_port = RecordingPort::new(leased.adapter.clone());
-    let first_process = start_adapter(&database, pool_address, first_port.clone()).await?;
+    let token_value = ServiceSecret::generate()?.expose_secret().to_owned();
+    let token = ChannelToken::try_from(token_value.clone())?;
+    let authority = CrashingAuthority::new(AcceptedWorkIngestService::new(leased.adapter.clone()));
+    let authority_address = serve_authority(authority.clone(), &token).await?;
+    let launch = AdapterLaunch {
+        database_url: database.database_url().to_owned(),
+        authority_address,
+        pool_address,
+        token_value,
+    };
+    let first_process = launch.start().await?;
     let mut worker = Worker::connect(first_process.proxy_address, &credentials).await?;
     worker.submit(3, "00000001").await?;
-    first_port.wait_for_deliveries(1).await?;
+    authority.wait_for_credits(1).await?;
     let acknowledged = only_outbox_event(&pool).await?;
     wait_for_outbox_state(&pool, &acknowledged, "acknowledged").await?;
-    first_port.stop_after_next_credit();
+    authority.crash_after_next_credit(first_process)?;
     worker.submit(4, "00000002").await?;
-    let credited_before_stop = first_port.wait_until_stopped().await?;
-    drop(first_process);
+    let credited_before_crash = authority.wait_until_crashed().await?;
     let reclaimable = expire_unacknowledged_claim(&pool).await?;
+    let credits_before_restart = authority.credits()?.len();
 
     // Act
-    let restarted_application =
-        AuthorityApplication::connect_postgres(authority_config()?, database.database_url())
-            .await?;
-    let restarted_port = RecordingPort::new(restarted_application.simulated_pool_adapter());
-    let _restarted_process = start_adapter(&database, pool_address, restarted_port.clone()).await?;
+    let _restarted_process = launch.start().await?;
     wait_until_nothing_pending(&pool).await?;
     tokio::time::sleep(QUIET_PERIOD).await;
 
     // Assert
-    assert_eq!(restarted_port.deliveries()?, vec![credited_before_stop]);
+    let credits = authority.credits()?;
+    assert_eq!(credits[credits_before_restart..], [credited_before_crash]);
     assert_eq!(
         outbox_state(&pool, &reclaimable).await?,
         ("acknowledged".to_owned(), 2)
@@ -130,123 +128,6 @@ async fn restarted_adapter_credits_its_reclaimed_event_once_and_never_replays_ac
     Ok(())
 }
 
-/// The in-process port, recording each event the Authority took.
-///
-/// Once told to, it stops for good right after the Authority credits the next
-/// event, as a process that dies before the outbox records the acknowledgement.
-#[derive(Clone)]
-struct RecordingPort {
-    adapter: SimulatedPoolAdapter,
-    delivered: Arc<Mutex<Vec<AcceptedWorkEvent>>>,
-    stop_after_credit: Arc<AtomicBool>,
-    stopped: Arc<Notify>,
-}
-
-impl RecordingPort {
-    fn new(adapter: SimulatedPoolAdapter) -> Self {
-        Self {
-            adapter,
-            delivered: Arc::new(Mutex::new(Vec::new())),
-            stop_after_credit: Arc::new(AtomicBool::new(false)),
-            stopped: Arc::new(Notify::new()),
-        }
-    }
-
-    fn deliveries(&self) -> Result<Vec<AcceptedWorkEvent>, Box<dyn Error>> {
-        Ok(self
-            .delivered
-            .lock()
-            .map_err(|_| "recording port lock is poisoned")?
-            .clone())
-    }
-
-    fn stop_after_next_credit(&self) {
-        self.stop_after_credit.store(true, Ordering::SeqCst);
-    }
-
-    async fn wait_for_deliveries(
-        &self,
-        count: usize,
-    ) -> Result<Vec<AcceptedWorkEvent>, Box<dyn Error>> {
-        let deadline = tokio::time::Instant::now() + WAIT_TIMEOUT;
-        loop {
-            let deliveries = self.deliveries()?;
-            if deliveries.len() >= count {
-                return Ok(deliveries);
-            }
-            if tokio::time::Instant::now() >= deadline {
-                return Err(format!("{count} deliveries never reached the Authority").into());
-            }
-            tokio::time::sleep(WAIT_POLL).await;
-        }
-    }
-
-    /// The event the Authority credited before delivery stopped.
-    async fn wait_until_stopped(&self) -> Result<AcceptedWorkEvent, Box<dyn Error>> {
-        tokio::time::timeout(WAIT_TIMEOUT, self.stopped.notified())
-            .await
-            .map_err(|_| "delivery never stopped after a credit")?;
-        self.deliveries()?
-            .pop()
-            .ok_or_else(|| "a stopped delivery must have reached the Authority".into())
-    }
-}
-
-#[async_trait]
-impl AcceptedWorkSink for RecordingPort {
-    async fn deliver(
-        &self,
-        event: AcceptedWorkEvent,
-        lease_context: StratumLeaseContext,
-    ) -> Result<(), AcceptedWorkSinkError> {
-        AcceptedWorkSink::deliver(&self.adapter, event.clone(), lease_context).await?;
-        self.delivered
-            .lock()
-            .map_err(|_| AcceptedWorkSinkError::Unavailable)?
-            .push(event);
-        if self.stop_after_credit.load(Ordering::SeqCst) {
-            self.stopped.notify_one();
-            std::future::pending::<()>().await;
-        }
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl WorkSessionDisconnectSink for RecordingPort {
-    async fn disconnected(
-        &self,
-        session_id: &WorkSessionId,
-    ) -> Result<(), WorkSessionDisconnectSinkError> {
-        self.adapter.disconnected(session_id).await
-    }
-}
-
-/// The adapter's tasks; dropping them stops the proxy, delivery and the sweep.
-struct AdapterProcess {
-    _tasks: JoinSet<()>,
-    proxy_address: SocketAddr,
-}
-
-async fn start_adapter(
-    database: &PostgresTestDatabase,
-    pool_address: SocketAddr,
-    port: RecordingPort,
-) -> Result<AdapterProcess, Box<dyn Error>> {
-    let listener = TcpListener::bind("127.0.0.1:0").await?;
-    let proxy_address = listener.local_addr()?;
-    let config = InProcessPoolAdapterConfig {
-        database_url: database.database_url().to_owned(),
-        upstream_address: pool_address.to_string(),
-        upstream_password: "x".to_owned(),
-    };
-    let tasks = spawn_in_process_pool_adapter(config, listener, port).await?;
-    Ok(AdapterProcess {
-        _tasks: tasks,
-        proxy_address,
-    })
-}
-
 /// Issues the Worker's Stratum credentials and stores the claimant's Pool Selection.
 async fn register_worker(
     database: &PostgresTestDatabase,
@@ -254,7 +135,7 @@ async fn register_worker(
 ) -> Result<StratumSessionCredentials, Box<dyn Error>> {
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     let registry = PostgresStratumSessionRegistry::connect(database.database_url()).await?;
-    let credentials = StratumCredentialIssuer::new([27_u8; 32]).issue(
+    let credentials = StratumCredentialIssuer::new(CREDENTIAL_KEY).issue(
         leased.session_id.clone(),
         leased.lease_context.clone(),
         now,
