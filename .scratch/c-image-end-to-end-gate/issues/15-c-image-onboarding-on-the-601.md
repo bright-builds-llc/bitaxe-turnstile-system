@@ -25,7 +25,7 @@ the first Gate (07). This is criterion 3's evidence for Ticket 09.
 - [x] A board on a reference image from before Ticket 03 (`247d2cd`, which both boards run)
   installs the package. It is admitted, inspected from flash, gets the C bootloader, and is
   verified over Worker Serial. A rollback returns to `247d2cd`, and is checked from flash.
-- [ ] A board with any other partition table is refused before anything is written.
+- [x] A board with any other partition table is refused before anything is written.
 - [ ] A failed startup check rolls back in the bootloader before mark-valid, and a
   browser-driven rollback after it returns to the previous slot with NVS restored.
 - [ ] Evidence names the board, commits, image and ELF digests, timings and
@@ -218,3 +218,27 @@ the first Gate (07). This is criterion 3's evidence for Ticket 09.
   - Non-claims: the Device Identity the C image proved was the 601's existing one, kept in
     `nvs`, not one a board from the field would create; no Migration Backup was used; one run on
     one board.
+- 2026-11-15, the refused partition table, on the 601 from `247d2cd` (restored from the
+  pre-install backup and verified). The pass condition, set before the run but not written here
+  first as the earlier contracts were: the page refuses the board before Install is offered, and
+  the whole flash reads back unchanged.
+  - Staging: after a base-MAC match, upstream's table from `199c151` (2023, 1 MiB app slots, no
+    coredump) was written over the 601's at `0x8000`, and verified. Nothing else changed. With
+    that table the 601 boots no app (HTTP unreachable).
+  - Run 1: the page from `70dc172`, Ticket 05's package. Connect stopped in inspection from flash
+    after 3.68 s with "partition table is neither upstream's nor the C image's"; the sitting went
+    to `failed` and Install never became available. The full readback then differed from the
+    expected image only inside `nvs` (`0x9000` to `0xf000`). The expected image was the backup
+    with the new table, but `247d2cd` had run for about 10 minutes between the restore and the
+    staging, so its own NVS writes can't be told apart from the sitting's. This run doesn't show
+    that nothing was written.
+  - Run 2, the clean comparison: the full readback after run 1 was the baseline. The same sitting
+    refused it again in 3.58 s with the same error, and a second full readback was identical to
+    the baseline across all 16 MiB. Since no app ran in between, this shows the refusal wrote
+    nothing. The bootloader, the staged table and everything after `nvs` also equal what staging
+    wrote.
+  - Afterwards the pre-install backup was written back after a base-MAC match and verified; the
+    601 runs `247d2cd`, paused, `mineOnBoot` 0. The 205 wasn't touched.
+  - Non-claims: one other table, upstream's from 2023, not a near miss such as a third coredump
+    size (the unit tests cover exact-match refusal); a board from the field would boot its app
+    and might write NVS, as `247d2cd` did here; one board.
