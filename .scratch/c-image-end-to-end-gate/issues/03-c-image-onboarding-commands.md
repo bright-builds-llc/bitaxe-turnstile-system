@@ -14,7 +14,9 @@ browser writes through the ROM bootloader (Ticket 04).
 
 ## Plan
 
-- [ ] Firmware ticket opened in the C repository and linked here.
+- [x] Firmware work tracked in the C repository and linked here. That repository keeps open
+  work in `TASKS.md`, not in GitHub issues: the build is commit `51e5af9`, and the
+  remaining 601 measurement is `task-onboarding-bounds-601`.
 - [x] `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE` on. The image marks itself valid only
   after its startup check (the Gate's link is up and NVS reads back cleanly),
   replacing upstream's unconditional mark-valid in `main/main.c`. A host or QEMU

@@ -1,7 +1,7 @@
 # First end-to-end Gate on the C image
 
 Type: task
-Status: ready-for-human
+Status: resolved
 Blocked by: 06
 
 ## Objective

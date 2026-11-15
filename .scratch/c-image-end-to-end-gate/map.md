@@ -1,7 +1,7 @@
 # C-image end-to-end Gate map
 
 [Spec](spec.md). The first Gate on the C Reference Firmware image through the
-production browser path. Tickets 01, 02, 06, 08, 10, 11, 12, 13, 14, 17, 18, 20, 21, 22, 23, 24, 26, 27 and 28 are resolved; the rest is still planning.
+production browser path. Tickets 01, 02, 06, 07, 08, 10, 11, 12, 13, 14, 17, 18, 20, 21, 22, 23, 24, 26, 27 and 28 are resolved; the rest is still planning.
 The first Gate (06, 07) and onboarding (14, 03, 04, 05, 15) run apart, and both
 feed 09.
 
@@ -178,3 +178,6 @@ feed 09.
   run in one browser profile, because the page's site-wide Web Lock refuses tab b's admission;
   Ticket 29 runs it in two profiles, and Ticket 30 covers what the second tab is told. Grants are
   per site, so a board granted on the acceptance page isn't granted on the Gate's site.
+- Ticket 29 (2026-11-14): the harness opens `handed_over`'s tab b in its own browser context, the
+  rehearsal now takes the page's real site-wide lock, and a real-browser test shows one profile
+  admits one Worker Serial session. The run on both boards waits for a sitting with the owner.
