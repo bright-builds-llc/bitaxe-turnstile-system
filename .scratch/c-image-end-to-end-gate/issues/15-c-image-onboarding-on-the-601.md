@@ -14,10 +14,10 @@ the first Gate (07). This is criterion 3's evidence for Ticket 09.
 - [x] Before the sitting: the base-MAC check (ADR-0112, required on the owner's boards) is ready
   to pass as `maybeAdmitBaseMac`, from the owner's private registry by digest, with nothing
   committing or printing a MAC. A board whose MAC differs is refused before any write.
-- [ ] Before the sitting: a page drives onboarding (Ticket 04 left this to Ticket 15). It loads
+- [x] Before the sitting: a page drives onboarding (Ticket 04 left this to Ticket 15). It loads
   the signed package, offers "Connect Bitaxe over USB" through `bitaxeUsbOnboardingAction`, and
   passes `baseMacAdmission(registeredBaseMacDigest(registry, "601"))` to
-  `createUsbBitaxeOnboarding`, with the digest served from private configuration.
+  `createUsbBitaxeOnboarding`, with the digest loaded from private configuration.
 - [ ] Stock ESP-Miner installs the signed C package. The category digests match
   before and after, and the device comes back with a fresh Hello and proof of
   possession.
@@ -67,3 +67,30 @@ the first Gate (07). This is criterion 3's evidence for Ticket 09.
   - Checks: 1,383 TypeScript tests, typecheck, the browser build and the standards check pass. One
     run of seven had a single failure that the next six didn't repeat, and its name wasn't
     captured.
+- 2026-11-15, the sitting page (`conformance/bwg-bitaxe-onboarding-0.2/sitting.html`, bundled by
+  `scripts/build-worker-acceptance.ts`, served by `scripts/serve-headless-browser.ts`):
+  - `web/bitaxe-onboarding-sitting.ts` runs the production `bitaxeUsbOnboardingAction` and pauses
+    for the owner at each decision: Connect, then Install or Stop before install, then Keep C image
+    or Roll back. It builds `createUsbBitaxeOnboarding` with the Gamma's USB filter, the
+    configuration's Update Authority keys and `baseMacAdmission` over its digest. Its state,
+    which the page shows and `window.bitaxeOnboardingSitting.state()` returns, names the board,
+    the inspection, the result without its HMACs, and each device step's time and outcome. It
+    holds no MAC, digest, passphrase or settings value.
+  - `observeDeviceSteps` in `web/bitaxe-usb-onboarding.ts` times each device step (inspect, the
+    settings read, flash, reboot, verification, rollback), for the evidence and for
+    `task-onboarding-bounds-601`.
+  - Private inputs come only through the page's file pickers. The configuration file is written
+    by `~/.bitaxe-fork-private/reference/make_sitting_config.ts <205|601>` (mode 600) from the
+    registry and the owner's public trust. The package is `package-51e5af9/signed-manifest.json`
+    and the three files in `image-51e5af9/`.
+  - Checked without a board: the simulator tests (Stop writes nothing; Install then Keep
+    completes; Roll back is confirmed; a refused package fails and still releases the port; no
+    secret in the state). Headless Chrome loaded the page with the real files set by path through
+    CDP; it read `configured` for board 601 with only Connect enabled, and the digest wasn't in
+    its state. The files joined as the page joins them were admitted by the configuration's trust
+    against a stock 601 snapshot, version 0.1.0. 1,418 TypeScript tests, typecheck, the browser
+    build and the standards check pass.
+  - Not run: any connect to a board. The sitting's first step is a read-only dry run on the 601
+    (Connect, the base-MAC check and the inspection, then Stop before install). It needs the
+    owner's chooser pick, resets the board into ROM, and runs esptool-js's `readMac` in the
+    browser for the first time.
