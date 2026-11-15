@@ -1,7 +1,7 @@
 # Negatives on both boards through the deployed page
 
 Type: task
-Status: ready-for-human
+Status: resolved
 Blocked by: 21, 26
 
 ## Objective
@@ -11,22 +11,45 @@ and the 205 in one sitting. It can share Ticket 15's 601 sitting.
 
 ## Plan
 
-- [ ] Withheld, expired-context and handed-over grants each fail before mining
-  on a real board. The board stays restored, `ok=1`, with no Gate Pass. Only the
+- [x] Withheld and expired-context grants each fail before mining on a real
+  board. Handed-over moves to [Ticket 29](29-handed-over-in-two-profiles.md). The board stays restored, `ok=1`, with no Gate Pass. Only the
   control-session digest reaches the Authority.
 - [ ] One board's grant handed to the other board is refused, because their
-  contexts differ (both boards).
-- [ ] After Ticket 26, a Cancel and an expiry release the port on a board.
-- [ ] The acceptance page (`conformance/bwg-worker-serial-0.2/acceptance.html`)
+  contexts differ (both boards). Moved to Ticket 29.
+- [x] After Ticket 26, a Cancel and an expiry release the port on a board.
+- [x] The acceptance page (`conformance/bwg-worker-serial-0.2/acceptance.html`)
   runs `interruptPendingStatusForQualification`, with no lease, on the C image.
   It records `helloRecovery.discardedReplies`. If the count is 0, the record says
   why: the firmware drops a reply for an old epoch before writing it
   (`components/bwg_worker/proto/bwg_writer.c`, `select_control`). This needs only
   one board.
-- [ ] Watch every mining case for `stale_job`. Claim it only if the proxy logs
+- [x] Watch every mining case for `stale_job`. Claim it only if the proxy logs
   one while a lease runs.
-- [ ] Records go in the fork's `docs/project/gate-integration-evidence.md` and on
+- [x] Records go in the fork's `docs/project/gate-integration-evidence.md` and on
   this ticket, with non-claims. They name no endpoints, MACs or pool identities.
+
+## Answer
+
+Ran on 2026-11-14 with the Gate at `59981fe`, both boards on the reference image
+of `247d2cd`, and nothing flashed. The fork's `docs/project/gate-integration-evidence.md`,
+"Ticket 28 on both boards", has the rows and non-claims.
+
+- **`withheld` and `expired_context` passed on the 601.** Each challenge ended
+  `cancelled`, with Verified Progress 0 and no Gate Pass request. The audit found
+  no board value in any Authority request.
+- **The expiry released the port on the 205.** The challenge expired, and 90 s
+  later the page had closed the port, with no Gate Pass.
+- **`discardedReplies` was positive on the 205**, the first on any firmware: 1
+  on each of five fast reconnects, and 0 on reconnects through the chooser.
+- **No stale job was logged.**
+- **`handed_over` can't run in one browser profile.** The page takes one
+  site-wide Web Lock (`bwg-worker-serial`, `ifAvailable`) before admission, so
+  tab b fails admission while tab a holds it, whichever board is picked.
+  [Ticket 29](29-handed-over-in-two-profiles.md) runs it in two profiles.
+- **Until the owner granted the 601 on the Gate's site, the page reused the
+  205's grant with no chooser.** A `withheld` and an `expired_context` passed
+  there by accident. [Ticket 30](30-second-tab-admission-reason.md) covers what
+  the page says to a second tab.
 
 ## Comments
 
@@ -51,3 +74,9 @@ and the 205 in one sitting. It can share Ticket 15's 601 sitting.
     keys aren't among them, which is a non-claim.
   - The disclosure list stays `bitaxe-601` only, because adding the 205 would
     double the duration estimate.
+- 2026-11-14, the sitting: the Gate's site and the acceptance page's site hold
+  separate grants, so the 601 needed its own grant on the Gate's site. The
+  harness opens each tab in a new window, which hid tab b's chooser from the
+  owner. Three tries left tab a's challenge with a lease the board never
+  received, and each ended at expiry as `challenge_expired`. The launcher
+  recorded lease sequence 15,049.

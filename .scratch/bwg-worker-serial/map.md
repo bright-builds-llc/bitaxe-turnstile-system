@@ -115,6 +115,7 @@ stays open for its withheld-authorization, other-identity and BIP 23 items.
 
 ADR-0105 makes the C fork of ESP-Miner the Reference Firmware. [Ticket 15](issues/15-fresh-hello-resynchronization.md)
 is resolved, its stale-reply hardware check moved to
-[`c-image-end-to-end-gate`](../c-image-end-to-end-gate/spec.md) Ticket 08.
+[`c-image-end-to-end-gate`](../c-image-end-to-end-gate/spec.md) Ticket 08. Ticket 28
+there saw the first positive `discardedReplies` on 2026-11-14, on the 205.
 [Ticket 22](issues/22-noise-serial-readiness.md) is resolved, since the Gate's
 Noise client ran against both firmwares' producers.

@@ -170,3 +170,11 @@ Hellos after a pulled cable on the 601, but it records no
 `helloRecovery.discardedReplies` count, so it doesn't cover the criterion
 either. No Gate change is needed. A positive count on the C image is a check in
 `c-image-end-to-end-gate` Ticket 08.
+
+2026-11-14: The C image gave the first positive count, through
+`c-image-end-to-end-gate` Ticket 28. On the Ultra 205, on the reference image of
+`247d2cd`, the acceptance page interrupted five pending status reads with no
+lease. Each reconnect reused the grant in about 1.5 s and reported
+`helloRecovery.discardedReplies` 1. Reconnects through the chooser, about 4 s,
+reported 0. Why only a fast reconnect leaves a stale reply isn't known; the C
+fork tracks it as `task-discarded-reply-source`. One board, one run.

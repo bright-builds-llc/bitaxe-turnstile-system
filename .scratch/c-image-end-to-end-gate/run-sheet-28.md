@@ -19,7 +19,8 @@ Private files, all mode 600 under `~/.bitaxe-fork-private/t28/`:
 - `board-values.txt`, the values the audit searches for. It holds 8: the firmware
   commit, the image, ELF and partition-table digests, both boards' base-MAC
   digests, and each board's capability signature.
-- `payout-address.txt`, which the owner confirms before the sitting.
+- `payout-address.txt`, the address part of the owner's pool user, which the
+  owner confirmed on 2026-11-14.
 
 ## Before starting
 

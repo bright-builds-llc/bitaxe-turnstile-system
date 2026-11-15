@@ -1,7 +1,7 @@
 # C-image end-to-end Gate map
 
 [Spec](spec.md). The first Gate on the C Reference Firmware image through the
-production browser path. Tickets 01, 02, 06, 08, 10, 11, 12, 13, 14, 17, 18, 20, 21, 22, 23, 24, 26 and 27 are resolved; the rest is still planning.
+production browser path. Tickets 01, 02, 06, 08, 10, 11, 12, 13, 14, 17, 18, 20, 21, 22, 23, 24, 26, 27 and 28 are resolved; the rest is still planning.
 The first Gate (06, 07) and onboarding (14, 03, 04, 05, 15) run apart, and both
 feed 09.
 
@@ -19,7 +19,7 @@ feed 09.
 | [06](issues/06-production-path-rehearsal.md) Compose and rehearse the production path | task | resolved | 12 |
 | [07](issues/07-first-c-image-gate.md) First end-to-end Gate on the C image | task | ready-for-human | 06 |
 | [08](issues/08-interruptions-and-negatives.md) Interruptions and negatives on the C image | task | resolved | 07, 17 |
-| [09](issues/09-core-mvp-evidence-map.md) Map C-image evidence onto the Core MVP | task | ready-for-agent | 08, 15, 27, 28 |
+| [09](issues/09-core-mvp-evidence-map.md) Map C-image evidence onto the Core MVP | task | ready-for-agent | 08, 15, 27, 29 |
 | [10](issues/10-pool-adapter-claimant-intake-and-renewal.md) Pool Adapter takes claimant Pool Selection and extends Stratum sessions on Renew | task | resolved | 01 |
 | [13](issues/13-flaky-sse-expiry-test.md) Lifecycle SSE expiry test flakes under load | bug | resolved | None |
 | [16](issues/16-pool-adapter-grpc-process.md) Pool Adapter runs as its own process over gRPC | task | ready-for-agent | None |
@@ -34,7 +34,9 @@ feed 09.
 | [25](issues/25-governance-apply-exit-unexplained.md) Relying-service governance test hides why an Apply run exited non-zero | bug | needs-info | None |
 | [26](issues/26-release-port-after-cancel-and-expiry.md) Gate page keeps the USB port after a Cancel or an expiry | bug | resolved | None |
 | [27](issues/27-adapter-restart-replay-test.md) An adapter restart replays nothing creditable twice | task | resolved | None |
-| [28](issues/28-negatives-on-both-boards.md) Negatives on both boards through the deployed page | task | ready-for-human | 21, 26 |
+| [28](issues/28-negatives-on-both-boards.md) Negatives on both boards through the deployed page | task | resolved | 21, 26 |
+| [29](issues/29-handed-over-in-two-profiles.md) Handed-over grants in two browser profiles | task | ready-for-agent | None |
+| [30](issues/30-second-tab-admission-reason.md) A second tab's refused admission gives no reason | bug | needs-triage | None |
 
 ## Decisions so far
 
@@ -170,3 +172,9 @@ feed 09.
   - a refused Start makes the page fail closed and drop the port.
   A handed-over Start grant is refused by the page's challenge check before it reaches the other
   board, so Ticket 28 can't observe the board's own context refusal through the page.
+- Ticket 28 (2026-11-14): on the C image through the deployed page, `withheld` and
+  `expired_context` passed on the 601, an expiry released the 205's port, and the 205 gave the
+  first positive `helloRecovery.discardedReplies`. No stale job was logged. `handed_over` can't
+  run in one browser profile, because the page's site-wide Web Lock refuses tab b's admission;
+  Ticket 29 runs it in two profiles, and Ticket 30 covers what the second tab is told. Grants are
+  per site, so a board granted on the acceptance page isn't granted on the Gate's site.
