@@ -22,25 +22,29 @@ credentials, pool users or endpoints. Security findings name topics only.
 
 ## Core MVP criteria against C-image evidence
 
-Criteria are from `docs/design/core-mvp-success-criteria.md`. "Partial" means
-the firmware's `docs/project/gate-integration-evidence.md` covers the device
-side through a test authority, not the production path.
+Criteria are from `docs/design/core-mvp-success-criteria.md`, updated
+2026-11-15 from Tickets 07, 08, 15, 27 and 28. "Partial" names what the C image
+shows and what it doesn't. The hardware evidence is in the firmware repository's
+[`docs/project/gate-integration-evidence.md`](https://github.com/bright-builds-llc/bitaxe-esp-miner-c/blob/2bb93f0/docs/project/gate-integration-evidence.md),
+in the sections named for Tickets 07, 08, 15 and 28. Those runs used the
+owner's reference images (`247d2cd`, and in Ticket 15 the signed `51e5af9` and
+`57b0841` packages) on the Gamma 601 or the Ultra 205.
 
 | # | Criterion | C-image evidence |
 | --- | --- | --- |
-| 1 | Relying Service creates the challenge | None |
-| 2 | Claimant selects the Bitaxe Reference Client | None |
-| 3 | Onboarding preserves settings, no account or app | None. Settings held unchanged through leases (`worker-preservation-v2`), but no onboarding ran |
-| 4 | Work Consent disclosure | None |
-| 5 | Reward outputs and BIP 23 acceptance before release | None |
-| 6 | Work through the Pool Adapter to pinned Hydra | None |
-| 7 | Accepted Work Events advance Verified Progress | None |
-| 8 | Work Requirement ends leases and confirms restoration | Partial: `challenge_satisfied` restoration through the conformance page |
-| 9 | Gate Pass redeems with fresh DPoP | None |
-| 10 | Action executes once, pass can't be reused | None |
-| 11 | Failure cases fail safely | Partial: expiry, Pause, Cancel, disconnect and reboot through the conformance page; none for adapter replay, malformed payout, invalid proposal or stale job |
+| 1 | Relying Service creates the challenge | The Reference Relying Service's account-creation page created each challenge in Tickets 07, 08 and 28, on mainnet |
+| 2 | Claimant selects the Bitaxe Reference Client | The Bitaxe choice: "Connect Bitaxe over USB" in every Ticket 07 run, on both boards. The standard Stratum V1 Worker choice isn't a firmware path and wasn't run here |
+| 3 | Onboarding preserves settings, no account or app | Ticket 15, on the 601: the signed package installed from stock v2.15.4 and from `247d2cd`, a reference-to-reference update (`51e5af9` to `57b0841`), and every rollback, each with the settings categories (nonce-keyed HMACs) matching and no account or app. An unknown partition table was refused with nothing written, and a failed startup check was recovered by the bootloader and the page. One board, no Migration Backup, and the failed check's fault was staged |
+| 4 | Work Consent disclosure | Partial: consent was shown before every Start through the deployed page (Tickets 07, 08, 28). Its fields weren't checked against this criterion's list, its policy links don't resolve yet (Ticket 19), and it names only the 601, even for the 205 (Ticket 28) |
+| 5 | Reward outputs and BIP 23 acceptance before release | Partial: the mainnet runs mined only jobs released by Hydra's Job Admission patch, which checks the Reward Policy and gets the BIP 23 proposal accepted first (Ticket 07). The evidence doesn't record each job's admission, and the node was Bitcoin Core 31.1, not the 28.1 pin |
+| 6 | Work through the Pool Adapter to pinned Hydra | The Pool Adapter's proxy in `gate-authority` to Hydra 0.12.0 at `8eca024`, patched only for Job Admission and block submission, on mainnet, on both boards (Ticket 07) |
+| 7 | Accepted Work Events advance Verified Progress | Shares through the adapter took Verified Progress to the Work Requirement, 2^44 and 2^45, on both boards (Ticket 07). No double credit across an adapter restart is a Rust test (Ticket 27), not hardware |
+| 8 | Work Requirement ends leases and confirms restoration | For one Worker: at the requirement the board stopped with `restoration_requested` and `Lease stop finished ok=1`, and restoration was confirmed as `challenge_satisfied`, on both boards (Ticket 07). Several Workers in one challenge weren't run |
+| 9 | Gate Pass redeems with fresh DPoP | Redeemed once with DPoP in each mainnet run, on both boards (Ticket 07) |
+| 10 | Action executes once, pass can't be reused | Partial: one redemption per pass. On the 601, resending the identical redemption was refused with 401 `invalid_redemption` and the count stayed the same (Ticket 07). A fresh proof on a spent pass is refused only in a Rust test, and a refresh wasn't tried |
+| 11 | Failure cases fail safely | Partial. On hardware through the deployed page: Pause, terminal Cancel, expiry, tab close, a USB drop, a power pull and a pool failure on the 205 (Ticket 08); expiry on the 205, and withheld and expired-context grants on the 601 (Ticket 28). Adapter replay is a Rust test (Ticket 27). No stale job came during a lease (Ticket 28). Malformed payout and invalid proposal: none on the C image. The handover rests on the rehearsal in two profiles with the real lock, `negative-cases.json` and the C host tests (`test_lease_auth.c`), and wasn't run on hardware |
 | 12 | Conformance Profiles pass in CI | Not a firmware criterion; no Client profile run against a real board |
-| 13 | Privacy across context boundaries | None through the production path |
+| 13 | Privacy across context boundaries | Partial: Ticket 28's audit found none of eight board values in any Authority request, and only the control-session digest reached it from a board. Device Identity keys weren't among the values searched, and the Account Identity, payout and action-payload boundaries weren't audited on the C image |
 
 ## Gaps found while planning
 

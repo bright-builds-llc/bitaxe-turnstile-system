@@ -6,6 +6,11 @@
 
 **Status:** ready-for-agent
 
+**Historical evidence.** ADR-0105 made `bitaxe-esp-miner-c` the Reference
+Firmware. Every result below this ticket's checklist, and the ticks above, rest on
+the Rust image (`bitaxe-esp-miner`) and carry over to nothing on the C image. The
+C image's evidence for each item is in "C Reference Firmware evidence" at the end.
+
 - [x] The firmware repository consumes the shared Controller 0.4, Worker Serial 0.2, Local Device
   Possession, and Work Lease Authorization conformance profiles and fixtures, separate authority
   trust configurations, and exact signed Ultra 205 capability artifact.
@@ -140,3 +145,34 @@ Caveats carried from the review:
 
 This ticket stays open until the withheld-authorization, other-identity and
 BIP 23 items resolve, and until its blockers 18, 20 and 22 are evidenced.
+
+
+## C Reference Firmware evidence — 2026-11-15
+
+Mapped by the C-image Gate effort's Ticket 09
+([`c-image-end-to-end-gate`](../../c-image-end-to-end-gate/spec.md)). The C
+repository's [evidence page](https://github.com/bright-builds-llc/bitaxe-esp-miner-c/blob/2bb93f0/docs/project/gate-integration-evidence.md) owns the physical evidence, by section. Runs
+named for a Ticket used the owner's reference image of `247d2cd`, the owner's
+trust and each board's signed capability; the lifecycle reruns used a
+test-authority image of the same commit.
+
+| Acceptance item | Status on the C image | Evidence |
+| --- | --- | --- |
+| Shared profiles, fixtures, trust and signed capability consumed | resolved, both boards | The C host tests consume the shared fixtures (`components/bwg_worker/host_test/fixtures`). The reference image carries the owner's trust and the 205's and 601's signed capabilities, and the Gate admitted it by commit and ELF ("Reference firmware under the owner's capability", "Ticket 07" on both boards) |
+| Exact-device admission and safe state before each effect | resolved | The Gate's admission before every lease; a base-MAC match before every ROM write ("The lifecycle rerun on the 205", "Ticket 15") |
+| Completion, Pause, Cancel, expiry, disconnect, reboot, uncertain time end mining | resolved | Completion on mainnet on both boards ("Ticket 07"); Pause, Cancel, expiry, tab close, a USB drop, a power pull and a pool failure through the deployed page on the 205 ("Ticket 08"); `monotonic_reset` and reboot through the harness and the restoration pages on both boards, each ending at `baseline` with restoration confirmed ("The lifecycle rerun" on each board) |
+| Baseline restoration confirmed without exposing credentials | resolved | Every lease in the lifecycle reruns ended in a confirmed restoration with its reason. Ticket 28's audit found no board value in any Authority request, and the committed evidence holds no credential |
+| Challenge credentials never persist as pool configuration | resolved, per boot | `worker-preservation-v2`'s digest over its 17-setting allowlist held `unchanged` through every step ("Preservation and the Close probe"); as on Rust, an identical write isn't distinguishable |
+| Accepted authorizations stay rejected across restoration and reboot | resolved | `authorization_negatives` run after `reboot` rejected the replayed renewal and Start, 3 of 3 ("Acceptance, through the Gate's page in Chrome"); the harness's replayed Start was `command_rejected` on both boards |
+| Withheld, expired-context and cross-possession authorizations fail before mining | partly resolved | Withheld and expired-context grants on the 601 through the deployed page: `cancelled`, Verified Progress 0, no Gate Pass, and only the control-session digest reached the Authority ("Ticket 28"). Cross-possession (the handover) rests on the rehearsal in two profiles, `negative-cases.json` and `test_lease_auth.c`, and wasn't run on hardware |
+| Another Device Identity derives a different context | open on hardware | `negative_changed_context_and_identity` in `test_lease_auth.c` refuses a Start bound to another identity, and `negative-cases.json` holds the case. No board was handed another's grant |
+| Mainnet use follows the per-job BIP 23 and Reward Policy guardrails | partly resolved | Mainnet Gates on both boards through Hydra's Job Admission patch ("Ticket 07"). The evidence doesn't record each job's admission, and the node was Bitcoin Core 31.1, not the 28.1 pin |
+| Evidence records identity, commands, safety, privacy, cleanup, outcome, residual risks | resolved | Each section names its board, commits, image and ELF digests and non-claims |
+
+Blocker 22's onboarding has its C-image evidence in the C-image effort's Ticket 15
+("Ticket 15: onboarding on the 601"), on the 601 only. Non-claims: one run of most
+cases, the Ticket 08 cases on the 205 only, and the Ticket 28 grants on the 601
+only. A failed stop has never happened on hardware, so stop retries rest on host
+tests. This ticket stays open until the handover and other-identity items have
+hardware evidence and the BIP 23 item records per-job admission, or the owner
+accepts the non-claims.
