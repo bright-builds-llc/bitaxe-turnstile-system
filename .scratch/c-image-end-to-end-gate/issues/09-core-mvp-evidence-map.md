@@ -1,7 +1,7 @@
 # Map C-image evidence onto the Core MVP
 
 Type: task
-Status: ready-for-human
+Status: resolved
 Blocked by: 08, 15, 27
 
 ## Objective
@@ -33,3 +33,4 @@ switch.
     by item: seven resolved, the withheld, expired-context and cross-possession item and the
     BIP 23 item partly resolved, and the other-identity item open on hardware.
   - Core Ticket 25 has the C-image summary against its items, and the non-claims.
+- 2026-11-15: the owner closed the ticket after review.

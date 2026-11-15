@@ -1,7 +1,7 @@
 # C-image end-to-end Gate map
 
 [Spec](spec.md). The first Gate on the C Reference Firmware image through the
-production browser path. Tickets 01, 02, 06, 07, 08, 10, 11, 12, 13, 14, 15, 17, 18, 20, 21, 22, 23, 24, 26, 27 and 28 are resolved; the rest is still planning.
+production browser path. Tickets 01, 02, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 17, 18, 20, 21, 22, 23, 24, 26, 27 and 28 are resolved; the rest is still planning.
 The first Gate (06, 07) and onboarding (14, 03, 04, 05, 15) run apart, and both
 feed 09.
 
@@ -19,7 +19,7 @@ feed 09.
 | [06](issues/06-production-path-rehearsal.md) Compose and rehearse the production path | task | resolved | 12 |
 | [07](issues/07-first-c-image-gate.md) First end-to-end Gate on the C image | task | resolved | 06 |
 | [08](issues/08-interruptions-and-negatives.md) Interruptions and negatives on the C image | task | resolved | 07, 17 |
-| [09](issues/09-core-mvp-evidence-map.md) Map C-image evidence onto the Core MVP | task | ready-for-human | 08, 15, 27 |
+| [09](issues/09-core-mvp-evidence-map.md) Map C-image evidence onto the Core MVP | task | resolved | 08, 15, 27 |
 | [10](issues/10-pool-adapter-claimant-intake-and-renewal.md) Pool Adapter takes claimant Pool Selection and extends Stratum sessions on Renew | task | resolved | 01 |
 | [13](issues/13-flaky-sse-expiry-test.md) Lifecycle SSE expiry test flakes under load | bug | resolved | None |
 | [16](issues/16-pool-adapter-grpc-process.md) Pool Adapter runs as its own process over gRPC | task | ready-for-agent | None |
@@ -195,3 +195,6 @@ feed 09.
   table with nothing written, and recovered a failed startup check through the bootloader and the
   page. Each install and rollback was verified, and the evidence is in the C repository's
   `docs/project/gate-integration-evidence.md`. Ticket 09 can take criterion 3 from it.
+- Ticket 09 (2026-11-15): resolved. `spec.md`'s criteria table links every Core MVP criterion
+  to its C-image evidence or names what is missing, and Core Tickets 23 and 25 carry the
+  C-image evidence and non-claims.
