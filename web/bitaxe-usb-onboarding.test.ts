@@ -264,6 +264,24 @@ describe("observeDeviceSteps", () => {
     await expect(reading).rejects.toThrow();
     expect(observed).toEqual(["readMigrationSettings:failed"]);
   });
+
+  test("reports a failing step's error with its causes, for the evidence", async () => {
+    // Arrange
+    const errors: Array<string | undefined> = [];
+    const simulated = await new SimulatedBitaxeConnector(snapshot(), settings).requestDevice();
+    const lastAttempt = new Error("Hello and possession timed out");
+    const device = observeDeviceSteps(
+      { ...simulated, reboot: async () => Promise.reject(new Error("the device was not back", { cause: lastAttempt })) },
+      (_step, _milliseconds, _outcome, maybeError) => errors.push(maybeError),
+    );
+
+    // Act
+    const rebooting = device.reboot();
+
+    // Assert
+    await expect(rebooting).rejects.toThrow("the device was not back");
+    expect(errors).toEqual(["the device was not back ← Hello and possession timed out"]);
+  });
 });
 
 describe("createUsbBitaxeOnboarding", () => {

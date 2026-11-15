@@ -21,6 +21,8 @@ import {
   type RomOnboardingBounds,
 } from "./rom-onboarding-seams";
 import { maybeWorkerControlRejectionCategory } from "./worker-control-rejection";
+import type { WorkerControllerCapabilities as SignedCapabilities } from "./worker-controller";
+import { parseWorkerControllerCapabilities, type WorkerControllerCapabilities } from "./worker-controller-semantics";
 import { createMemoryWorkerContinuityAccess } from "./worker-continuity-store";
 import { BrowserSerialController } from "./worker-serial-controller-runtime";
 import {
@@ -138,8 +140,16 @@ export function createUsbBitaxeOnboarding(input: UsbBitaxeOnboardingInput): UsbB
 }
 
 export type DeviceStepOutcome = "ok" | "failed";
-/** Told when one device step ends: its name, how long it took, and whether it succeeded. */
-export type DeviceStepObserver = (step: keyof BitaxeOnboardingDevice, milliseconds: number, outcome: DeviceStepOutcome) => void;
+/**
+ * Told when one device step ends: its name, how long it took, whether it succeeded, and for a
+ * failure its error with each cause after `←`. The install's recovery hides the error otherwise.
+ */
+export type DeviceStepObserver = (
+  step: keyof BitaxeOnboardingDevice,
+  milliseconds: number,
+  outcome: DeviceStepOutcome,
+  maybeError?: string,
+) => void;
 
 /** `device`, reporting each of its steps to `observe` as it ends. */
 export function observeDeviceSteps(device: BitaxeOnboardingDevice, observe: DeviceStepObserver): BitaxeOnboardingDevice {
@@ -150,7 +160,7 @@ export function observeDeviceSteps(device: BitaxeOnboardingDevice, observe: Devi
       observe(step, performance.now() - started, "ok");
       return value;
     } catch (error) {
-      observe(step, performance.now() - started, "failed");
+      observe(step, performance.now() - started, "failed", errorWithCauses(error));
       throw error;
     }
   }
@@ -162,6 +172,23 @@ export function observeDeviceSteps(device: BitaxeOnboardingDevice, observe: Devi
     verifyRedactedSettings: (nonce) => timed("verifyRedactedSettings", () => device.verifyRedactedSettings(nonce)),
     rollback: (rollbackInput) => timed("rollback", () => device.rollback(rollbackInput)),
   };
+}
+
+/**
+ * The admitted capability without its signed envelope (`transportProfile`, `attestation`), which
+ * admission has verified; onboarding's snapshot holds only the semantic fields.
+ */
+function semanticCapabilities(admitted: SignedCapabilities): WorkerControllerCapabilities {
+  const { protocolVersion, board, firmware, compatibility } = admitted;
+  return parseWorkerControllerCapabilities({ protocolVersion, board, firmware, compatibility });
+}
+
+function errorWithCauses(error: unknown): string {
+  const messages: string[] = [];
+  for (let maybe: unknown = error; maybe !== undefined && messages.length < 8; maybe = maybe instanceof Error ? maybe.cause : undefined) {
+    messages.push(maybe instanceof Error ? maybe.message : String(maybe));
+  }
+  return messages.join(" ← ");
 }
 
 /**
@@ -202,7 +229,7 @@ function workerSerialLink(
         throw error;
       }
       try {
-        const capabilities = await controller.discover();
+        const capabilities = semanticCapabilities(await controller.discover());
         return {
           capabilities,
           inspect: () => inspectOnboarding(() => controller.onboardingInspect()),

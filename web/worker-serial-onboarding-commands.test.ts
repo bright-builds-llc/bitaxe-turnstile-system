@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
 import type { BrowserSerialController } from "./worker-serial-controller-runtime";
+import { createUsbBitaxeOnboarding } from "./bitaxe-usb-onboarding";
+import type { UpdateAuthorityJwk } from "./worker-deployment-trust";
+import { workerSerialTestRuntime } from "./webserial-worker-port";
 import { serialHarness } from "./worker-serial.test-support";
 
 /**
@@ -40,4 +43,25 @@ test("closes promptly after the image rejects onboarding_verify and ends the ses
 
   // Assert
   await expect(closing).resolves.toBeUndefined();
+});
+
+test("onboarding connects to an image that answers onboarding_inspect, despite its signed capability envelope", async () => {
+  // Arrange
+  const harness = await serialHarness();
+  harness.setCommandHandler(async (request) => {
+    if (request.command !== "onboarding_inspect") return undefined;
+    const partition = { scheme: "esp32-factory-ota-ab", appSlotBytes: 4_194_304, rollbackAvailable: true, activeSlot: "ota_0", bootable: true };
+    return { ok: true, result: { settingsSchemaVersion: 1, settingsReadable: true, partition } };
+  });
+  const { onboarding } = createUsbBitaxeOnboarding({
+    deviceFilter: harness.input.deviceFilter,
+    trustedUpdateKeys: harness.input.trustedUpdateKeys as UpdateAuthorityJwk[],
+    maybeRuntime: harness.input[workerSerialTestRuntime].runtime,
+  });
+
+  // Act
+  const inspection = await onboarding.connect();
+
+  // Assert
+  expect(Object.keys(inspection.capabilities).sort()).toEqual(["board", "compatibility", "firmware", "protocolVersion"]);
 });

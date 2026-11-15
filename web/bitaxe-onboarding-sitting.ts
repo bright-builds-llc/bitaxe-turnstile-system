@@ -81,7 +81,7 @@ export type SittingStatus =
   | "failed";
 
 /** One device step as the evidence records it. */
-export type SittingStep = { step: string; milliseconds: number; outcome: DeviceStepOutcome };
+export type SittingStep = { step: string; milliseconds: number; outcome: DeviceStepOutcome; error?: string };
 
 /** What the page shows and DevTools reads: never a MAC, digest, passphrase or settings value. */
 export type SittingState = {
@@ -173,8 +173,8 @@ export function createOnboardingSitting(input: OnboardingSittingInput): Onboardi
   const requireStatus = (status: SittingStatus, action: string) => {
     if (state.status !== status) throw new Error(`${action} needs the sitting to be ${status}, not ${state.status}`);
   };
-  const observeStep: DeviceStepObserver = (step, milliseconds, outcome) =>
-    update({ steps: [...state.steps, { step, milliseconds, outcome }] });
+  const observeStep: DeviceStepObserver = (step, milliseconds, outcome, maybeError) =>
+    update({ steps: [...state.steps, { step, milliseconds, outcome, ...(maybeError === undefined ? {} : { error: maybeError }) }] });
 
   const recordResult = (result: BitaxeOnboardingResult) => update({ result: redactedResult(result) });
   const recorded = (usb: UsbBitaxeOnboarding): UsbBitaxeOnboarding => ({
