@@ -12,7 +12,7 @@ feed 09.
 | [14](issues/14-gate-onboarding-contract-for-the-c-image.md) Gate onboarding contract matches the C image | task | resolved | 02 |
 | [03](issues/03-c-image-onboarding-commands.md) C image reports onboarding facts and guards its own boot | task | ready-for-human | 02, 14 |
 | [04](issues/04-web-serial-onboarding-device.md) Browser onboarding device over the ROM bootloader | task | ready-for-human | 03 |
-| [05](issues/05-signed-c-image-package.md) Owner signs the C image's firmware package | task | ready-for-human | 03, 04 |
+| [05](issues/05-signed-c-image-package.md) Owner signs the C image's firmware package (signed; licence review left) | task | ready-for-human | 03, 04 |
 | [15](issues/15-c-image-onboarding-on-the-601.md) Onboarding on the 601, from stock and between reference images | task | ready-for-human | 05 |
 | [11](issues/11-late-work-delivery-after-renew.md) Authority judges a Work Event by the reading at which it was observed | task | resolved | 10 |
 | [12](issues/12-terminal-refusal-of-uncreditable-work.md) Authority refuses uncreditable work terminally, and delivery stops retrying it | task | resolved | 11 |
@@ -183,3 +183,7 @@ feed 09.
   admits one Worker Serial session. The run on both boards waits for a sitting with the owner.
   The owner made that run optional: it no longer blocks Ticket 09, and runs only when both boards
   are out for another sitting.
+- Ticket 05 (2026-11-14): the owner signed the C image's manifest with the source set to the fork's
+  public commit, and the Gate's package admission accepts it against the owner's trust for both
+  boards. Ticket 15 can use the package now; its other precondition is ADR-0112's acceptance. The
+  licence reviews still block distributing the image to anyone else.

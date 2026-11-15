@@ -35,3 +35,7 @@ the first Gate (07). This is criterion 3's evidence for Ticket 09.
     and that the session ends after it.
   - An interrupted bootloader write on such a board can't be repaired from the browser. Esptool
     repairs it (ADR-0112).
+- 2026-11-14: Ticket 05's package is signed and admitted against the owner's trust
+  (`~/.bitaxe-fork-private/reference/package-51e5af9/signed-manifest.json`, with the image files in
+  `image-51e5af9/`). Before the sitting, the owner accepts or amends ADR-0112. Ticket 05's licence
+  reviews don't block this run, since installing on the owner's own board isn't distribution.

@@ -18,10 +18,11 @@ and check the signed one; they never handle the owner's keys.
   601, `esp32-factory-ota-ab` with rollback, settings schema `1`, public HTTPS
   source).
 - [ ] Owner: review the GPL source and notice obligations before distributing the
-  image, as the C repository's owner decisions require.
-- [ ] Owner: sign the manifest, and new capabilities if Ticket 03 changed the
+  image, as the C repository's owner decisions require. This blocks distributing
+  the image to anyone else, not Ticket 15, which installs on the owner's own board.
+- [x] Owner: sign the manifest, and new capabilities if Ticket 03 changed the
   Worker Serial manifest.
-- [ ] Agent: verify the signed manifest against the owner's public trust with the
+- [x] Agent: verify the signed manifest against the owner's public trust with the
   Gate's package admission.
 
 ## Comments
@@ -83,3 +84,20 @@ and check the signed one; they never handle the owner's keys.
   - A rollback returns to `247d2cd` and is checked from flash.
   - Details are on Ticket 04. The manifest and image are unchanged. The owner signs from `main` once
     this branch lands.
+- 2026-11-14, signed and admitted:
+  - The owner chose `sourceUrl`
+    `https://github.com/bright-builds-llc/bitaxe-esp-miner-c/tree/51e5af9e108113ef23c2c687fcc9ba218b5e3d34`,
+    the fork's public commit, as the image's corresponding source. The rebuilt payload is 674
+    bytes, SHA-256 `4a335c62427d6a122730df67bcb56db5d27411a22ab44269c04646d2a06daeb3`.
+  - The owner signed it with `sign-firmware-manifest` and the Update Authority key
+    `dev-update-PY57O77eAUFmYzGW`, from the authority directory that signed the capabilities. No
+    agent read or used the key. `signed-manifest.json` is in the private package directory,
+    SHA-256 `de0201baa67e0d13b2e5599e1f58996552d827173bb0c943a563868a87081b29`; its contents are
+    public.
+  - Verified with the Gate's `admitFirmwarePackage` against `owner-trust/trust.json`, at turnstile
+    `26e6552`: the header is `Ed25519` and `bwg-firmware-manifest+jws`, the signed payload equals
+    the prepared one, both capabilities' version equals the manifest's `0.1.0`, and the package is
+    accepted for the 205 and the 601 from stock and from a reference image. One changed image
+    byte is refused as an invalid image digest, and a changed `sourceUrl` as an invalid signature.
+    The image, bootloader and table still match `SHA256SUMS`.
+  - Left: the licence reviews, before the image goes to anyone else.
