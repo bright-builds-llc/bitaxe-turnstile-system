@@ -30,7 +30,7 @@ implements it.
   Serial, is checked.
 - [x] "Device is back" is a fresh Hello plus proof of possession on the new image.
   Bounds chosen under Ticket 02's rules.
-- [ ] Bounds measured on the 601, recorded here.
+- [x] Bounds measured on the 601, recorded here.
 - [x] Reuse one granted port across ROM, onboarding and the Worker Controller
   (ADR-0101), wire the component's "Connect Bitaxe over USB" path, and run
   `bun run verify`.
@@ -180,3 +180,25 @@ Run under the fork handoff's process rules, with a base-MAC match before any ROM
   - ADR-0112 and the protocol doc are amended. Tests cover the fallback, the install with the C
     bootloader, the rollback checked from flash, a failed possession, and a supported
     `onboarding_inspect` that errors.
+- 2026-11-15, the bounds measured on the 601, in Ticket 15's sittings (the C repository's
+  `docs/project/gate-integration-evidence.md`, "Ticket 15: onboarding on the 601"). The page
+  timed each device step as a whole, so some bounds are measured only inside a step:
+
+  | Step, as the page times it | Bounds inside it | Measured | Bound |
+  | --- | --- | --- | --- |
+  | Inspection from flash (ROM entry, table, `otadata`, descriptor, NVS) | ROM entry 15 s, each read 15 s | 1.42 to 1.62 s from `247d2cd`, 4.28 to 4.36 s from stock (probably the wait for a Hello that stock never sends) | Met with wide margin |
+  | Inspection over Worker Serial | Hello and possession 10 s, one reply 10 s | 0.30 to 0.44 s after a reboot or on Connect | Met |
+  | Settings read (ROM entry and the 24 KiB `nvs`) | 15 s each | 1.12 to 1.15 s | Met |
+  | Flash (image with MD5, and from stock or `247d2cd` the C bootloader and table, then `otadata`) | Image 240 s, small writes 20 s | 36.4 to 36.7 s with the bootloader and table, 35.6 s for the update, whose bootloader and table already matched | About 15% of the image bound |
+  | Reboot until bootable | 180 s, reconnect pause 2 s, port re-found 10 s | 10.1 to 10.2 s; in the failed startup check the bound expired at 183 s with no Hello, and onboarding recovered | Met, and the expiry ended in recovery, not a hang |
+  | Verification | 10 s over Worker Serial, ROM bounds from flash | 0.31 to 0.35 s over Worker Serial, 1.41 to 1.52 s from flash | Met |
+  | Rollback (MD5 of the previous slot, `otadata` and `nvs` written and read back) | MD5 60 s, small writes 20 s | 9.1 to 9.4 s | Met |
+  | Reset into stock, unobserved | 10 s pause | 10.1 s | As designed |
+
+  The bounds stay as proposed; none came near its limit except the reboot bound, which did
+  its job. Not measured on their own: ROM entry, a single read, a slot's MD5 and the port's
+  re-find time, each only inside its step; the 2 s reconnect pause ran only in the failed check.
+  The rest of "Left for the 601 sitting" also held: the grant was re-found across every ROM and
+  hard reset with no chooser; the C bootloader booted stock `factory` under the C table; a real
+  bootloader rollback returned to stock; the browser's HMACs matched the image's; and stock's
+  table was classified as upstream's known table.

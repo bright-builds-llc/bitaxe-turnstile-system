@@ -26,7 +26,7 @@ browser writes through the ROM bootloader (Ticket 04).
   slot and rollback state.
 - [x] Post-reboot verify answers with category HMACs keyed by the browser's nonce,
   passing Ticket 14's vectors.
-- [ ] Bounds chosen under Ticket 02's rules and measured on the 601, recorded here.
+- [x] Bounds chosen under Ticket 02's rules and measured on the 601, recorded here.
 - [x] The Worker Serial manifest digest confirmed as `a43c2c7d61f95fc6`, so the 205
   and 601 capabilities need no new signatures.
 - [x] The mark-valid change prepared as an upstream offer; the owner opens it.
@@ -92,3 +92,18 @@ the 601, so this ticket waits for a hardware sitting with the owner. Nothing was
   and 601 run from wasn't checked.
 
 ## Comments
+- 2026-11-15, the bounds measured on the 601, in Ticket 15's sittings (the C repository's
+  `docs/project/gate-integration-evidence.md`, "Ticket 15: onboarding on the 601"):
+  - **Startup check against a real boot.** In every install of `51e5af9` and `57b0841`, a reset
+    reached a bootable Worker Serial session, with the Gate link up and a fresh Hello and
+    possession, in 10.1 to 10.2 s: about a twelfth of the 120 s deadline. The deadline stays at
+    120 s, since a board that waits on Wi-Fi or the full NTP wait (up to 32 s) has no other
+    margin.
+  - **A failed check rolling back through the bootloader.** With the Gate's device seed zeroed
+    in `nvs`, `51e5af9` booted without a link, and HTTP showed it give way to stock v2.15.4 about
+    120 s after it came up, before the browser acted.
+  - **HMACs over its NVS.** After each install, the image's category HMACs over Worker Serial
+    matched the browser's over the NVS it read through ROM, for all, network and pool; after
+    each rollback the same held from flash.
+  - **Slots.** The 601 on `247d2cd` runs from `factory`, so it is never on trial. Which slot the
+    205 runs from still wasn't checked.
