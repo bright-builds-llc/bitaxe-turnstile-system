@@ -21,7 +21,7 @@ the first Gate (07). This is criterion 3's evidence for Ticket 09.
 - [x] Stock ESP-Miner installs the signed C package. The category digests match
   before and after, and the device comes back with a fresh Hello and proof of
   possession.
-- [ ] A reference-to-reference update installs a newer signed package the same way.
+- [x] A reference-to-reference update installs a newer signed package the same way.
 - [x] A board on a reference image from before Ticket 03 (`247d2cd`, which both boards run)
   installs the package. It is admitted, inspected from flash, gets the C bootloader, and is
   verified over Worker Serial. A rollback returns to `247d2cd`, and is checked from flash.
@@ -249,3 +249,33 @@ the first Gate (07). This is criterion 3's evidence for Ticket 09.
   `0.1.0`, so the capabilities need no new signature. The unsigned manifest differs from Ticket 05's
   only in `imageSha256` and `sourceUrl`. A dry run under a throwaway key admits it for both boards,
   from stock and from reference. Waits on the owner's signature.
+- 2026-11-15, the newer package signed and admitted: the owner signed `package-57b0841` with
+  `sign-firmware-manifest` and the Update Authority key `dev-update-PY57O77eAUFmYzGW`, Ticket 05's
+  key. No agent read or used it. Against `owner-trust/trust.json` the header is `Ed25519` and
+  `bwg-firmware-manifest+jws`, the signed payload equals the prepared one, both capabilities'
+  version equals the manifest's `0.1.0`, and the package is accepted for the 205 and the 601 from
+  stock and from reference. One changed image byte is refused as an invalid image digest, and a
+  changed `sourceUrl` as an invalid signature.
+- 2026-11-15, the reference-to-reference update on the 601, `complete` for that item. The page
+  from `70dc172`, Chrome with the profile that holds the 601's serial grant, no Migration Backup,
+  the 601 on `247d2cd` from its pre-install backup. The plan in the signing hand-off was the
+  owner's go-ahead for the choices: keep run A, roll back run B once HTTP showed `57b0841`.
+  - Run A, `51e5af9` from `247d2cd`: inspection from flash 1.54 s (`firmware_required`, reference
+    0.1.0, settings `upgrade_required`), the settings read 1.12 s, the flash step 36.5 s, the
+    reboot 10.2 s, inspection over Worker Serial 0.32 s and verification 0.35 s: `ready`, `ota_0`,
+    bootable, settings preservation confirmed for all, network and pool. Kept; HTTP showed
+    `51e5af9`, paused.
+  - Run B, `57b0841` over `51e5af9`: inspection over Worker Serial 0.43 s, `ready`, settings
+    `compatible`; the settings read 1.14 s, the flash step 35.6 s, the reboot 10.2 s, inspection
+    0.33 s and verification 0.35 s: `ready`, `ota_1`, bootable, preservation confirmed for all,
+    network and pool. HTTP showed `57b0841`.
+  - Run B's rollback: 9.2 s, the reboot 10.2 s, then inspection (0.32 s) and verification (0.33 s)
+    over Worker Serial, since `51e5af9` answers onboarding commands: `rolled_back`, rollback
+    confirmed, `ota_0`, bootable, preservation confirmed for all, network and pool. HTTP showed
+    `51e5af9`, paused.
+  - Afterwards the pre-install backup was written back after a base-MAC match and verified; the
+    601 runs `247d2cd`, paused, `mineOnBoot` 0. The 205 wasn't touched.
+  - Non-claims: both images report 0.1.0, so "newer" is the later commit, and onboarding compares
+    no versions; the package carries `51e5af9`'s bootloader, so whether the update rewrote it is
+    not observable here (the bytes were already equal); NVS wasn't changed between install and
+    rollback, so a rollback restoring changed NVS is still open; one run on one board.
