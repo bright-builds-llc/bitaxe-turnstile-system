@@ -10,6 +10,7 @@ if (result.exitCode !== 0 || !/^[0-9a-f]{40}$/u.test(commit))
 for (const [entrypoint, outdir] of [
   ["web/worker-serial-acceptance.ts", "dist/worker-serial-acceptance"],
   ["web/worker-restoration-page.ts", "dist/worker-restoration"],
+  ["web/bitaxe-onboarding-sitting-page.ts", "dist/bitaxe-onboarding-sitting"],
 ] as const) {
   const build = await Bun.build({
     entrypoints: [entrypoint],

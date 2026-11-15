@@ -1,0 +1,13 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Bitaxe onboarding sitting</title>
+<style>body{background:#101319;color:#eee;font:16px system-ui;max-width:960px;margin:2rem auto;padding:1rem}button,input{font:inherit;margin:.4rem;padding:.6rem}pre{white-space:pre-wrap}label{display:block}button:disabled{opacity:.45}</style>
+<h1>Bitaxe onboarding sitting</h1><p>Local onboarding on one of the owner's boards. It writes flash only after <strong>Install</strong>, and only to the board whose base MAC the configuration names; any other board is refused before a write. Files are read in this page and never sent anywhere.</p>
+<label>Sitting configuration <input id="configuration" type="file" accept="application/json"></label>
+<label>Signed manifest <input id="signed-manifest" type="file" accept="application/json"></label>
+<label>Image (<code>esp-miner.bin</code>) <input id="image" type="file" accept=".bin"></label>
+<label>Bootloader (<code>bootloader.bin</code>) <input id="bootloader" type="file" accept=".bin"></label>
+<label>Partition table (<code>partition-table.bin</code>) <input id="partition-table" type="file" accept=".bin"></label>
+<button id="connect">Connect Bitaxe over USB</button>
+<label>Migration Backup passphrase (optional; leave empty to skip the download) <input id="passphrase" type="password" autocomplete="off"></label>
+<button id="install">Install</button><button id="stop">Stop before install</button>
+<button id="keep">Keep C image</button><button id="roll-back">Roll back</button>
+<p id="status" aria-live="polite"></p><pre id="state"></pre><script type="module" src="/dist/bitaxe-onboarding-sitting/bitaxe-onboarding-sitting-page.js"></script></html>

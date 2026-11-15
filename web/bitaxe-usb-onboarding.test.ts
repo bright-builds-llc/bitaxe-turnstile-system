@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { BitaxeOnboarding, BitaxeOnboardingResult, FirmwarePackage } from "./bitaxe-onboarding";
-import { bitaxeUsbOnboardingAction, GrantedBitaxePort, inspectOnboarding } from "./bitaxe-usb-onboarding";
+import { bitaxeUsbOnboardingAction, GrantedBitaxePort, inspectOnboarding, observeDeviceSteps } from "./bitaxe-usb-onboarding";
+import { settings, snapshot } from "./bitaxe-onboarding-test-fixtures";
+import { SimulatedBitaxeConnector } from "./simulated-bitaxe-onboarding";
 import { OnboardingCommandsUnsupportedError } from "./rom-onboarding-seams";
 import { parseWorkerControlResult } from "./worker-control-rejection";
 import type { WorkGateConfiguration } from "./bwg-work-gate";
@@ -217,5 +219,43 @@ describe("inspectOnboarding", () => {
     // Assert
     await expect(inspecting).rejects.not.toBeInstanceOf(OnboardingCommandsUnsupportedError);
     await expect(inspecting).rejects.toThrow("command_rejected");
+  });
+});
+
+describe("observeDeviceSteps", () => {
+  test("reports each device step it passes through, with its time and outcome", async () => {
+    // Arrange
+    const observed: Array<{ step: string; milliseconds: number; outcome: string }> = [];
+    const device = observeDeviceSteps(
+      await new SimulatedBitaxeConnector(snapshot(), settings).requestDevice(),
+      (step, milliseconds, outcome) => observed.push({ step, milliseconds, outcome }),
+    );
+
+    // Act
+    await device.inspect();
+    await device.readMigrationSettings(1_000_000);
+
+    // Assert
+    expect(observed.map(({ step, outcome }) => ({ step, outcome }))).toEqual([
+      { step: "inspect", outcome: "ok" },
+      { step: "readMigrationSettings", outcome: "ok" },
+    ]);
+    expect(observed.every(({ milliseconds }) => milliseconds >= 0)).toBe(true);
+  });
+
+  test("reports a failing step as failed and still rejects with its error", async () => {
+    // Arrange
+    const observed: string[] = [];
+    const device = observeDeviceSteps(
+      await new SimulatedBitaxeConnector(snapshot(), settings).requestDevice(),
+      (step, _milliseconds, outcome) => observed.push(`${step}:${outcome}`),
+    );
+
+    // Act
+    const reading = device.readMigrationSettings(1);
+
+    // Assert
+    await expect(reading).rejects.toThrow();
+    expect(observed).toEqual(["readMigrationSettings:failed"]);
   });
 });

@@ -1,6 +1,7 @@
 import {
   createBitaxeOnboarding,
   type BitaxeOnboarding,
+  type BitaxeOnboardingDevice,
   type BitaxeOnboardingResult,
   type FirmwarePackage,
   type UpdateAuthorityJwk,
@@ -97,6 +98,8 @@ export type UsbBitaxeOnboardingInput = {
   /** Required on the owner's boards (ADR-0112): `baseMacAdmission` with the board's registered digest. */
   maybeAdmitBaseMac?: (baseMac: string) => boolean | Promise<boolean>;
   maybeBounds?: RomOnboardingBounds;
+  /** Times each device step, for a sitting's evidence and the bounds it measures (ADR-0112). */
+  maybeObserveDeviceStep?: DeviceStepObserver;
   /** Tests replace the browser's serial runtime; production omits it. */
   maybeRuntime?: WorkerSerialBrowserRuntime;
 };
@@ -112,7 +115,7 @@ export function createUsbBitaxeOnboarding(input: UsbBitaxeOnboardingInput): UsbB
   const runtime = input.maybeRuntime ?? browserSerialRuntime();
   const clock = PAGE_ONBOARDING_CLOCK;
   const grant = new GrantedBitaxePort(runtime.serial, input.deviceFilter, clock);
-  const device = new RomBitaxeOnboardingDevice(
+  const romDevice = new RomBitaxeOnboardingDevice(
     esptoolRomAccess({
       port: () => grant.current(),
       acquireLock: () => runtime.acquireLock(),
@@ -122,6 +125,7 @@ export function createUsbBitaxeOnboarding(input: UsbBitaxeOnboardingInput): UsbB
     input.maybeBounds ?? PROPOSED_ROM_ONBOARDING_BOUNDS,
     clock,
   );
+  const device = input.maybeObserveDeviceStep ? observeDeviceSteps(romDevice, input.maybeObserveDeviceStep) : romDevice;
   const onboarding = createBitaxeOnboarding({
     requestDevice: async () => {
       await grant.select();
@@ -130,7 +134,34 @@ export function createUsbBitaxeOnboarding(input: UsbBitaxeOnboardingInput): UsbB
     trustedUpdateKeys: input.trustedUpdateKeys,
     ...(input.downloadMigrationBackup ? { downloadMigrationBackup: input.downloadMigrationBackup } : {}),
   });
-  return { onboarding, release: () => device.release() };
+  return { onboarding, release: () => romDevice.release() };
+}
+
+export type DeviceStepOutcome = "ok" | "failed";
+/** Told when one device step ends: its name, how long it took, and whether it succeeded. */
+export type DeviceStepObserver = (step: keyof BitaxeOnboardingDevice, milliseconds: number, outcome: DeviceStepOutcome) => void;
+
+/** `device`, reporting each of its steps to `observe` as it ends. */
+export function observeDeviceSteps(device: BitaxeOnboardingDevice, observe: DeviceStepObserver): BitaxeOnboardingDevice {
+  async function timed<T>(step: keyof BitaxeOnboardingDevice, run: () => Promise<T>): Promise<T> {
+    const started = performance.now();
+    try {
+      const value = await run();
+      observe(step, performance.now() - started, "ok");
+      return value;
+    } catch (error) {
+      observe(step, performance.now() - started, "failed");
+      throw error;
+    }
+  }
+  return {
+    inspect: () => timed("inspect", () => device.inspect()),
+    readMigrationSettings: (maximumBytes) => timed("readMigrationSettings", () => device.readMigrationSettings(maximumBytes)),
+    flash: (flashInput) => timed("flash", () => device.flash(flashInput)),
+    reboot: () => timed("reboot", () => device.reboot()),
+    verifyRedactedSettings: (nonce) => timed("verifyRedactedSettings", () => device.verifyRedactedSettings(nonce)),
+    rollback: (rollbackInput) => timed("rollback", () => device.rollback(rollbackInput)),
+  };
 }
 
 /**
