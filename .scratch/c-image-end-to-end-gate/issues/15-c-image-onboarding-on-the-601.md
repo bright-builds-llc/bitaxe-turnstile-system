@@ -94,3 +94,32 @@ the first Gate (07). This is criterion 3's evidence for Ticket 09.
     (Connect, the base-MAC check and the inspection, then Stop before install). It needs the
     owner's chooser pick, resets the board into ROM, and runs esptool-js's `readMac` in the
     browser for the first time.
+- 2026-11-15, the read-only dry run on the 601 (bundle from `caf2306` plus the fixes below,
+  uncommitted at the run; Chrome with a profile that already holds the 601's serial grant, so no
+  chooser pick was needed after the first):
+  - Three faults stopped the first runs; each has a test that was red before its fix.
+    - The continuity store admits only `challenge_` identifiers, and onboarding's session used
+      `onboarding_`, so Connect failed at once ("Worker continuity scope is invalid"). It is now
+      `challenge_onboarding_` and random; a test builds the production onboarding without a port.
+    - `247d2cd` rejects `onboarding_inspect` with `command_rejected` and then ends the session (as
+      the 2026-11-13 comment predicted, now seen on the board). The browser still sent Close and
+      waited for a credit that never came, so the sitting hung until the Worker Serial timeout.
+      A rejected `onboarding_inspect` or `onboarding_verify` now skips Close, as a rejected Start
+      already did (`web/worker-serial-onboarding-commands.test.ts`).
+    - esptool-js 0.7.0's ESP32-S3 stub stalls reading flash over USB-Serial-JTAG with its 4 KB
+      packets and 1,024 in flight, and leaves the MD5 unread; the 15 s read bound expired with no
+      bytes. Reads now use our own loop: 256-byte packets, one in flight, a cumulative
+      acknowledgement each, and the MD5 checked (`web/esptool-rom-access.ts`, five tests on a fake
+      stub). ADR-0112 is amended for this, by the owner's choice at the dry run.
+  - Then two runs passed, the same each time: Connect, ROM entry with the base-MAC check passing in
+    the browser (esptool-js's `readMac`, first time), the flash table matching the C table, and
+    inspection in 1.54 s (1,544 ms and 1,541 ms). The inspection read `firmware_required` for
+    bitaxe-gamma 601 on `bright-builds-reference-firmware` 0.1.0, reference firmware, settings
+    preservation `upgrade_required` at schema 1, Migration Backup optional. Stop before install
+    then ended the sitting as `stopped`, with nothing written.
+  - Afterwards the 601 reset into the app on `247d2cd`, paused, `mineOnBoot` 0. The 205 wasn't
+    touched and is on `247d2cd`, paused.
+  - Checks: 1,426 TypeScript tests, typecheck, the browser build and the standards check pass.
+  - Non-claims: no install, rollback or verification has run; the refusal of another board's MAC
+    is proven only against the fake esptool-js; the read loop is proven on this 601's
+    inspection reads, not on a full-image read or another board.
