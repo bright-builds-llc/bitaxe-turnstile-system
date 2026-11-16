@@ -1,7 +1,7 @@
 # C-image end-to-end Gate map
 
 [Spec](spec.md). The first Gate on the C Reference Firmware image through the
-production browser path. Tickets 01, 02, 03, 04, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24, 26, 27 and 28 are resolved; the rest is still planning.
+production browser path. Tickets 01, 02, 03, 04, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24, 26, 27, 28 and 30 are resolved; the rest is still planning.
 The first Gate (06, 07) and onboarding (14, 03, 04, 05, 15) run apart, and both
 feed 09.
 
@@ -36,7 +36,7 @@ feed 09.
 | [27](issues/27-adapter-restart-replay-test.md) An adapter restart replays nothing creditable twice | task | resolved | None |
 | [28](issues/28-negatives-on-both-boards.md) Negatives on both boards through the deployed page | task | resolved | 21, 26 |
 | [29](issues/29-handed-over-in-two-profiles.md) Handed-over grants in two browser profiles (optional) | task | ready-for-human | None |
-| [30](issues/30-second-tab-admission-reason.md) A second tab's refused admission gives no reason | bug | needs-triage | None |
+| [30](issues/30-second-tab-admission-reason.md) A second tab's refused admission gives no reason | bug | resolved | None |
 
 ## Decisions so far
 

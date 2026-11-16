@@ -1,7 +1,7 @@
 # A second tab's refused admission gives no reason
 
 Type: bug
-Status: ready-for-human
+Status: resolved
 Blocked by: None
 
 ## Objective
@@ -57,3 +57,4 @@ like a page that never offered consent. The lock's refusal is already typed,
   to expire; a second tab still reuses the site's one grant, so a second board
   can't be picked there; pages other than the reference account page still
   show `Worker Serial already_owned`.
+- 2026-11-15: the owner closed the ticket; the fix is on `main` as `e153241`.
