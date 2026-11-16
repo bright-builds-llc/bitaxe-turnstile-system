@@ -1,7 +1,7 @@
 # Pool Adapter runs as its own process over gRPC
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: None
 
 ## Objective
@@ -74,4 +74,4 @@ routes, OpenAPI and the refusal vectors are unchanged. No hardware was used.
 Non-claims: no mainnet Gate or board ran against the separate process. The
 channel has no TLS, so the processes must share a host. Ticket 27's original
 non-claim stands: a restart on hardware isn't shown.
-
+- 2026-11-15: the owner accepted ADR-0113 and closed the ticket; on `main` as `cf21d19`.
