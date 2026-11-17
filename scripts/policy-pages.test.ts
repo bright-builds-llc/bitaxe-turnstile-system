@@ -71,3 +71,15 @@ test("the privacy page implies no account removal step that doesn't exist", () =
   // Assert
   expect(privacy).not.toContain("kept until removed");
 });
+
+test("the privacy page states the Pool Adapter's schedule", () => {
+  // Assert
+  expect(privacy).toContain("30 days after their session ends");
+  expect(privacy).not.toContain("aren't covered by that step");
+});
+
+test("the privacy page times a sessionless connection from its own close", () => {
+  // Assert
+  expect(privacy).toContain("never joined a session is deleted when the connection closes");
+  expect(privacy).not.toContain("otherwise the software deletes none of these records by itself");
+});

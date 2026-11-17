@@ -37,6 +37,7 @@ feed 09.
 | [28](issues/28-negatives-on-both-boards.md) Negatives on both boards through the deployed page | task | resolved | 21, 26 |
 | [29](issues/29-handed-over-in-two-profiles.md) Handed-over grants in two browser profiles (optional) | task | ready-for-human | None |
 | [30](issues/30-second-tab-admission-reason.md) A second tab's refused admission gives no reason | bug | resolved | None |
+| [31](issues/31-pool-adapter-retention.md) The Pool Adapter's expired records are never deleted | task | in-progress | None |
 
 ## Decisions so far
 

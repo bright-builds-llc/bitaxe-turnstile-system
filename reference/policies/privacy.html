@@ -33,10 +33,11 @@
       <ul>
         <li>Single-use proofs, Gate Pass bytes and consent receipts become eligible for deletion once they expire.</li>
         <li>The Gate Authority's challenge, share, payout commitment and issuance records, and the Reference Service's redemption and outcome records, can be reduced at day 30 to a keyed record with no public reference to you, and that record can be deleted at day 90.</li>
+        <li>The Pool Adapter's miner logins and connection records become eligible for deletion 30 days after their session ends. A connection record that never joined a session is deleted when the connection closes or, if the Pool Adapter stopped first, becomes eligible 30 days after the connection opened. Its settled share records become eligible 30 days after the Gate Authority has taken or refused the share; a share record still on its way to the Gate Authority is kept until it arrives.</li>
         <li>The Reference Service answers a lookup of your action's outcome for 24 hours by default.</li>
         <li>Accounts created through the Reference Service are kept; the software has no step that removes them. [Owner: say whether and when you remove accounts.]</li>
       </ul>
-      <p>These periods are the earliest the software allows, and they take effect only when its operator runs its retention step; the software doesn't run that step by itself. The Pool Adapter's own session and share records aren't covered by that step. [Owner: state whether and how often you run retention, and how long the Pool Adapter's session and share records are kept.]</p>
+      <p>These periods are the earliest the software allows. They take effect when its operator runs the services' retention steps or, for the Pool Adapter's records, turns on the Pool Adapter's automatic deletion. Apart from connection records deleted as their connection closes, the software deletes none of these records by itself. [Owner: state whether and how often you run retention, and whether the Pool Adapter's automatic deletion is on and how often it runs.]</p>
 
       <h2>Who else sees what</h2>
       <p>The mining pool receives your miner's shares and your payout address, under its own terms. The site you came from receives your Gate Pass, which says your work was done but carries no payout address or share. No other party receives your payout address or shares from the Gate. [Owner: name any hosting or network provider that carries this traffic.]</p>

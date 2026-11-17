@@ -34,6 +34,8 @@ use postgres_support::PostgresTestDatabase;
 mod adapter_process;
 #[path = "stratum_v1_proxy/adapter_restart.rs"]
 mod adapter_restart;
+#[path = "stratum_v1_proxy/adapter_retention.rs"]
+mod adapter_retention;
 #[path = "stratum_v1_proxy/authority_delivery.rs"]
 mod authority_delivery;
 #[path = "stratum_v1_proxy/bounds.rs"]
@@ -47,6 +49,8 @@ mod stratum_hash_support;
 use fixtures::{StratumJobFields, hex_target, test_lease_context, worked_nonce, write_line};
 #[path = "stratum_v1_proxy/persistence.rs"]
 mod persistence;
+#[path = "stratum_v1_proxy/pool_adapter_governance.rs"]
+mod pool_adapter_governance;
 #[path = "stratum_v1_proxy/renewal.rs"]
 mod renewal;
 #[path = "stratum_v1_proxy/retention.rs"]

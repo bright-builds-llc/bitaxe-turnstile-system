@@ -1,6 +1,6 @@
 //! The Pool Adapter process (ADR-0055, ADR-0113): the Stratum V1 proxy, accepted-work
-//! delivery and the Pool Selection expiry sweep, with its own database, reaching the
-//! Gate Authority only over the loopback gRPC boundary.
+//! delivery, the Pool Selection expiry sweep and the opt-in retention sweep, with its own
+//! database, reaching the Gate Authority only over the loopback gRPC boundary.
 
 use std::{env, error::Error};
 
@@ -11,7 +11,8 @@ use bwg_core::{
         loopback_listen_address, stratum_session_registry_router,
     },
     stratum_v1::{
-        PoolAdapterWorkerStratum, PostgresStratumSessionRegistry, StratumCredentialIssuer,
+        PoolAdapterRetentionSweep, PoolAdapterWorkerStratum, PostgresStratumSessionRegistry,
+        StratumCredentialIssuer,
         process::{PoolAdapterConfig, spawn_pool_adapter},
     },
 };
@@ -20,6 +21,15 @@ use tokio::net::TcpListener;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tracing_subscriber::fmt().try_init()?;
+    let retention_sweep = PoolAdapterRetentionSweep::from_settings(
+        env::var("BWG_POOL_ADAPTER_RETENTION_INTERVAL_SECONDS")
+            .ok()
+            .as_deref(),
+        env::var("BWG_POOL_ADAPTER_RETENTION_SECONDS")
+            .ok()
+            .as_deref(),
+        env::var("BWG_GOVERNANCE_DESTRUCTIVE_ENABLED").is_ok_and(|value| value == "true"),
+    )?;
     let token = ChannelToken::try_from(env::var("BWG_POOL_ADAPTER_CHANNEL_TOKEN")?)?;
     let database_url = env::var("BWG_POOL_ADAPTER_DATABASE_URL")?;
     let authority = GrpcAuthorityPort::connect_lazy(&env::var("BWG_AUTHORITY_GRPC_URL")?, &token)?;
@@ -37,6 +47,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         database_url,
         upstream_address: env::var("BWG_POOL_UPSTREAM_STRATUM_ADDRESS")?,
         upstream_password: env::var("BWG_POOL_UPSTREAM_PASSWORD")?,
+        retention_sweep,
     };
     let proxy_address = env::var("BWG_STRATUM_PROXY_LISTEN_ADDRESS")?;
 

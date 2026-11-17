@@ -119,7 +119,7 @@ fn retention_policy(arguments: &[String]) -> Result<RetentionPolicy, GovernanceC
     Ok(RetentionPolicy::new(operational, tombstone)?)
 }
 
-fn required_u64(arguments: &[String], name: &str) -> Result<u64, GovernanceCliError> {
+pub(crate) fn required_u64(arguments: &[String], name: &str) -> Result<u64, GovernanceCliError> {
     optional_u64(arguments, name)?.ok_or_else(|| GovernanceCliError::MissingOption(name.to_owned()))
 }
 
@@ -147,7 +147,10 @@ fn optional_string<'a>(
         .ok_or_else(|| GovernanceCliError::MissingOption(name.to_owned()))
 }
 
-fn optional_u64(arguments: &[String], name: &str) -> Result<Option<u64>, GovernanceCliError> {
+pub(crate) fn optional_u64(
+    arguments: &[String],
+    name: &str,
+) -> Result<Option<u64>, GovernanceCliError> {
     let Some(index) = arguments.iter().position(|argument| argument == name) else {
         return Ok(None);
     };

@@ -12,6 +12,8 @@ does not claim compliance with a jurisdiction-specific regime.
   no remote governance HTTP route, shared governance transaction, or cross-schema foreign key.
 - Destructive Apply is disabled by default. It requires an enabled deployment mode, an exact
   Governance Manifest digest, and explicit operator confirmation.
+  The Pool Adapter's retention is the one exception: it has no manifest, and its sweep is a
+  standing confirmation, both described under Pool Adapter retirement behavior.
 - Logs, telemetry, audit events, exports, and manifests may contain operation identifiers, counts,
   durations, digests, and bounded error categories, but never credentials, keys, signed artifacts,
   action payloads, payout data, network secrets, Account Identity, or Device Identity.
@@ -32,6 +34,7 @@ period may be longer but never shorter than its applicable Retention Floor.
 | Relying Service | Pass Consumption | No conforming verifier can accept the Gate Pass | Pseudonymize at day 30 or later floor; delete tombstone at day 90 or later floor |
 | Relying Service | Redemption Record and Protected Action Outcome | Outcome terminal; public lookup is independently bounded | Pseudonymize at day 30; delete tombstone at day 90 |
 | Relying Service | Action Execution Intent and attempts | Protected Action Outcome is immutable terminal | Pseudonymize at day 30; delete tombstone at day 90 |
+| Pool Adapter | Stratum session, connection reservation, and settled accepted-work record | Session expiry; reservation, for a connection with no session; acknowledgement or refusal | Delete at day 30; no tombstone |
 | Either | Governance audit event | Event committed | Delete at day 90 |
 
 Pseudonymized Tombstones retain only context, record class, terminal status, policy or action type
@@ -118,6 +121,32 @@ respectively.
   A first cleanup after that final floor declares a direct overdue deletion instead of creating an
   already-expired tombstone. This applies independently to a Pass Consumption marker when a longer
   public lookup window keeps its aggregate identifying beyond marker day 90.
+
+### Pool Adapter retirement behavior
+
+The Pool Adapter keeps no Governance Manifest, audit event, export, or Pseudonymized Tombstone. Its
+expired records are deleted outright, in bounded batches that skip rows another run holds, so the
+operator command and the sweep can overlap without waiting on each other. An accepted-work record
+that is not yet acknowledged or refused is never eligible. A connection reservation that never
+joined a session is deleted when its connection closes, so only one left by a stopped process
+waits for retention. Its raw Pool Selection is not governed here: the Pool Adapter deletes it when
+its challenge ends.
+
+- `pool-adapter-governance` reads only `BWG_POOL_ADAPTER_DATABASE_URL`.
+  `count-expired --as-of <unix-seconds> [--retention-seconds <n>]` prints the eligible counts per
+  table and changes nothing. `delete-expired --as-of <unix-seconds> [--retention-seconds <n>]
+  [--batch-size <1..1000>] --confirm-destruction` requires `BWG_GOVERNANCE_DESTRUCTIVE_ENABLED=true`,
+  deletes batches until one is empty, and prints the totals. Both reject an instant later than
+  trusted system time and a period shorter than 30 days.
+- The `pool-adapter` process runs a sweep only when `BWG_POOL_ADAPTER_RETENTION_INTERVAL_SECONDS`
+  (60 to 86,400) is set and `BWG_GOVERNANCE_DESTRUCTIVE_ENABLED=true`. Setting both is the
+  operator's standing confirmation, the one exception to per-run confirmation. Either alone leaves
+  the sweep off, and the process logs which at start. `BWG_POOL_ADAPTER_RETENTION_SECONDS` defaults
+  to 30 days and may extend but never shorten it. A malformed or out-of-range value stops the
+  process at start, whether or not the sweep would run.
+- The sweep's first run is at start, then one per interval, each from the system clock. A failed
+  run logs a bounded error category and the next run retries. A system clock set ahead deletes
+  early, as the Pool Selection expiry sweep already would.
 
 ## Export contract
 

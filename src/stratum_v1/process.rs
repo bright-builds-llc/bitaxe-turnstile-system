@@ -1,4 +1,5 @@
-//! The Pool Adapter's proxy, accepted-work delivery and Pool Selection expiry sweep.
+//! The Pool Adapter's proxy, accepted-work delivery, Pool Selection expiry sweep and
+//! opt-in retention sweep.
 //!
 //! The `pool-adapter` binary runs them with the gRPC port to the Authority (ADR-0113);
 //! tests may run them with the in-process port.
@@ -16,8 +17,10 @@ use tokio::{
 use uuid::Uuid;
 
 use super::{
-    AcceptedWorkDeliveryWorker, AcceptedWorkSink, DeliveryOutcome, PostgresAcceptedWorkOutbox,
-    PostgresStratumSessionRegistry, StratumTcpProxy, StratumV1Error, WorkSessionDisconnectSink,
+    AcceptedWorkDeliveryWorker, AcceptedWorkSink, DeliveryOutcome, PoolAdapterRetentionSweep,
+    PostgresAcceptedWorkOutbox, PostgresPoolAdapterRetention, PostgresStratumSessionRegistry,
+    StratumTcpProxy, StratumV1Error, SweepOffReason, WorkSessionDisconnectSink,
+    retention_sweep::sweep_expired_records,
 };
 
 const DELIVERY_INTERVAL: Duration = Duration::from_millis(250);
@@ -32,6 +35,8 @@ pub struct PoolAdapterConfig {
     pub upstream_address: String,
     /// The Mining Pool-facing password; each session's username comes from its Pool Selection.
     pub upstream_password: String,
+    /// Whether the process deletes its own expired records.
+    pub retention_sweep: PoolAdapterRetentionSweep,
 }
 
 /// Starts the proxy on `listener`, delivery into `port` and the expiry sweep.
@@ -59,6 +64,32 @@ where
     tasks.spawn(accept_workers(listener, proxy, config.upstream_address));
     tasks.spawn(deliver_accepted_work(delivery, port));
     tasks.spawn(sweep_expired_selections(registry));
+    match config.retention_sweep {
+        PoolAdapterRetentionSweep::On {
+            interval,
+            retention_seconds,
+        } => {
+            let retention = PostgresPoolAdapterRetention::connect(&config.database_url).await?;
+            tracing::info!(
+                interval_seconds = interval.as_secs(),
+                retention_seconds,
+                "Pool Adapter retention sweep is on"
+            );
+            tasks.spawn(sweep_expired_records(
+                retention,
+                interval,
+                retention_seconds,
+            ));
+        }
+        PoolAdapterRetentionSweep::Off(SweepOffReason::IntervalUnset) => {
+            tracing::info!("Pool Adapter retention sweep is off: no interval is set");
+        }
+        PoolAdapterRetentionSweep::Off(SweepOffReason::DestructiveDisabled) => {
+            tracing::info!(
+                "Pool Adapter retention sweep is off: destructive governance isn't enabled"
+            );
+        }
+    }
     Ok(tasks)
 }
 

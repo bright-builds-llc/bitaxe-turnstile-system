@@ -171,6 +171,25 @@ impl AdapterLaunch {
     /// It binds the proxy before the registry, so a listening registry means a
     /// listening proxy; probing the proxy would spend the Mining Pool's one connection.
     pub(super) async fn start(&self) -> Result<AdapterProcess, Box<dyn Error>> {
+        self.start_with(&[]).await
+    }
+
+    /// Starts the binary with `extra_env` added and waits for it to listen.
+    pub(super) async fn start_with(
+        &self,
+        extra_env: &[(&str, &str)],
+    ) -> Result<AdapterProcess, Box<dyn Error>> {
+        let (process, registry_address) = self.spawn_with(extra_env).await?;
+        wait_for_listener(registry_address).await?;
+        Ok(process)
+    }
+
+    /// Spawns the binary with `extra_env` added, returning it and its registry address
+    /// without waiting for it to listen.
+    pub(super) async fn spawn_with(
+        &self,
+        extra_env: &[(&str, &str)],
+    ) -> Result<(AdapterProcess, SocketAddr), Box<dyn Error>> {
         let proxy_address = free_loopback_address().await?;
         let registry_address = free_loopback_address().await?;
         let child = Command::new(env!("CARGO_BIN_EXE_pool-adapter"))
@@ -202,6 +221,7 @@ impl AdapterLaunch {
                 "BWG_STRATUM_PROXY_LISTEN_ADDRESS",
                 proxy_address.to_string(),
             )
+            .envs(extra_env.iter().copied())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()?;
@@ -209,14 +229,13 @@ impl AdapterLaunch {
             child,
             proxy_address,
         };
-        wait_for_listener(registry_address).await?;
-        Ok(process)
+        Ok((process, registry_address))
     }
 }
 
 /// One `pool-adapter` process; dropping it kills the process.
 pub(super) struct AdapterProcess {
-    child: Child,
+    pub(super) child: Child,
     pub(super) proxy_address: SocketAddr,
 }
 
@@ -231,11 +250,11 @@ impl Drop for AdapterProcess {
     }
 }
 
-async fn free_loopback_address() -> Result<SocketAddr, std::io::Error> {
+pub(super) async fn free_loopback_address() -> Result<SocketAddr, std::io::Error> {
     TcpListener::bind("127.0.0.1:0").await?.local_addr()
 }
 
-async fn wait_for_listener(address: SocketAddr) -> Result<(), Box<dyn Error>> {
+pub(super) async fn wait_for_listener(address: SocketAddr) -> Result<(), Box<dyn Error>> {
     let deadline = tokio::time::Instant::now() + WAIT_TIMEOUT;
     while TcpStream::connect(address).await.is_err() {
         if tokio::time::Instant::now() >= deadline {

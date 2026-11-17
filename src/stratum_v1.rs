@@ -11,11 +11,13 @@ use crate::progress::{
 mod credentials;
 mod delivery;
 mod error;
+pub mod governance_cli;
 mod jobs;
 mod pool_selection;
 mod postgres;
 pub mod process;
 mod retention;
+mod retention_sweep;
 mod sessions;
 mod target;
 mod tcp;
@@ -31,6 +33,7 @@ use jobs::RetainedJobs;
 pub use jobs::UnheldJob;
 pub use postgres::{ClaimedAcceptedWork, PersistedAcceptedWork, PostgresAcceptedWorkOutbox};
 pub use retention::{PoolAdapterRetentionCounts, PostgresPoolAdapterRetention};
+pub use retention_sweep::{PoolAdapterRetentionSweep, SweepOffReason};
 pub use sessions::{AuthenticatedStratumSession, PostgresStratumSessionRegistry};
 use target::{
     classify_network_target, meets_assigned_target, submitted_header, target_for_difficulty,
