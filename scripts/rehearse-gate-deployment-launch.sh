@@ -147,6 +147,12 @@ for path in /reference/production-path-rehearsal.html /dist/test-rehearsal/produ
   [[ "$status" == "404" ]] || fail "the front served $path with $status"
 done
 printf 'The front publishes the Gate Pass key and serves nothing beyond the page\n'
+# The consent screen and discovery document link these (Ticket 19).
+for path in /policies/operator /privacy /terms; do
+  answer=$(curl --silent --max-time 10 --output /dev/null --write-out '%{http_code} %{content_type}' "$front$path")
+  [[ "$answer" == "200 text/html"* ]] || fail "the front answered $path with $answer"
+done
+printf 'The front serves the operator policy, privacy and terms pages\n'
 
 # The Reference Relying Service creates a challenge with the generated service
 # credential, so the production environment and both binaries agree on the origin.

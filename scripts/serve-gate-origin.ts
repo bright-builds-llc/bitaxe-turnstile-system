@@ -4,7 +4,8 @@
  * plain HTTP; `tailscale serve` terminates TLS in front of it. It routes `/v0` and
  * `/.well-known` to `gate-authority` and `/account-creation` to
  * `reference-service`. It serves only the reference page, with its public config
- * filled in, and that page's bundle; every other path is 404.
+ * filled in, that page's bundle, and the policy pages the consent screen and
+ * discovery document link (Ticket 19); every other path is 404.
  *
  * Environment: BWG_FRONT_PORT, BWG_FRONT_GATE and BWG_FRONT_REFERENCE (http
  * base URLs), and BWG_FRONT_PAGE_CONFIG_FILE (the page config JSON).
@@ -18,6 +19,18 @@ const BUNDLE_PREFIX = "/dist/reference-page/";
 const CONFIG_PLACEHOLDER = '<script type="application/json" id="bwg-reference-config">null</script>';
 const authorityPaths = /^\/(v0|\.well-known)(\/|$)/u;
 const referencePaths = /^\/account-creation(\/|$)/u;
+
+/** The policy pages the launcher's `BWG_*_URL` settings name, by exact path. */
+export const POLICY_PAGES: Readonly<Record<string, string>> = Object.freeze({
+  "/policies/operator": "reference/policies/operator.html",
+  "/privacy": "reference/policies/privacy.html",
+  "/terms": "reference/policies/terms.html",
+});
+
+/** The repository-relative file for a policy path; any other spelling of a path is not one. */
+export function policyPageFile(pathname: string): string | undefined {
+  return Object.hasOwn(POLICY_PAGES, pathname) ? POLICY_PAGES[pathname] : undefined;
+}
 
 /** Fills the page's config element; `<` is escaped so the JSON cannot close the script. */
 export function fillPageConfig(html: string, configJson: string): string {
@@ -78,6 +91,12 @@ if (import.meta.main) {
       if (url.pathname === PAGE_PATH) {
         return new Response(page, {
           headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+        });
+      }
+      const maybePolicyFile = policyPageFile(url.pathname);
+      if (maybePolicyFile) {
+        return new Response(Bun.file(resolve(repositoryRoot, maybePolicyFile)), {
+          headers: { "content-type": "text/html; charset=utf-8" },
         });
       }
       if (url.pathname.startsWith(BUNDLE_PREFIX)) return await bundleFile(url.pathname);

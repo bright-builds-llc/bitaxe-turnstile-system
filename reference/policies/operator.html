@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>Operator policy</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0 auto; max-width: 40rem; padding: 1rem; line-height: 1.5; }
+      .draft { border: 2px solid #b45309; padding: 0.5rem 0.75rem; }
+      nav a { margin-inline-end: 1rem; }
+    </style>
+  </head>
+  <body>
+    <p class="draft" role="note"><strong>Draft, not yet reviewed by the operator or a lawyer.</strong> Dated 2026-11-15. Text in [Owner: …] brackets is for the operator to supply.</p>
+    <nav><a href="/policies/operator">Operator policy</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
+    <main>
+      <h1>Operator policy</h1>
+      <p>This Gate deployment is run by [Owner: operator's legal name]. It lets you earn a Gate Pass for an action, such as creating an account, by lending your Bitaxe's hashing to a pool for a few minutes instead of solving a puzzle or giving an email address.</p>
+
+      <h2>How the Gate is run</h2>
+      <ul>
+        <li>Account creation uses the Standard policy: about 2<sup>44</sup> hashes, roughly 44 seconds on a 400 GH/s Bitaxe, within a 15-minute challenge.</li>
+        <li>Each service is operated only from its own host and command line. There is no remote administration route.</li>
+        <li>Records are kept and reduced as the <a href="/privacy">privacy page</a> describes.</li>
+        <li>If something the Gate depends on fails, it refuses rather than issues a pass it can't stand behind.</li>
+      </ul>
+
+      <h2>The software</h2>
+      <p>The Gate is the open-source Bitcoin Work Gate from Bright Builds, under the MIT licence. The consent screen names the pool and the adapter your miner connects through, with their versions and source.</p>
+
+      <h2>Contact</h2>
+      <p>[Owner: how to reach the operator, and how to report a problem.]</p>
+    </main>
+  </body>
+</html>

@@ -4,10 +4,12 @@
  *
  * Serves the repository's static files and streams the `gate-authority` and
  * `reference-service` routes, so the page, its event stream and its proofs all
- * name one origin. Rehearsal only; it uses a throwaway
+ * name one origin. The policy pages answer at the deployment's paths (Ticket 19). Rehearsal only; it uses a throwaway
  * self-signed certificate.
  */
 import { resolve, sep } from "node:path";
+
+import { policyPageFile } from "./serve-gate-origin";
 
 const repositoryRoot = resolve(import.meta.dir, "..");
 const gate = required("BWG_REHEARSAL_GATE");
@@ -31,6 +33,12 @@ Bun.serve({
     if (referencePaths.test(url.pathname)) return await forward(reference, request, url);
     if (url.pathname === "/rehearsal-config") {
       return new Response(config, { headers: { "content-type": "application/json" } });
+    }
+    const maybePolicyFile = policyPageFile(url.pathname);
+    if (maybePolicyFile) {
+      return new Response(Bun.file(resolve(repositoryRoot, maybePolicyFile)), {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
     }
     return await staticFile(decodeURIComponent(url.pathname));
   },

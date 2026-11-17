@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 
-import { fillPageConfig } from "./serve-gate-origin";
+import { existsSync } from "node:fs";
+
+import { fillPageConfig, policyPageFile } from "./serve-gate-origin";
 
 test("fills the reference page's config element", async () => {
   // Arrange
@@ -34,4 +36,31 @@ test("refuses a page without an empty config element", () => {
 
   // Assert
   expect(fill).toThrow("no empty config element");
+});
+
+test("maps each linked policy path to its page", () => {
+  // Arrange
+  const expected = {
+    "/policies/operator": "reference/policies/operator.html",
+    "/privacy": "reference/policies/privacy.html",
+    "/terms": "reference/policies/terms.html",
+  };
+
+  // Act
+  const mapped = Object.fromEntries(Object.keys(expected).map(path => [path, policyPageFile(path)]));
+
+  // Assert
+  expect(mapped).toEqual(expected);
+  for (const file of Object.values(expected)) expect(existsSync(file)).toBe(true);
+});
+
+test("serves no other policy-like path", () => {
+  // Arrange
+  const nearMisses = ["/privacy/", "/terms.html", "/policies/", "/policies/operator.html", "/policies/../package.json"];
+
+  // Act
+  const mapped = nearMisses.map(path => policyPageFile(path));
+
+  // Assert
+  expect(mapped).toEqual(nearMisses.map(() => undefined));
 });
