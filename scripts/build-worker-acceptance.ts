@@ -22,3 +22,8 @@ for (const [entrypoint, outdir] of [
   if (!build.success)
     throw new AggregateError(build.logs, "Worker acceptance build failed");
 }
+// The onboarding sitting carries esptool-js and its stubs, so their notices go beside its bundle.
+await Bun.write(
+  "dist/bitaxe-onboarding-sitting/THIRD_PARTY_NOTICES.txt",
+  Bun.file("web/third-party-notices/bitaxe-onboarding.txt"),
+);
