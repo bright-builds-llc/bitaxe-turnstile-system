@@ -323,6 +323,8 @@ wait_for_port 127.0.0.1 "$authority_grpc_port"
   export BWG_WORKER_STRATUM_ENDPOINT="stratum+tcp://$proxy_address:$proxy_port/"
   export BWG_STRATUM_PROXY_LISTEN_ADDRESS="$proxy_address:$proxy_port"
   export BWG_POOL_UPSTREAM_STRATUM_ADDRESS="$upstream" BWG_POOL_UPSTREAM_PASSWORD=x RUST_LOG=info
+  # The privacy page promises the Pool Adapter's daily retention sweep; it needs both settings.
+  export BWG_POOL_ADAPTER_RETENTION_INTERVAL_SECONDS=86400 BWG_GOVERNANCE_DESTRUCTIVE_ENABLED=true
   exec target/debug/pool-adapter
 ) > >(redact >"$run_dir/pool-adapter.log") 2>&1 &
 adapter_pid=$!

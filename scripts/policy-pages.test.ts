@@ -37,8 +37,7 @@ test("the privacy page promises no deletion it can't keep", () => {
   const retention = privacy.slice(privacy.indexOf('id="retention"'));
 
   // Assert
-  expect(privacy).toContain('id="retention"');
-  expect(retention).toContain("[Owner:");
+  expect(retention).toContain("eligible for deletion");
   expect(privacy).not.toContain("automatically deleted");
 });
 
@@ -82,4 +81,36 @@ test("the privacy page times a sessionless connection from its own close", () =>
   // Assert
   expect(privacy).toContain("never joined a session is deleted when the connection closes");
   expect(privacy).not.toContain("otherwise the software deletes none of these records by itself");
+});
+
+test("every policy page names the operator", () => {
+  // Act
+  const unnamed = pages.filter(({ html }) => !html.includes("run by Bright Builds LLC") || html.includes("operator's legal name"));
+
+  // Assert
+  expect(unnamed.map(({ file }) => file)).toEqual([]);
+});
+
+test("the privacy page gives the operator's retention schedule", () => {
+  // Arrange
+  const retention = privacy.slice(privacy.indexOf('id="retention"'), privacy.indexOf("<h2>Who else sees what"));
+
+  // Assert
+  expect(retention).toContain("about once a month");
+  expect(retention).toContain("every 24 hours");
+  expect(retention).not.toContain("[Owner:");
+});
+
+test("the privacy page lets a person have their account removed", () => {
+  // Assert
+  expect(privacy).toContain("until you ask the operator to remove it");
+});
+
+test("the operator page says where to report a problem", () => {
+  // Arrange
+  const operator = readFileSync(POLICY_PAGES["/policies/operator"]!, "utf8");
+
+  // Assert
+  expect(operator).toContain("github.com/bright-builds-llc/bitaxe-turnstile-system/issues");
+  expect(operator).not.toContain("how to report a problem");
 });

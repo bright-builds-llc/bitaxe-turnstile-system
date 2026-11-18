@@ -93,3 +93,21 @@ screen.
   06 rehearsal wasn't run with the pages; whether the pool's share chain makes
   a payout address public isn't covered; the Pool Adapter's cleanup and the
   placeholder pool endpoint stay open.
+- 2026-11-18, the owner's answers: the operator is Bright Builds LLC; problems and
+  privacy questions go to the turnstile repository's public issue tracker, with a
+  warning to leave out personal details; an account is kept until its holder asks
+  the operator to remove it, by hand; the operator runs the Gate Authority's and
+  Reference Service's retention about once a month, and the Pool Adapter's sweep is
+  on every 24 hours. `scripts/launch-gate-deployment.sh` now starts the Pool Adapter
+  with `BWG_POOL_ADAPTER_RETENTION_INTERVAL_SECONDS=86400` and
+  `BWG_GOVERNANCE_DESTRUCTIVE_ENABLED=true` (that process only), so the page's
+  promise holds, and the launcher proof requires the sweep's start-up line with that
+  interval: it failed with the settings removed and passed with them, on regtest.
+  Four page tests pin the name, the schedule, removal on request and the problem
+  tracker, each red first. `bun test` (1449 pass), `bun run typecheck` and
+  `bun run check:standards` pass. Left for the owner: a private address for account
+  removal and other personal requests, what hosting, network and proxy logs record,
+  the providers that carry the traffic, warranty and liability wording, how the
+  terms change and their governing law, and a review before the draft banner comes
+  off. Non-claims: no monthly retention run is scheduled by the software; the
+  Gate Authority's and Reference Service's schedule is the operator's undertaking.

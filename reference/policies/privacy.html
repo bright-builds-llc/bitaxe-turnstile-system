@@ -16,7 +16,7 @@
     <nav><a href="/policies/operator">Operator policy</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
     <main>
       <h1>Privacy</h1>
-      <p>This page describes what this Gate deployment keeps when you use your Bitaxe to earn a Gate Pass. The deployment is three services run by [Owner: operator's legal name]: the Gate Authority, which issues challenges and passes; the Pool Adapter, which connects your miner to the pool; and the Reference Service, the account-creation site you came from. You need no account to use the Gate.</p>
+      <p>This page describes what this Gate deployment keeps when you use your Bitaxe to earn a Gate Pass. The deployment is three services run by Bright Builds LLC: the Gate Authority, which issues challenges and passes; the Pool Adapter, which connects your miner to the pool; and the Reference Service, the account-creation site you came from. You need no account to use the Gate.</p>
 
       <h2>What is kept, and where</h2>
       <ul>
@@ -35,15 +35,15 @@
         <li>The Gate Authority's challenge, share, payout commitment and issuance records, and the Reference Service's redemption and outcome records, can be reduced at day 30 to a keyed record with no public reference to you, and that record can be deleted at day 90.</li>
         <li>The Pool Adapter's miner logins and connection records become eligible for deletion 30 days after their session ends. A connection record that never joined a session is deleted when the connection closes or, if the Pool Adapter stopped first, becomes eligible 30 days after the connection opened. Its settled share records become eligible 30 days after the Gate Authority has taken or refused the share; a share record still on its way to the Gate Authority is kept until it arrives.</li>
         <li>The Reference Service answers a lookup of your action's outcome for 24 hours by default.</li>
-        <li>Accounts created through the Reference Service are kept; the software has no step that removes them. [Owner: say whether and when you remove accounts.]</li>
+        <li>An account created through the Reference Service is kept until you ask the operator to remove it. The software has no step that removes accounts, so the operator removes it by hand.</li>
       </ul>
-      <p>These periods are the earliest the software allows. They take effect when its operator runs the services' retention steps or, for the Pool Adapter's records, turns on the Pool Adapter's automatic deletion. Apart from connection records deleted as their connection closes, the software deletes none of these records by itself. [Owner: state whether and how often you run retention, and whether the Pool Adapter's automatic deletion is on and how often it runs.]</p>
+      <p>These periods are the earliest the software allows. The operator runs the Gate Authority's and the Reference Service's retention steps about once a month, so their eligible records are reduced or deleted at the next monthly run. The Pool Adapter's automatic deletion is on and runs every 24 hours, so its eligible records are deleted within about a day. Apart from that and connection records deleted as their connection closes, the software deletes none of these records by itself.</p>
 
       <h2>Who else sees what</h2>
       <p>The mining pool receives your miner's shares and your payout address, under its own terms. The site you came from receives your Gate Pass, which says your work was done but carries no payout address or share. No other party receives your payout address or shares from the Gate. [Owner: name any hosting or network provider that carries this traffic.]</p>
 
       <h2>Contact</h2>
-      <p>[Owner: how to reach the operator about privacy.]</p>
+      <p>Questions about privacy can go to the project's public issue tracker at github.com/bright-builds-llc/bitaxe-turnstile-system/issues. Issues are public, so leave out personal details. [Owner: a private address for account removal and other requests that need personal details.]</p>
     </main>
   </body>
 </html>

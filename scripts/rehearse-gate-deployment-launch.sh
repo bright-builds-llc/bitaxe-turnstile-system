@@ -206,5 +206,11 @@ fi
 grep -Fq 'Stratum proxy listening' "$proof_root/run/pool-adapter.log" || fail "pool-adapter never ran the Stratum proxy"
 grep -Fq 'accepted-work ingest listening' "$proof_root/run/gate-authority.log" ||
   fail "gate-authority never served accepted-work ingest"
+# The privacy page promises the Pool Adapter's retention sweep every 24 hours (Ticket 31).
+grep -Fq 'Pool Adapter retention sweep is on' "$proof_root/run/pool-adapter.log" ||
+  fail "pool-adapter's retention sweep is off"
+sed $'s/\x1b\\[[0-9;]*m//g' "$proof_root/run/pool-adapter.log" | grep -Fq 'interval_seconds=86400' ||
+  fail "pool-adapter's retention sweep doesn't run every 24 hours"
 printf 'No private value in the logs; the run logs redact the origin host and the LAN address\n'
+printf 'The Pool Adapter retention sweep runs every 24 hours\n'
 printf 'Gate deployment launch proof passed\n'
