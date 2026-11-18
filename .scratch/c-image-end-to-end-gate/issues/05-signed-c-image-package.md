@@ -101,3 +101,31 @@ and check the signed one; they never handle the owner's keys.
     byte is refused as an invalid image digest, and a changed `sourceUrl` as an invalid signature.
     The image, bootloader and table still match `SHA256SUMS`.
   - Left: the licence reviews, before the image goes to anyone else.
+- 2026-11-18, licence review prepared for the owner:
+  [licence-review-05.md](../licence-review-05.md). esptool-js 0.7.0's stubs are MIT or
+  Apache-2.0 (copied from esp-flasher-stub v1.2.2), not GPL, so they carry no source obligation;
+  the onboarding bundle still ships no licence text for them or esptool-js. The C image's named
+  source can't rebuild it: the trust inputs and build command are outside the tree, and the npm
+  set the reference build used wasn't kept. No third-party notices go with the binary, as with
+  upstream. No lock stops a user installing their own build. ADR-0112, called proposed above, was
+  accepted on 2026-11-14. The review's decisions (A to E) wait on the owner.
+- 2026-11-18, the owner chose A2, B and C, accepted D (the Wi-Fi and PHY binaries as upstream ships
+  them) and left E (no legal notices in Axe-OS), built to `plan-05-licence.md`. C fork branch
+  `licence-notices`: `npm ci` from a synced lockfile, the public trust in `reference/trust`,
+  `tools/build_reference_image.sh`, and `tools/third_party_notices.py` with nine tests run by the
+  host test runner. A `--local` reference build of the branch passed its clean-tree check (the
+  `51e5af9` build had left `package-lock.json` changed) and wrote notices holding the GPL, lwIP,
+  Mbed TLS, LVGL, cJSON, chart.js, Tailwind and the Rust repository's MIT notice. Turnstile: the
+  onboarding notices beside both bundles, linked from the sitting page, and a test that a hidden
+  package makes fail. Host tests (679), the fork's standards check, the onboarding and policy tests
+  and the turnstile's typecheck and standards check pass. The turnstile's full suite was 1452 of
+  1453: two ROM onboarding tests time out under another project's CPU load, on `main` as well.
+  Non-claims: no image was rebuilt or signed; no source release is published; no lawyer has read
+  the review; the notices were checked by keyword, not audited. The licence item stays open until
+  the first image that goes to anyone else ships with its source release and notices.
+- 2026-11-18, a fresh review of both branches found three gaps, each fixed with a test that failed
+  first: notices for code and fonts vendored into the tree (`reference/notices/vendored.txt`, which
+  the generator refuses to run without), the required sections checked by the generator itself, and
+  `npm ci` limited to a lockfile change. New finding for the owner: two upstream fonts, Nippo (ITF
+  Free Font License, which forbids redistribution and conversion) and Angel Wish ("All rights
+  reserved"), ship in the image and may not be redistributable; see the review's last section.

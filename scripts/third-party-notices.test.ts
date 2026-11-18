@@ -8,6 +8,10 @@ function notices(): string {
   return readFileSync(NOTICES_FILE, "utf8");
 }
 
+function installedVersion(name: string): string {
+  return JSON.parse(readFileSync(`node_modules/${name}/package.json`, "utf8")).version;
+}
+
 /** The npm packages a browser bundle of `entrypoint` carries, from Bun's per-module path comments. */
 async function bundledPackages(entrypoint: string): Promise<string[]> {
   const build = await Bun.build({
@@ -22,7 +26,15 @@ async function bundledPackages(entrypoint: string): Promise<string[]> {
   return [...new Set(packages)].sort();
 }
 
-test("the onboarding notices name every npm package each onboarding bundle carries", async () => {
+test("each onboarding bundle carries esptool-js, so the package check below can't pass on an empty bundle", async () => {
+  // Act
+  const carried = await Promise.all(ONBOARDING_ENTRIES.map(bundledPackages));
+
+  // Assert
+  for (const packages of carried) expect(packages).toContain("esptool-js");
+});
+
+test("the onboarding notices name every npm package each onboarding bundle carries, at its installed version", async () => {
   // Arrange
   const text = notices();
 
@@ -30,7 +42,8 @@ test("the onboarding notices name every npm package each onboarding bundle carri
   const unnamed: string[] = [];
   for (const entrypoint of ONBOARDING_ENTRIES) {
     for (const name of await bundledPackages(entrypoint)) {
-      if (!text.includes(`== ${name} `)) unnamed.push(`${entrypoint}: ${name}`);
+      const heading = `== ${name} ${installedVersion(name)} ==`;
+      if (!text.includes(heading)) unnamed.push(`${entrypoint}: ${heading}`);
     }
   }
 

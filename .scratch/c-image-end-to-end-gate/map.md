@@ -12,7 +12,7 @@ feed 09.
 | [14](issues/14-gate-onboarding-contract-for-the-c-image.md) Gate onboarding contract matches the C image | task | resolved | 02 |
 | [03](issues/03-c-image-onboarding-commands.md) C image reports onboarding facts and guards its own boot | task | resolved | 02, 14 |
 | [04](issues/04-web-serial-onboarding-device.md) Browser onboarding device over the ROM bootloader | task | resolved | 03 |
-| [05](issues/05-signed-c-image-package.md) Owner signs the C image's firmware package (signed; licence review left) | task | ready-for-human | 03, 04 |
+| [05](issues/05-signed-c-image-package.md) Owner signs the C image's firmware package (signed; licence fixes built, source release at first distribution) | task | ready-for-human | 03, 04 |
 | [15](issues/15-c-image-onboarding-on-the-601.md) Onboarding on the 601, from stock and between reference images | task | resolved | 05 |
 | [11](issues/11-late-work-delivery-after-renew.md) Authority judges a Work Event by the reading at which it was observed | task | resolved | 10 |
 | [12](issues/12-terminal-refusal-of-uncreditable-work.md) Authority refuses uncreditable work terminally, and delivery stops retrying it | task | resolved | 11 |
