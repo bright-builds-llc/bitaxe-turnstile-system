@@ -139,3 +139,7 @@ The image carries two fonts that upstream ships, whose terms look stricter than 
 choice, and their releases ship both the same way. The owner decides whether to replace the fonts
 (ideally upstream, since both projects carry them), ask the rights holders, or take advice. It
 should be settled before the first image goes to anyone else.
+
+On 2026-11-20 the owner accepted both fonts as a known risk, inheriting upstream's position, to be
+revisited later. The fork records the decision in `AGENTS.md` and `reference/README.md`, and tracks
+it as `task-upstream-font-licences` in `TASKS.md`.

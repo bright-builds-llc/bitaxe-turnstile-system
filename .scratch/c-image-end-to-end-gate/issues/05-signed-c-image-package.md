@@ -129,3 +129,6 @@ and check the signed one; they never handle the owner's keys.
   `npm ci` limited to a lockfile change. New finding for the owner: two upstream fonts, Nippo (ITF
   Free Font License, which forbids redistribution and conversion) and Angel Wish ("All rights
   reserved"), ship in the image and may not be redistributable; see the review's last section.
+- 2026-11-20, the owner accepted Nippo and Angel Wish as a known risk inherited from upstream, to be
+  revisited later; the fork records it in `AGENTS.md` and `reference/README.md` and tracks it as
+  `task-upstream-font-licences`.
