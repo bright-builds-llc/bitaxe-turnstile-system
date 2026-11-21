@@ -1,4 +1,4 @@
-import type { ChallengeLifecycleState, HeadlessTransport } from "./headless-client.types";
+import type { ChallengeLifecycleState, HeadlessTransport, WorkerDisclosure } from "./headless-client.types";
 import {
   parseWorkerControllerCapabilities,
   parseWorkerControllerStatus,
@@ -14,6 +14,23 @@ export async function discoverWorker(
   controller: WorkerController,
 ): Promise<WorkerControllerCapabilities> {
   return parseWorkerControllerCapabilities(await controller.discover());
+}
+
+/**
+ * The Workers a disclosure names: with a connected board, a Worker that names its board only when it
+ * is that board, so the terms describe the device that will mine. Throws if none is left.
+ */
+export function participatingWorkers(
+  workers: readonly WorkerDisclosure[],
+  maybeCapabilities: WorkerControllerCapabilities | undefined,
+): WorkerDisclosure[] {
+  if (!maybeCapabilities) return [...workers];
+  const { model, revision } = maybeCapabilities.board;
+  const participating = workers.filter(
+    (worker) => !worker.maybeBoard || (worker.maybeBoard.model === model && worker.maybeBoard.revision === revision),
+  );
+  if (participating.length === 0) throw new Error(`no configured Worker is the connected ${model} ${revision}`);
+  return participating;
 }
 
 export async function startWorkerController(

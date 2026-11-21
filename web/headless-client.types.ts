@@ -24,6 +24,8 @@ export type WorkerDisclosure = {
   displayName: string;
   hashrateHs: string;
   maybePowerWatts?: number;
+  /** The board this Worker is, as its signed capability reports it; disclosed only while that board is connected. */
+  maybeBoard?: { model: string; revision: string };
 };
 
 export type OfferComponentDisclosure = {

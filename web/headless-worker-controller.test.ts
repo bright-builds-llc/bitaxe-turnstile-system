@@ -488,3 +488,49 @@ test("admission rollback preserves controller and Authority failures", async () 
     "Error: Authority pause failed",
   ]);
 });
+
+const gamma601 = {
+  workerId: "bitaxe-601",
+  displayName: "Bitaxe 601",
+  hashrateHs: "1200000000000",
+  maybeBoard: { model: "bitaxe-gamma", revision: "601" },
+};
+const ultra205 = {
+  workerId: "bitaxe-205",
+  displayName: "Bitaxe 205",
+  hashrateHs: "500000000000",
+  maybeBoard: { model: "bitaxe-ultra", revision: "205" },
+};
+
+test("discloses only the configured Worker whose board is connected", async () => {
+  // Arrange
+  const input = {
+    ...(await headlessInput(transportHarness().transport)),
+    workers: [gamma601, ultra205],
+    maybeWorkerController: recordingWorkerController([]),
+  };
+
+  // Act
+  const disclosure = (await createHeadlessClient(input)).disclosure();
+
+  // Assert
+  expect(disclosure.workers).toEqual([ultra205]);
+  expect(disclosure.maybeDurationSeconds).toBeCloseTo(2 ** 44 / 500_000_000_000);
+});
+
+test("refuses before consent when no configured Worker names the connected board", async () => {
+  // Arrange
+  const authority = transportHarness();
+  const input = {
+    ...(await headlessInput(authority.transport)),
+    workers: [gamma601],
+    maybeWorkerController: recordingWorkerController([]),
+  };
+
+  // Act
+  const creation = createHeadlessClient(input);
+
+  // Assert
+  await expect(creation).rejects.toThrow("no configured Worker is the connected bitaxe-ultra 205");
+  expect(authority.calls).toEqual([]);
+});

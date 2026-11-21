@@ -61,6 +61,9 @@ headless client forwards it, composes renewal, validates redacted status/restora
 rolls back both Worker and Authority on controller failure. `maybeWorkerCapabilities` and
 `maybeWorkerStatus` expose only the strict non-secret contract. USB disconnect pauses Authority
 after device-local restoration, while asynchronous `close()` requests `tab_closed` restoration.
+A configured Worker may name its board (`maybeBoard`, model and revision); with a controller, the
+disclosure names such a Worker only when the discovered capabilities report that board, and client
+construction fails before any Authority call when no configured Worker is left.
 Possession-bound deployments may separately supply `WorkerLeaseAuthorizationContextProvider`.
 The client obtains its Device Identity-bound digest before Authority Start/resume and the active
 context before renewal, then passes only that digest to the transport's authorization seam. The

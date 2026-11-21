@@ -48,6 +48,7 @@ import {
 import { verifyTrustedConsentReceipt } from "./trusted-consent";
 import {
   discoverWorker,
+  participatingWorkers,
   renewWorkerController,
   restoreWorkerController,
   restorationReason,
@@ -102,7 +103,8 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       : {}),
   });
   const maybeTrustedConsentRequirement = trustedConsent.maybeRequirement;
-  const estimates = estimateWork(expectedHashes, snapshot.workers);
+  const workers = participatingWorkers(snapshot.workers, maybeWorkerCapabilities);
+  const estimates = estimateWork(expectedHashes, workers);
   const disclosureSnapshot: WorkConsentDisclosure = {
     challengeId: snapshot.challenge.challengeId,
     actionPolicy: snapshot.challenge.actionPolicy,
@@ -116,7 +118,7 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
     rewardPolicy: selectedOffer.rewardPolicy,
     payoutDestinationType: snapshot.selection.payoutDestinationType,
     payoutDestination: payoutDestination(snapshot.selection),
-    workers: snapshot.workers,
+    workers,
     cancellationBehavior: "pause_preserves_progress_cancel_is_terminal",
     claimantWorkCeiling: claimantCeiling.toString(),
     clientSafetyCeiling: safetyCeiling.toString(),

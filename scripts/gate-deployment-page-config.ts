@@ -18,7 +18,21 @@ import { parseWorkerDeploymentTrust } from "../web/worker-deployment-trust";
 const DEVICE_FILTER = { usbVendorId: 0x303a, usbProductId: 0x1001 } as const;
 /** 2^48, above the Standard Work Requirement and the 2^44 floor Ticket 07 sets. */
 const WORK_CEILING = "281474976710656";
-const WORKERS = [{ workerId: "bitaxe-601", displayName: "Bitaxe 601", hashrateHs: "1200000000000" }];
+/** The client discloses only the one whose board is connected; hashrates are each board's nominal rate. */
+const WORKERS = [
+  {
+    workerId: "bitaxe-601",
+    displayName: "Bitaxe Gamma 601",
+    hashrateHs: "1200000000000",
+    maybeBoard: { model: "bitaxe-gamma", revision: "601" },
+  },
+  {
+    workerId: "bitaxe-205",
+    displayName: "Bitaxe Ultra 205",
+    hashrateHs: "500000000000",
+    maybeBoard: { model: "bitaxe-ultra", revision: "205" },
+  },
+];
 const SOURCE_URL = "https://github.com/bright-builds-llc/bitaxe-turnstile-system";
 
 export type PageConfigInput = {

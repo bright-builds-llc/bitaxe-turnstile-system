@@ -62,3 +62,14 @@ test("refuses a non-https origin and a malformed image commit", () => {
   expect(plainOrigin).toThrow("https");
   expect(shortCommit).toThrow("COMMIT");
 });
+
+test("offers both boards, each named by the board its signed capability reports", () => {
+  // Act
+  const config = buildPageConfig(input());
+
+  // Assert
+  expect(config.workers.map((worker) => worker.maybeBoard)).toEqual([
+    { model: "bitaxe-gamma", revision: "601" },
+    { model: "bitaxe-ultra", revision: "205" },
+  ]);
+});

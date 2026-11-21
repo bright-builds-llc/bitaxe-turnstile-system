@@ -80,3 +80,7 @@ of `247d2cd`, and nothing flashed. The fork's `docs/project/gate-integration-evi
   owner. Three tries left tab a's challenge with a lease the board never
   received, and each ended at expiry as `challenge_expired`. The launcher
   recorded lease sequence 15,049.
+- 2026-11-21: the page config now lists both boards, each with the model and revision its signed
+  capability reports, and the client discloses only the one connected, with its own duration
+  estimate. A board no configured Worker names is refused before consent. Branch
+  `consent-names-connected-board`. Not yet seen on a board.
