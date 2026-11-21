@@ -1,7 +1,8 @@
 # C-image end-to-end Gate map
 
 [Spec](spec.md). The first Gate on the C Reference Firmware image through the
-production browser path. Tickets 01, 02, 03, 04, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24, 26, 27, 28 and 30 are resolved; the rest is still planning.
+production browser path. Tickets 01, 02, 03, 04, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24, 26, 27, 28 and 30 are resolved. Tickets 05, 19 and 31 wait on the owner's review, 29 is optional,
+and 25 waits for its failure to recur.
 The first Gate (06, 07) and onboarding (14, 03, 04, 05, 15) run apart, and both
 feed 09.
 
@@ -12,7 +13,7 @@ feed 09.
 | [14](issues/14-gate-onboarding-contract-for-the-c-image.md) Gate onboarding contract matches the C image | task | resolved | 02 |
 | [03](issues/03-c-image-onboarding-commands.md) C image reports onboarding facts and guards its own boot | task | resolved | 02, 14 |
 | [04](issues/04-web-serial-onboarding-device.md) Browser onboarding device over the ROM bootloader | task | resolved | 03 |
-| [05](issues/05-signed-c-image-package.md) Owner signs the C image's firmware package (signed; licence fixes built, source release at first distribution) | task | ready-for-human | 03, 04 |
+| [05](issues/05-signed-c-image-package.md) Owner signs the C image's firmware package (signed; licence fixes built, fonts accepted as a known risk, source release at first distribution) | task | ready-for-human | 03, 04 |
 | [15](issues/15-c-image-onboarding-on-the-601.md) Onboarding on the 601, from stock and between reference images | task | resolved | 05 |
 | [11](issues/11-late-work-delivery-after-renew.md) Authority judges a Work Event by the reading at which it was observed | task | resolved | 10 |
 | [12](issues/12-terminal-refusal-of-uncreditable-work.md) Authority refuses uncreditable work terminally, and delivery stops retrying it | task | resolved | 11 |
@@ -25,7 +26,7 @@ feed 09.
 | [16](issues/16-pool-adapter-grpc-process.md) Pool Adapter runs as its own process over gRPC | task | resolved | None |
 | [17](issues/17-sdk-http-transport-and-renew.md) SDK claimant HTTP transport and component-owned Renew | task | resolved | 06 |
 | [18](issues/18-postgres-test-readiness.md) PostgreSQL test container is used before it accepts queries | bug | resolved | None |
-| [19](issues/19-deployment-policy-pages.md) Deployment serves its operator policy, privacy and terms pages | task | needs-triage | None |
+| [19](issues/19-deployment-policy-pages.md) Deployment serves its operator policy, privacy and terms pages | task | ready-for-human | None |
 | [20](issues/20-pause-overlaps-renew-and-start.md) Pause overlapping a Renew or an in-flight Start | bug | resolved | None |
 | [21](issues/21-gate-negatives-harness.md) Gate negatives harness for the C image | task | resolved | None |
 | [22](issues/22-sse-subscribe-after-snapshot.md) Challenge events SSE can miss an update sent while it subscribes | bug | resolved | None |
@@ -37,7 +38,7 @@ feed 09.
 | [28](issues/28-negatives-on-both-boards.md) Negatives on both boards through the deployed page | task | resolved | 21, 26 |
 | [29](issues/29-handed-over-in-two-profiles.md) Handed-over grants in two browser profiles (optional) | task | ready-for-human | None |
 | [30](issues/30-second-tab-admission-reason.md) A second tab's refused admission gives no reason | bug | resolved | None |
-| [31](issues/31-pool-adapter-retention.md) The Pool Adapter's expired records are never deleted | task | in-progress | None |
+| [31](issues/31-pool-adapter-retention.md) The Pool Adapter's expired records are never deleted | task | ready-for-human | None |
 
 ## Decisions so far
 
@@ -205,3 +206,20 @@ feed 09.
   C-image evidence and non-claims.
 - Tickets 03 and 04 (2026-11-15): resolved. Ticket 15's sittings measured the onboarding bounds
   on the 601, and both tickets record them.
+- Ticket 19 (2026-11-16, 2026-11-18): the deployment's origin serves agent-drafted operator, privacy
+  and terms pages under a draft banner, and the launcher proof requires each to answer. The pages
+  carry the owner's answers: Bright Builds LLC operates the deployment, problems go to the public
+  issue tracker, an account is removed on request, and the Pool Adapter's sweep runs every 24 hours.
+  Left for the owner: the gaps the ticket lists, and a final review before the banner comes off.
+- Ticket 31 (2026-11-17): the Pool Adapter deletes its expired records through an opt-in sweep and
+  `pool-adapter-governance`, skipping records still in use. Ticket 19's answers then turned the
+  sweep on in the launcher, every 24 hours, which the ticket's non-claims predate.
+- Ticket 05 licence review (2026-11-18), on the owner's choices: the C fork builds a reference image
+  from a pushed commit with everything it reads in the tree, and writes its third-party notices
+  beside it; the onboarding bundles ship their notices too. The first image distributed to anyone
+  else gets a published source release (`task-reference-source-release` in the fork). The Wi-Fi
+  and PHY binaries ship as upstream ships them, and Axe-OS shows no legal notices, as upstream's
+  doesn't. [licence-review-05.md](licence-review-05.md).
+- Ticket 05 (2026-11-20): the owner accepted the two upstream fonts that may not be
+  redistributable, Nippo and Angel Wish, as a known risk inherited from upstream, to be revisited
+  later (`task-upstream-font-licences` in the fork).
