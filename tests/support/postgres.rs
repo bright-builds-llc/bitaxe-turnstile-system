@@ -69,6 +69,30 @@ impl PostgresTestDatabase {
         &self.database_url
     }
 
+    /// Every row of every table in `schema`, as JSON text, for searching a context's stored data.
+    #[allow(dead_code)]
+    pub async fn rows_in_schema(&self, schema: &str) -> Result<String, Box<dyn Error>> {
+        let pool = sqlx::PgPool::connect(&self.database_url).await?;
+        let tables = sqlx::query_scalar::<_, String>(
+            "SELECT table_name FROM information_schema.tables
+             WHERE table_type = 'BASE TABLE' AND table_schema = $1",
+        )
+        .bind(schema)
+        .fetch_all(&pool)
+        .await?;
+        let mut rows = String::new();
+        for table in tables {
+            let text = sqlx::query_scalar::<_, Option<String>>(&format!(
+                "SELECT string_agg(row_to_json(row)::text, '\n') FROM \"{schema}\".\"{table}\" AS row"
+            ))
+            .fetch_one(&pool)
+            .await?;
+            rows.push_str(&text.unwrap_or_default());
+        }
+        pool.close().await;
+        Ok(rows)
+    }
+
     #[allow(dead_code)]
     pub async fn pause(&self) -> Result<(), Box<dyn Error>> {
         self.container.pause().await?;

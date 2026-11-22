@@ -20,8 +20,11 @@
  * A person picks each tab's port when Chrome asks; the handover's second tab is the second board,
  * in its own browser profile (Ticket 29), so its chooser asks every run. On macOS, start that
  * Chrome through `open -na "Google Chrome" --args ...`; started from a shell it aborts on the chooser.
- * The board values file lists, one per line, values tied to the boards (Device Identity
- * fingerprints, firmware commit, ELF digest, MACs); the audit searches every request for them.
+ * The board values file lists, one per line, values tied to the boards (firmware commit, image and
+ * ELF digests, MAC digests, capability signatures). The harness adds each tab's Device Identity
+ * fingerprint, read from the page's own store once its board is admitted, and the audit searches
+ * every request and every grant for them all. The payout address may appear only in the pool
+ * selection, and never in a grant the page hands the board.
  * If a step fails, the harness still tries the page's Cancel so no challenge waits for expiry.
  */
 import { parseArgs } from "node:util";
@@ -37,7 +40,7 @@ import {
   type GateNegativeCase,
   type TabEvidence,
 } from "./gate-negatives-cases";
-import { deploymentAdapter, rehearsalAdapter, type DeploymentAdapter } from "./gate-negatives-adapters";
+import { deploymentAdapter, rehearsalAdapter, type BoardValue, type DeploymentAdapter } from "./gate-negatives-adapters";
 import { grantInterceptor } from "./gate-negatives-interceptor";
 import { openHarnessTab, waitFor, type HarnessTab } from "./gate-negatives-tab";
 
@@ -119,29 +122,41 @@ async function runCase(
   tabs: HarnessTab[],
 ): Promise<CaseReport> {
   const interceptor = grantInterceptor(caseName);
+  const fingerprints: BoardValue[] = [];
   for (const { name, ownProfile } of caseTabs(caseName)) {
     const tab = await openHarnessTab(connection, name, interceptor.onPaused, { ownProfile });
     tabs.push(tab);
     await adapter.load(tab, origin);
     await consentAndStart(tab, adapter);
     await waitFor(`tab ${name}'s Start grant to be paused`, () => interceptor.pausedStart(name), 60_000);
+    fingerprints.push(...(await deviceIdentityFingerprints(tab, adapter)));
   }
   await waitFor("every altered grant to be answered", () => interceptor.settled(), CONTEXT_HOLD_MILLISECONDS + 30_000);
   for (const tab of tabs) await cancelThroughPage(tab, ROLLBACK_MILLISECONDS);
   for (const tab of tabs) await endedByAuthority(tab, adapter);
   await Bun.sleep(LATE_EVENT_MILLISECONDS);
   const evidence = await Promise.all(tabs.map(async (tab) => tabEvidence(tab, adapter, interceptor)));
+  const boardValues = [...adapter.boardValues, ...fingerprints];
   const audit = auditAuthorityRequests(tabs.flatMap((tab) => tab.requests), {
     origin,
-    boardValues: adapter.boardValues.map((boardValue) => boardValue.value),
+    boardValues: boardValues.map((boardValue) => boardValue.value),
+    payoutDestination: adapter.payoutDestination(),
+    grants: interceptor.grants(),
   });
   return {
     caseName,
-    boardValuesSearched: adapter.boardValues.map((boardValue) => boardValue.label),
+    boardValuesSearched: boardValues.map((boardValue) => boardValue.label),
     verdict: caseVerdict(caseName, evidence, audit),
     tabs: evidence,
     routes: audit.routes,
   };
+}
+
+/** The page holds its board's fingerprint once admitted; without one the audit would search for nothing new. */
+async function deviceIdentityFingerprints(tab: HarnessTab, adapter: DeploymentAdapter): Promise<BoardValue[]> {
+  const values = await adapter.deviceIdentityFingerprints(tab);
+  if (values.length === 0) throw new Error(`tab ${tab.name}'s page holds no Device Identity fingerprint to search for`);
+  return values.map((value, index) => ({ label: `tab ${tab.name} Device Identity fingerprint ${index + 1}`, value }));
 }
 
 async function consentAndStart(tab: HarnessTab, adapter: DeploymentAdapter): Promise<void> {

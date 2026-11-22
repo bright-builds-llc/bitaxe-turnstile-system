@@ -169,6 +169,13 @@ async fn standard_issue_work_pass_redeem_outcome_journey_uses_public_interfaces(
     let consumed_retry =
         redeem(&reference_url, &gate_pass, &retry_proof, &action_reference).await?;
     let replay = redeem(&reference_url, &gate_pass, &first_proof, &action_reference).await?;
+    let account_id = outcome["outcome"]["result"]["account_id"]
+        .as_str()
+        .ok_or("outcome account identifier is missing")?
+        .to_owned();
+    let relying_service_rows = database.rows_in_schema("relying_service").await?;
+    let authority_rows = database.rows_in_schema("gate_authority").await?;
+    let pool_adapter_rows = database.rows_in_schema("pool_adapter").await?;
 
     // Assert
     assert!(acknowledgement.issuance_intent_created());
@@ -179,11 +186,10 @@ async fn standard_issue_work_pass_redeem_outcome_journey_uses_public_interfaces(
     assert!(!gate_pass_payload.contains(payout_destination));
     assert!(!first_record.to_string().contains(payout_destination));
     assert!(!outcome.to_string().contains(payout_destination));
-    assert!(
-        outcome["outcome"]["result"]["account_id"]
-            .as_str()
-            .is_some()
-    );
+    // The account exists only on the Relying Service's side; the scan finding it there shows it can find it.
+    assert!(relying_service_rows.contains(&account_id));
+    assert!(!authority_rows.contains(&account_id));
+    assert!(!pool_adapter_rows.contains(&account_id));
     assert_eq!(consumed_retry.status(), reqwest::StatusCode::UNAUTHORIZED);
     assert_eq!(replay.status(), reqwest::StatusCode::UNAUTHORIZED);
 

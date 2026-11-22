@@ -84,3 +84,9 @@ of `247d2cd`, and nothing flashed. The fork's `docs/project/gate-integration-evi
   capability reports, and the client discloses only the one connected, with its own duration
   estimate. A board no configured Worker names is refused before consent. Branch
   `consent-names-connected-board`. Not yet seen on a board.
+- 2026-11-21, criterion 13: the negatives audit now reads each tab's Device Identity fingerprint
+  from the page's `bwg-worker` store after admission and searches for it with the board values. It
+  allows the payout address only as the pool selection's `payout_destination`, and searches every
+  Start and Renew grant for the payout and the board values. The rehearsal's three cases passed with
+  these checks. The rehearsal keeps continuity in memory, so the store read first runs at this
+  sitting. Branch `privacy-boundaries`.

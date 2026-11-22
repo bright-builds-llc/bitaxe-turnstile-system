@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test";
-import { auditAuthorityRequests, routeTemplate, type SeenRequest } from "./gate-negatives-audit";
+import { auditAuthorityRequests, routeTemplate, type SeenGrant, type SeenRequest } from "./gate-negatives-audit";
 
 const ORIGIN = "https://gate.example.test:8443";
 const BINDING = "jEc1ro90lL2fX0ZozUbY0XpmxrC46gEkEUKKTyGj0Zs";
 const BOARD_VALUE = "board-identity-fingerprint-0001";
+const PAYOUT = "bc1qpayoutdestinationfixture0000000000000";
+const POOL_SELECTION = "/v0/challenges/challenge_01/work-session/pool-selection";
 
 function post(path: string, body: unknown, tab = "a"): SeenRequest {
   return { tab, method: "POST", url: `${ORIGIN}${path}`, headers: {}, maybeBody: JSON.stringify(body) };
@@ -13,8 +15,12 @@ function startRequest(binding: string, tab = "a"): SeenRequest {
   return post("/v0/challenges/challenge_01/work-session/start", { control_session_binding_sha256: binding }, tab);
 }
 
-function audit(requests: SeenRequest[]) {
-  return auditAuthorityRequests(requests, { origin: ORIGIN, boardValues: [BOARD_VALUE] });
+function audit(requests: SeenRequest[], grants: SeenGrant[] = []) {
+  return auditAuthorityRequests(requests, { origin: ORIGIN, boardValues: [BOARD_VALUE], payoutDestination: PAYOUT, grants });
+}
+
+function poolSelection(fields: Record<string, unknown>): SeenRequest {
+  return post(POOL_SELECTION, { pool_offer_id: "offer_01", payout_destination_type: "bitcoin_address", ...fields });
 }
 
 test("templates a challenge route without its identifier", () => {
@@ -170,9 +176,102 @@ test("flags a POST to a listed route whose body wasn't captured", () => {
 });
 
 test("refuses to audit without a board value to search for", () => {
-  expect(() => auditAuthorityRequests([], { origin: ORIGIN, boardValues: [] })).toThrow("the audit needs at least one board value");
+  expect(() => auditAuthorityRequests([], { origin: ORIGIN, boardValues: [], payoutDestination: PAYOUT })).toThrow("the audit needs at least one board value");
 });
 
 test("refuses a board value too short to search for safely", () => {
-  expect(() => auditAuthorityRequests([], { origin: ORIGIN, boardValues: ["abc"] })).toThrow("board values must be at least 8 characters");
+  expect(() => auditAuthorityRequests([], { origin: ORIGIN, boardValues: ["abc"], payoutDestination: PAYOUT })).toThrow("board values must be at least 8 characters");
+});
+
+test("refuses a payout destination too short to search for safely", () => {
+  expect(() => auditAuthorityRequests([], { origin: ORIGIN, boardValues: [BOARD_VALUE], payoutDestination: "bc1" })).toThrow("the payout destination must be at least 8 characters");
+});
+
+test("accepts the payout destination as the pool selection's payout_destination", () => {
+  // Arrange
+  const requests = [poolSelection({ payout_destination: PAYOUT })];
+
+  // Act
+  const result = audit(requests);
+
+  // Assert
+  expect(result.violations).toEqual([]);
+});
+
+test("flags the payout destination in another field of the pool selection", () => {
+  // Arrange
+  const requests = [poolSelection({ payout_destination: PAYOUT, pool_offer_id: `offer-${PAYOUT}` })];
+
+  // Act
+  const result = audit(requests);
+
+  // Assert
+  expect(result.violations).toEqual(["the payout destination reached POST /v0/challenges/{id}/work-session/pool-selection outside payout_destination"]);
+});
+
+test("flags the payout destination on another Authority route", () => {
+  // Arrange
+  const requests = [post("/v0/challenges/challenge_01/work-session/pause", { reason: PAYOUT })];
+
+  // Act
+  const result = audit(requests);
+
+  // Assert
+  expect(result.violations).toEqual(["the payout destination reached POST /v0/challenges/{id}/work-session/pause outside payout_destination"]);
+});
+
+test("flags the payout destination sent to the Relying Service", () => {
+  // Arrange
+  const requests = [post("/account-creation/redeem", { gate_pass: "g", dpop_proof: "d", action_reference: PAYOUT })];
+
+  // Act
+  const result = audit(requests);
+
+  // Assert
+  expect(result.violations).toEqual(["the payout destination reached POST /account-creation/redeem outside payout_destination"]);
+});
+
+test("flags the payout destination in a URL, even beside a valid pool selection", () => {
+  // Arrange
+  const request = { ...poolSelection({ payout_destination: PAYOUT }), url: `${ORIGIN}${POOL_SELECTION}?to=${PAYOUT}` };
+
+  // Act
+  const result = audit([request]);
+
+  // Assert
+  expect(result.violations).toEqual(["the payout destination reached POST /v0/challenges/{id}/work-session/pool-selection outside payout_destination"]);
+});
+
+test("accepts a grant that names neither the payout destination nor a board value", () => {
+  // Arrange
+  const grants: SeenGrant[] = [{ tab: "a", operation: "start", body: JSON.stringify({ leaseId: "lease_01", stratum: { username: "issued" } }) }];
+
+  // Act
+  const result = audit([], grants);
+
+  // Assert
+  expect(result.violations).toEqual([]);
+});
+
+test("flags the payout destination in a Start grant sent toward the board", () => {
+  // Arrange
+  const grants: SeenGrant[] = [{ tab: "a", operation: "start", body: JSON.stringify({ stratum: { username: `${PAYOUT}.worker` } }) }];
+
+  // Act
+  const result = audit([], grants);
+
+  // Assert
+  expect(result.violations).toEqual(["the payout destination reached the board in tab a's start grant"]);
+});
+
+test("flags a board value inside a Renew grant's signed authorization", () => {
+  // Arrange
+  const claims = Buffer.from(JSON.stringify({ device: BOARD_VALUE })).toString("base64url");
+  const grants: SeenGrant[] = [{ tab: "b", operation: "renew", body: JSON.stringify({ authorization: `eyJhbGciOiJFZERTQSJ9.${claims}.c2ln` }) }];
+
+  // Act
+  const result = audit([], grants);
+
+  // Assert
+  expect(result.violations).toEqual(["a board value came back from the Authority in tab b's renew grant"]);
 });

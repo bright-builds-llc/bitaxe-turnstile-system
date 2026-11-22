@@ -160,6 +160,65 @@ async fn browser_cannot_supply_authoritative_challenge_terms()
 }
 
 #[tokio::test]
+async fn authority_refuses_account_identity_payload_and_payout_in_challenge_issuance()
+-> Result<(), Box<dyn std::error::Error>> {
+    // Arrange
+    let (authority_url, _database) = spawn_authority(authority_config()?).await?;
+    let typed = json!({
+        "action_policy": ActionPolicy::ACCOUNT_CREATION_STANDARD_V1,
+        "action_reference": "action_Z9x3pK7m",
+        "claimant_key": CLAIMANT_PUBLIC_JWK
+    });
+    let forbidden = [
+        ("account_identifier", json!("account_123")),
+        ("action_payload", json!({ "email": "customer@example.com" })),
+        (
+            "payout_destination",
+            json!("bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu"),
+        ),
+    ];
+
+    // Act
+    let typed_status = issue_challenge(&authority_url, &typed).await?;
+    let mut forbidden_statuses = Vec::new();
+    for (field, value) in forbidden {
+        let mut body = typed.clone();
+        body[field] = value;
+        forbidden_statuses.push((field, issue_challenge(&authority_url, &body).await?));
+    }
+
+    // Assert
+    assert!(
+        typed_status.is_success(),
+        "typed request got {typed_status}"
+    );
+    for (field, status) in forbidden_statuses {
+        assert_eq!(
+            status,
+            reqwest::StatusCode::UNPROCESSABLE_ENTITY,
+            "challenge issuance carrying {field}"
+        );
+    }
+
+    Ok(())
+}
+
+/// Sends a challenge request as the Relying Service does, with its client identifier and credential.
+async fn issue_challenge(
+    authority_url: &str,
+    body: &Value,
+) -> Result<reqwest::StatusCode, reqwest::Error> {
+    let response = reqwest::Client::new()
+        .post(format!("{authority_url}/v0/challenges"))
+        .header(authority::CLIENT_ID_HEADER, SERVICE_CLIENT_ID)
+        .bearer_auth(SERVICE_CREDENTIAL)
+        .json(body)
+        .send()
+        .await?;
+    Ok(response.status())
+}
+
+#[tokio::test]
 async fn authority_rejects_unauthenticated_challenge_issuance()
 -> Result<(), Box<dyn std::error::Error>> {
     // Arrange

@@ -22,6 +22,11 @@ Private files, all mode 600 under `~/.bitaxe-fork-private/t28/`:
 - `payout-address.txt`, the address part of the owner's pool user, which the
   owner confirmed on 2026-11-14.
 
+The harness adds each tab's Device Identity fingerprint, read from the page's own
+store once its board is admitted, and searches every request and every Start or
+Renew grant for all of these. The payout address may appear only as the pool
+selection's `payout_destination`, and never in a grant the page hands a board.
+
 ## Before starting
 
 1. Check the node through the tunnel: `~/.bitaxe-fork-private/t07/tunnel_check.sh`
@@ -122,14 +127,12 @@ On a stop:
 
 ## Non-claims
 
-- **The boards' Device Identity keys aren't in `board-values.txt`.** Nothing on
-  disk records them, and capturing one needs a Hello that the page performs
-  inside the browser. The audit's field rules still allow only the binding
-  digest as a board-derived field.
-- **The 205's consent screen names "Bitaxe 601".** The page's disclosure lists
-  one worker, and adding the 205 would double the combined hashrate in its
-  duration estimate. The negatives never mine, so the estimate doesn't matter
-  here.
+- **The Device Identity is searched as its fingerprint, not its raw key.** The
+  page keeps only the fingerprint, a SHA-256 of the key, so a request carrying the
+  raw key alone would pass the search. The audit's field rules still allow only
+  the binding digest as a board-derived field.
+- **The page discloses only the connected board** since 2026-11-21, with its own
+  duration estimate. This sitting is the first to see that on the 205.
 - **A handed-over grant is refused by the page, not by the board.** The board's
   "contexts differ" refusal stays proven by `negative-cases.json` and the C host
   tests.

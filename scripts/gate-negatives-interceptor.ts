@@ -11,6 +11,7 @@ import {
   type InterceptionAction,
   type TabEvidence,
 } from "./gate-negatives-cases";
+import type { SeenGrant } from "./gate-negatives-audit";
 import type { FetchPausedEvent, HarnessTab } from "./gate-negatives-tab";
 
 type PausedResponse = {
@@ -30,6 +31,7 @@ export function grantInterceptor(caseName: GateNegativeCase) {
   const paused = new Map<string, PausedResponse>();
   const interceptions = new Map<string, NonNullable<TabEvidence["maybeInterception"]>>();
   const errors: string[] = [];
+  const grants: SeenGrant[] = [];
 
   async function handle(tab: HarnessTab, event: FetchPausedEvent): Promise<void> {
     const status = event.responseStatusCode ?? 0;
@@ -40,8 +42,9 @@ export function grantInterceptor(caseName: GateNegativeCase) {
     const operation = new URL(event.request.url).pathname.endsWith("/renew") ? "renew" : "start";
     const key = `${tab.name}-${++nextKey}`;
     const pausedAtMilliseconds = performance.now();
-    const maybeBody = operation === "start" ? await responseBody(tab, event.requestId) : undefined;
-    paused.set(key, { tab, event, pausedAtMilliseconds, ...(maybeBody === undefined ? {} : { maybeBody }) });
+    const maybeBody = await responseBody(tab, event.requestId);
+    grants.push({ tab: tab.name, operation, body: Buffer.from(maybeBody, "base64").toString("utf8") });
+    paused.set(key, { tab, event, pausedAtMilliseconds, maybeBody });
     const decided = decideGrant(caseName, state, { key, tab: tab.name, operation, pausedAtMilliseconds });
     state = decided.state;
     for (const decision of decided.decisions) execute(decision);
@@ -106,6 +109,8 @@ export function grantInterceptor(caseName: GateNegativeCase) {
       return pendingDeliveries === 0 && state.handledTabs.every((tab) => interceptions.has(tab));
     },
     interception: (tabName: string) => interceptions.get(tabName),
+    /** Every grant the Authority sent, as the tab that asked received it, for the privacy audit; never printed. */
+    grants: (): SeenGrant[] => [...grants],
   };
 }
 

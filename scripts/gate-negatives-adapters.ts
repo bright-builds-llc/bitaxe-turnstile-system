@@ -4,6 +4,7 @@
  * where only the page and the Authority are visible and a person picks each port.
  */
 import { readFile } from "node:fs/promises";
+import possessionFixture from "../conformance/bwg-worker-possession-0.2/fixtures.json";
 import { rehearsalBoardValues } from "../web/production-path-rehearsal-device";
 import type { BoardEvidence } from "./gate-negatives-cases";
 import { waitFor, type HarnessTab } from "./gate-negatives-tab";
@@ -14,6 +15,10 @@ export type BoardValue = { label: string; value: string };
 export type DeploymentAdapter = {
   pagePath: string;
   boardValues: BoardValue[];
+  /** The payout destination the page entered, which the audit allows only in the pool selection. */
+  payoutDestination(): string;
+  /** The Device Identity fingerprints the tab's page holds once its board is admitted; never printed. */
+  deviceIdentityFingerprints(tab: HarnessTab): Promise<string[]>;
   /** How long a person may take to pick the port and the page to show consent. */
   connectTimeoutMilliseconds: number;
   /** Opens the page in `tab`, ready for the Connect click. */
@@ -37,9 +42,16 @@ type RehearsalDevice = {
 /** The rehearsal page with its fake board; the CPU miner is never wired, since no case may mine. */
 export async function rehearsalAdapter(): Promise<DeploymentAdapter> {
   const minerStarts = new Map<string, number>();
+  let maybePayoutDestination: string | undefined;
   return {
     pagePath: REHEARSAL_PAGE,
     boardValues: await rehearsalBoardValues(),
+    payoutDestination() {
+      if (!maybePayoutDestination) throw new Error("the rehearsal page has not served its payout address yet");
+      return maybePayoutDestination;
+    },
+    // The rehearsal keeps continuity in memory, so its fake board's fingerprint comes from the fixture it signs with.
+    deviceIdentityFingerprints: async () => [possessionFixture.fixtureIdentity.fingerprintSha256],
     connectTimeoutMilliseconds: 30_000,
     async load(tab, origin) {
       minerStarts.set(tab.name, 0);
@@ -49,6 +61,8 @@ export async function rehearsalAdapter(): Promise<DeploymentAdapter> {
       await tab.send("Runtime.addBinding", { name: MINER_BINDING });
       await tab.navigate(`${origin}${REHEARSAL_PAGE}`);
       const served = await tab.evaluate(async () => (await fetch("/rehearsal-config")).json() as Promise<Record<string, unknown>>);
+      if (typeof served.payoutAddress !== "string") throw new Error("the rehearsal config has no payout address");
+      maybePayoutDestination = served.payoutAddress;
       await tab.send("Page.addScriptToEvaluateOnNewDocument", {
         source: `(${installRehearsalPage.toString()})(${JSON.stringify(rehearsalPageConfig(served))}, ${JSON.stringify(MINER_BINDING)})`,
       });
@@ -101,6 +115,8 @@ export async function deploymentAdapter(input: {
   return {
     pagePath: input.pagePath,
     boardValues,
+    payoutDestination: () => payoutAddress,
+    deviceIdentityFingerprints: async (tab) => await tab.evaluate(storedDeviceIdentityFingerprints),
     connectTimeoutMilliseconds: input.connectTimeoutMilliseconds,
     async load(tab, origin) {
       await tab.navigate(`${origin}${input.pagePath}`);
@@ -115,6 +131,34 @@ export async function deploymentAdapter(input: {
     settle: async () => undefined,
     maybeBoard: async () => undefined,
   };
+}
+
+/**
+ * Runs in the page: the fingerprints in its private `bwg-worker` continuity store, which the page
+ * writes on admission and clears when the attempt ends. Self-contained, since it's sent as source.
+ */
+async function storedDeviceIdentityFingerprints(): Promise<string[]> {
+  const known = await indexedDB.databases();
+  if (!known.some((database) => database.name === "bwg-worker")) return [];
+  const database = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open("bwg-worker");
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  try {
+    if (!database.objectStoreNames.contains("continuity")) return [];
+    const records = await new Promise<unknown[]>((resolve, reject) => {
+      const request = database.transaction("continuity", "readonly").objectStore("continuity").getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    return records.flatMap((record) => {
+      const maybeFingerprint = (record as { deviceIdentityFingerprint?: unknown } | null)?.deviceIdentityFingerprint;
+      return typeof maybeFingerprint === "string" ? [maybeFingerprint] : [];
+    });
+  } finally {
+    database.close();
+  }
 }
 
 function rehearsalPageConfig(served: Record<string, unknown>) {
