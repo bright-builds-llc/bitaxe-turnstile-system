@@ -1,7 +1,7 @@
 # Handed-over grants in two browser profiles
 
 Type: task
-Status: ready-for-human
+Status: resolved
 Blocked by: None
 
 ## Objective
@@ -33,7 +33,7 @@ page's intended limit, so the harness must change, not the page.
   `scripts/verify-headless-browser.sh`, takes the lock with
   `acquireWorkerSerialLock` in real Chromium: a second tab in the same profile
   gets `already_owned`, and a tab in a second profile takes it.
-- [ ] Run `handed_over` on both boards: tab a the 601, tab b the 205. Each page
+- [x] Run `handed_over` on both boards: tab a the 601, tab b the 205. Each page
   refuses the other tab's grant before `start_lease`, and the two bindings
   differ. Records as in Ticket 28.
 
@@ -66,3 +66,6 @@ page's intended limit, so the harness must change, not the page.
     timing out at tab b's consent, as Ticket 28 did on the deployment.
 - 2026-11-22: the last item runs in [Ticket 32](32-privacy-consent-handover-on-both-boards.md)'s
   sitting, with a mining journey per board and the newer privacy checks.
+- 2026-11-23: `handed_over` passed on both boards in Ticket 32's sitting. Tab b's
+  window came to the front, and the owner picked the 205 in its chooser. See
+  that ticket's comment.

@@ -1,7 +1,7 @@
 # Privacy, consent and handover on both boards
 
 Type: task
-Status: ready-for-human
+Status: resolved
 Blocked by: None
 
 ## Objective
@@ -29,11 +29,11 @@ proposal. Both are refused before any board gets work.
 - [x] Every case records the Workers and duration the consent names, read before the consent click.
   A consent naming more than one Worker fails the case.
 - [x] The rehearsal runs the journey with the three negatives.
-- [ ] The sitting, per [run-sheet-32.md](../run-sheet-32.md):
+- [x] The sitting, per [run-sheet-32.md](../run-sheet-32.md):
   - a journey on each board;
   - `withheld` and `expired_context` on the 205;
   - `handed_over` with tab a on the 601 and tab b on the 205.
-- [ ] Records go in the fork's `docs/project/gate-integration-evidence.md` and on this ticket, with
+- [x] Records go in the fork's `docs/project/gate-integration-evidence.md` and on this ticket, with
   non-claims, naming no endpoints, MACs or pool identities. Update criteria 4, 11 and 13 in
   `spec.md`.
 
@@ -64,3 +64,25 @@ proposal. Both are refused before any board gets work.
   - No code fix: the harness and the page behave correctly when their bundles are missing. The
     deployment's `serve-gate-origin.ts` also reads `dist/` per request, so the run sheet now forbids
     builds and checks in the Gate's checkout while the launcher runs.
+- 2026-11-23, the sitting, 12:20 to 12:34 UTC: every case passed on the owner's `247d2cd` image,
+  with the Gate at `0be5ae1`. The records are in the fork's
+  `docs/project/gate-integration-evidence.md`, "Ticket 32 on both boards".
+  - The 205's journey: the consent named "Bitaxe Ultra 205" alone, estimating 70.4 s. It mined
+    101 s, the audit searched 5 Renew grants, the Authority reached `pass_issued`, the redemption
+    was answered 200, and the board stopped with `ok=1`.
+  - The 601's journey: the consent named "Bitaxe Gamma 601" alone, estimating 29.3 s. It mined
+    33 s, with 2 Renew grants searched, and ended the same way.
+  - `withheld` and `expired_context` on the 205, and `handed_over` with tab a the 601 and tab b
+    the 205: each challenge ended `cancelled` with Verified Progress 0 and no Gate Pass request.
+    Neither board logged a lease. In `handed_over` each consent named only its tab's board.
+  - Every audit searched both boards' Device Identity fingerprints and found no violation. No
+    stale job was logged. Both boards ended paused with `mineOnBoot` 0.
+  - The run sheet missed one step: the page reuses a port when exactly one is granted (ADR
+    0101), so the test profile's serial grants were forgotten before each step after the first.
+    Otherwise the 601's journey would have run on the 205.
+  - Unexplained: the Authority issued three challenges that never got a session or a grant, each
+    25 to 86 s before a step. The page mints one only on its Connect click, and the harness
+    clicks once per tab. They ended unused at expiry.
+  - The page's continuity store held three records for two boards after the 205's second
+    admission, each with a retention expiry. The harness's note that the page clears the store
+    when an attempt ends doesn't match that.
