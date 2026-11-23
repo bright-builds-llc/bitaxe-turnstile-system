@@ -21,15 +21,18 @@ export type DeploymentAdapter = {
   deviceIdentityFingerprints(tab: HarnessTab): Promise<string[]>;
   /** How long a person may take to pick the port and the page to show consent. */
   connectTimeoutMilliseconds: number;
-  /** Opens the page in `tab`, ready for the Connect click. */
-  load(tab: HarnessTab, origin: string): Promise<void>;
+  /** Opens the page in `tab`, ready for the Connect click; only a `mining` case may start real work. */
+  load(tab: HarnessTab, origin: string, options: { mining: boolean }): Promise<void>;
+  /** Brings a journey's work to the Work Requirement, where the harness has to; a board mines by itself. */
+  driveWork(tab: HarnessTab): Promise<void>;
   /** Waits for whatever confirms the board's restoration, where the harness can see it. */
   settle(tab: HarnessTab): Promise<void>;
   maybeBoard(tab: HarnessTab): Promise<BoardEvidence | undefined>;
 };
 
 const REHEARSAL_PAGE = "/reference/production-path-rehearsal.html";
-const MINER_BINDING = "bwgHarnessMinerStart";
+const MINER_BINDING = "bwgHarnessMiner";
+const WORK_STEP_MILLISECONDS = 120_000;
 
 type RehearsalDevice = {
   commands: string[];
@@ -39,10 +42,25 @@ type RehearsalDevice = {
   portClosed: boolean;
 };
 
-/** The rehearsal page with its fake board; the CPU miner is never wired, since no case may mine. */
+/**
+ * The rehearsal page with its fake board. A negative never reaches the CPU miner; a journey's miner
+ * commands go to the rehearsal's control listener, which also queues the one synthetic share that
+ * crosses the Work Requirement, as `scripts/run-production-path-rehearsal.mjs` does.
+ */
 export async function rehearsalAdapter(): Promise<DeploymentAdapter> {
   const minerStarts = new Map<string, number>();
   let maybePayoutDestination: string | undefined;
+  let maybeControl: string | undefined;
+  const control = async (path: string, maybeBody?: unknown): Promise<Response> => {
+    if (!maybeControl) throw new Error("the rehearsal page has not served its control listener yet");
+    const init = maybeBody === undefined
+      ? {}
+      : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(maybeBody) };
+    const response = await fetch(`${maybeControl}${path}`, init);
+    // 409 means "not yet" for the synthetic share; anything else unexpected stops the journey.
+    if (!response.ok && response.status !== 409) throw new Error(`rehearsal control ${path.split("/")[1]} answered ${response.status}`);
+    return response;
+  };
   return {
     pagePath: REHEARSAL_PAGE,
     boardValues: await rehearsalBoardValues(),
@@ -53,20 +71,45 @@ export async function rehearsalAdapter(): Promise<DeploymentAdapter> {
     // The rehearsal keeps continuity in memory, so its fake board's fingerprint comes from the fixture it signs with.
     deviceIdentityFingerprints: async () => [possessionFixture.fixtureIdentity.fingerprintSha256],
     connectTimeoutMilliseconds: 30_000,
-    async load(tab, origin) {
+    async load(tab, origin, { mining }) {
       minerStarts.set(tab.name, 0);
       tab.on("Runtime.bindingCalled", (params) => {
-        if (params.name === MINER_BINDING) minerStarts.set(tab.name, (minerStarts.get(tab.name) ?? 0) + 1);
+        if (params.name !== MINER_BINDING) return;
+        // The payload carries the pool credentials the board was given; it goes to the miner, never to output.
+        const { command, body } = JSON.parse(String(params.payload)) as { command: "start" | "stop"; body?: unknown };
+        if (command === "start") minerStarts.set(tab.name, (minerStarts.get(tab.name) ?? 0) + 1);
+        if (!mining) return;
+        control(`/miner/${command}`, body ?? {}).catch((error: unknown) =>
+          tab.recorderErrors.push(`the rehearsal miner's ${command} failed: ${error instanceof Error ? error.message : String(error)}`));
       });
       await tab.send("Runtime.addBinding", { name: MINER_BINDING });
       await tab.navigate(`${origin}${REHEARSAL_PAGE}`);
       const served = await tab.evaluate(async () => (await fetch("/rehearsal-config")).json() as Promise<Record<string, unknown>>);
       if (typeof served.payoutAddress !== "string") throw new Error("the rehearsal config has no payout address");
       maybePayoutDestination = served.payoutAddress;
+      if (typeof served.control !== "string") throw new Error("the rehearsal config has no control listener");
+      maybeControl = served.control;
       await tab.send("Page.addScriptToEvaluateOnNewDocument", {
         source: `(${installRehearsalPage.toString()})(${JSON.stringify(rehearsalPageConfig(served))}, ${JSON.stringify(MINER_BINDING)})`,
       });
       await tab.reload();
+    },
+    async driveWork(tab) {
+      const challengeId = await waitFor(`tab ${tab.name}'s challenge to be created`, () => createdChallengeId(tab), WORK_STEP_MILLISECONDS);
+      // Real shares across two lease windows and a Renew first, so the journey's grants include a Renew.
+      await waitFor(
+        `tab ${tab.name}'s Renew while real shares are delivered`,
+        async () => {
+          const delivery = (await (await control(`/challenges/${challengeId}/delivery`)).json()) as { acknowledgedLeaseWindows: number };
+          return delivery.acknowledgedLeaseWindows >= 2 && (await pageRenewed(tab));
+        },
+        WORK_STEP_MILLISECONDS,
+      );
+      await waitFor(
+        `tab ${tab.name}'s synthetic share to be queued`,
+        async () => (await control(`/challenges/${challengeId}/synthetic-share`, {})).status === 204,
+        WORK_STEP_MILLISECONDS,
+      );
     },
     async settle(tab) {
       // A refused Start makes the page fail closed and drop the port, so there is no Cancel to confirm.
@@ -74,7 +117,8 @@ export async function rehearsalAdapter(): Promise<DeploymentAdapter> {
         `tab ${tab.name}'s board to confirm restoration or lose its port`,
         async () => {
           const maybeDevice = await rehearsalDevice(tab);
-          return maybeDevice?.restorationReason === "cancelled" || maybeDevice?.portClosed === true;
+          // A journey's board restores for the satisfied challenge and the page then releases the port.
+      return maybeDevice?.restorationReason === "cancelled" || maybeDevice?.portClosed === true;
         },
         60_000,
       );
@@ -127,6 +171,8 @@ export async function deploymentAdapter(input: {
         field.dispatchEvent(new Event("input", { bubbles: true }));
       }, payoutAddress);
     },
+    // A board mines by itself once the page passes it the lease.
+    driveWork: async () => undefined,
     // A person reads the board's own log for its restoration; the page's Cancel and the Authority are checked.
     settle: async () => undefined,
     maybeBoard: async () => undefined,
@@ -176,13 +222,27 @@ function rehearsalPageConfig(served: Record<string, unknown>) {
   };
 }
 
-/** Runs in the page before its entry: the rehearsal config, and a miner bridge that only reports a start. */
+/** Runs in the page before its entry: the rehearsal config, and a miner bridge that hands each command to the harness. */
 function installRehearsalPage(config: unknown, bindingName: string): void {
   const page = window as unknown as Record<string, unknown>;
   page.bwgRehearsalConfig = config;
-  page.bwgRehearsalMiner = async (command: string) => {
-    if (command === "start") (page[bindingName] as (payload: string) => void)("start");
+  page.bwgRehearsalMiner = async (command: string, body?: unknown) => {
+    (page[bindingName] as (payload: string) => void)(JSON.stringify({ command, body }));
   };
+}
+
+async function createdChallengeId(tab: HarnessTab): Promise<string | undefined> {
+  return await tab.evaluate(() => {
+    const events = (window as unknown as { bwgRehearsal?: { pageEvents: { type: string; challengeId?: string }[] } }).bwgRehearsal?.pageEvents ?? [];
+    return events.find((event) => event.type === "challenge_created")?.challengeId;
+  });
+}
+
+async function pageRenewed(tab: HarnessTab): Promise<boolean> {
+  return await tab.evaluate(() => {
+    const events = (window as unknown as { bwgRehearsal?: { pageEvents: { type: string }[] } }).bwgRehearsal?.pageEvents ?? [];
+    return events.some((event) => event.type === "renewed");
+  });
 }
 
 async function rehearsalDevice(tab: HarnessTab): Promise<RehearsalDevice | undefined> {

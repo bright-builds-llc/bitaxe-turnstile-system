@@ -6,7 +6,10 @@
  * unused context, or hand one tab's grant to another tab. Each attempt is then
  * cancelled through the page, and the harness checks that mining never started,
  * the Authority ended the attempt, no Gate Pass exists and the only board-bound
- * value the Authority saw was `control_session_binding_sha256`.
+ * value the Authority saw was `control_session_binding_sha256`. The `journey` case
+ * (Ticket 32), named only explicitly, alters nothing: the board mines to the Work
+ * Requirement and the page redeems, so the same audit also covers Renew grants and the
+ * redemption. Every case records the Workers the consent named, never its payout line.
  *
  * Nothing here signs anything; grants are the Authority's own, moved or delayed.
  * Output names cases, routes as templates and field names, never endpoints, keys,
@@ -16,7 +19,7 @@
  * Deployment (Ticket 28), against a Chrome started with `--remote-debugging-port`:
  *   bun scripts/gate-negatives-harness.ts --browser http://127.0.0.1:9222 \
  *     --origin <deployment origin> --payout-address-file <file> \
- *     --board-values-file <file> [--cases withheld,expired_context,handed_over]
+ *     --board-values-file <file> [--cases withheld,expired_context,handed_over,journey]
  * A person picks each tab's port when Chrome asks; the handover's second tab is the second board,
  * in its own browser profile (Ticket 29), so its chooser asks every run. On macOS, start that
  * Chrome through `open -na "Google Chrome" --args ...`; started from a shell it aborts on the chooser.
@@ -37,7 +40,7 @@ import {
   caseVerdict,
   parseGateNegativeCases,
   type CaseVerdict,
-  type GateNegativeCase,
+  type GateCase,
   type TabEvidence,
 } from "./gate-negatives-cases";
 import { deploymentAdapter, rehearsalAdapter, type BoardValue, type DeploymentAdapter } from "./gate-negatives-adapters";
@@ -48,13 +51,17 @@ const CONNECT_BUTTON = ["#connect-bitaxe"];
 const PRIMARY_BUTTON = ["bwg-work-gate", "[data-action=primary]"];
 const CANCEL_BUTTON = ["bwg-work-gate", "[data-action=cancel]"];
 const CONFIRM_CANCEL_BUTTON = ["bwg-work-gate", "[data-action=confirm-cancel]"];
+const CONSENT_WORKERS = ["bwg-work-gate", "[data-field=workers]"];
+const CONSENT_DURATION = ["bwg-work-gate", "[data-field=duration]"];
 /** The page's rollback waits for the board's restoration, about 35 s on the fake and 47 s on a board. */
 const ROLLBACK_MILLISECONDS = 120_000;
 const LATE_EVENT_MILLISECONDS = 2_000;
 const CLEANUP_MILLISECONDS = 15_000;
+/** Mining to the requirement, the board's restoration and the redemption, well inside a challenge's 15 min. */
+const JOURNEY_MILLISECONDS = 600_000;
 
 type CaseReport = {
-  caseName: GateNegativeCase;
+  caseName: GateCase;
   boardValuesSearched: string[];
   verdict: CaseVerdict;
   tabs: TabEvidence[];
@@ -80,7 +87,7 @@ async function runCaseSafely(
   connection: CdpConnection,
   adapter: DeploymentAdapter,
   origin: string,
-  caseName: GateNegativeCase,
+  caseName: GateCase,
 ): Promise<CaseReport> {
   const tabs: HarnessTab[] = [];
   try {
@@ -103,7 +110,8 @@ async function runCaseSafely(
 async function cancelLeftAttempts(tabs: readonly HarnessTab[]): Promise<string[]> {
   const outcomes: string[] = [];
   for (const tab of tabs) {
-    if (tab.authorityStates.at(-1) === "cancelled") continue;
+    const lastState = tab.authorityStates.at(-1);
+    if (lastState === "cancelled" || lastState === "pass_issued") continue;
     try {
       await cancelThroughPage(tab, CLEANUP_MILLISECONDS);
       outcomes.push(`cleanup: tab ${tab.name} sent Cancel through the page`);
@@ -118,24 +126,30 @@ async function runCase(
   connection: CdpConnection,
   adapter: DeploymentAdapter,
   origin: string,
-  caseName: GateNegativeCase,
+  caseName: GateCase,
   tabs: HarnessTab[],
 ): Promise<CaseReport> {
   const interceptor = grantInterceptor(caseName);
   const fingerprints: BoardValue[] = [];
+  const consents = new Map<string, NonNullable<TabEvidence["maybeConsent"]>>();
+  const mining = caseName === "journey";
   for (const { name, ownProfile } of caseTabs(caseName)) {
     const tab = await openHarnessTab(connection, name, interceptor.onPaused, { ownProfile });
     tabs.push(tab);
-    await adapter.load(tab, origin);
-    await consentAndStart(tab, adapter);
+    await adapter.load(tab, origin, { mining });
+    consents.set(name, await consentAndStart(tab, adapter));
     await waitFor(`tab ${name}'s Start grant to be paused`, () => interceptor.pausedStart(name), 60_000);
     fingerprints.push(...(await deviceIdentityFingerprints(tab, adapter)));
   }
   await waitFor("every altered grant to be answered", () => interceptor.settled(), CONTEXT_HOLD_MILLISECONDS + 30_000);
-  for (const tab of tabs) await cancelThroughPage(tab, ROLLBACK_MILLISECONDS);
-  for (const tab of tabs) await endedByAuthority(tab, adapter);
+  if (mining) {
+    for (const tab of tabs) await redeemedAfterWork(tab, adapter);
+  } else {
+    for (const tab of tabs) await cancelThroughPage(tab, ROLLBACK_MILLISECONDS);
+    for (const tab of tabs) await endedByAuthority(tab, adapter);
+  }
   await Bun.sleep(LATE_EVENT_MILLISECONDS);
-  const evidence = await Promise.all(tabs.map(async (tab) => tabEvidence(tab, adapter, interceptor)));
+  const evidence = await Promise.all(tabs.map(async (tab) => tabEvidence(tab, adapter, interceptor, consents.get(tab.name))));
   const boardValues = [...adapter.boardValues, ...fingerprints];
   const audit = auditAuthorityRequests(tabs.flatMap((tab) => tab.requests), {
     origin,
@@ -159,7 +173,8 @@ async function deviceIdentityFingerprints(tab: HarnessTab, adapter: DeploymentAd
   return values.map((value, index) => ({ label: `tab ${tab.name} Device Identity fingerprint ${index + 1}`, value }));
 }
 
-async function consentAndStart(tab: HarnessTab, adapter: DeploymentAdapter): Promise<void> {
+/** Criterion 4's evidence: the Workers the disclosure names, read before consent is given. */
+async function consentAndStart(tab: HarnessTab, adapter: DeploymentAdapter): Promise<NonNullable<TabEvidence["maybeConsent"]>> {
   await tab.click(CONNECT_BUTTON);
   await waitFor(
     `tab ${tab.name}'s consent to be offered`,
@@ -169,7 +184,28 @@ async function consentAndStart(tab: HarnessTab, adapter: DeploymentAdapter): Pro
     },
     adapter.connectTimeoutMilliseconds,
   );
+  const workers = (await tab.text(CONSENT_WORKERS)) ?? "";
+  const consent = {
+    workers: workers.split(", ").map((worker) => worker.trim()).filter(Boolean),
+    duration: (await tab.text(CONSENT_DURATION)) ?? "",
+  };
   await tab.click(PRIMARY_BUTTON);
+  return consent;
+}
+
+/** A journey: the board mines to the requirement and restores, then the page redeems its Gate Pass. */
+async function redeemedAfterWork(tab: HarnessTab, adapter: DeploymentAdapter): Promise<void> {
+  await adapter.driveWork(tab);
+  await waitFor(
+    `tab ${tab.name}'s Gate Pass to be issued and redeemed`,
+    () => {
+      const lastState = tab.authorityStates.at(-1);
+      if (lastState === "cancelled" || lastState === "expired") throw new Error(`tab ${tab.name}'s attempt ended ${lastState}`);
+      return lastState === "pass_issued" && tab.redeemStatus() !== undefined;
+    },
+    JOURNEY_MILLISECONDS,
+  );
+  await adapter.settle(tab);
 }
 
 async function cancelThroughPage(tab: HarnessTab, offerTimeoutMilliseconds: number): Promise<void> {
@@ -199,9 +235,12 @@ async function tabEvidence(
   tab: HarnessTab,
   adapter: DeploymentAdapter,
   interceptor: ReturnType<typeof grantInterceptor>,
+  maybeConsent: TabEvidence["maybeConsent"],
 ): Promise<TabEvidence> {
   const maybeInterception = interceptor.interception(tab.name);
   const maybeBoard = await adapter.maybeBoard(tab);
+  const maybeRedeemStatus = tab.redeemStatus();
+  const renewGrants = interceptor.grants().filter((grant) => grant.tab === tab.name && grant.operation === "renew").length;
   return {
     tab: tab.name,
     ...(maybeInterception ? { maybeInterception } : {}),
@@ -212,6 +251,9 @@ async function tabEvidence(
     recorderErrors: [...tab.recorderErrors],
     cancelAccepted: tab.cancelAccepted(),
     gatePassRequests: tab.gatePassRequests(),
+    renewGrants,
+    ...(maybeRedeemStatus !== undefined ? { maybeRedeemStatus } : {}),
+    ...(maybeConsent ? { maybeConsent } : {}),
     ...(maybeBoard ? { maybeBoard } : {}),
   };
 }

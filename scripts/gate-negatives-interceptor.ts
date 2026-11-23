@@ -6,7 +6,7 @@
 import {
   decideGrant,
   emptyInterceptionState,
-  type GateNegativeCase,
+  type GateCase,
   type GrantDecision,
   type InterceptionAction,
   type TabEvidence,
@@ -24,7 +24,7 @@ type PausedResponse = {
 /** Hop-by-hop and length headers describe the original bytes, not a substituted body. */
 const DROPPED_HEADERS = new Set(["content-length", "content-encoding", "transfer-encoding"]);
 
-export function grantInterceptor(caseName: GateNegativeCase) {
+export function grantInterceptor(caseName: GateCase) {
   let state = emptyInterceptionState();
   let nextKey = 0;
   let pendingDeliveries = 0;
@@ -55,7 +55,10 @@ export function grantInterceptor(caseName: GateNegativeCase) {
     if (!target) throw new Error("a decision named a grant that was never paused");
     const { tab, event } = target;
     if (decision.type === "pass") {
-      void tab.send("Fetch.continueRequest", { requestId: event.requestId }).catch(record);
+      // A journey takes over each tab's first Start only to pass it, which `pausedStart` and `settled` wait for.
+      const takenOver = caseName === "journey" && state.handledTabs.includes(tab.name) && !interceptions.has(tab.name);
+      void tab.send("Fetch.continueRequest", { requestId: event.requestId })
+        .then(() => takenOver && note(target, "passed"), record);
       return;
     }
     if (decision.type === "withhold") {

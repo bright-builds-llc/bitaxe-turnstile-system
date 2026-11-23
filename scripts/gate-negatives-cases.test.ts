@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   CONTEXT_HOLD_MILLISECONDS,
+  GATE_NEGATIVE_CASES,
   caseTabs,
   caseVerdict,
   decideGrant,
@@ -8,7 +9,7 @@ import {
   parseGateNegativeCases,
   type PausedGrant,
   type TabEvidence,
-  type GateNegativeCase,
+  type GateCase,
 } from "./gate-negatives-cases";
 
 function paused(tab: string, operation: PausedGrant["operation"] = "start", pausedAtMilliseconds = 1_000): PausedGrant {
@@ -26,6 +27,8 @@ function endedTab(tab: string, action: NonNullable<TabEvidence["maybeInterceptio
     recorderErrors: [],
     cancelAccepted: true,
     gatePassRequests: 0,
+    renewGrants: 0,
+    maybeConsent: { workers: ["Bitaxe Gamma 601"], duration: "40.0 seconds estimated" },
     maybeBoard: {
       startLeaseCommands: action === "held" ? 1 : 0,
       leasesStarted: 0,
@@ -34,6 +37,32 @@ function endedTab(tab: string, action: NonNullable<TabEvidence["maybeInterceptio
       // A Start the board refuses ends the serial session, so the page drops the port instead of cancelling.
       restorationReason: action === "held" ? undefined : "cancelled",
       portClosed: action === "held",
+    },
+  };
+}
+
+/** A tab whose grants all passed, mined to the Work Requirement and redeemed its Gate Pass. */
+function journeyTab(tab = "a"): TabEvidence {
+  return {
+    tab,
+    maybeInterception: { action: "passed", heldMilliseconds: 0 },
+    authorityStates: ["issued", "active", "satisfied", "pass_issued"],
+    verifiedProgress: "35184372088832",
+    progressEvents: 6,
+    resyncRequired: false,
+    recorderErrors: [],
+    cancelAccepted: false,
+    gatePassRequests: 2,
+    renewGrants: 3,
+    maybeRedeemStatus: 200,
+    maybeConsent: { workers: ["Bitaxe Ultra 205"], duration: "80.0 seconds estimated" },
+    maybeBoard: {
+      startLeaseCommands: 1,
+      leasesStarted: 1,
+      startRejections: [],
+      minerStarts: 1,
+      restorationReason: "challenge_satisfied",
+      portClosed: true,
     },
   };
 }
@@ -49,7 +78,7 @@ test("refuses an unknown case", () => {
 });
 
 test("hands over between two tabs and runs the others in one", () => {
-  const names = (caseName: GateNegativeCase) => caseTabs(caseName).map((tab) => tab.name);
+  const names = (caseName: GateCase) => caseTabs(caseName).map((tab) => tab.name);
   expect([names("withheld"), names("expired_context"), names("handed_over")]).toEqual([["a"], ["a"], ["a", "b"]]);
 });
 
@@ -379,4 +408,137 @@ test("judges a real board by the Authority's view when the harness can't read it
 
   // Assert
   expect(verdict).toEqual({ passed: true, failures: [], startByTab: { a: "unobserved" } });
+});
+
+test("parses the journey case, but leaves it out of the default negatives so a bare run never mines", () => {
+  // Act
+  const parsed = parseGateNegativeCases("journey");
+
+  // Assert
+  expect(parsed).toEqual(["journey"]);
+  expect(GATE_NEGATIVE_CASES).not.toContain("journey");
+});
+
+test("runs a journey in one tab", () => {
+  expect(caseTabs("journey")).toEqual([{ name: "a", ownProfile: false }]);
+});
+
+test("passes a journey's first Start grant through and marks its tab handled", () => {
+  // Arrange
+  const grant = paused("a");
+
+  // Act
+  const { state, decisions } = decideGrant("journey", emptyInterceptionState(), grant);
+
+  // Assert
+  expect(decisions).toEqual([{ type: "pass", key: "a-start" }]);
+  expect(state.handledTabs).toEqual(["a"]);
+});
+
+test("passes a journey that mined to the requirement, renewed and redeemed with no audit violation", () => {
+  // Act
+  const verdict = caseVerdict("journey", [journeyTab()], cleanAudit);
+
+  // Assert
+  expect(verdict).toEqual({ passed: true, failures: [], startByTab: { a: "lease_started" } });
+});
+
+test("fails a journey whose Start grant was not passed through", () => {
+  // Arrange
+  const tabs = [{ ...journeyTab(), maybeInterception: { action: "withheld" as const, heldMilliseconds: 0 } }];
+
+  // Act
+  const verdict = caseVerdict("journey", tabs, cleanAudit);
+
+  // Assert
+  expect(verdict.failures).toEqual(["tab a: the Start grant was not passed through"]);
+});
+
+test("fails a journey that never reached pass_issued", () => {
+  // Arrange
+  const tabs = [{ ...journeyTab(), authorityStates: ["issued", "active", "satisfied"] }];
+
+  // Act
+  const verdict = caseVerdict("journey", tabs, cleanAudit);
+
+  // Assert
+  expect(verdict.failures).toEqual(["tab a: the Authority did not reach pass_issued"]);
+});
+
+test("fails a journey in which no Renew grant was seen, since the audit searched none", () => {
+  // Arrange
+  const tabs = [{ ...journeyTab(), renewGrants: 0 }];
+
+  // Act
+  const verdict = caseVerdict("journey", tabs, cleanAudit);
+
+  // Assert
+  expect(verdict.failures).toEqual(["tab a: no Renew grant was seen, so none was searched"]);
+});
+
+test("fails a journey whose redemption was refused", () => {
+  // Arrange
+  const tabs = [{ ...journeyTab(), maybeRedeemStatus: 401 }];
+
+  // Act
+  const verdict = caseVerdict("journey", tabs, cleanAudit);
+
+  // Assert
+  expect(verdict.failures).toEqual(["tab a: the redemption was answered 401"]);
+});
+
+test("fails a journey with no redemption response", () => {
+  // Arrange
+  const { maybeRedeemStatus: _, ...tab } = journeyTab();
+
+  // Act
+  const verdict = caseVerdict("journey", [tab], cleanAudit);
+
+  // Assert
+  expect(verdict.failures).toEqual(["tab a: no redemption response was seen"]);
+});
+
+test("fails a journey the page cancelled", () => {
+  // Arrange
+  const tabs = [{ ...journeyTab(), cancelAccepted: true }];
+
+  // Act
+  const verdict = caseVerdict("journey", tabs, cleanAudit);
+
+  // Assert
+  expect(verdict.failures).toEqual(["tab a: the Authority accepted a Cancel"]);
+});
+
+test("fails a journey whose board didn't restore for the satisfied challenge", () => {
+  // Arrange
+  const tab = journeyTab();
+  const tabs = [{ ...tab, maybeBoard: { ...tab.maybeBoard!, restorationReason: "cancelled" } }];
+
+  // Act
+  const verdict = caseVerdict("journey", tabs, cleanAudit);
+
+  // Assert
+  expect(verdict.failures).toEqual(["tab a: the board did not restore for the satisfied challenge"]);
+});
+
+test("fails any case whose consent named more than the connected board", () => {
+  // Arrange
+  const tabs = [{ ...endedTab("a", "withheld"), maybeConsent: { workers: ["Bitaxe Gamma 601", "Bitaxe Ultra 205"], duration: "26.7 seconds estimated" } }];
+
+  // Act
+  const verdict = caseVerdict("withheld", tabs, cleanAudit);
+
+  // Assert
+  expect(verdict.failures).toEqual(["tab a: the consent named 2 Workers, not only the connected board"]);
+});
+
+test("fails any case whose consent wasn't read", () => {
+  // Arrange
+  const { maybeConsent: _, ...tab } = journeyTab();
+
+  // Act
+  const verdict = caseVerdict("journey", [tab], cleanAudit);
+
+  // Assert
+  expect(verdict.failures).toEqual(["tab a: the consent's Workers were not read"]);
 });

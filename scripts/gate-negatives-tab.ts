@@ -30,6 +30,8 @@ export type HarnessTab = {
   recorderErrors: string[];
   cancelAccepted: () => boolean;
   gatePassRequests: () => number;
+  /** The status of the page's Gate Pass redemption, once answered. */
+  redeemStatus: () => number | undefined;
   send<T = Record<string, unknown>>(method: string, params?: object): Promise<T>;
   /** Subscribes to one of this tab's CDP events until the tab closes. */
   on(method: string, listener: (params: Record<string, unknown>) => void): void;
@@ -37,6 +39,8 @@ export type HarnessTab = {
   navigate(url: string): Promise<void>;
   reload(): Promise<void>;
   elementState(path: ElementPath): Promise<ElementState>;
+  /** The element's rendered text, or `undefined` if it isn't on the page. */
+  text(path: ElementPath): Promise<string | undefined>;
   click(path: ElementPath): Promise<void>;
   close(): Promise<void>;
 };
@@ -82,6 +86,7 @@ export async function openHarnessTab(
     recorderErrors: recorder.errors,
     cancelAccepted: recorder.cancelAccepted,
     gatePassRequests: recorder.gatePassRequests,
+    redeemStatus: recorder.redeemStatus,
     send,
     on(method, listener) {
       subscribe(method, (params, maybeSessionId) => {
@@ -103,6 +108,7 @@ export async function openHarnessTab(
       await waitForLoad(tab);
     },
     elementState: (path) => evaluate(send, pageElementState, [path]),
+    text: async (path) => (await evaluate(send, pageElementText, [path])) ?? undefined,
     async click(path) {
       const state = await tab.elementState(path);
       if (!state.visible || !state.enabled) throw new Error(`tab ${name}: ${path.join(" > ")} is not clickable`);
@@ -187,6 +193,7 @@ function networkRecorder(cdp: CdpConnection, sessionId: string, tabName: string)
   let resyncRequired = false;
   let cancelAccepted = false;
   let gatePassRequests = 0;
+  let maybeRedeemStatus: number | undefined;
   // Every handler's failure is recorded for the verdict; none may escape as an unhandled rejection.
   const mine = (listener: (params: Record<string, unknown>) => void | Promise<void>) =>
     (params: Record<string, unknown>, maybeSessionId: string | undefined) => {
@@ -218,6 +225,7 @@ function networkRecorder(cdp: CdpConnection, sessionId: string, tabName: string)
       const response = params.response as { url: string; status: number };
       const route = routeTemplate(new URL(response.url).pathname);
       if (route?.endsWith("/work-session/cancel") && response.status >= 200 && response.status < 300) cancelAccepted = true;
+      if (route === "/account-creation/redeem") maybeRedeemStatus = response.status;
     })),
     cdp.on("Network.eventSourceMessageReceived", mine((params) => {
       const event = readAuthorityStreamEvent(String(params.eventName), String(params.data));
@@ -238,6 +246,7 @@ function networkRecorder(cdp: CdpConnection, sessionId: string, tabName: string)
     resyncRequired: () => resyncRequired,
     cancelAccepted: () => cancelAccepted,
     gatePassRequests: () => gatePassRequests,
+    redeemStatus: () => maybeRedeemStatus,
     stop: () => stops.forEach((stop) => stop()),
   };
 }
@@ -276,4 +285,16 @@ function pageElementState(path: readonly string[]): ElementState {
   const visible = !element.closest("[hidden]") && rect.width > 0 && rect.height > 0;
   const enabled = !(element as HTMLButtonElement).disabled;
   return { present: true, visible, enabled, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+}
+
+/** Runs in the page: an element's rendered text, found through shadow roots, or `null` if absent. */
+function pageElementText(path: readonly string[]): string | null {
+  let root: ParentNode = document;
+  let maybeElement: Element | null = null;
+  for (const selector of path) {
+    maybeElement = root.querySelector(selector);
+    if (!maybeElement) return null;
+    root = maybeElement.shadowRoot ?? maybeElement;
+  }
+  return (maybeElement as HTMLElement).innerText.trim();
 }

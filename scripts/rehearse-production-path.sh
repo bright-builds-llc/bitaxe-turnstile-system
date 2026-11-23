@@ -10,8 +10,8 @@
 #
 # Usage: scripts/rehearse-production-path.sh [--hold | --negatives]
 #   --hold       start the stack, print its configuration and wait instead of the browser run.
-#   --negatives  run the Gate negatives harness (Ticket 21) in headless Chrome over CDP instead
-#                of the passing run. `BWG_TEST_CHROME` overrides the Chrome binary.
+#   --negatives  run the Gate negatives harness (Ticket 21) and its journey (Ticket 32) in headless
+#                Chrome over CDP instead of the passing run. `BWG_TEST_CHROME` overrides the Chrome binary.
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
@@ -186,8 +186,9 @@ run_negatives() {
   fi
   devtools="ws://127.0.0.1:$(sed -n 1p "$chrome_profile/DevToolsActivePort")$(sed -n 2p "$chrome_profile/DevToolsActivePort")"
   # The harness prints cases, route templates and field names only, so its output can be shown.
+  # The journey (Ticket 32) mines and redeems, so the audit also sees Renew grants and the redemption.
   if ! bun scripts/gate-negatives-harness.ts --browser "$devtools" --origin "$origin" --rehearsal \
-    >"$integration_root/negatives.log" 2>&1; then
+    --cases withheld,expired_context,handed_over,journey >"$integration_root/negatives.log" 2>&1; then
     printf 'Gate negatives did not pass\n' >&2
     return 1
   fi

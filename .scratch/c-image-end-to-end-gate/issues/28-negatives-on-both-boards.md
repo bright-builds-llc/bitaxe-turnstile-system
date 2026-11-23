@@ -90,3 +90,6 @@ of `247d2cd`, and nothing flashed. The fork's `docs/project/gate-integration-evi
   Start and Renew grant for the payout and the board values. The rehearsal's three cases passed with
   these checks. The rehearsal keeps continuity in memory, so the store read first runs at this
   sitting. Branch `privacy-boundaries`.
+- 2026-11-22: the store read, the payout and grant checks, and the 205's consent screen move to
+  [Ticket 32](32-privacy-consent-handover-on-both-boards.md). It adds a mining journey per board,
+  so the audit also sees Renew grants and the redemption.

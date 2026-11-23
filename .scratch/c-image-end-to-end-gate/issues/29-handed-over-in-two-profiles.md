@@ -64,3 +64,5 @@ page's intended limit, so the harness must change, not the page.
   - The rehearsal now shows the limit: with tab b moved back into tab a's
     profile, `withheld` and `expired_context` pass and `handed_over` fails,
     timing out at tab b's consent, as Ticket 28 did on the deployment.
+- 2026-11-22: the last item runs in [Ticket 32](32-privacy-consent-handover-on-both-boards.md)'s
+  sitting, with a mining journey per board and the newer privacy checks.
