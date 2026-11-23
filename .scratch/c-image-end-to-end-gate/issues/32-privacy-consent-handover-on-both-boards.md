@@ -80,9 +80,20 @@ proposal. Both are refused before any board gets work.
   - The run sheet missed one step: the page reuses a port when exactly one is granted (ADR
     0101), so the test profile's serial grants were forgotten before each step after the first.
     Otherwise the 601's journey would have run on the 205.
-  - Unexplained: the Authority issued three challenges that never got a session or a grant, each
-    25 to 86 s before a step. The page mints one only on its Connect click, and the harness
-    clicks once per tab. They ended unused at expiry.
+  - The Authority issued three challenges that never got a session or a grant. They're explained
+    in the next comment.
   - The page's continuity store held three records for two boards after the 205's second
     admission, each with a retention expiry. The harness's note that the page clears the store
     when an attempt ends doesn't match that.
+- 2026-11-23, the three unused challenges, diagnosed:
+  - Cause: the owner moved the test Chrome window while its serial chooser was open, which
+    dismissed the chooser. `requestPort` failed, the page re-enabled Connect, and the owner pressed
+    it again. The page mints its challenge before the chooser
+    (`connectReferenceAccountPage` in `web/reference-account-page.ts`), so the first one stayed
+    `issued` until it expired.
+  - Evidence: each was issued within a second of the harness's click (12:20:56, 12:26:32 and
+    12:32:10 UTC, against harness starts at 12:20:55.7, 12:26:31.8 and about 12:32:09). The
+    challenge each step used came 25 to 86 s later, at the owner's click. The negatives step, with
+    the window left alone, has none. The harness has no challenge request of its own.
+  - Not a fault in the harness or the Authority. A run sheet should say to leave the window still
+    while a chooser is open.
