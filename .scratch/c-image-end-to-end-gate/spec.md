@@ -25,7 +25,7 @@ credentials, pool users or endpoints. Security findings name topics only.
 Criteria are from `docs/design/core-mvp-success-criteria.md`, updated
 2026-11-23 from Tickets 07, 08, 15, 27, 28 and 32. "Partial" names what the C image
 shows and what it doesn't. The hardware evidence is in the firmware repository's
-[`docs/project/gate-integration-evidence.md`](https://github.com/bright-builds-llc/bitaxe-esp-miner-c/blob/839a35f/docs/project/gate-integration-evidence.md),
+[`docs/project/gate-integration-evidence.md`](https://github.com/bright-builds-llc/bitaxe-esp-miner-c/blob/ddeecd6/docs/project/gate-integration-evidence.md),
 in the sections named for Tickets 07, 08, 15, 28 and 32. Those runs used the
 owner's reference images (`247d2cd`, and in Ticket 15 the signed `51e5af9` and
 `57b0841` packages) on the Gamma 601 or the Ultra 205.
