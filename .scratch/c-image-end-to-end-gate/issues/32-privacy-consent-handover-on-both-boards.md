@@ -49,7 +49,18 @@ proposal. Both are refused before any board gets work.
   - Mutation check: with the payout address planted in each Renew grant the audit sees, the
     journey failed with "the payout destination reached the board in tab a's renew grant".
   - In the first of the three runs, `expired_context` timed out waiting for the consent screen, so
-    it never reached its Start. Nothing in this change runs before consent, so it looks like an
-    existing race. The guess is that the withheld tab's site-wide Web Lock was still held when the
-    next case's tab connected, but that isn't confirmed. If it happens at the sitting, the page sits
-    on its connect step until the 600 s connect timeout.
+    it never reached its Start. The cause wasn't a Web Lock race; see the next comment.
+- 2026-11-22, the `expired_context` timeout, diagnosed:
+  - Cause: `bun run build:browser` ran in the same checkout during that run. It empties `dist/`
+    first, and the rehearsal server reads `dist/` on each request. `expired_context`'s tab clicks
+    Connect about 4.7 s into a run, so its page loaded while the bundles were gone. The page never
+    got its `bwg-work-gate` component, so neither the consent nor Cancel appeared. The build started
+    at 17:12:43 UTC, 5 s after the stack was ready.
+  - Repro: with the stack held, moving `dist/` aside for 3 s as `expired_context` loads fails it
+    with the same two messages, two runs of two. The control runs between them passed.
+  - Ruled out: 56 runs of `withheld,expired_context` with nothing building passed. They covered a
+    held stack, every CPU core loaded, a fresh stack per run, and four Chromes at once. A probe of
+    300 tab closes found no Web Lock outliving `Target.closeTarget`, even with no gap.
+  - No code fix: the harness and the page behave correctly when their bundles are missing. The
+    deployment's `serve-gate-origin.ts` also reads `dist/` per request, so the run sheet now forbids
+    builds and checks in the Gate's checkout while the launcher runs.

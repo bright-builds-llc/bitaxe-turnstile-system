@@ -42,6 +42,9 @@ sent to a board. Each case also records the Workers and duration the consent nam
    ```
 
    Started from a shell, Chrome aborts on the serial chooser.
+7. Run no build, test or check in the Gate's checkout until the launcher stops. The page's bundles
+   are read from its `dist/` on each request, and `build:browser` empties that first, so a page
+   loaded during a build never offers consent.
 
 ## Steps, in order
 
