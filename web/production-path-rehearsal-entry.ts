@@ -50,10 +50,8 @@ connect.addEventListener("click", () => {
     config: { ...config, origin: window.location.origin },
     gate,
     payoutAddress,
-    worker(scope) {
+    worker() {
       const { worker, log } = rehearsalWorkerInput({
-        challengeId: scope.challengeId,
-        retentionExpiryUnixSeconds: scope.expiresAtUnixSeconds,
         miner: {
           start: (stratum) => page.bwgRehearsalMiner("start", stratum),
           stop: () => page.bwgRehearsalMiner("stop"),

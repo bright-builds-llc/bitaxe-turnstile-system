@@ -38,7 +38,8 @@ The current local Worker contract is Controller 0.4 over fixed ESP32-S3 USB Seri
 Web Serial, documented in [Worker Serial 0.2](docs/protocol/bwg-worker-serial-0.2.md).
 `bwg-core/worker-controller` exports the open-page production adapter (ADR-0110) and strict parsers;
 `bwg-core/headless` exports `connectWebSerialHeadlessClient` to compose possession-bound device
-control with Authority Start/Renew flows. The device heartbeat cutoff is 2.8 seconds. Switching tabs
+control with Authority Start/Renew flows. Given `prepareClient` instead of a client, it opens the
+chooser first and mints the challenge only once a port is chosen. The device heartbeat cutoff is 2.8 seconds. Switching tabs
 or minimizing keeps the session; leaving or reloading the page requires fresh explicit admission and
 never resumes mining automatically.
 

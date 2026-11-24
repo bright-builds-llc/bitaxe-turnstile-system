@@ -68,15 +68,13 @@ export type RehearsalDeviceLog = {
 
 /** Builds Worker Serial input whose port is the fake device. */
 export function rehearsalWorkerInput(input: {
-  challengeId: string;
-  retentionExpiryUnixSeconds: number;
   miner: RehearsalMiner;
   /** The board's monotonic clock; unit tests move it to age the possession context. */
   maybeDeviceClock?: () => number;
   maybeRestoreConfirmationMilliseconds?: number;
   /** The page's Worker Serial lock; the rehearsal page takes the real site-wide one, so it shows the same one-session limit. */
   acquireLock: () => Promise<() => void>;
-}): { worker: WebSerialWorkerControllerInput; log: RehearsalDeviceLog } {
+}): { worker: Omit<WebSerialWorkerControllerInput, "continuityScope">; log: RehearsalDeviceLog } {
   const log: RehearsalDeviceLog = {
     commands: [],
     leasesStarted: 0,
@@ -124,10 +122,6 @@ export function rehearsalWorkerInput(input: {
   const worker = {
     deviceFilter: DEVICE_FILTER,
     trustedUpdateKeys: trustFixture.updateAuthority.keys,
-    continuityScope: {
-      challengeId: input.challengeId,
-      retentionExpiryUnixSeconds: input.retentionExpiryUnixSeconds,
-    },
     expectedFirmwareSourceCommit: FIRMWARE_SOURCE_COMMIT,
     expectedAppElfSha256: APP_ELF_SHA256,
     [workerSerialTestRuntime]: options,

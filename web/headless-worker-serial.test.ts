@@ -6,6 +6,7 @@ import {
   transportHarness,
 } from "./headless-client.test-support";
 import { serialHarness } from "./worker-serial.test-support";
+import { workerSerialTestRuntime } from "./webserial-worker-port";
 import type { WorkerLeaseAuthorizationContext } from "./worker-lease-authorization";
 
 test("public serial headless entrypoint binds real Authority Start/Renew to production possession", async () => {
@@ -109,4 +110,71 @@ test("a completed challenge keeps the USB port until the client closes", async (
 
   // Assert
   expect(h.counts()).toMatchObject({ closed: 0, active: false });
+});
+
+function workerWithoutScope(h: Awaited<ReturnType<typeof serialHarness>>) {
+  const { continuityScope: _scope, ...worker } = h.input;
+  return worker;
+}
+
+test("the challenge is prepared only after a port is chosen", async () => {
+  // Arrange
+  const h = await serialHarness(fixture.challenge.challengeId);
+  const authority = transportHarness();
+  const prepared: string[] = [];
+  h.delayPermission();
+  const connecting = connectWebSerialHeadlessClient({
+    worker: workerWithoutScope(h),
+    async prepareClient() {
+      prepared.push("challenge");
+      return await headlessInput(authority.transport);
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const beforeChoice = [...prepared];
+  // Act
+  h.grantPermission();
+  const client = await connecting;
+  // Assert
+  expect(beforeChoice).toEqual([]);
+  expect(prepared).toEqual(["challenge"]);
+  await client.close();
+});
+
+test("a cancelled chooser prepares no challenge", async () => {
+  // Arrange
+  const h = await serialHarness(fixture.challenge.challengeId);
+  const authority = transportHarness();
+  const prepared: string[] = [];
+  // The person closes the chooser, as moving its window does.
+  h.input[workerSerialTestRuntime].runtime.serial = {
+    requestPort: async () => { throw new DOMException("No port selected by the user.", "NotFoundError"); },
+  };
+  // Act
+  const connecting = connectWebSerialHeadlessClient({
+    worker: workerWithoutScope(h),
+    async prepareClient() {
+      prepared.push("challenge");
+      return await headlessInput(authority.transport);
+    },
+  });
+  // Assert
+  await expect(connecting).rejects.toMatchObject({ category: "admission_failed" });
+  expect(prepared).toEqual([]);
+  expect(h.counts()).toMatchObject({ opened: 0, locked: false });
+});
+
+test("a failed challenge request releases the port lock", async () => {
+  // Arrange
+  const h = await serialHarness(fixture.challenge.challengeId);
+  // Act
+  const connecting = connectWebSerialHeadlessClient({
+    worker: workerWithoutScope(h),
+    async prepareClient() {
+      throw new Error("challenge request failed");
+    },
+  });
+  // Assert
+  await expect(connecting).rejects.toThrow("challenge request failed");
+  expect(h.counts()).toMatchObject({ opened: 0, locked: false });
 });

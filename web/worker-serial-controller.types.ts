@@ -45,6 +45,11 @@ export type WebSerialWorkerControllerInput = {
   deviceFilter: { usbVendorId: number; usbProductId: number };
   trustedUpdateKeys: readonly unknown[];
   continuityScope: WorkerContinuityScope;
+  /**
+   * Replaces `continuityScope` once the person has chosen a port and before it opens, so a
+   * cancelled chooser mints no challenge and the chooser opens within the Connect gesture.
+   */
+  maybePrepareScope?: () => Promise<WorkerContinuityScope>;
   expectedFirmwareSourceCommit?: string;
   expectedAppElfSha256?: string;
 };

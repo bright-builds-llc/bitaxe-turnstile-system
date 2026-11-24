@@ -146,8 +146,9 @@ export class BrowserSerialController implements WebSerialWorkerController {
       )
         throw serialFailure("selected_port");
       stage = "scope";
-      if (this.maybeQualificationHook?.prepareScope) {
-        const scope = await this.maybeQualificationHook.prepareScope();
+      const maybePrepareScope = this.input.maybePrepareScope ?? this.maybeQualificationHook?.prepareScope;
+      if (maybePrepareScope) {
+        const scope = await maybePrepareScope();
         this.input.continuityScope = scope;
         this.#continuity =
           this.maybeContinuity ??

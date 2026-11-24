@@ -164,6 +164,9 @@ export async function deploymentAdapter(input: {
     connectTimeoutMilliseconds: input.connectTimeoutMilliseconds,
     async load(tab, origin) {
       await tab.navigate(`${origin}${input.pagePath}`);
+      // The page reuses a single granted port (ADR 0101), so a step for another board would get the last one.
+      const forgotten = await tab.evaluate(forgetSerialGrants);
+      process.stdout.write(`negatives: tab ${tab.name} forgot ${forgotten} serial grants, so its chooser asks\n`);
       await tab.evaluate((address: string) => {
         const field = document.querySelector<HTMLInputElement>("#payout-address");
         if (!field) throw new Error("the page has no payout address field");
@@ -180,8 +183,20 @@ export async function deploymentAdapter(input: {
 }
 
 /**
+ * Runs in the page: forgets every serial port the site was granted and returns how many, so the
+ * next Connect asks. Self-contained, since it's sent as source.
+ */
+export async function forgetSerialGrants(): Promise<number> {
+  const serial = (navigator as unknown as { serial: { getPorts(): Promise<{ forget(): Promise<void> }[]> } }).serial;
+  const ports = await serial.getPorts();
+  for (const port of ports) await port.forget();
+  return ports.length;
+}
+
+/**
  * Runs in the page: the fingerprints in its private `bwg-worker` continuity store, which the page
- * writes on admission and clears when the attempt ends. Self-contained, since it's sent as source.
+ * writes on admission and keeps until each record's retention expiry. Self-contained, since it's
+ * sent as source.
  */
 async function storedDeviceIdentityFingerprints(): Promise<string[]> {
   const known = await indexedDB.databases();

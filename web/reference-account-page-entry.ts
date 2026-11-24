@@ -28,13 +28,7 @@ connect.addEventListener("click", () => {
     config: { ...deployment, origin: window.location.origin },
     gate,
     payoutAddress: payout.value.trim(),
-    worker: (scope) => ({
-      ...deployment.worker,
-      continuityScope: {
-        challengeId: scope.challengeId,
-        retentionExpiryUnixSeconds: scope.expiresAtUnixSeconds,
-      },
-    }),
+    worker: () => deployment.worker,
     maybeOnEvent: (event) => {
       if (event.type === "released") status.textContent = "Restoration confirmed and the USB port released; you can close this page.";
       if (event.type === "release_failed") status.textContent = `The USB port was not released: ${event.message}`;

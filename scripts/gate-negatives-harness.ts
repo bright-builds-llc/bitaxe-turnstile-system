@@ -20,8 +20,11 @@
  *   bun scripts/gate-negatives-harness.ts --browser http://127.0.0.1:9222 \
  *     --origin <deployment origin> --payout-address-file <file> \
  *     --board-values-file <file> [--cases withheld,expired_context,handed_over,journey]
- * A person picks each tab's port when Chrome asks; the handover's second tab is the second board,
- * in its own browser profile (Ticket 29), so its chooser asks every run. On macOS, start that
+ * A person picks each tab's port when Chrome asks. Each tab first forgets the site's serial grants,
+ * so every chooser asks, even for a second case on the same board, and no step reuses the last
+ * board's port. Moving the window while its chooser is open dismisses it, and Connect then mints
+ * no challenge until a port is chosen. The handover's second tab is the second board, in its own
+ * browser profile (Ticket 29). On macOS, start that
  * Chrome through `open -na "Google Chrome" --args ...`; started from a shell it aborts on the chooser.
  * The board values file lists, one per line, values tied to the boards (firmware commit, image and
  * ELF digests, MAC digests, capability signatures). The harness adds each tab's Device Identity

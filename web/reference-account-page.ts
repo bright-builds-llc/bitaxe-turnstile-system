@@ -41,55 +41,69 @@ export type ReferencePageInput = {
   config: ReferencePageConfig;
   gate: BwgWorkGateElement;
   payoutAddress: string;
-  /** Production passes the real board's filter and trust; the rehearsal its fake device. */
-  worker(scope: { challengeId: string; expiresAtUnixSeconds: number }): WebSerialWorkerControllerInput;
+  /**
+   * Production passes the real board's filter and trust; the rehearsal its fake device. The
+   * challenge's continuity scope is added once a port is chosen.
+   */
+  worker(): Omit<WebSerialWorkerControllerInput, "continuityScope">;
   maybeOnEvent?: (event: ReferencePageEvent) => void;
 };
 
-/** Runs from the user's "Connect Bitaxe over USB" gesture, then hands the session to the gate. */
+type PreparedChallenge = {
+  transport: ClaimantHttpTransport;
+  selection: Parameters<ClaimantHttpTransport["selectPool"]>[0];
+  actionReference: string;
+};
+
+/**
+ * Runs from the user's "Connect Bitaxe over USB" gesture, then hands the session to the gate. The
+ * chooser opens first, within the gesture; the challenge is requested only once a port is chosen.
+ */
 export async function connectReferenceAccountPage(input: ReferencePageInput): Promise<HeadlessClient> {
   const { config } = input;
   const notify = input.maybeOnEvent ?? (() => undefined);
-  const identity = await prepareClaimantIdentity({ maybeIssuanceWindowSeconds: 300 });
-  const descriptor = await postJson(`${config.origin}/account-creation/challenge`, {
-    claimant_key: identity.claimantKey(),
-  });
-  const challenge = challengeInput(descriptor);
-  notify({
-    type: "challenge_created",
-    challengeId: challenge.challengeId,
-    expiresAtUnixSeconds: challenge.expiresAtUnixSeconds,
-  });
-  const transport = createClaimantHttpTransport({
-    authorityBaseUrl: config.origin,
-    challengeId: challenge.challengeId,
-    claimantIdentity: identity,
-  });
-  const offers = poolOffers(descriptor);
-  const selection = {
-    poolOfferId: offers.offers[0]?.offerId ?? "",
-    payoutDestinationType: "bitcoin_mainnet_address" as const,
-    bitcoinMainnetAddress: input.payoutAddress,
-  };
+  let maybePrepared: PreparedChallenge | undefined;
   const client = await connectWebSerialHeadlessClient({
-    client: {
-      challenge,
-      claimantIdentity: identity,
-      signedPoolOfferSet: offers,
-      authorityTrust: config.authorityTrust,
-      selection,
-      workers: config.workers,
-      claimantWorkCeiling: config.claimantWorkCeiling,
-      clientSafetyCeiling: config.clientSafetyCeiling,
-      transport,
+    worker: input.worker(),
+    async prepareClient() {
+      const identity = await prepareClaimantIdentity({ maybeIssuanceWindowSeconds: 300 });
+      const descriptor = await postJson(`${config.origin}/account-creation/challenge`, {
+        claimant_key: identity.claimantKey(),
+      });
+      const challenge = challengeInput(descriptor);
+      notify({
+        type: "challenge_created",
+        challengeId: challenge.challengeId,
+        expiresAtUnixSeconds: challenge.expiresAtUnixSeconds,
+      });
+      const transport = createClaimantHttpTransport({
+        authorityBaseUrl: config.origin,
+        challengeId: challenge.challengeId,
+        claimantIdentity: identity,
+      });
+      const offers = poolOffers(descriptor);
+      const selection = {
+        poolOfferId: offers.offers[0]?.offerId ?? "",
+        payoutDestinationType: "bitcoin_mainnet_address" as const,
+        bitcoinMainnetAddress: input.payoutAddress,
+      };
+      maybePrepared = { transport, selection, actionReference: stringField(descriptor, "action_reference") };
+      return {
+        challenge,
+        claimantIdentity: identity,
+        signedPoolOfferSet: offers,
+        authorityTrust: config.authorityTrust,
+        selection,
+        workers: config.workers,
+        claimantWorkCeiling: config.claimantWorkCeiling,
+        clientSafetyCeiling: config.clientSafetyCeiling,
+        transport,
+      };
     },
-    worker: input.worker({
-      challengeId: challenge.challengeId,
-      expiresAtUnixSeconds: challenge.expiresAtUnixSeconds,
-    }),
   });
+  if (!maybePrepared) throw new Error("the connected client has no prepared challenge");
+  const { transport, selection, actionReference } = maybePrepared;
   await transport.selectPool(selection);
-  const actionReference = stringField(descriptor, "action_reference");
   input.gate.configure({
     loadSession: async () => ({
       client,

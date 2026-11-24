@@ -20,8 +20,6 @@ async function admittedBoard() {
   let deviceClockOffset = 0;
   const minerStarts: unknown[] = [];
   const { worker, log } = rehearsalWorkerInput({
-    challengeId: CHALLENGE_ID,
-    retentionExpiryUnixSeconds: Math.floor(Date.now() / 1000) + 600,
     miner: {
       start: async (stratum) => {
         minerStarts.push(stratum);
@@ -32,7 +30,10 @@ async function admittedBoard() {
     maybeRestoreConfirmationMilliseconds: 10,
     acquireLock: async () => () => undefined,
   });
-  const controller = createWebSerialWorkerController(worker);
+  const controller = createWebSerialWorkerController({
+    ...worker,
+    continuityScope: { challengeId: CHALLENGE_ID, retentionExpiryUnixSeconds: Math.floor(Date.now() / 1000) + 600 },
+  });
   closers.push(() => controller.close());
   await controller.requestPermission();
   const context = await controller.prepareWorkerLeaseAuthorizationContext("start");
