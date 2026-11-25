@@ -131,7 +131,11 @@ fn standard_transcript_persists_an_accepted_submit_before_worker_acknowledgement
     );
     assert_eq!(
         session.upstream_frame(notify, 1_000)?,
-        [StratumProxyAction::ForwardWorker(notify.to_owned())]
+        [StratumProxyAction::RelayJob {
+            job_id: "job-01".to_owned(),
+            clean_jobs: true,
+            frame: notify.to_owned(),
+        }]
     );
     assert_eq!(
         session.worker_frame(submit, 1_001)?,

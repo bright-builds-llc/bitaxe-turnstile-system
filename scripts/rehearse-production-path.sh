@@ -195,8 +195,22 @@ run_negatives() {
   cat "$integration_root/negatives.log"
 }
 
+# Every job the Pool Adapter relayed must have passed Hydra's Job Admission (criterion 5).
+check_job_admissions() {
+  hydra_log_args=()
+  for hydra_log in "$integration_root"/hydra-*.log; do
+    hydra_log_args+=(--hydra-log "$hydra_log")
+  done
+  if ! bun scripts/job-admission-evidence.ts --adapter-log "$integration_root/pool-adapter.log" \
+    "${hydra_log_args[@]}"; then
+    printf 'A relayed job had no accepted Job Admission, or none was relayed\n' >&2
+    return 1
+  fi
+}
+
 if [[ "$negatives" == true ]]; then
   run_negatives
+  check_job_admissions
   exit 0
 fi
 
@@ -219,4 +233,5 @@ if ! grep -q 'rehearsal: passed' "$integration_root/browser.log"; then
 fi
 # `run-code` prints the runner's result as a JSON string; print the evidence object.
 sed -n 's/.*rehearsal: evidence \(.*\)"$/\1/p' "$integration_root/browser.log" | sed 's/\\"/"/g'
+check_job_admissions
 printf 'Production-path rehearsal passed\n'

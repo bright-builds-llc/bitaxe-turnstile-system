@@ -49,6 +49,27 @@ fn clean_notify_answers_a_submit_for_the_superseded_job_as_stale() -> Result<(),
 }
 
 #[test]
+fn a_job_added_without_clearing_is_relayed_under_its_own_id() -> Result<(), Box<dyn Error>> {
+    // Arrange
+    let mut session = authorized_session()?;
+    let frame = notify("job-next", false);
+
+    // Act
+    let actions = session.upstream_frame(&frame, 1_000)?;
+
+    // Assert
+    assert_eq!(
+        actions,
+        [StratumProxyAction::RelayJob {
+            job_id: "job-next".to_owned(),
+            clean_jobs: false,
+            frame,
+        }]
+    );
+    Ok(())
+}
+
+#[test]
 fn a_job_never_sent_to_the_session_is_not_found() -> Result<(), Box<dyn Error>> {
     // Arrange
     let mut session = authorized_session()?;

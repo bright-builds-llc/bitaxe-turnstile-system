@@ -358,6 +358,15 @@ impl StratumTcpProxy {
             match action {
                 StratumProxyAction::ForwardUpstream(frame) => write_line(upstream, &frame).await?,
                 StratumProxyAction::ForwardWorker(frame) => write_line(worker, &frame).await?,
+                StratumProxyAction::RelayJob {
+                    job_id,
+                    clean_jobs,
+                    frame,
+                } => {
+                    // The record joined against the pool's own Job Admission log.
+                    tracing::info!(job_id = %job_id, clean_jobs, "Stratum job relayed");
+                    write_line(worker, &frame).await?;
+                }
                 StratumProxyAction::ForwardUpstreamRefusal {
                     maybe_code,
                     worker_response,

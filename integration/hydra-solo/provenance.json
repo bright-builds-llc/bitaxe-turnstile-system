@@ -14,9 +14,9 @@
     "blockSubmissionPatchSha256": "40539665f743dea0efc2791e7f90471c90224441b05408fa24b9b76c23cadcae"
   },
   "bitcoinCore": {
-    "version": "28.1",
-    "sourceUrl": "https://bitcoincore.org/bin/bitcoin-core-28.1/bitcoin-28.1-arm64-apple-darwin.tar.gz",
-    "sha256": "abf4d2f7ebda6284e2246bce3591bcf161c114e370c0443ccc049b2728dc7e20",
+    "version": "31.1",
+    "sourceUrl": "https://bitcoincore.org/bin/bitcoin-core-31.1/bitcoin-31.1-arm64-apple-darwin.tar.gz",
+    "sha256": "16a097c09fbd7eb78b240ce1dae123663ea2e5e377cfd6a951e71e227e23cf2f",
     "license": "MIT"
   }
 }

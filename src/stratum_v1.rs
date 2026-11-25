@@ -90,6 +90,12 @@ impl ExtranonceSpace {
 pub enum StratumProxyAction {
     ForwardUpstream(String),
     ForwardWorker(String),
+    /// Relays a pool job unchanged, naming it so the shell can record which jobs a Worker got.
+    RelayJob {
+        job_id: String,
+        clean_jobs: bool,
+        frame: String,
+    },
     ReserveExtranonce {
         token: ExtranonceReservationToken,
         session_id: WorkSessionId,
@@ -396,6 +402,11 @@ impl StratumSession {
                             .ok_or(StratumV1Error::TargetRequired)?,
                     };
                     self.jobs.retain(job_id, job);
+                    return Ok(vec![StratumProxyAction::RelayJob {
+                        job_id: job_id.to_owned(),
+                        clean_jobs,
+                        frame: frame.to_owned(),
+                    }]);
                 }
                 _ => {}
             }
