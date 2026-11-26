@@ -35,9 +35,12 @@ jobs:
         with:
           node-version: "22"
 
+      # Pinned, because `clippy -D warnings` fails on lints a newer stable adds. Move it with the
+      # toolchain the repository is checked with locally.
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.91.1"
           components: clippy, rustfmt
 
       - name: Cache Rust builds
