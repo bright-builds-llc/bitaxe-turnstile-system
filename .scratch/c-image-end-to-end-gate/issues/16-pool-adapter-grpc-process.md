@@ -19,7 +19,7 @@ gRPC boundary that ADR-0055 and ADR-0022 call for.
 - [x] Both the in-process port and the gRPC adapter pass
   `accepted-work-refusal-vectors.json`, and the claimant routes of ADR-0106 and
   ADR-0107 are unchanged.
-- [ ] The rehearsal (Ticket 06) runs against the separate process.
+- [x] The rehearsal (Ticket 06) runs against the separate process.
 - [x] Ticket 27's restart test runs against the separate process, restarting
   only the adapter.
 
@@ -75,3 +75,11 @@ Non-claims: no mainnet Gate or board ran against the separate process. The
 channel has no TLS, so the processes must share a host. Ticket 27's original
 non-claim stands: a restart on hardware isn't shown.
 - 2026-11-15: the owner accepted ADR-0113 and closed the ticket; on `main` as `cf21d19`.
+
+### Rehearsal against the separate process — 2026-11-26
+
+`scripts/rehearse-production-path.sh` starts the `pool-adapter` binary as its own process
+(`start_binary pool-adapter`), with the Authority's ingest and the adapter's registry on separate
+loopback gRPC ports. On 2026-11-26 it passed that way three times on regtest: the Bitaxe run, the
+standard Worker run (`--standard-worker`) and `--negatives`. The self-hosted deployment
+(bwg-core Ticket 24) runs the same three processes through the owner's launcher. Regtest only.
