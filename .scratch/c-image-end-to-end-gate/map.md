@@ -226,3 +226,6 @@ feed 09.
 - Ticket 05 (2026-11-20): the owner accepted the two upstream fonts that may not be
   redistributable, Nippo and Angel Wish, as a known risk inherited from upstream, to be revisited
   later (`task-upstream-font-licences` in the fork).
+- Criterion 8 (2026-11-26): the owner limited the MVP to one participating Worker per challenge,
+  which Ticket 07 meets on both boards. Several Workers in one challenge through the page is future
+  work, in [`bwg-multi-worker-challenge`](../bwg-multi-worker-challenge/spec.md).

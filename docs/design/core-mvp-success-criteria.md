@@ -9,7 +9,7 @@ BWG Core is successful when one reproducible mainnet-capable flow proves all of 
 5. The pool path independently verifies reward outputs and obtains BIP 23 proposal acceptance for the exact constructed mainnet job before release.
 6. Mainnet work passes through the Rust Pool Adapter proxy to pinned Hydra without teaching the pool Protected Action concepts.
 7. Accepted Work Events advance exact Verified Progress without loss or duplicate credit under replay.
-8. Reaching the Work Requirement ends every Work Lease and confirms Mining Baseline restoration.
+8. Reaching the Work Requirement ends every Work Lease and confirms Mining Baseline restoration. In the MVP a challenge has one participating Worker; several Workers per challenge through the Claimant path is future work (`.scratch/bwg-multi-worker-challenge/spec.md`).
 9. A two-minute JWS Gate Pass redeems with fresh DPoP for the exact Action Reference.
 10. The reference action executes idempotently, creates a Redemption Record, and cannot reuse or refresh the pass.
 11. Expiry, Pause, terminal Cancel, disconnect, adapter replay, pool failure, malformed payout, invalid proposal, and stale-job cases fail safely.
