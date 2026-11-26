@@ -5,13 +5,25 @@
  * `/.well-known` to `gate-authority` and `/account-creation` to
  * `reference-service`. It serves only the reference page, with its public config
  * filled in, that page's bundle, and the policy pages the consent screen and
- * discovery document link (Ticket 19); every other path is 404.
+ * discovery document link (Ticket 19). It also answers `/healthz`, `/readyz` and
+ * `/provenance` (Ticket 24); every other path is 404.
  *
  * Environment: BWG_FRONT_PORT, BWG_FRONT_GATE and BWG_FRONT_REFERENCE (http
- * base URLs), and BWG_FRONT_PAGE_CONFIG_FILE (the page config JSON).
+ * base URLs), and BWG_FRONT_PAGE_CONFIG_FILE (the page config JSON). Optional:
+ * BWG_FRONT_STRATUM_PROBE (Hydra's loopback HOST:PORT) with BWG_FRONT_STRATUM_PROBE_USER
+ * (the operator's solo address) for readiness, and BWG_FRONT_PROVENANCE_FILE.
  */
 import { readFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
+
+import {
+  applicationHealth,
+  cachedProbe,
+  probeMiningJob,
+  readiness,
+  type ApplicationHealth,
+  type MiningJobReadiness,
+} from "./deployment-health";
 
 const repositoryRoot = resolve(import.meta.dir, "..");
 const PAGE_PATH = "/reference/account-creation.html";
@@ -40,6 +52,45 @@ export function fillPageConfig(html: string, configJson: string): string {
     CONFIG_PLACEHOLDER,
     `<script type="application/json" id="bwg-reference-config">${safeJson}</script>`,
   );
+}
+
+export type OperationalChecks = {
+  health(): Promise<ApplicationHealth>;
+  miningJob(): Promise<MiningJobReadiness>;
+  maybeProvenance?: string;
+};
+
+/** Health, readiness and provenance, or undefined for any other path. Failing checks answer 503. */
+export async function operationalResponse(pathname: string, checks: OperationalChecks): Promise<Response | undefined> {
+  const json = (body: unknown, status: number) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json", "cache-control": "no-store" },
+    });
+  if (pathname === "/healthz") {
+    const health = await checks.health();
+    return json(health, health.status === "available" ? 200 : 503);
+  }
+  if (pathname === "/readyz") {
+    const [health, miningJob] = await Promise.all([checks.health(), checks.miningJob()]);
+    const verdict = readiness(health, miningJob);
+    return json(verdict, verdict.ready ? 200 : 503);
+  }
+  if (pathname === "/provenance") {
+    if (checks.maybeProvenance === undefined) return new Response("not found", { status: 404 });
+    return json(JSON.parse(checks.maybeProvenance), 200);
+  }
+  return undefined;
+}
+
+/** The mining probe the environment configures, cached for 30 s; "unconfigured" without one. */
+function miningProbe(): () => Promise<MiningJobReadiness> {
+  const maybeAddress = process.env.BWG_FRONT_STRATUM_PROBE;
+  const maybeUser = process.env.BWG_FRONT_STRATUM_PROBE_USER;
+  if (!maybeAddress || !maybeUser) return async () => "unconfigured";
+  const separator = maybeAddress.lastIndexOf(":");
+  const pool = { host: maybeAddress.slice(0, separator), port: Number(maybeAddress.slice(separator + 1)) };
+  return cachedProbe(() => probeMiningJob(pool, maybeUser, 10_000), 30_000);
 }
 
 async function forward(service: string, request: Request, url: URL): Promise<Response> {
@@ -76,6 +127,12 @@ if (import.meta.main) {
     await readFile(resolve(repositoryRoot, `.${PAGE_PATH}`), "utf8"),
     await readFile(required("BWG_FRONT_PAGE_CONFIG_FILE"), "utf8"),
   );
+  const maybeProvenanceFile = process.env.BWG_FRONT_PROVENANCE_FILE;
+  const checks: OperationalChecks = {
+    health: () => applicationHealth(fetch, gate, reference),
+    miningJob: miningProbe(),
+    ...(maybeProvenanceFile ? { maybeProvenance: await readFile(maybeProvenanceFile, "utf8") } : {}),
+  };
   Bun.serve({
     hostname: "127.0.0.1",
     port,
@@ -87,6 +144,8 @@ if (import.meta.main) {
       if (request.method !== "GET" && request.method !== "HEAD") {
         return new Response("method not allowed", { status: 405 });
       }
+      const maybeOperational = await operationalResponse(url.pathname, checks);
+      if (maybeOperational) return maybeOperational;
       if (url.pathname === "/") return new Response(null, { status: 302, headers: { location: PAGE_PATH } });
       if (url.pathname === PAGE_PATH) {
         return new Response(page, {

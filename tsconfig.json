@@ -11,5 +11,5 @@
     "resolveJsonModule": true,
     "skipLibCheck": true
   },
-  "include": ["web/**/*.ts", "scripts/serve-headless-browser.ts", "scripts/cdp-connection.ts", "scripts/gate-negatives-*.ts"]
+  "include": ["web/**/*.ts", "scripts/serve-headless-browser.ts", "scripts/cdp-connection.ts", "scripts/gate-negatives-*.ts", "scripts/self-host-*.ts", "scripts/deployment-*.ts"]
 }

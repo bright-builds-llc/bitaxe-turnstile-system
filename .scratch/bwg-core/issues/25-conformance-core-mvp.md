@@ -33,6 +33,10 @@ Against this ticket's items:
 - **Every criterion has linked evidence:** each has a C-image entry. Criterion 11 is partial:
   malformed payout and invalid proposal weren't run on the C image, by the owner's choice
   (2026-11-22), and adapter replay is a Rust test.
+- **Hosted and self-hosted public seams:** the hosted journey redeemed on mainnet. A self-hosted
+  deployment ran on regtest through consent, real shares, a Renew and Cancel, but no Gate Pass,
+  since a CPU miner can't reach the requirement there (Ticket 24, "Self-host proof"). The item
+  stays open until a self-hosted journey redeems.
 - **Standard Stratum and real Bitaxe paths share accounting and Redemption:** the real Bitaxe path
   ran on the C image. A standard Stratum V1 Worker ran beside it on regtest; see below.
 

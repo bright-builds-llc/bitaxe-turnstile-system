@@ -27,6 +27,6 @@ Hardware evidence comes from the C Reference Firmware on a Gamma 601 and an Ultr
 - Most hardware cases ran once, and some on one board only.
 - The standard Stratum V1 and Bitaxe paths meet the same accounting and Redemption checks in the regtest rehearsal. Each had real shares credited across two lease windows and a Renew, a lease that survived a new tip, one synthetic share to the requirement, one redemption with DPoP, and a replay refused. The real Bitaxe path also ran on mainnet. They differ after the requirement: a standard Worker mines on until its credentials expire, 56 s in the rehearsal, and those shares earn no credit.
 - No block was found on mainnet, so independent block submission is shown only on regtest, by `scripts/verify-hydra-solo-integration.sh`.
-- The reference deployment ran as one hosted origin; a self-hosted deployment hasn't been run.
+- A self-hosted deployment (Ticket 24) ran on regtest only, through consent, real shares, a Renew and Cancel. It issued no Gate Pass, since a CPU miner can't reach the requirement there; the hosted origin is the only one that redeemed.
 - What the Rust tests check beyond the language-neutral vectors holds for the reference implementation only.
 - One governance test failure under parallel load is still unexplained.

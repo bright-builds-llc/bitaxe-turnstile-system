@@ -4,12 +4,16 @@
 # loopback gRPC (ADR-0113), `reference-service` and the same-origin front, published on this Mac's tailnet
 # name by `tailscale serve`. Private values are read from files at run time and
 # reach the binaries only through their environment, never a command line, the
-# repository or a log. Hydra runs separately (`scripts/hydra-mainnet-stack.sh`).
+# repository or a log. Hydra runs separately (`scripts/hydra-mainnet-stack.sh`), or
+# `scripts/self-host-gate.sh` starts it and then this launcher (Ticket 24).
 #
 # Usage: scripts/launch-gate-deployment.sh --keys-dir DIR --lease-authority-dir DIR
 #          --owner-trust FILE --image-dir DIR --run-dir DIR
 #          [--upstream HOST:PORT] [--proxy-port PORT] [--sequence-margin N]
 #          [--proxy-address ADDRESS] [--loopback-origin URL] [--expected-hashes N]
+#          [--front-port PORT] [--postgres-volume NAME] [--readiness-address ADDRESS]
+#          [--readiness-timeout SECONDS] [--network regtest|mainnet]
+#          [--standard-worker-name NAME --standard-worker-hashrate H/S]
 #   --keys-dir             output of scripts/gate-deployment-keys.ts
 #   --lease-authority-dir  the Work Lease Authority's lease-private.json and lease-sequence.json
 #   --owner-trust          the public Worker deployment trust the board's image embeds
@@ -19,10 +23,18 @@
 #   --proxy-port           the Pool Adapter proxy's port on the LAN address (default 3334)
 #   --sequence-margin      added to the stored lease sequence before seeding (default 1000)
 #   --proxy-address        the LAN address to bind instead of the default interface's
-#   --loopback-origin      regtest proofs only: skip Tailscale; the caller terminates
-#                          TLS for this origin (needs --proxy-address)
+#   --loopback-origin      skip Tailscale; the caller terminates TLS for this origin
+#                          (needs --proxy-address)
 #   --expected-hashes      each challenge's Work Requirement, within the Standard
 #                          policy's override bounds (default: the policy's own)
+#   --front-port           the loopback front's port, for a caller's TLS proxy (default: free)
+#   --postgres-volume      keep PostgreSQL's data in this Docker volume across runs; its
+#                          password is kept in the keys directory (default: discarded at exit)
+#   --readiness-address    Hydra solo address for the readiness probe; startup then waits
+#                          for an admitted mining job and fails without one
+#   --readiness-timeout    seconds to wait for readiness (default 180)
+#   --network              names the build's engine patches in /provenance (default mainnet)
+#   --standard-worker-*    offer "Use another Stratum V1 Worker" with this name and rate
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "$0")/.." && pwd -P)
@@ -37,11 +49,18 @@ sequence_margin=1000
 loopback_origin=""
 proxy_address=""
 expected_hashes=""
+front_port_option=""
+postgres_volume=""
+readiness_address=""
+readiness_timeout=180
+network=mainnet
+standard_worker_name=""
+standard_worker_hashrate=""
 ACTION_POLICY="account-creation.standard.v1"
 POSTGRES_IMAGE="postgres:16-alpine"
 
 usage() {
-  sed -n '9,25p' "$0" >&2
+  sed -n '10,37p' "$0" >&2
   exit 2
 }
 
@@ -63,6 +82,13 @@ while [[ $# -gt 0 ]]; do
     --loopback-origin) loopback_origin=${2:-}; shift 2 ;;
     --proxy-address) proxy_address=${2:-}; shift 2 ;;
     --expected-hashes) expected_hashes=${2:-}; shift 2 ;;
+    --front-port) front_port_option=${2:-}; shift 2 ;;
+    --postgres-volume) postgres_volume=${2:-}; shift 2 ;;
+    --readiness-address) readiness_address=${2:-}; shift 2 ;;
+    --readiness-timeout) readiness_timeout=${2:-}; shift 2 ;;
+    --network) network=${2:-}; shift 2 ;;
+    --standard-worker-name) standard_worker_name=${2:-}; shift 2 ;;
+    --standard-worker-hashrate) standard_worker_hashrate=${2:-}; shift 2 ;;
     *) usage ;;
   esac
 done
@@ -76,6 +102,18 @@ fi
 [[ "$sequence_margin" =~ ^[0-9]{1,9}$ ]] || refuse '--sequence-margin must be a whole number'
 [[ "$upstream" =~ ^127\.0\.0\.1:[0-9]{1,5}$ ]] || refuse '--upstream must be 127.0.0.1:PORT'
 [[ -z "$expected_hashes" || "$expected_hashes" =~ ^[0-9]{1,20}$ ]] || refuse '--expected-hashes must be a whole number'
+[[ -z "$front_port_option" || "$front_port_option" =~ ^[0-9]{1,5}$ ]] || refuse '--front-port must be a port number'
+[[ -z "$front_port_option" || -n "$loopback_origin" ]] || refuse '--front-port needs --loopback-origin'
+[[ -z "$postgres_volume" || "$postgres_volume" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$ ]] ||
+  refuse '--postgres-volume must be a Docker volume name'
+[[ -z "$readiness_address" || "$readiness_address" =~ ^[A-Za-z0-9]{14,90}$ ]] ||
+  refuse '--readiness-address must be a Bitcoin address'
+[[ "$readiness_timeout" =~ ^[0-9]{1,4}$ ]] || refuse '--readiness-timeout must be a whole number of seconds'
+[[ "$network" == regtest || "$network" == mainnet ]] || refuse '--network must be regtest or mainnet'
+if [[ -n "$standard_worker_name" && -z "$standard_worker_hashrate" ]] ||
+  [[ -z "$standard_worker_name" && -n "$standard_worker_hashrate" ]]; then
+  refuse '--standard-worker-name and --standard-worker-hashrate go together'
+fi
 
 outside_repo() {
   resolved=$(cd "$1" && pwd -P)
@@ -154,9 +192,13 @@ nc -z "${upstream%:*}" "${upstream##*:}" || refuse "no Stratum upstream on $upst
 
 gate_commit=$(git -C "$repo_root" rev-parse HEAD)
 worktree_state=clean
+build_commit=$gate_commit
 if [[ -n "$(git -C "$repo_root" status --porcelain)" ]]; then
   worktree_state=dirty
+  build_commit="$gate_commit-dirty"
 fi
+# The commit's own date, so a relaunch of the same commit doesn't rebuild.
+build_time=$(git -C "$repo_root" show -s --format=%cI HEAD)
 
 authority_pid=""
 adapter_pid=""
@@ -249,6 +291,26 @@ wait_for_port() {
   return 1
 }
 
+# Waits for a service's port, and stops the launch with its log's tail if it exits first,
+# as a failed migration or a refused key does.
+wait_for_service() {
+  service_name=$1
+  service_pid=$2
+  service_log=$5
+  for _attempt in $(seq 1 600); do
+    if nc -z "$3" "$4" >/dev/null 2>&1; then
+      return 0
+    fi
+    if ! kill -0 "$service_pid" 2>/dev/null; then
+      printf '%s exited during startup; the end of %s:\n' "$service_name" "$(basename "$service_log")" >&2
+      tail -n 20 "$service_log" >&2
+      refuse "$service_name did not start"
+    fi
+    sleep 0.1
+  done
+  refuse "$service_name never listened on port $4"
+}
+
 # Keeps the LAN address and the tailnet name out of the run's logs.
 redact() {
   sed -l -e "s/${proxy_address//./\\.}/LAN_ADDRESS/g" -e "s/${origin_host//./\\.}/ORIGIN_HOST/g"
@@ -256,12 +318,37 @@ redact() {
 
 cd "$repo_root"
 bun run build:browser >"$run_dir/build.log" 2>&1
-cargo build --quiet --all-features --bin gate-authority --bin pool-adapter --bin reference-service
+BWG_BUILD_COMMIT="$build_commit" BWG_BUILD_TIME="$build_time" \
+  cargo build --quiet --all-features --bin gate-authority --bin pool-adapter --bin reference-service
+standard_worker_args=()
+if [[ -n "$standard_worker_name" ]]; then
+  standard_worker_args=(--standard-worker-name "$standard_worker_name" --standard-worker-hashrate "$standard_worker_hashrate")
+fi
 bun scripts/gate-deployment-page-config.ts --origin "$origin" \
   --public-keys "$keys_dir/gate-pass-public-keys.json" --owner-trust "$owner_trust" \
-  --image-dir "$image_dir" --gate-commit "$gate_commit" >"$run_dir/page-config.json"
+  --image-dir "$image_dir" --gate-commit "$gate_commit" ${standard_worker_args[@]+"${standard_worker_args[@]}"} \
+  >"$run_dir/page-config.json"
+bun scripts/deployment-provenance.ts --origin "$origin" --commit "$build_commit" --build-time "$build_time" \
+  --network "$network" >"$run_dir/provenance.json"
 
-postgres_password=$(python3 -c 'import secrets; print(secrets.token_hex(24))')
+# A kept volume keeps its password from the run that created it, in the keys directory.
+postgres_credential="$keys_dir/postgres-credential.json"
+volume_args=()
+if [[ -n "$postgres_volume" ]]; then
+  if [[ ! -e "$postgres_credential" ]]; then
+    docker volume inspect "$postgres_volume" >/dev/null 2>&1 &&
+      refuse "volume $postgres_volume exists but $(basename "$postgres_credential") does not; restore it first"
+    (
+      umask 077
+      python3 -c 'import json, secrets; print(json.dumps({"password": secrets.token_hex(24)}))' >"$postgres_credential"
+    )
+  fi
+  require_owner_only "$postgres_credential"
+  postgres_password=$(jq -er '.password' "$postgres_credential") || refuse "$(basename "$postgres_credential") has no password"
+  volume_args=(--volume "$postgres_volume:/var/lib/postgresql/data")
+else
+  postgres_password=$(python3 -c 'import secrets; print(secrets.token_hex(24))')
+fi
 (
   umask 077
   printf 'POSTGRES_USER=bwg\nPOSTGRES_DB=gate_authority\nPOSTGRES_PASSWORD=%s\n' "$postgres_password" \
@@ -269,7 +356,7 @@ postgres_password=$(python3 -c 'import secrets; print(secrets.token_hex(24))')
 )
 container_name="bwg-gate-deployment-$$"
 docker run --detach --name "$container_name" --env-file "$run_dir/postgres.env" \
-  --publish 127.0.0.1::5432 "$POSTGRES_IMAGE" >/dev/null
+  ${volume_args[@]+"${volume_args[@]}"} --publish 127.0.0.1::5432 "$POSTGRES_IMAGE" >/dev/null
 postgres_container=$container_name
 rm -f "$run_dir/postgres.env"
 # The image's init server listens only on its socket, so a TCP query means it is ready.
@@ -279,8 +366,12 @@ for _attempt in $(seq 1 300); do
   fi
   sleep 0.2
 done
-postgres_query 'CREATE DATABASE relying_service' >/dev/null
-postgres_query 'CREATE DATABASE pool_adapter' >/dev/null
+# A kept volume already has them from its first run.
+for database in relying_service pool_adapter; do
+  if [[ -z "$(postgres_query "SELECT 1 FROM pg_database WHERE datname = '$database'")" ]]; then
+    postgres_query "CREATE DATABASE $database" >/dev/null
+  fi
+done
 postgres_port=$(docker port "$postgres_container" 5432/tcp | head -1)
 postgres_port=${postgres_port##*:}
 database_base="postgres://bwg:$postgres_password@127.0.0.1:$postgres_port"
@@ -289,7 +380,7 @@ gate_port=$(free_port)
 authority_grpc_port=$(free_port)
 adapter_grpc_port=$(free_port)
 reference_port=$(free_port)
-front_port=$(free_port)
+front_port=${front_port_option:-$(free_port)}
 # A fresh secret for this run's loopback gRPC boundary; only the two processes hold it.
 channel_token=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
 (
@@ -311,8 +402,8 @@ channel_token=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
   exec target/debug/gate-authority
 ) > >(redact >"$run_dir/gate-authority.log") 2>&1 &
 authority_pid=$!
-wait_for_port 127.0.0.1 "$gate_port"
-wait_for_port 127.0.0.1 "$authority_grpc_port"
+wait_for_service gate-authority "$authority_pid" 127.0.0.1 "$gate_port" "$run_dir/gate-authority.log"
+wait_for_service gate-authority "$authority_pid" 127.0.0.1 "$authority_grpc_port" "$run_dir/gate-authority.log"
 
 (
   export BWG_POOL_ADAPTER_DATABASE_URL="$database_base/pool_adapter"
@@ -328,8 +419,8 @@ wait_for_port 127.0.0.1 "$authority_grpc_port"
   exec target/debug/pool-adapter
 ) > >(redact >"$run_dir/pool-adapter.log") 2>&1 &
 adapter_pid=$!
-wait_for_port 127.0.0.1 "$adapter_grpc_port"
-wait_for_port "$proxy_address" "$proxy_port"
+wait_for_service pool-adapter "$adapter_pid" 127.0.0.1 "$adapter_grpc_port" "$run_dir/pool-adapter.log"
+wait_for_service pool-adapter "$adapter_pid" "$proxy_address" "$proxy_port" "$run_dir/pool-adapter.log"
 
 # The Authority has run its migrations; nothing can reach it until the front starts.
 postgres_query "INSERT INTO gate_authority.work_lease_authorization_sequences (key_id, last_sequence)
@@ -350,14 +441,35 @@ sequence_seeded=true
   exec target/debug/reference-service
 ) > >(redact >"$run_dir/reference-service.log") 2>&1 &
 reference_pid=$!
-wait_for_port 127.0.0.1 "$reference_port"
+wait_for_service reference-service "$reference_pid" 127.0.0.1 "$reference_port" "$run_dir/reference-service.log"
 
-BWG_FRONT_PORT="$front_port" BWG_FRONT_GATE="http://127.0.0.1:$gate_port" \
-  BWG_FRONT_REFERENCE="http://127.0.0.1:$reference_port" \
-  BWG_FRONT_PAGE_CONFIG_FILE="$run_dir/page-config.json" \
-  bun scripts/serve-gate-origin.ts > >(redact >"$run_dir/front.log") 2>&1 &
+front_env=(
+  BWG_FRONT_PORT="$front_port" BWG_FRONT_GATE="http://127.0.0.1:$gate_port"
+  BWG_FRONT_REFERENCE="http://127.0.0.1:$reference_port"
+  BWG_FRONT_PAGE_CONFIG_FILE="$run_dir/page-config.json" BWG_FRONT_PROVENANCE_FILE="$run_dir/provenance.json"
+)
+if [[ -n "$readiness_address" ]]; then
+  front_env+=(BWG_FRONT_STRATUM_PROBE="$upstream" BWG_FRONT_STRATUM_PROBE_USER="$readiness_address")
+fi
+env "${front_env[@]}" bun scripts/serve-gate-origin.ts > >(redact >"$run_dir/front.log") 2>&1 &
 front_pid=$!
-wait_for_port 127.0.0.1 "$front_port"
+wait_for_service front "$front_pid" 127.0.0.1 "$front_port" "$run_dir/front.log"
+
+# Readiness is the application up and Hydra releasing an admitted job; without one, nothing starts.
+if [[ -n "$readiness_address" ]]; then
+  readiness_answer="no answer"
+  readiness_deadline=$((SECONDS + readiness_timeout))
+  while ((SECONDS < readiness_deadline)); do
+    readiness_answer=$(curl --silent --max-time 15 "http://127.0.0.1:$front_port/readyz") || readiness_answer="no answer"
+    if jq -e '.ready == true' <<<"$readiness_answer" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+  done
+  jq -e '.ready == true' <<<"$readiness_answer" >/dev/null 2>&1 ||
+    refuse "the deployment never became ready: $readiness_answer"
+  printf 'Readiness: %s\n' "$readiness_answer"
+fi
 
 if [[ -z "$loopback_origin" ]]; then
   # The serve is set in tailscaled and removed on exit: the `tailscale` command
