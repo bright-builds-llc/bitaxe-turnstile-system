@@ -1,7 +1,7 @@
 # A spent Gate Pass can't be reused or refreshed
 
 Type: task
-Status: in-progress
+Status: resolved
 Blocked by: None
 
 ## Objective
@@ -28,9 +28,9 @@ mainnet journey on the Gamma 601.
 - [x] `scripts/rehearse-production-path.sh --negatives` checks the Relying Service's log. It needs
   exactly one `Protected Action succeeded` and at least one `Gate Pass was already consumed`,
   because a 401 alone could be a malformed retry.
-- [ ] [Run sheet 34](../run-sheet-34.md) on the 601, on mainnet: the journey and the log checks
+- [x] [Run sheet 34](../run-sheet-34.md) on the 601, on mainnet: the journey and the log checks
   pass.
-- [ ] The fork's evidence gets a Ticket 34 section, and criterion 10 in `spec.md` is updated.
+- [x] The fork's evidence gets a Ticket 34 section, and criterion 10 in `spec.md` is updated.
 
 ## Comments
 
@@ -46,3 +46,21 @@ mainnet journey on the Gamma 601.
   - **Mutation: the recorder overwriting the page's redemption status.** The journey failed with
     "the redemption was answered 401".
   - Each mutation was restored from a backup copy, and the diff was checked.
+- 2026-11-26, the sitting, 03:39 to 03:42 UTC, on the 601 with the owner's `247d2cd` image and the
+  Gate at `b8025c9`, against Hydra on mainnet through the owner's Bitcoin Core 31.1 node:
+  - **The journey passed.**
+    - The consent named "Bitaxe Gamma 601" alone, estimating 29.3 s.
+    - The Authority reached `pass_issued` at 03:40:26, and the page's redemption was answered 200.
+    - The board stopped with `ok=1` after 32,013 ms of cooling.
+  - **The spent pass:**
+    - `refresh` `identical`;
+    - the retry answered 401 `invalid_redemption`;
+    - the service logged 1 `Protected Action succeeded` at 03:41:14.25, then 1 `Gate Pass was
+      already consumed` 0.17 s later, 48 s into the pass's life.
+  - **Job admission:** 4 relayed and 4 admitted. No stale job was logged.
+  - **Afterwards:**
+    - the board was paused with `mineOnBoot` 0 at 19 mV;
+    - the launcher exited 0, the serve is off and the container gone;
+    - Hydra and the tunnel are stopped.
+  - The records are in the fork's `docs/project/gate-integration-evidence.md`, "Ticket 34: a spent
+    Gate Pass".

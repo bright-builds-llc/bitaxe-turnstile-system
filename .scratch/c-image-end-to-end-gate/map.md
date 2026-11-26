@@ -1,8 +1,8 @@
 # C-image end-to-end Gate map
 
 [Spec](spec.md). The first Gate on the C Reference Firmware image through the
-production browser path. Tickets 01, 02, 03, 04, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30, 32 and 33 are resolved. Tickets 05, 19 and 31 wait on the owner's review,
-34 is in progress, and 25 waits for its failure to recur.
+production browser path. Tickets 01, 02, 03, 04, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30, 32, 33 and 34 are resolved. Tickets 05, 19 and 31 wait on the owner's review,
+and 25 waits for its failure to recur.
 The first Gate (06, 07) and onboarding (14, 03, 04, 05, 15) run apart, and both
 feed 09.
 
@@ -41,7 +41,7 @@ feed 09.
 | [31](issues/31-pool-adapter-retention.md) The Pool Adapter's expired records are never deleted | task | ready-for-human | None |
 | [32](issues/32-privacy-consent-handover-on-both-boards.md) Privacy, consent and handover on both boards | task | resolved | None |
 | [33](issues/33-job-admission-record.md) Each job's admission, recorded against the jobs a board received | task | resolved | None |
-| [34](issues/34-spent-pass.md) A spent Gate Pass can't be reused or refreshed | task | in-progress | None |
+| [34](issues/34-spent-pass.md) A spent Gate Pass can't be reused or refreshed | task | resolved | None |
 
 ## Decisions so far
 
