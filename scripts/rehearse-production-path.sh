@@ -208,9 +208,23 @@ check_job_admissions() {
   fi
 }
 
+# The journey's spent-pass retry gets a 401 for any bad redemption; only the Relying Service's log
+# says it was refused because the pass was spent, and that the action ran once (criterion 10).
+check_spent_pass() {
+  service_log="$integration_root/reference-service.log"
+  executions=$(grep -c 'Protected Action succeeded' "$service_log" || true)
+  spent_refusals=$(grep -c 'Gate Pass was already consumed' "$service_log" || true)
+  printf 'spent pass: %s execution(s), %s refusal(s) as already consumed\n' "$executions" "$spent_refusals"
+  if [[ "$executions" != 1 || "$spent_refusals" -lt 1 ]]; then
+    printf 'The spent Gate Pass was not refused as consumed, or the action did not run exactly once\n' >&2
+    return 1
+  fi
+}
+
 if [[ "$negatives" == true ]]; then
   run_negatives
   check_job_admissions
+  check_spent_pass
   exit 0
 fi
 

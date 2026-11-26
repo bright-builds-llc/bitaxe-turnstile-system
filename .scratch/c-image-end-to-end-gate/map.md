@@ -1,8 +1,8 @@
 # C-image end-to-end Gate map
 
 [Spec](spec.md). The first Gate on the C Reference Firmware image through the
-production browser path. Tickets 01, 02, 03, 04, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24, 26, 27, 28 and 30 are resolved. Tickets 05, 19 and 31 wait on the owner's review, 29 is optional,
-and 25 waits for its failure to recur.
+production browser path. Tickets 01, 02, 03, 04, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30, 32 and 33 are resolved. Tickets 05, 19 and 31 wait on the owner's review,
+34 is in progress, and 25 waits for its failure to recur.
 The first Gate (06, 07) and onboarding (14, 03, 04, 05, 15) run apart, and both
 feed 09.
 
@@ -36,10 +36,12 @@ feed 09.
 | [26](issues/26-release-port-after-cancel-and-expiry.md) Gate page keeps the USB port after a Cancel or an expiry | bug | resolved | None |
 | [27](issues/27-adapter-restart-replay-test.md) An adapter restart replays nothing creditable twice | task | resolved | None |
 | [28](issues/28-negatives-on-both-boards.md) Negatives on both boards through the deployed page | task | resolved | 21, 26 |
-| [29](issues/29-handed-over-in-two-profiles.md) Handed-over grants in two browser profiles (optional) | task | ready-for-human | None |
+| [29](issues/29-handed-over-in-two-profiles.md) Handed-over grants in two browser profiles (optional) | task | resolved | None |
 | [30](issues/30-second-tab-admission-reason.md) A second tab's refused admission gives no reason | bug | resolved | None |
 | [31](issues/31-pool-adapter-retention.md) The Pool Adapter's expired records are never deleted | task | ready-for-human | None |
+| [32](issues/32-privacy-consent-handover-on-both-boards.md) Privacy, consent and handover on both boards | task | resolved | None |
 | [33](issues/33-job-admission-record.md) Each job's admission, recorded against the jobs a board received | task | resolved | None |
+| [34](issues/34-spent-pass.md) A spent Gate Pass can't be reused or refreshed | task | in-progress | None |
 
 ## Decisions so far
 

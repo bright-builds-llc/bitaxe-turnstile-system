@@ -67,9 +67,21 @@ export type TabEvidence = {
   /** Renew grants the interceptor saw for this tab, each searched by the audit. */
   renewGrants: number;
   maybeRedeemStatus?: number;
+  /** The claimant's retries after redemption: the pass looked up again, then redeemed with a fresh proof. */
+  maybeSpentPass?: SpentPassEvidence;
   /** The Work Consent disclosure's Worker names and duration, read before consent; never the payout. */
   maybeConsent?: { workers: string[]; duration: string };
   maybeBoard?: BoardEvidence;
+};
+
+/**
+ * A spent pass retried from the page with the page's own key. `refresh` is how a second lookup
+ * answered: the same pass, a different one, or a refusal. It holds no pass, proof or key.
+ */
+export type SpentPassEvidence = {
+  refresh: "identical" | "different" | "refused";
+  replayStatus: number;
+  replayError: string;
 };
 
 export type StartOutcome = "never_reached_board" | "board_refused" | "lease_started" | "unobserved";
@@ -212,7 +224,20 @@ function journeyFailures(tab: TabEvidence): string[] {
   if (tab.renewGrants === 0) failures.push("no Renew grant was seen, so none was searched");
   if (tab.maybeRedeemStatus === undefined) failures.push("no redemption response was seen");
   else if (tab.maybeRedeemStatus !== 200) failures.push(`the redemption was answered ${tab.maybeRedeemStatus}`);
+  failures.push(...spentPassFailures(tab.maybeSpentPass));
   return failures.map((failure) => `tab ${tab.tab}: ${failure}`);
+}
+
+/** Criterion 10: a spent pass is neither reissued as a new pass nor redeemed a second time. */
+function spentPassFailures(maybeSpentPass: SpentPassEvidence | undefined): string[] {
+  if (!maybeSpentPass) return ["the spent Gate Pass wasn't retried"];
+  const failures: string[] = [];
+  if (maybeSpentPass.refresh === "different") failures.push("a second lookup returned a different Gate Pass");
+  const { replayStatus, replayError } = maybeSpentPass;
+  if (replayStatus !== 401 || replayError !== "invalid_redemption") {
+    failures.push(`the spent Gate Pass was answered ${[replayStatus, replayError].filter(Boolean).join(" ")}`);
+  }
+  return failures;
 }
 
 function journeyBoardFailures(tab: TabEvidence): string[] {

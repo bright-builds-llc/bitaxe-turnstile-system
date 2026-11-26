@@ -9,9 +9,12 @@
  * value the Authority saw was `control_session_binding_sha256`. The `journey` case
  * (Ticket 32), named only explicitly, alters nothing: the board mines to the Work
  * Requirement and the page redeems, so the same audit also covers Renew grants and the
- * redemption. Every case records the Workers the consent named, never its payout line.
+ * redemption. The journey then retries the spent Gate Pass as its claimant could (criterion 10):
+ * it looks the pass up again and redeems it again with a fresh DPoP proof, both signed inside the
+ * page with the page's own Claimant key and code (`gate-spent-pass-page.ts`). Every case records
+ * the Workers the consent named, never its payout line.
  *
- * Nothing here signs anything; grants are the Authority's own, moved or delayed.
+ * Outside the page nothing signs anything; grants are the Authority's own, moved or delayed.
  * Output names cases, routes as templates and field names, never endpoints, keys,
  * pool identities or values.
  *
@@ -44,11 +47,13 @@ import {
   parseGateNegativeCases,
   type CaseVerdict,
   type GateCase,
+  type SpentPassEvidence,
   type TabEvidence,
 } from "./gate-negatives-cases";
 import { deploymentAdapter, rehearsalAdapter, type BoardValue, type DeploymentAdapter } from "./gate-negatives-adapters";
 import { grantInterceptor } from "./gate-negatives-interceptor";
 import { openHarnessTab, waitFor, type HarnessTab } from "./gate-negatives-tab";
+import { spentPassInput, spentPassPageScript } from "./gate-spent-pass";
 
 const CONNECT_BUTTON = ["#connect-bitaxe"];
 const PRIMARY_BUTTON = ["bwg-work-gate", "[data-action=primary]"];
@@ -136,6 +141,8 @@ async function runCase(
   const fingerprints: BoardValue[] = [];
   const consents = new Map<string, NonNullable<TabEvidence["maybeConsent"]>>();
   const mining = caseName === "journey";
+  const maybeSpentPassScript = mining ? await spentPassPageScript() : undefined;
+  const spentPasses = new Map<string, SpentPassEvidence>();
   for (const { name, ownProfile } of caseTabs(caseName)) {
     const tab = await openHarnessTab(connection, name, interceptor.onPaused, { ownProfile });
     tabs.push(tab);
@@ -145,14 +152,16 @@ async function runCase(
     fingerprints.push(...(await deviceIdentityFingerprints(tab, adapter)));
   }
   await waitFor("every altered grant to be answered", () => interceptor.settled(), CONTEXT_HOLD_MILLISECONDS + 30_000);
-  if (mining) {
-    for (const tab of tabs) await redeemedAfterWork(tab, adapter);
+  if (maybeSpentPassScript !== undefined) {
+    for (const tab of tabs) spentPasses.set(tab.name, await redeemedAfterWork(tab, adapter, origin, maybeSpentPassScript));
   } else {
     for (const tab of tabs) await cancelThroughPage(tab, ROLLBACK_MILLISECONDS);
     for (const tab of tabs) await endedByAuthority(tab, adapter);
   }
   await Bun.sleep(LATE_EVENT_MILLISECONDS);
-  const evidence = await Promise.all(tabs.map(async (tab) => tabEvidence(tab, adapter, interceptor, consents.get(tab.name))));
+  const evidence = await Promise.all(
+    tabs.map(async (tab) => tabEvidence(tab, adapter, interceptor, consents.get(tab.name), spentPasses.get(tab.name))),
+  );
   const boardValues = [...adapter.boardValues, ...fingerprints];
   const audit = auditAuthorityRequests(tabs.flatMap((tab) => tab.requests), {
     origin,
@@ -196,8 +205,16 @@ async function consentAndStart(tab: HarnessTab, adapter: DeploymentAdapter): Pro
   return consent;
 }
 
-/** A journey: the board mines to the requirement and restores, then the page redeems its Gate Pass. */
-async function redeemedAfterWork(tab: HarnessTab, adapter: DeploymentAdapter): Promise<void> {
+/**
+ * A journey: the board mines to the requirement and restores, then the page redeems its Gate Pass.
+ * The spent pass is retried at once, while it's unexpired, so a refusal is for the spend alone.
+ */
+async function redeemedAfterWork(
+  tab: HarnessTab,
+  adapter: DeploymentAdapter,
+  origin: string,
+  spentPassScript: string,
+): Promise<SpentPassEvidence> {
   await adapter.driveWork(tab);
   await waitFor(
     `tab ${tab.name}'s Gate Pass to be issued and redeemed`,
@@ -208,7 +225,18 @@ async function redeemedAfterWork(tab: HarnessTab, adapter: DeploymentAdapter): P
     },
     JOURNEY_MILLISECONDS,
   );
+  const spentPass = await retriedSpentPass(tab, origin, spentPassScript);
   await adapter.settle(tab);
+  return spentPass;
+}
+
+async function retriedSpentPass(tab: HarnessTab, origin: string, spentPassScript: string): Promise<SpentPassEvidence> {
+  const input = spentPassInput(tab.requests, origin);
+  await tab.send("Runtime.evaluate", { expression: spentPassScript });
+  return await tab.evaluate(
+    (attempt) => (globalThis as unknown as { bwgSpentPassAttempt: (input: typeof attempt) => Promise<SpentPassEvidence> }).bwgSpentPassAttempt(attempt),
+    input,
+  );
 }
 
 async function cancelThroughPage(tab: HarnessTab, offerTimeoutMilliseconds: number): Promise<void> {
@@ -239,6 +267,7 @@ async function tabEvidence(
   adapter: DeploymentAdapter,
   interceptor: ReturnType<typeof grantInterceptor>,
   maybeConsent: TabEvidence["maybeConsent"],
+  maybeSpentPass: SpentPassEvidence | undefined,
 ): Promise<TabEvidence> {
   const maybeInterception = interceptor.interception(tab.name);
   const maybeBoard = await adapter.maybeBoard(tab);
@@ -256,6 +285,7 @@ async function tabEvidence(
     gatePassRequests: tab.gatePassRequests(),
     renewGrants,
     ...(maybeRedeemStatus !== undefined ? { maybeRedeemStatus } : {}),
+    ...(maybeSpentPass ? { maybeSpentPass } : {}),
     ...(maybeConsent ? { maybeConsent } : {}),
     ...(maybeBoard ? { maybeBoard } : {}),
   };

@@ -55,6 +55,7 @@ function journeyTab(tab = "a"): TabEvidence {
     gatePassRequests: 2,
     renewGrants: 3,
     maybeRedeemStatus: 200,
+    maybeSpentPass: { refresh: "identical", replayStatus: 401, replayError: "invalid_redemption" },
     maybeConsent: { workers: ["Bitaxe Ultra 205"], duration: "80.0 seconds estimated" },
     maybeBoard: {
       startLeaseCommands: 1,
@@ -485,6 +486,61 @@ test("fails a journey whose redemption was refused", () => {
 
   // Assert
   expect(verdict.failures).toEqual(["tab a: the redemption was answered 401"]);
+});
+
+test("passes a journey whose spent pass lookup was refused rather than answered with the same pass", () => {
+  // Arrange
+  const tabs = [{ ...journeyTab(), maybeSpentPass: { refresh: "refused" as const, replayStatus: 401, replayError: "invalid_redemption" } }];
+
+  // Act
+  const verdict = caseVerdict("journey", tabs, cleanAudit);
+
+  // Assert
+  expect(verdict.failures).toEqual([]);
+});
+
+test("fails a journey whose spent pass was never retried", () => {
+  // Arrange
+  const { maybeSpentPass: _, ...tab } = journeyTab();
+
+  // Act
+  const verdict = caseVerdict("journey", [tab], cleanAudit);
+
+  // Assert
+  expect(verdict.failures).toEqual(["tab a: the spent Gate Pass wasn't retried"]);
+});
+
+test("fails a journey whose second lookup returned a different Gate Pass", () => {
+  // Arrange
+  const tabs = [{ ...journeyTab(), maybeSpentPass: { refresh: "different" as const, replayStatus: 401, replayError: "invalid_redemption" } }];
+
+  // Act
+  const verdict = caseVerdict("journey", tabs, cleanAudit);
+
+  // Assert
+  expect(verdict.failures).toEqual(["tab a: a second lookup returned a different Gate Pass"]);
+});
+
+test("fails a journey whose spent pass redeemed again", () => {
+  // Arrange
+  const tabs = [{ ...journeyTab(), maybeSpentPass: { refresh: "identical" as const, replayStatus: 200, replayError: "" } }];
+
+  // Act
+  const verdict = caseVerdict("journey", tabs, cleanAudit);
+
+  // Assert
+  expect(verdict.failures).toEqual(["tab a: the spent Gate Pass was answered 200"]);
+});
+
+test("fails a journey whose spent pass was refused for another reason", () => {
+  // Arrange
+  const tabs = [{ ...journeyTab(), maybeSpentPass: { refresh: "identical" as const, replayStatus: 502, replayError: "authority_unavailable" } }];
+
+  // Act
+  const verdict = caseVerdict("journey", tabs, cleanAudit);
+
+  // Assert
+  expect(verdict.failures).toEqual(["tab a: the spent Gate Pass was answered 502 authority_unavailable"]);
 });
 
 test("fails a journey with no redemption response", () => {

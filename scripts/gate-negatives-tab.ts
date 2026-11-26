@@ -225,7 +225,8 @@ function networkRecorder(cdp: CdpConnection, sessionId: string, tabName: string)
       const response = params.response as { url: string; status: number };
       const route = routeTemplate(new URL(response.url).pathname);
       if (route?.endsWith("/work-session/cancel") && response.status >= 200 && response.status < 300) cancelAccepted = true;
-      if (route === "/account-creation/redeem") maybeRedeemStatus = response.status;
+      // The page's own redemption is the first; the harness's spent-pass retry comes after it.
+      if (route === "/account-creation/redeem") maybeRedeemStatus ??= response.status;
     })),
     cdp.on("Network.eventSourceMessageReceived", mine((params) => {
       const event = readAuthorityStreamEvent(String(params.eventName), String(params.data));
