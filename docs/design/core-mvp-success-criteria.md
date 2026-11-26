@@ -15,3 +15,5 @@ BWG Core is successful when one reproducible mainnet-capable flow proves all of 
 11. Expiry, Pause, terminal Cancel, disconnect, adapter replay, pool failure, malformed payout, invalid proposal, and stale-job cases fail safely.
 12. Versioned Client, Gate Authority, Pool Adapter, and Relying Service Conformance Profiles pass reproducibly in CI.
 13. Privacy tests prove forbidden Account Identity, Device Identity, payout, network, credential, and action-payload data do not cross their context boundaries.
+
+What the evidence for each criterion shows, and what it doesn't, is in [Core MVP evidence and non-claims](core-mvp-evidence.md).
