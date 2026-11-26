@@ -147,11 +147,11 @@ This ticket stays open until the withheld-authorization, other-identity and
 BIP 23 items resolve, and until its blockers 18, 20 and 22 are evidenced.
 
 
-## C Reference Firmware evidence — 2026-11-15
+## C Reference Firmware evidence — 2026-11-15, updated 2026-11-26
 
-Mapped by the C-image Gate effort's Ticket 09
+Mapped by the C-image Gate effort's Ticket 09, and updated from its Tickets 32 and 33
 ([`c-image-end-to-end-gate`](../../c-image-end-to-end-gate/spec.md)). The C
-repository's [evidence page](https://github.com/bright-builds-llc/bitaxe-esp-miner-c/blob/2bb93f0/docs/project/gate-integration-evidence.md) owns the physical evidence, by section. Runs
+repository's [evidence page](https://github.com/bright-builds-llc/bitaxe-esp-miner-c/blob/220d2dd/docs/project/gate-integration-evidence.md) owns the physical evidence, by section. Runs
 named for a Ticket used the owner's reference image of `247d2cd`, the owner's
 trust and each board's signed capability; the lifecycle reruns used a
 test-authority image of the same commit.
@@ -164,15 +164,15 @@ test-authority image of the same commit.
 | Baseline restoration confirmed without exposing credentials | resolved | Every lease in the lifecycle reruns ended in a confirmed restoration with its reason. Ticket 28's audit found no board value in any Authority request, and the committed evidence holds no credential |
 | Challenge credentials never persist as pool configuration | resolved, per boot | `worker-preservation-v2`'s digest over its 17-setting allowlist held `unchanged` through every step ("Preservation and the Close probe"); as on Rust, an identical write isn't distinguishable |
 | Accepted authorizations stay rejected across restoration and reboot | resolved | `authorization_negatives` run after `reboot` rejected the replayed renewal and Start, 3 of 3 ("Acceptance, through the Gate's page in Chrome"); the harness's replayed Start was `command_rejected` on both boards |
-| Withheld, expired-context and cross-possession authorizations fail before mining | partly resolved | Withheld and expired-context grants on the 601 through the deployed page: `cancelled`, Verified Progress 0, no Gate Pass, and only the control-session digest reached the Authority ("Ticket 28"). Cross-possession (the handover) rests on the rehearsal in two profiles, `negative-cases.json` and `test_lease_auth.c`, and wasn't run on hardware |
-| Another Device Identity derives a different context | open on hardware | `negative_changed_context_and_identity` in `test_lease_auth.c` refuses a Start bound to another identity, and `negative-cases.json` holds the case. No board was handed another's grant |
-| Mainnet use follows the per-job BIP 23 and Reward Policy guardrails | partly resolved | Mainnet Gates on both boards through Hydra's Job Admission patch ("Ticket 07"). The evidence doesn't record each job's admission, and the node was Bitcoin Core 31.1, not the 28.1 pin |
+| Withheld, expired-context and cross-possession authorizations fail before mining | resolved, both boards | Withheld and expired-context grants through the deployed page on the 601 ("Ticket 28") and the 205 ("Ticket 32"): `cancelled`, Verified Progress 0, no Gate Pass, and only the control-session digest reached the Authority. The handover, tab a on the 601 and tab b on the 205 in two profiles: each page refused the other tab's grant before `start_lease`, and neither board logged a lease ("Ticket 32") |
+| Another Device Identity derives a different context | partly resolved | In the handover the two boards' bindings differed, and each page refused the other's grant before it reached a board ("Ticket 32"). The board's own refusal of a Start bound to another identity rests on `negative_changed_context_and_identity` in `test_lease_auth.c` and on `negative-cases.json`; no board was sent another's grant |
+| Mainnet use follows the per-job BIP 23 and Reward Policy guardrails | resolved, on the 601 | Mainnet Gates on both boards through Hydra's Job Admission patch ("Ticket 07"). On the 601, each of the 6 jobs the Pool Adapter relayed had an accepted Job Admission in Hydra's log, on Bitcoin Core 31.1, now the pin ("Ticket 33"). That admission came before release rests on the patch's tests and the regtest runner |
 | Evidence records identity, commands, safety, privacy, cleanup, outcome, residual risks | resolved | Each section names its board, commits, image and ELF digests and non-claims |
 
 Blocker 22's onboarding has its C-image evidence in the C-image effort's Ticket 15
 ("Ticket 15: onboarding on the 601"), on the 601 only. Non-claims: one run of most
-cases, the Ticket 08 cases on the 205 only, and the Ticket 28 grants on the 601
+cases, the Ticket 08 cases on the 205 only, and per-job admission on the 601
 only. A failed stop has never happened on hardware, so stop retries rest on host
-tests. This ticket stays open until the handover and other-identity items have
-hardware evidence and the BIP 23 item records per-job admission, or the owner
-accepts the non-claims.
+tests. The handover and per-job admission now have hardware evidence (Tickets 32 and
+33). This ticket stays open until a board itself refuses another identity's
+grant on hardware, or the owner accepts that non-claim.
