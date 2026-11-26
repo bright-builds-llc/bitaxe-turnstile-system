@@ -1,0 +1,671 @@
+{
+  "profile": "BWG/0.1",
+  "sources": ["docs/protocol/bwg-0.1-lifecycle.md"],
+  "note": "Every state paired with every command, for the Work Challenge and the Work Session. A command that leaves the state as it is answers that state, so a replay is safe; one the lifecycle forbids answers forbidden_transition. Times are Unix seconds. A proof is fresh from its issue time through issue time plus the window, with no clock-skew allowance; a signed artifact is valid from its issue time up to, but not at, its expiry.",
+  "challenge_commands": [
+    {
+      "from": "issued",
+      "command": "register_session",
+      "expected": {
+        "state": "issued"
+      }
+    },
+    {
+      "from": "issued",
+      "command": "select_pool_offer",
+      "expected": {
+        "state": "issued"
+      }
+    },
+    {
+      "from": "issued",
+      "command": "confirm_pool_selection",
+      "expected": {
+        "state": "issued"
+      }
+    },
+    {
+      "from": "issued",
+      "command": "start_work",
+      "expected": {
+        "state": "active"
+      }
+    },
+    {
+      "from": "issued",
+      "command": "accept_work",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "issued",
+      "command": "pause",
+      "expected": {
+        "state": "issued"
+      }
+    },
+    {
+      "from": "issued",
+      "command": "satisfy",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "issued",
+      "command": "issue_pass",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "issued",
+      "command": "cancel",
+      "expected": {
+        "state": "cancelled"
+      }
+    },
+    {
+      "from": "issued",
+      "command": "expire",
+      "expected": {
+        "state": "expired"
+      }
+    },
+    {
+      "from": "active",
+      "command": "register_session",
+      "expected": {
+        "state": "active"
+      }
+    },
+    {
+      "from": "active",
+      "command": "select_pool_offer",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "active",
+      "command": "confirm_pool_selection",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "active",
+      "command": "start_work",
+      "expected": {
+        "state": "active"
+      }
+    },
+    {
+      "from": "active",
+      "command": "accept_work",
+      "expected": {
+        "state": "active"
+      }
+    },
+    {
+      "from": "active",
+      "command": "pause",
+      "expected": {
+        "state": "active"
+      }
+    },
+    {
+      "from": "active",
+      "command": "satisfy",
+      "expected": {
+        "state": "satisfied"
+      }
+    },
+    {
+      "from": "active",
+      "command": "issue_pass",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "active",
+      "command": "cancel",
+      "expected": {
+        "state": "cancelled"
+      }
+    },
+    {
+      "from": "active",
+      "command": "expire",
+      "expected": {
+        "state": "expired"
+      }
+    },
+    {
+      "from": "satisfied",
+      "command": "register_session",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "satisfied",
+      "command": "select_pool_offer",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "satisfied",
+      "command": "confirm_pool_selection",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "satisfied",
+      "command": "start_work",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "satisfied",
+      "command": "accept_work",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "satisfied",
+      "command": "pause",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "satisfied",
+      "command": "satisfy",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "satisfied",
+      "command": "issue_pass",
+      "expected": {
+        "state": "pass_issued"
+      }
+    },
+    {
+      "from": "satisfied",
+      "command": "cancel",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "satisfied",
+      "command": "expire",
+      "expected": {
+        "state": "expired"
+      }
+    },
+    {
+      "from": "pass_issued",
+      "command": "register_session",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "pass_issued",
+      "command": "select_pool_offer",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "pass_issued",
+      "command": "confirm_pool_selection",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "pass_issued",
+      "command": "start_work",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "pass_issued",
+      "command": "accept_work",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "pass_issued",
+      "command": "pause",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "pass_issued",
+      "command": "satisfy",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "pass_issued",
+      "command": "issue_pass",
+      "expected": {
+        "state": "pass_issued"
+      }
+    },
+    {
+      "from": "pass_issued",
+      "command": "cancel",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "pass_issued",
+      "command": "expire",
+      "expected": {
+        "state": "expired"
+      }
+    },
+    {
+      "from": "cancelled",
+      "command": "register_session",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "cancelled",
+      "command": "select_pool_offer",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "cancelled",
+      "command": "confirm_pool_selection",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "cancelled",
+      "command": "start_work",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "cancelled",
+      "command": "accept_work",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "cancelled",
+      "command": "pause",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "cancelled",
+      "command": "satisfy",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "cancelled",
+      "command": "issue_pass",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "cancelled",
+      "command": "cancel",
+      "expected": {
+        "state": "cancelled"
+      }
+    },
+    {
+      "from": "cancelled",
+      "command": "expire",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "expired",
+      "command": "register_session",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "expired",
+      "command": "select_pool_offer",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "expired",
+      "command": "confirm_pool_selection",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "expired",
+      "command": "start_work",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "expired",
+      "command": "accept_work",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "expired",
+      "command": "pause",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "expired",
+      "command": "satisfy",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "expired",
+      "command": "issue_pass",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "expired",
+      "command": "cancel",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "expired",
+      "command": "expire",
+      "expected": {
+        "state": "expired"
+      }
+    }
+  ],
+  "session_commands": [
+    {
+      "from": "ready",
+      "command": "start_lease",
+      "expected": {
+        "state": "leased"
+      }
+    },
+    {
+      "from": "ready",
+      "command": "observe_lease",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "ready",
+      "command": "stop",
+      "expected": {
+        "state": "stopping"
+      }
+    },
+    {
+      "from": "ready",
+      "command": "confirm_restored",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "ready",
+      "command": "fail",
+      "expected": {
+        "state": "failed"
+      }
+    },
+    {
+      "from": "leased",
+      "command": "start_lease",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "leased",
+      "command": "observe_lease",
+      "expected": {
+        "state": "leased"
+      }
+    },
+    {
+      "from": "leased",
+      "command": "stop",
+      "expected": {
+        "state": "stopping"
+      }
+    },
+    {
+      "from": "leased",
+      "command": "confirm_restored",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "leased",
+      "command": "fail",
+      "expected": {
+        "state": "failed"
+      }
+    },
+    {
+      "from": "stopping",
+      "command": "start_lease",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "stopping",
+      "command": "observe_lease",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "stopping",
+      "command": "stop",
+      "expected": {
+        "state": "stopping"
+      }
+    },
+    {
+      "from": "stopping",
+      "command": "confirm_restored",
+      "expected": {
+        "state": "restored"
+      }
+    },
+    {
+      "from": "stopping",
+      "command": "fail",
+      "expected": {
+        "state": "failed"
+      }
+    },
+    {
+      "from": "restored",
+      "command": "start_lease",
+      "expected": {
+        "state": "leased"
+      }
+    },
+    {
+      "from": "restored",
+      "command": "observe_lease",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "restored",
+      "command": "stop",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "restored",
+      "command": "confirm_restored",
+      "expected": {
+        "state": "restored"
+      }
+    },
+    {
+      "from": "restored",
+      "command": "fail",
+      "expected": {
+        "state": "failed"
+      }
+    },
+    {
+      "from": "failed",
+      "command": "start_lease",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "failed",
+      "command": "observe_lease",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "failed",
+      "command": "stop",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "failed",
+      "command": "confirm_restored",
+      "expected": {
+        "error": "forbidden_transition"
+      }
+    },
+    {
+      "from": "failed",
+      "command": "fail",
+      "expected": {
+        "state": "failed"
+      }
+    }
+  ],
+  "proof_freshness": [
+    {
+      "id": "dpop-issued-now",
+      "now": 1000,
+      "issued_at": 1000,
+      "freshness_seconds": 60,
+      "fresh": true
+    },
+    {
+      "id": "dpop-at-window-end",
+      "now": 1060,
+      "issued_at": 1000,
+      "freshness_seconds": 60,
+      "fresh": true
+    },
+    {
+      "id": "dpop-after-window",
+      "now": 1061,
+      "issued_at": 1000,
+      "freshness_seconds": 60,
+      "fresh": false
+    },
+    {
+      "id": "dpop-issued-in-future",
+      "now": 999,
+      "issued_at": 1000,
+      "freshness_seconds": 60,
+      "fresh": false
+    }
+  ],
+  "signed_artifact_validity": [
+    {
+      "id": "gate-pass-before-issue",
+      "now": 999,
+      "issued_at": 1000,
+      "expires_at": 1120,
+      "valid": false
+    },
+    {
+      "id": "gate-pass-at-issue",
+      "now": 1000,
+      "issued_at": 1000,
+      "expires_at": 1120,
+      "valid": true
+    },
+    {
+      "id": "gate-pass-last-valid-second",
+      "now": 1119,
+      "issued_at": 1000,
+      "expires_at": 1120,
+      "valid": true
+    },
+    {
+      "id": "gate-pass-at-expiry",
+      "now": 1120,
+      "issued_at": 1000,
+      "expires_at": 1120,
+      "valid": false
+    },
+    {
+      "id": "challenge-at-deadline",
+      "now": 1900,
+      "issued_at": 1000,
+      "expires_at": 1900,
+      "valid": false
+    }
+  ]
+}

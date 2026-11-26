@@ -40,6 +40,7 @@
         "governance_policy",
         "late_work_delivery",
         "lifecycle_control",
+        "lifecycle_vectors",
         "lookup_proof_vectors",
         "material_pool_offer_consent",
         "multi_session_aggregation",
@@ -62,7 +63,8 @@
         "docs/protocol/bwg-0.1-stratum-v1-proxy.md",
         "docs/protocol/bwg-0.1-mainnet-job-admission.md",
         "docs/protocol/bwg-0.1-hydra-solo-integration.md",
-        "docs/protocol/bwg-0.1-independent-block-submission.md"
+        "docs/protocol/bwg-0.1-independent-block-submission.md",
+        "docs/protocol/bwg-0.1-lifecycle.md"
       ],
       "bunTests": [],
       "browser": false,
@@ -71,6 +73,7 @@
         "claimant_pool_selection",
         "hydra_solo_integration",
         "late_work_delivery",
+        "lifecycle_vectors",
         "stratum_v1_proxy"
       ]
     },

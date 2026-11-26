@@ -13,3 +13,5 @@ One Work Lease lasts at most 60 seconds and should be renewed every 20 seconds. 
 The lifecycle snapshot also publishes `lifecycle_deadline_unix_seconds`, which is the Work Challenge deadline before issuance and the Gate Pass deadline after issuance. Connected SSE clients receive an `expired` lifecycle event when that deadline arrives.
 
 The BWG/0.1 reference profile uses a 15-minute Work Challenge, a two-minute Gate Pass, a 60-second single-use DPoP freshness window, and zero verifier clock-skew extension. Future-issued DPoP proofs are invalid. The signed or persisted deadline is the first invalid instant.
+
+`conformance/bwg-0.1/lifecycle-vectors.json` pairs every Work Challenge and Work Session state with every command and gives the resulting state or `forbidden_transition`, with the boundary cases of proof freshness and signed-artifact validity. `tests/lifecycle_vectors.rs` checks the reference implementation against it, and a missing or repeated pair fails.
