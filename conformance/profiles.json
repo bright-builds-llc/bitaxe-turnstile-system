@@ -1,6 +1,6 @@
 {
   "version": "BWG/0.1",
-  "note": "Each role's checks run against this repository's reference implementation. Run one with `bun run conformance <role>`. A Worker Controller's profile is checked by the firmware against the bwg-worker-* fixtures in this directory.",
+  "note": "Each role's checks run against this repository's reference implementation. Run one with `bun run conformance <role>`. Each profile's `vectors` are the language-neutral files another implementation of that role runs with its own harness. It certifies a role with a Conformance Statement that names every one of the profile's vectors by SHA-256, checked by `bun run conformance --check <statement.json>`; a reference run writes its own with `--statement <path>`. A Worker Controller's profile is checked by the firmware against the bwg-worker-* fixtures in this directory.",
   "profiles": [
     {
       "role": "client",
@@ -13,6 +13,12 @@
       ],
       "bunTests": ["conformance/bwg-0.1/crypto-vectors.test.mjs", "conformance/bwg-0.1/lookup-proof-vectors.test.mjs", "web"],
       "browser": true,
+      "vectors": [
+        "conformance/bwg-0.1/crypto-vectors.json",
+        "conformance/bwg-0.1/headless-work-consent-vectors.json",
+        "conformance/bwg-0.1/lookup-proof-vectors.json",
+        "conformance/bwg-0.1/work-gate-component-vectors.json"
+      ],
       "rustTests": []
     },
     {
@@ -28,6 +34,14 @@
       ],
       "bunTests": [],
       "browser": false,
+      "vectors": [
+        "conformance/bwg-0.1/crypto-vectors.json",
+        "conformance/bwg-0.1/lifecycle-vectors.json",
+        "conformance/bwg-0.1/lookup-proof-vectors.json",
+        "conformance/bwg-0.1/payout-commitment-vectors.json",
+        "conformance/bwg-0.1/pool-offer-terms-vectors.json",
+        "conformance/bwg-0.1/work-vectors.json"
+      ],
       "rustTests": [
         "accepted_work_progress",
         "authority_persistence",
@@ -71,6 +85,13 @@
       ],
       "bunTests": [],
       "browser": false,
+      "vectors": [
+        "conformance/bwg-0.1/accepted-work-refusal-vectors.json",
+        "conformance/bwg-0.1/lifecycle-vectors.json",
+        "conformance/bwg-0.1/payout-commitment-vectors.json",
+        "conformance/bwg-0.1/pool-offer-terms-vectors.json",
+        "conformance/bwg-0.1/stratum-v1-proxy-transcript.json"
+      ],
       "rustTests": [
         "accepted_work_refusal_vectors",
         "claimant_pool_selection",
@@ -88,6 +109,9 @@
       "protocol": ["docs/protocol/bwg-0.1-redemption.md", "docs/protocol/bwg-0.1-crypto-profile.md"],
       "bunTests": [],
       "browser": false,
+      "vectors": [
+        "conformance/bwg-0.1/crypto-vectors.json"
+      ],
       "rustTests": [
         "account_creation_challenge",
         "crypto_profile",
