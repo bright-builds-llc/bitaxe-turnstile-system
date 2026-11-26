@@ -1,7 +1,7 @@
 # Each job's admission, recorded against the jobs a board received
 
 Type: task
-Status: in-progress
+Status: resolved
 Blocked by: None
 
 ## Objective
@@ -25,9 +25,9 @@ to repin to 31.1 and to close the criterion with one mainnet journey on the Gamm
   - `SHA256SUMS` carries 11 good builder signatures;
   - the archive matches it;
   - the regtest runner and the rehearsal pass on it.
-- [ ] [Run sheet 33](../run-sheet-33.md) on the 601, on mainnet: the journey passes, and so does
+- [x] [Run sheet 33](../run-sheet-33.md) on the 601, on mainnet: the journey passes, and so does
   the join.
-- [ ] The fork's evidence gets a Ticket 33 section, and criterion 5 in `spec.md` is updated.
+- [x] The fork's evidence gets a Ticket 33 section, and criterion 5 in `spec.md` is updated.
 
 ## Comments
 
@@ -44,3 +44,18 @@ to repin to 31.1 and to close the criterion with one mainnet journey on the Gamm
     - `--negatives` on 31.1: 3 relayed, 3 admitted.
     - Neither run had an unadmitted relayed job.
   - **Mutation check:** with the relay log line removed, the rehearsal failed with `relayed` 0.
+- 2026-11-26, the sitting, 01:34 to 01:37 UTC, on the 601 with the owner's `247d2cd` image and the
+  Gate at `2615ec9`, against Hydra on mainnet through the owner's Bitcoin Core 31.1 node:
+  - **The journey passed.** The consent named "Bitaxe Gamma 601" alone, estimating 29.3 s.
+    - 2 Renew grants were searched.
+    - The Authority reached `pass_issued`, and the redemption was answered 200.
+    - The board stopped with `ok=1` after 32,002 ms of cooling.
+  - **The join passed:**
+    - 6 relayed and 6 admitted, with no failed admission and no unadmitted relayed job;
+    - relays from 01:35:28.6 to 01:36:15.2 UTC, before the redemption;
+    - exit 0.
+  - No stale job was logged. The board ended paused with `mineOnBoot` 0 at 19 mV.
+  - The launcher exited 0, the Tailscale serve is off and the container gone. Hydra and the tunnel
+    are stopped.
+  - The records are in the fork's `docs/project/gate-integration-evidence.md`, "Ticket 33: each
+    job's admission".

@@ -23,10 +23,10 @@ credentials, pool users or endpoints. Security findings name topics only.
 ## Core MVP criteria against C-image evidence
 
 Criteria are from `docs/design/core-mvp-success-criteria.md`, updated
-2026-11-23 from Tickets 07, 08, 15, 27, 28 and 32. "Partial" names what the C image
+2026-11-26 from Tickets 07, 08, 15, 27, 28, 32 and 33. "Partial" names what the C image
 shows and what it doesn't. The hardware evidence is in the firmware repository's
-[`docs/project/gate-integration-evidence.md`](https://github.com/bright-builds-llc/bitaxe-esp-miner-c/blob/ddeecd6/docs/project/gate-integration-evidence.md),
-in the sections named for Tickets 07, 08, 15, 28 and 32. Those runs used the
+[`docs/project/gate-integration-evidence.md`](https://github.com/bright-builds-llc/bitaxe-esp-miner-c/blob/b1a2f06/docs/project/gate-integration-evidence.md),
+in the sections named for Tickets 07, 08, 15, 28, 32 and 33. Those runs used the
 owner's reference images (`247d2cd`, and in Ticket 15 the signed `51e5af9` and
 `57b0841` packages) on the Gamma 601 or the Ultra 205.
 
@@ -36,7 +36,7 @@ owner's reference images (`247d2cd`, and in Ticket 15 the signed `51e5af9` and
 | 2 | Claimant selects the Bitaxe Reference Client | The Bitaxe choice: "Connect Bitaxe over USB" in every Ticket 07 run, on both boards. The standard Stratum V1 Worker choice isn't a firmware path and wasn't run here |
 | 3 | Onboarding preserves settings, no account or app | Ticket 15, on the 601: the signed package installed from stock v2.15.4 and from `247d2cd`, a reference-to-reference update (`51e5af9` to `57b0841`), and every rollback, each with the settings categories (nonce-keyed HMACs) matching and no account or app. An unknown partition table was refused with nothing written, and a failed startup check was recovered by the bootloader and the page. One board, no Migration Backup, and the failed check's fault was staged |
 | 4 | Work Consent disclosure | Consent was shown before every Start through the deployed page (Tickets 07, 08, 28, 32). The page names the connected board, from its signed capability, with that board's duration estimate, and refuses before consent if no configured Worker is that board. On hardware each consent named only the connected board: the Ultra 205 at 70.4 s and the Gamma 601 at 29.3 s, including in one tab each during the handover (Ticket 32). Tests pin the criterion's six fields in the client's disclosure and in the gate's terms, and the policy links resolve (Ticket 19) |
-| 5 | Reward outputs and BIP 23 acceptance before release | Partial: the mainnet runs mined only jobs released by Hydra's Job Admission patch, which checks the Reward Policy and gets the BIP 23 proposal accepted first (Ticket 07). The evidence doesn't record each job's admission, and the node was Bitcoin Core 31.1, not the 28.1 pin |
+| 5 | Reward outputs and BIP 23 acceptance before release | On mainnet on the 601 (Ticket 33), each of the 6 jobs the Pool Adapter relayed to the board had an accepted Job Admission in Hydra's log, and none failed. Hydra's Job Admission patch checks the Reward Policy and gets the BIP 23 proposal accepted before it releases a job. The node was Bitcoin Core 31.1, now the pin. The logs show which jobs were admitted, not that admission came first; that rests on the patch's tests and the regtest runner. One board, one journey |
 | 6 | Work through the Pool Adapter to pinned Hydra | The Pool Adapter's proxy in `gate-authority` to Hydra 0.12.0 at `8eca024`, patched only for Job Admission and block submission, on mainnet, on both boards (Ticket 07) |
 | 7 | Accepted Work Events advance Verified Progress | Shares through the adapter took Verified Progress to the Work Requirement, 2^44 and 2^45, on both boards (Ticket 07). No double credit across an adapter restart is a Rust test (Ticket 27), not hardware |
 | 8 | Work Requirement ends leases and confirms restoration | For one Worker: at the requirement the board stopped with `restoration_requested` and `Lease stop finished ok=1`, and restoration was confirmed as `challenge_satisfied`, on both boards (Ticket 07). Several Workers in one challenge weren't run |
