@@ -1,6 +1,6 @@
-# Runs `bun run verify`, which holds the Client, Gate Authority, Pool Adapter and Relying Service
-# Conformance Profiles (Core MVP criterion 12). The Rust tests start PostgreSQL through Docker, and
-# the browser tests drive the runner's Google Chrome.
+# Runs `bun run verify`, then each role's Conformance Profile from `conformance/profiles.json` on its
+# own, so each role's result is published (Core MVP criterion 12). The Rust tests start PostgreSQL
+# through Docker, and the browser tests drive the runner's Google Chrome.
 name: Verify
 
 on:
@@ -56,3 +56,15 @@ jobs:
 
       - name: Verify
         run: bun run verify
+
+      - name: "Conformance: Client"
+        run: bun run conformance client
+
+      - name: "Conformance: Gate Authority"
+        run: bun run conformance gate-authority
+
+      - name: "Conformance: Pool Adapter"
+        run: bun run conformance pool-adapter
+
+      - name: "Conformance: Relying Service"
+        run: bun run conformance relying-service

@@ -1,0 +1,96 @@
+{
+  "version": "BWG/0.1",
+  "note": "Each role's checks run against this repository's reference implementation. Run one with `bun run conformance <role>`. A Worker Controller's profile is checked by the firmware against the bwg-worker-* fixtures in this directory.",
+  "profiles": [
+    {
+      "role": "client",
+      "profile": "bwg-client/0.1",
+      "protocol": [
+        "docs/protocol/bwg-0.1-headless-client.md",
+        "docs/protocol/bwg-0.1-web-component.md",
+        "docs/protocol/bwg-0.1-trusted-consent.md",
+        "docs/protocol/bwg-0.1-bitaxe-onboarding.md"
+      ],
+      "bunTests": ["conformance/bwg-0.1/crypto-vectors.test.mjs", "conformance/bwg-0.1/lookup-proof-vectors.test.mjs", "web"],
+      "browser": true,
+      "rustTests": []
+    },
+    {
+      "role": "gate-authority",
+      "profile": "bwg-gate-authority/0.1",
+      "protocol": [
+        "docs/protocol/bwg-0.1-authority-descriptor.md",
+        "docs/protocol/bwg-0.1-crypto-profile.md",
+        "docs/protocol/bwg-0.1-lifecycle.md",
+        "docs/protocol/bwg-0.1-progress.md",
+        "docs/protocol/bwg-0.1-pool-offers.md",
+        "docs/protocol/bwg-0.1-data-governance.md"
+      ],
+      "bunTests": [],
+      "browser": false,
+      "rustTests": [
+        "accepted_work_progress",
+        "authority_persistence",
+        "claimant_pool_selection",
+        "claimant_work_session",
+        "composed_failover",
+        "crypto_profile",
+        "governance_cli",
+        "governance_composed",
+        "governance_policy",
+        "late_work_delivery",
+        "lifecycle_control",
+        "lookup_proof_vectors",
+        "material_pool_offer_consent",
+        "multi_session_aggregation",
+        "openapi_contract",
+        "pool_offer_failover",
+        "pool_offer_selection",
+        "secure_issuance_discovery",
+        "trusted_consent_authority",
+        "trusted_consent_migration",
+        "trusted_consent_receipt_retention",
+        "trusted_consent_surface",
+        "work_vectors",
+        "worker_replacement"
+      ]
+    },
+    {
+      "role": "pool-adapter",
+      "profile": "bwg-pool-adapter/0.1",
+      "protocol": [
+        "docs/protocol/bwg-0.1-stratum-v1-proxy.md",
+        "docs/protocol/bwg-0.1-mainnet-job-admission.md",
+        "docs/protocol/bwg-0.1-hydra-solo-integration.md",
+        "docs/protocol/bwg-0.1-independent-block-submission.md"
+      ],
+      "bunTests": [],
+      "browser": false,
+      "rustTests": [
+        "accepted_work_refusal_vectors",
+        "claimant_pool_selection",
+        "hydra_solo_integration",
+        "late_work_delivery",
+        "stratum_v1_proxy"
+      ]
+    },
+    {
+      "role": "relying-service",
+      "profile": "bwg-relying-service/0.1",
+      "protocol": ["docs/protocol/bwg-0.1-redemption.md", "docs/protocol/bwg-0.1-crypto-profile.md"],
+      "bunTests": [],
+      "browser": false,
+      "rustTests": [
+        "account_creation_challenge",
+        "crypto_profile",
+        "dpop_gate_pass_redemption",
+        "governance_composed",
+        "relying_service_concurrency",
+        "relying_service_persistence"
+      ]
+    }
+  ],
+  "unassignedRustTests": {
+    "rehearsal_isolation": "repository hygiene: rehearsal-only code stays out of production sources"
+  }
+}
