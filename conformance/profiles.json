@@ -44,6 +44,7 @@
         "lookup_proof_vectors",
         "material_pool_offer_consent",
         "multi_session_aggregation",
+        "payout_commitment_vectors",
         "openapi_contract",
         "pool_offer_failover",
         "pool_offer_selection",
@@ -76,6 +77,7 @@
         "hydra_solo_integration",
         "late_work_delivery",
         "lifecycle_vectors",
+        "payout_commitment_vectors",
         "pool_offer_terms_vectors",
         "stratum_v1_proxy"
       ]

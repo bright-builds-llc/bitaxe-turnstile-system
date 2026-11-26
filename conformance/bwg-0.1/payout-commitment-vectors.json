@@ -1,0 +1,80 @@
+{
+  "profile": "BWG/0.1",
+  "sources": [
+    "docs/protocol/bwg-0.1-pool-offers.md"
+  ],
+  "domain": "BWG/0.1 pool selection commitment",
+  "note": "The Pool Adapter keeps the raw payout choice and the Gate Authority holds only this commitment: the lowercase hex SHA-256 of the UTF-8 domain, challenge ID, offer ID, destination type and destination, with a NUL between each. The same destination in another challenge commits differently, so commitments can't be linked across challenges. A refused selection is never committed.",
+  "commitments": [
+    {
+      "id": "p2pkh-address",
+      "challenge_id": "challenge_vectorcommitment01",
+      "pool_offer_id": "pool_offer_hydra_solo_v1",
+      "payout_destination_type": "bitcoin_mainnet_address",
+      "payout_destination": "1BoatSLRHtKNngkdXEeobR76b53LETtpyT",
+      "commitment_sha256_hex": "310611311825a4c515510d523c9854548fa83ba0281cec46ca36e172e277ad2e"
+    },
+    {
+      "id": "p2sh-address",
+      "challenge_id": "challenge_vectorcommitment01",
+      "pool_offer_id": "pool_offer_hydra_solo_v1",
+      "payout_destination_type": "bitcoin_mainnet_address",
+      "payout_destination": "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy",
+      "commitment_sha256_hex": "9e0b656aa6ff8bf4ec4c1b4f56ea3ca521247b7e8699d9fe253923861ef7e1c7"
+    },
+    {
+      "id": "segwit-address",
+      "challenge_id": "challenge_vectorcommitment01",
+      "pool_offer_id": "pool_offer_hydra_solo_v1",
+      "payout_destination_type": "bitcoin_mainnet_address",
+      "payout_destination": "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+      "commitment_sha256_hex": "3383f4b6093091494f3b65aefca9a6000b1496148c9600a8fb1343bd638374e3"
+    },
+    {
+      "id": "same-address-other-challenge",
+      "challenge_id": "challenge_vectorcommitment02",
+      "pool_offer_id": "pool_offer_hydra_solo_v1",
+      "payout_destination_type": "bitcoin_mainnet_address",
+      "payout_destination": "1BoatSLRHtKNngkdXEeobR76b53LETtpyT",
+      "commitment_sha256_hex": "d1bd529fe946bf003ada8f65a41283647d4931d5f7ecf9498e3c7caaa6064c33"
+    },
+    {
+      "id": "approved-beneficiary",
+      "challenge_id": "challenge_vectorcommitment01",
+      "pool_offer_id": "pool_offer_hydra_solo_v1",
+      "payout_destination_type": "approved_beneficiary",
+      "payout_destination": "open_source_bitcoin_research",
+      "commitment_sha256_hex": "8e893b9e76351a9be2c87d2baf19e7ae97bf99c258b7fd4aa9922338f63c2dcf"
+    }
+  ],
+  "refused_selections": [
+    {
+      "id": "address-checksum-broken",
+      "pool_offer_id": "pool_offer_hydra_solo_v1",
+      "payout_destination_type": "bitcoin_mainnet_address",
+      "payout_destination": "1BoatSLRHtKNngkdXEeobR76b53LETtpyU",
+      "expected_error": "invalid_payout_selection"
+    },
+    {
+      "id": "testnet-address",
+      "pool_offer_id": "pool_offer_hydra_solo_v1",
+      "payout_destination_type": "bitcoin_mainnet_address",
+      "payout_destination": "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
+      "expected_error": "invalid_payout_selection"
+    },
+    {
+      "id": "beneficiary-id-with-space",
+      "pool_offer_id": "pool_offer_hydra_solo_v1",
+      "payout_destination_type": "approved_beneficiary",
+      "payout_destination": "open source",
+      "expected_error": "invalid_pool_offer"
+    },
+    {
+      "id": "empty-offer-id",
+      "pool_offer_id": "",
+      "payout_destination_type": "bitcoin_mainnet_address",
+      "payout_destination": "1BoatSLRHtKNngkdXEeobR76b53LETtpyT",
+      "expected_error": "invalid_pool_offer"
+    }
+  ]
+}

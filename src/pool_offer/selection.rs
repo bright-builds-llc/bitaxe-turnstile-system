@@ -55,8 +55,10 @@ impl PoolSelection {
         }
     }
 
-    /// Computes the commitment that binds this local choice to one Work Challenge.
-    pub(crate) fn commitment(&self, challenge_id: &str) -> String {
+    /// Computes the commitment that binds this local choice to one Work Challenge: the lowercase hex
+    /// SHA-256 of the protocol's domain and the challenge, offer, destination type and destination,
+    /// each followed by NUL but the last. It holds none of the destination's bytes.
+    pub fn commitment(&self, challenge_id: &str) -> String {
         let mut input = b"BWG/0.1 pool selection commitment\0".to_vec();
         input.extend_from_slice(challenge_id.as_bytes());
         input.push(0);
