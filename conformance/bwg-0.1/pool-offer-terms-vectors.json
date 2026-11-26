@@ -1,0 +1,281 @@
+{
+  "profile": "BWG/0.1",
+  "sources": [
+    "docs/protocol/bwg-0.1-pool-offers.md"
+  ],
+  "note": "Each case replaces one field of the base offer and classifies the result against the base, as failover does. A valid change to the Reward Policy or payout requirements is a material change that needs fresh Work Consent. An offer must pay a network-valid result directly in the coinbase, allocate exactly 10,000 basis points, create no revenue claim or custodial balance, require a payout choice, keep that choice ephemeral by default, and accept only a mainnet address or an approved beneficiary. rejected_shape means the offer doesn't parse.",
+  "base_offer": {
+    "offer_id": "pool_offer_hydra_solo_v1",
+    "mining_pool": {
+      "component_id": "p2poolv2_hydra",
+      "display_name": "Hydra / P2Pool v2",
+      "version": "v0.12.0+8eca024bde6c2de74620dce2f9cc7fb9a544c5c0",
+      "source_url": "https://github.com/p2poolv2/p2poolv2/tree/8eca024bde6c2de74620dce2f9cc7fb9a544c5c0",
+      "license": "AGPL-3.0-or-later"
+    },
+    "pool_adapter": {
+      "component_id": "bwg_reference_stratum_adapter",
+      "display_name": "BWG Reference Stratum V1 Adapter",
+      "version": "0.1.0",
+      "source_url": "https://github.com/bright-builds-llc/bitaxe-turnstile-system",
+      "license": "MIT"
+    },
+    "mining_transport": "stratum_v1",
+    "endpoint": "stratum+tcp://pool.example:3333/",
+    "reward_policy": {
+      "mode": "solo_direct_coinbase",
+      "selected_destination_basis_points": 10000,
+      "pool_fee_basis_points": 0,
+      "service_fee_basis_points": 0,
+      "accepted_work_creates_revenue_claim": false,
+      "creates_custodial_balance": false,
+      "network_valid_result": "direct_coinbase_payout"
+    },
+    "payout_requirements": {
+      "selection_required": true,
+      "ephemeral_by_default": true,
+      "accepted_destination_types": [
+        "bitcoin_mainnet_address",
+        "approved_beneficiary"
+      ],
+      "approved_beneficiaries": [
+        {
+          "beneficiary_id": "open_source_bitcoin_research",
+          "display_name": "Open-source Bitcoin research",
+          "terms_url": "https://pool.example/beneficiaries/open-source-bitcoin-research"
+        }
+      ]
+    },
+    "privacy_terms_url": "https://authority.example/privacy",
+    "operator_terms_url": "https://authority.example/terms"
+  },
+  "cases": [
+    {
+      "id": "same-reward-policy",
+      "replace": "reward_policy",
+      "with": {
+        "mode": "solo_direct_coinbase",
+        "selected_destination_basis_points": 10000,
+        "pool_fee_basis_points": 0,
+        "service_fee_basis_points": 0,
+        "accepted_work_creates_revenue_claim": false,
+        "creates_custodial_balance": false,
+        "network_valid_result": "direct_coinbase_payout"
+      },
+      "expected": "equivalent"
+    },
+    {
+      "id": "pool-fee-of-one-percent",
+      "replace": "reward_policy",
+      "with": {
+        "mode": "solo_direct_coinbase",
+        "selected_destination_basis_points": 9900,
+        "pool_fee_basis_points": 100,
+        "service_fee_basis_points": 0,
+        "accepted_work_creates_revenue_claim": false,
+        "creates_custodial_balance": false,
+        "network_valid_result": "direct_coinbase_payout"
+      },
+      "expected": "economic_terms_changed"
+    },
+    {
+      "id": "service-fee-of-half-a-percent",
+      "replace": "reward_policy",
+      "with": {
+        "mode": "solo_direct_coinbase",
+        "selected_destination_basis_points": 9950,
+        "pool_fee_basis_points": 0,
+        "service_fee_basis_points": 50,
+        "accepted_work_creates_revenue_claim": false,
+        "creates_custodial_balance": false,
+        "network_valid_result": "direct_coinbase_payout"
+      },
+      "expected": "economic_terms_changed"
+    },
+    {
+      "id": "allocation-short-of-whole",
+      "replace": "reward_policy",
+      "with": {
+        "mode": "solo_direct_coinbase",
+        "selected_destination_basis_points": 9999,
+        "pool_fee_basis_points": 0,
+        "service_fee_basis_points": 0,
+        "accepted_work_creates_revenue_claim": false,
+        "creates_custodial_balance": false,
+        "network_valid_result": "direct_coinbase_payout"
+      },
+      "expected": "invalid_reward_policy"
+    },
+    {
+      "id": "allocation-over-whole",
+      "replace": "reward_policy",
+      "with": {
+        "mode": "solo_direct_coinbase",
+        "selected_destination_basis_points": 10000,
+        "pool_fee_basis_points": 1,
+        "service_fee_basis_points": 0,
+        "accepted_work_creates_revenue_claim": false,
+        "creates_custodial_balance": false,
+        "network_valid_result": "direct_coinbase_payout"
+      },
+      "expected": "invalid_reward_policy"
+    },
+    {
+      "id": "pooled-reward-mode",
+      "replace": "reward_policy",
+      "with": {
+        "mode": "pplns",
+        "selected_destination_basis_points": 10000,
+        "pool_fee_basis_points": 0,
+        "service_fee_basis_points": 0,
+        "accepted_work_creates_revenue_claim": false,
+        "creates_custodial_balance": false,
+        "network_valid_result": "direct_coinbase_payout"
+      },
+      "expected": "invalid_reward_policy"
+    },
+    {
+      "id": "result-not-paid-in-coinbase",
+      "replace": "reward_policy",
+      "with": {
+        "mode": "solo_direct_coinbase",
+        "selected_destination_basis_points": 10000,
+        "pool_fee_basis_points": 0,
+        "service_fee_basis_points": 0,
+        "accepted_work_creates_revenue_claim": false,
+        "creates_custodial_balance": false,
+        "network_valid_result": "pool_balance_credit"
+      },
+      "expected": "invalid_reward_policy"
+    },
+    {
+      "id": "work-creates-revenue-claim",
+      "replace": "reward_policy",
+      "with": {
+        "mode": "solo_direct_coinbase",
+        "selected_destination_basis_points": 10000,
+        "pool_fee_basis_points": 0,
+        "service_fee_basis_points": 0,
+        "accepted_work_creates_revenue_claim": true,
+        "creates_custodial_balance": false,
+        "network_valid_result": "direct_coinbase_payout"
+      },
+      "expected": "invalid_reward_policy"
+    },
+    {
+      "id": "work-creates-custodial-balance",
+      "replace": "reward_policy",
+      "with": {
+        "mode": "solo_direct_coinbase",
+        "selected_destination_basis_points": 10000,
+        "pool_fee_basis_points": 0,
+        "service_fee_basis_points": 0,
+        "accepted_work_creates_revenue_claim": false,
+        "creates_custodial_balance": true,
+        "network_valid_result": "direct_coinbase_payout"
+      },
+      "expected": "invalid_reward_policy"
+    },
+    {
+      "id": "reward-policy-unknown-field",
+      "replace": "reward_policy",
+      "with": {
+        "mode": "solo_direct_coinbase",
+        "selected_destination_basis_points": 10000,
+        "pool_fee_basis_points": 0,
+        "service_fee_basis_points": 0,
+        "accepted_work_creates_revenue_claim": false,
+        "creates_custodial_balance": false,
+        "network_valid_result": "direct_coinbase_payout",
+        "payout_threshold_sats": 10000
+      },
+      "expected": "rejected_shape"
+    },
+    {
+      "id": "another-approved-beneficiary",
+      "replace": "payout_requirements",
+      "with": {
+        "selection_required": true,
+        "ephemeral_by_default": true,
+        "accepted_destination_types": [
+          "bitcoin_mainnet_address",
+          "approved_beneficiary"
+        ],
+        "approved_beneficiaries": [
+          {
+            "beneficiary_id": "open_source_bitcoin_research",
+            "display_name": "Open-source Bitcoin research",
+            "terms_url": "https://pool.example/beneficiaries/open-source-bitcoin-research"
+          },
+          {
+            "beneficiary_id": "bitcoin_developer_fund",
+            "display_name": "Bitcoin developer fund",
+            "terms_url": "https://pool.example/beneficiaries/bitcoin-developer-fund"
+          }
+        ]
+      },
+      "expected": "payout_terms_changed"
+    },
+    {
+      "id": "payout-choice-optional",
+      "replace": "payout_requirements",
+      "with": {
+        "selection_required": false,
+        "ephemeral_by_default": true,
+        "accepted_destination_types": [
+          "bitcoin_mainnet_address",
+          "approved_beneficiary"
+        ],
+        "approved_beneficiaries": [
+          {
+            "beneficiary_id": "open_source_bitcoin_research",
+            "display_name": "Open-source Bitcoin research",
+            "terms_url": "https://pool.example/beneficiaries/open-source-bitcoin-research"
+          }
+        ]
+      },
+      "expected": "invalid_payout_requirements"
+    },
+    {
+      "id": "payout-identity-persisted-by-default",
+      "replace": "payout_requirements",
+      "with": {
+        "selection_required": true,
+        "ephemeral_by_default": false,
+        "accepted_destination_types": [
+          "bitcoin_mainnet_address",
+          "approved_beneficiary"
+        ],
+        "approved_beneficiaries": [
+          {
+            "beneficiary_id": "open_source_bitcoin_research",
+            "display_name": "Open-source Bitcoin research",
+            "terms_url": "https://pool.example/beneficiaries/open-source-bitcoin-research"
+          }
+        ]
+      },
+      "expected": "invalid_payout_requirements"
+    },
+    {
+      "id": "custodial-destination-type",
+      "replace": "payout_requirements",
+      "with": {
+        "selection_required": true,
+        "ephemeral_by_default": true,
+        "accepted_destination_types": [
+          "bitcoin_mainnet_address",
+          "approved_beneficiary",
+          "pool_account"
+        ],
+        "approved_beneficiaries": [
+          {
+            "beneficiary_id": "open_source_bitcoin_research",
+            "display_name": "Open-source Bitcoin research",
+            "terms_url": "https://pool.example/beneficiaries/open-source-bitcoin-research"
+          }
+        ]
+      },
+      "expected": "invalid_payout_requirements"
+    }
+  ]
+}

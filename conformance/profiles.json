@@ -47,6 +47,7 @@
         "openapi_contract",
         "pool_offer_failover",
         "pool_offer_selection",
+        "pool_offer_terms_vectors",
         "secure_issuance_discovery",
         "trusted_consent_authority",
         "trusted_consent_migration",
@@ -64,7 +65,8 @@
         "docs/protocol/bwg-0.1-mainnet-job-admission.md",
         "docs/protocol/bwg-0.1-hydra-solo-integration.md",
         "docs/protocol/bwg-0.1-independent-block-submission.md",
-        "docs/protocol/bwg-0.1-lifecycle.md"
+        "docs/protocol/bwg-0.1-lifecycle.md",
+        "docs/protocol/bwg-0.1-pool-offers.md"
       ],
       "bunTests": [],
       "browser": false,
@@ -74,6 +76,7 @@
         "hydra_solo_integration",
         "late_work_delivery",
         "lifecycle_vectors",
+        "pool_offer_terms_vectors",
         "stratum_v1_proxy"
       ]
     },

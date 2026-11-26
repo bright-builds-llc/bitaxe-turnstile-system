@@ -37,3 +37,5 @@ On upgrade, a legacy challenge without signed Pool Offers cannot safely begin or
 sessions fail closed, any unsigned issuance intent becomes terminal, and an issued/active/satisfied
 challenge expires. Legacy descriptors remain readable so an already-issued Gate Pass can complete
 its bounded lookup/retirement lifecycle without making the old challenge selectable again.
+
+`conformance/bwg-0.1/pool-offer-terms-vectors.json` changes one field of a reference offer at a time and gives the result: equivalent, a material economic or payout change that needs fresh Work Consent, or a refusal of an invalid Reward Policy or payout requirement. `tests/pool_offer_terms_vectors.rs` checks the reference implementation against it.
