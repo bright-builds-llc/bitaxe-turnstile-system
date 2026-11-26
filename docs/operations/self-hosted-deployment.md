@@ -124,7 +124,7 @@ The services migrate the database as they start, and `/provenance` then names th
 
 ## Key rotation
 
-These steps are documented but not yet exercised by the regtest proof.
+The regtest proof runs the Gate Pass, Reference Relying Service, Stratum and Work Lease rotations below.
 
 - **Gate Pass signing key:**
   1. Generate a new keys directory.
@@ -153,7 +153,12 @@ This regtest proof uses generated test keys. It checks the following:
   - the claimant chooses the standard Worker and gives consent;
   - a CPU miner configured from the shown settings mines real shares past a Renew;
   - the claimant cancels, the page withdraws the settings and the miner is cut off.
+- An upgrade: the first self-hostable commit, `1eda7d5`, launched from a temporary worktree, then this tree on the same volume, with every migration applied and the earlier challenge kept.
 - A backup while running, a restore into a new volume, and a relaunch on it with the journey's challenge present.
+- Key rotation:
+  - a new Gate Pass key published and trusted beside the old one, then the old one retired;
+  - a new Relying Service credential creating a challenge;
+  - a new Work Lease key seeded and recorded, with the old key's high-water mark kept.
 - No private value in any log.
 
 A regtest CPU miner can't reach the Standard policy's Work Requirement, so the proof issues no Gate Pass. `scripts/rehearse-production-path.sh --standard-worker` covers issuance and redemption with the same services and page.

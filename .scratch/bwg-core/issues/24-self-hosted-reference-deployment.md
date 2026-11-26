@@ -11,7 +11,7 @@
 - [x] Startup fails visibly when required pins, migrations, keys, proposal validation, or dependencies are unavailable.
 - [x] Authority discovery, source, version, commit, build, engine, and license provenance are visible.
 - [x] Health and readiness distinguish application availability from valid mining-job readiness.
-- [ ] Backup, restore, upgrade, key rotation, shutdown, and recovery operations are documented and testable.
+- [x] Backup, restore, upgrade, key rotation, shutdown, and recovery operations are documented and testable.
 - [ ] The deployment passes the same public acceptance harness without self-host-specific protocol forks.
 
 ## Self-host proof — 2026-11-26
@@ -56,9 +56,26 @@ Non-claims:
   (`tests/rehearsal_isolation.rs`), and a regtest CPU miner earns about one hash per share against
   at least 2^43. Issuance and redemption with a standard Worker are
   `scripts/rehearse-production-path.sh --standard-worker`'s, on the same services and page.
-- Upgrade and key rotation are documented only. A failed migration wasn't injected.
+- A failed migration wasn't injected. The first upgrade run went from `1eda7d5` to this change, which adds no migration. Later runs upgrade from `1eda7d5` across whatever migrations land after it.
 - The Gate negatives harness wasn't run against the self-hosted deployment; the journey shares its
   tab recorder and page controls.
 
-So the last two items stay open: operations are documented, but upgrade and key rotation aren't
-yet exercised, and the acceptance run stops short of redemption.
+### Upgrade and key rotation — 2026-11-26
+
+The proof gained both, and passed again on regtest.
+
+- **Upgrade:** `1eda7d5` launched from a temporary clean worktree and created a challenge. This tree
+  then launched on the same volume with every migration applied in each of the three databases
+  (15, 4 and 7), and kept the challenge. `/provenance` named each build's commit.
+- **Rotation, on the restored volume:**
+  - a new Gate Pass key: the Authority published both keys and the page trusted both. With the old
+    key dropped, only the new one was published;
+  - a new Reference Relying Service credential created a challenge;
+  - a new Work Lease key (`rotate --role lease`) was seeded and recorded at shutdown, and the old
+    key's high-water mark was kept.
+- No private value from the old or rotated keys appeared in any log.
+
+The last item stays open, and it can't close in software. A self-hosted Gate Pass needs at least
+2^43 credited hashes. A regtest CPU miner would take weeks to earn them, and the rehearsal's
+synthetic share is kept away from launched deployments. Closing it takes a Bitaxe or another
+hashing Worker on a self-hosted deployment, on mainnet or with real hashrate.
