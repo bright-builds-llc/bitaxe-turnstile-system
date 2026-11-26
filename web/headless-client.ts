@@ -394,7 +394,7 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
       }
       const maybeController = snapshot.maybeWorkerController;
       const maybeRenew = snapshot.transport.renewWorkerLease;
-      if (!maybeController || !maybeRenew) {
+      if (!maybeRenew) {
         throw new Error("Worker Controller renewal is unavailable");
       }
       const renewal = (async () => {
@@ -403,13 +403,16 @@ export async function createHeadlessClient(input: HeadlessClientInput): Promise<
               .prepareWorkerLeaseAuthorizationContext("renew")
           : undefined;
         try {
-          await renewWorkerController(
-            maybeController,
-            () => maybeRenew(maybeAuthorizationContext),
-            snapshot.challenge.challengeId,
-            snapshot.transport,
-            renewalMayCommand,
-          );
+          // A standard Worker has no Controller; its credentials live as long as the Authority's lease.
+          await (maybeController
+            ? renewWorkerController(
+                maybeController,
+                () => maybeRenew(maybeAuthorizationContext),
+                snapshot.challenge.challengeId,
+                snapshot.transport,
+                renewalMayCommand,
+              )
+            : maybeRenew(maybeAuthorizationContext));
         } catch (error) {
           // A refusal while running rolled the Worker back and paused the Authority's session.
           if (controllable()) {

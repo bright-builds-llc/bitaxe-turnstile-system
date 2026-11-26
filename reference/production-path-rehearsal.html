@@ -10,6 +10,14 @@
     <main>
       <h1>Production-path rehearsal (test keys, regtest)</h1>
       <button id="connect-bitaxe" type="button">Connect Bitaxe over USB</button>
+      <button id="use-stratum-worker" type="button">Use another Stratum V1 Worker</button>
+      <section id="stratum-settings" hidden>
+        <dl>
+          <dt>Pool URL</dt><dd data-field="endpoint"></dd>
+          <dt>Username</dt><dd data-field="username"></dd>
+          <dt>Password</dt><dd data-field="password"></dd>
+        </dl>
+      </section>
       <bwg-work-gate presentation="inline"></bwg-work-gate>
     </main>
     <script type="module" src="../dist/test-rehearsal/production-path-rehearsal-entry.js"></script>

@@ -270,6 +270,63 @@ describe("Authority observations", () => {
     await expect(client.start()).rejects.toBeInstanceOf(ConsentRequiredError);
   });
 
+  test("renews the Authority's lease when a standard Worker runs without a Controller", async () => {
+    // Arrange
+    const harness = transportHarness();
+    const renewals: string[] = [];
+    const transport = {
+      ...harness.transport,
+      renewWorkerLease: async (maybeContext?: { controlSessionBindingSha256: string }) => {
+        renewals.push(maybeContext?.controlSessionBindingSha256 ?? "none");
+        return {
+          protocolVersion: "bwg-worker-controller/0.4" as const,
+          leaseId: "lease-1",
+          authorization: "renewed",
+          durationMilliseconds: 60_000,
+          renewAfterMilliseconds: 30_000,
+        };
+      },
+    };
+    const binding = "b".repeat(43);
+    const client = await createHeadlessClient({
+      ...(await headlessInput(transport)),
+      maybeWorkerLeaseAuthorizationContext: {
+        prepareWorkerLeaseAuthorizationContext: async () => ({ controlSessionBindingSha256: binding }),
+      },
+    });
+    await client.grantConsent();
+    await client.start();
+
+    // Act
+    await client.renewWorkerLease();
+
+    // Assert
+    expect(renewals).toEqual([binding]);
+  });
+
+  test("pauses a standard Worker's work when the Authority refuses its Renew", async () => {
+    // Arrange
+    const harness = transportHarness();
+    const transport = {
+      ...harness.transport,
+      renewWorkerLease: async () => {
+        throw new Error("lost continuity");
+      },
+    };
+    const client = await createHeadlessClient(await headlessInput(transport));
+    const events: HeadlessEvent[] = [];
+    client.subscribe((event) => events.push(event));
+    await client.grantConsent();
+    await client.start();
+
+    // Act
+    const renewal = client.renewWorkerLease();
+
+    // Assert
+    await expect(renewal).rejects.toThrow("lost continuity");
+    expect(events.at(-1)).toEqual({ type: "lifecycle", challengeState: "active", controlState: "paused" });
+  });
+
   test("emits metadata-only events", async () => {
     // Arrange
     const harness = transportHarness();

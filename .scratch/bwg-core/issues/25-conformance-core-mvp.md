@@ -10,7 +10,7 @@
 - [x] Positive and negative fixtures cover work arithmetic, lifecycle, signatures, DPoP, event replay, expiry, rewards, privacy, and failure behavior.
 - [x] Implementations can self-certify only the profiles they actually pass.
 - [ ] The reference account-creation journey passes through the hosted and self-hosted public seams.
-- [ ] Standard Stratum and real Bitaxe paths both satisfy the same Gate Authority accounting and Redemption semantics.
+- [x] Standard Stratum and real Bitaxe paths both satisfy the same Gate Authority accounting and Redemption semantics.
 - [ ] Every Core MVP success criterion has linked executable or hardware evidence.
 - [ ] Mainnet evidence includes exact job admission and independent block-submission behavior.
 - [x] Residual risks and non-claims are published without weakening the protocol's stated guarantees.
@@ -34,7 +34,31 @@ Against this ticket's items:
   malformed payout and invalid proposal weren't run on the C image, by the owner's choice
   (2026-11-22), and adapter replay is a Rust test.
 - **Standard Stratum and real Bitaxe paths share accounting and Redemption:** the real Bitaxe path
-  ran on the C image; no standard Stratum Worker ran beside it.
+  ran on the C image. A standard Stratum V1 Worker ran beside it on regtest; see below.
+
+## Standard Stratum V1 Worker through the page — 2026-11-26
+
+The reference page now offers "Use another Stratum V1 Worker" when its config names one
+([ADR-0114](../../../docs/adr/0114-the-page-shows-a-standard-worker-its-lease-settings.md)). The page
+shows each lease's endpoint, username and password, and withdraws them when the lease ends.
+`scripts/rehearse-production-path.sh --standard-worker` drives that choice on regtest. The runner
+enters the shown settings into the rehearsal's CPU miner, a plain Stratum V1 miner, as a claimant
+would. It runs the same accounting and Redemption checks as the Bitaxe run.
+
+| Check | Standard Worker | Bitaxe path (fake serial board) |
+| --- | --- | --- |
+| Real shares credited before the synthetic one | 41, over 2 lease windows | 43, over 2 lease windows |
+| Renew while shares are delivered | 1 | 1 |
+| Lease survives a new tip | yes, 5 real shares credited after it | yes, 5 |
+| Synthetic share to the requirement | 1 | 1 |
+| Redemption with DPoP | 200 | 200 |
+| Replayed redemption | 401 | 401 |
+| End of gated work | settings withdrawn; the Pool Adapter cut the miner off 56 s after redemption, and its 110 shares in that window were refused as `challenge_satisfied` | board restored as `challenge_satisfied` |
+| Relayed jobs with an accepted Job Admission | 9 of 9 | 4 of 4 |
+
+Both runs were of the tree this change commits. Non-claims: regtest only, with the requirement
+crossed by one synthetic share as in every rehearsal; no standard Worker ran on mainnet or on
+hardware other than a Bitaxe. The real Bitaxe path's mainnet evidence is the section above.
 - **Mainnet job admission and independent block submission:** on the 601, each relayed job had an
   accepted Job Admission (Ticket 33). No block was found, so block submission isn't shown.
 

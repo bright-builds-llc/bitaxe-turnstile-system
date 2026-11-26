@@ -9,7 +9,7 @@ Hardware evidence comes from the C Reference Firmware on a Gamma 601 and an Ultr
 | # | Shown | Not shown |
 | --- | --- | --- |
 | 1 | The reference Relying Service created each mainnet challenge from its account-creation Action Policy | — |
-| 2 | A Claimant chose the Bitaxe Reference Client over USB, on both boards | A standard Stratum V1 Worker chosen through the page, on mainnet |
+| 2 | A Claimant chose the Bitaxe Reference Client over USB, on both boards. On regtest, a Claimant chose "Use another Stratum V1 Worker" on the reference page, and a CPU miner configured from the settings it showed earned credit to a redeemed Gate Pass (`rehearse-production-path.sh --standard-worker`, [ADR-0114](../adr/0114-the-page-shows-a-standard-worker-its-lease-settings.md)) | A standard Stratum V1 Worker on mainnet, or a hardware miner other than a Bitaxe |
 | 3 | On the 601, the signed package installed from stock and from a reference image, updated, and rolled back, with settings preserved and no account or app | A second board; a Migration Backup. The failed startup check that was recovered was staged |
 | 4 | Consent named the connected board, its duration estimate and the criterion's fields before every Start | Several Workers in one consent: the MVP has one Worker per challenge |
 | 5 | On the 601, every job the Pool Adapter relayed had an accepted Job Admission from pinned Hydra | That admission came before release, on hardware: that rests on the patch's tests and the regtest runner |
@@ -25,6 +25,7 @@ Hardware evidence comes from the C Reference Firmware on a Gamma 601 and an Ultr
 ## Across criteria
 
 - Most hardware cases ran once, and some on one board only.
+- The standard Stratum V1 and Bitaxe paths meet the same accounting and Redemption checks in the regtest rehearsal. Each had real shares credited across two lease windows and a Renew, a lease that survived a new tip, one synthetic share to the requirement, one redemption with DPoP, and a replay refused. The real Bitaxe path also ran on mainnet. They differ after the requirement: a standard Worker mines on until its credentials expire, 56 s in the rehearsal, and those shares earn no credit.
 - No block was found on mainnet, so independent block submission is shown only on regtest, by `scripts/verify-hydra-solo-integration.sh`.
 - The reference deployment ran as one hosted origin; a self-hosted deployment hasn't been run.
 - What the Rust tests check beyond the language-neutral vectors holds for the reference implementation only.

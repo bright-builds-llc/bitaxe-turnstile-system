@@ -8,8 +8,10 @@
 # mid-lease checks that the lease survives a new Bitcoin tip.
 # macOS arm64 only, like the Hydra runner. Not part of `bun run verify`.
 #
-# Usage: scripts/rehearse-production-path.sh [--hold | --negatives]
+# Usage: scripts/rehearse-production-path.sh [--hold | --negatives | --standard-worker]
 #   --hold       start the stack, print its configuration and wait instead of the browser run.
+#   --standard-worker  run the passing journey with a standard Stratum V1 Worker chosen through the page:
+#                the CPU miner takes the settings the page shows, with no Worker Controller.
 #   --negatives  run the Gate negatives harness (Ticket 21) and its journey (Ticket 32) in headless
 #                Chrome over CDP instead of the passing run. `BWG_TEST_CHROME` overrides the Chrome binary.
 set -euo pipefail
@@ -20,12 +22,15 @@ playwright_cli="$repo_root/node_modules/.bin/playwright-cli"
 session_name="bwg-rehearsal-$$"
 hold=false
 negatives=false
+mode=bitaxe
 if [[ "${1:-}" == "--hold" ]]; then
   hold=true
 elif [[ "${1:-}" == "--negatives" ]]; then
   negatives=true
+elif [[ "${1:-}" == "--standard-worker" ]]; then
+  mode=standard_worker
 elif [[ $# -gt 0 ]]; then
-  printf 'Usage: %s [--hold | --negatives]\n' "$0" >&2
+  printf 'Usage: %s [--hold | --negatives | --standard-worker]\n' "$0" >&2
   exit 2
 fi
 
@@ -151,8 +156,8 @@ start_binary reference-service referenceService
 reference_pid=$!
 wait_for_port "$reference_port"
 
-rehearsal_config=$(jq -c --arg payout "$payout_address" \
-  '{origin, control, authorityTrust, payoutAddress: $payout}' <<<"$composition")
+rehearsal_config=$(jq -c --arg payout "$payout_address" --arg mode "$mode" \
+  '{origin, control, authorityTrust, payoutAddress: $payout, mode: $mode}' <<<"$composition")
 # A throwaway certificate for the loopback front; Chromium ignores its trust.
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=gate.rehearsal.test" \
   -keyout "$integration_root/front-key.pem" -out "$integration_root/front-cert.pem" \

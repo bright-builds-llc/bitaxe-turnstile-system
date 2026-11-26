@@ -2,20 +2,24 @@
  * Reference account-creation page (Ticket 06): `bwg-core/component` on the headless
  * SDK over direct Web Serial, with the Authority and Reference Relying Service
  * served from the page's own origin. The SDK's claimant HTTP transport carries the
- * claimant routes, and the gate renews while work runs (Ticket 17).
+ * claimant routes, and the gate renews while work runs (Ticket 17). A deployment may also offer a
+ * standard Stratum V1 Worker, which the claimant configures from the settings the page shows.
  */
 import type { BwgWorkGateElement } from "./bwg-work-gate";
 import {
   connectWebSerialHeadlessClient,
   createClaimantHttpTransport,
+  createHeadlessClient,
   type AuthorityTrustInput,
   type ClaimantHttpTransport,
   type HeadlessClient,
+  type HeadlessClientInput,
   type PoolOfferDisclosure,
   type WorkChallengeInput,
   type WorkerDisclosure,
 } from "./headless-client";
 import { prepareClaimantIdentity } from "./headless-key";
+import { createStandardStratumWorker, type StandardStratumWorker } from "./headless-standard-worker";
 import type { WebSerialWorkerControllerInput } from "./webserial-worker-controller";
 import { SerialFailure } from "./worker-serial-errors";
 
@@ -24,6 +28,8 @@ export type ReferencePageConfig = {
   origin: string;
   authorityTrust: AuthorityTrustInput;
   workers: readonly WorkerDisclosure[];
+  /** The standard Stratum V1 Worker this deployment offers beside the Bitaxe, if any. */
+  maybeStandardWorker?: WorkerDisclosure;
   claimantWorkCeiling: string;
   clientSafetyCeiling: string;
   provenance: Parameters<BwgWorkGateElement["configure"]>[0]["provenance"];
@@ -53,6 +59,7 @@ type PreparedChallenge = {
   transport: ClaimantHttpTransport;
   selection: Parameters<ClaimantHttpTransport["selectPool"]>[0];
   actionReference: string;
+  clientInput: Omit<HeadlessClientInput, "maybeWorkerController" | "maybeWorkerLeaseAuthorizationContext">;
 };
 
 /**
@@ -60,49 +67,96 @@ type PreparedChallenge = {
  * chooser opens first, within the gesture; the challenge is requested only once a port is chosen.
  */
 export async function connectReferenceAccountPage(input: ReferencePageInput): Promise<HeadlessClient> {
-  const { config } = input;
   const notify = input.maybeOnEvent ?? (() => undefined);
   let maybePrepared: PreparedChallenge | undefined;
   const client = await connectWebSerialHeadlessClient({
     worker: input.worker(),
     async prepareClient() {
-      const identity = await prepareClaimantIdentity({ maybeIssuanceWindowSeconds: 300 });
-      const descriptor = await postJson(`${config.origin}/account-creation/challenge`, {
-        claimant_key: identity.claimantKey(),
-      });
-      const challenge = challengeInput(descriptor);
-      notify({
-        type: "challenge_created",
-        challengeId: challenge.challengeId,
-        expiresAtUnixSeconds: challenge.expiresAtUnixSeconds,
-      });
-      const transport = createClaimantHttpTransport({
-        authorityBaseUrl: config.origin,
-        challengeId: challenge.challengeId,
-        claimantIdentity: identity,
-      });
-      const offers = poolOffers(descriptor);
-      const selection = {
-        poolOfferId: offers.offers[0]?.offerId ?? "",
-        payoutDestinationType: "bitcoin_mainnet_address" as const,
-        bitcoinMainnetAddress: input.payoutAddress,
-      };
-      maybePrepared = { transport, selection, actionReference: stringField(descriptor, "action_reference") };
-      return {
-        challenge,
-        claimantIdentity: identity,
-        signedPoolOfferSet: offers,
-        authorityTrust: config.authorityTrust,
-        selection,
-        workers: config.workers,
-        claimantWorkCeiling: config.claimantWorkCeiling,
-        clientSafetyCeiling: config.clientSafetyCeiling,
-        transport,
-      };
+      maybePrepared = await prepareChallenge(input.config, input.payoutAddress, notify);
+      return maybePrepared.clientInput;
     },
   });
   if (!maybePrepared) throw new Error("the connected client has no prepared challenge");
-  const { transport, selection, actionReference } = maybePrepared;
+  await startGate(input, client, maybePrepared, notify);
+  return client;
+}
+
+export type StandardWorkerPageInput = Omit<ReferencePageInput, "worker">;
+
+/**
+ * Runs from the user's "Use another Stratum V1 Worker" choice: the challenge names the configured
+ * standard Worker, and the page shows each lease's Stratum settings for the claimant to enter.
+ */
+export async function connectStandardWorkerReferencePage(
+  input: StandardWorkerPageInput,
+): Promise<{ client: HeadlessClient; worker: StandardStratumWorker }> {
+  const maybeStandardWorker = input.config.maybeStandardWorker;
+  if (!maybeStandardWorker) throw new Error("this deployment offers no standard Stratum V1 Worker");
+  const notify = input.maybeOnEvent ?? (() => undefined);
+  const worker = await createStandardStratumWorker();
+  const prepared = await prepareChallenge(input.config, input.payoutAddress, notify);
+  const client = await createHeadlessClient({
+    ...prepared.clientInput,
+    workers: [maybeStandardWorker],
+    transport: worker.transport(prepared.transport),
+    maybeWorkerLeaseAuthorizationContext: worker,
+  });
+  await startGate(input, client, prepared, notify);
+  return { client, worker };
+}
+
+async function prepareChallenge(
+  config: ReferencePageConfig,
+  payoutAddress: string,
+  notify: (event: ReferencePageEvent) => void,
+): Promise<PreparedChallenge> {
+  const identity = await prepareClaimantIdentity({ maybeIssuanceWindowSeconds: 300 });
+  const descriptor = await postJson(`${config.origin}/account-creation/challenge`, {
+    claimant_key: identity.claimantKey(),
+  });
+  const challenge = challengeInput(descriptor);
+  notify({
+    type: "challenge_created",
+    challengeId: challenge.challengeId,
+    expiresAtUnixSeconds: challenge.expiresAtUnixSeconds,
+  });
+  const transport = createClaimantHttpTransport({
+    authorityBaseUrl: config.origin,
+    challengeId: challenge.challengeId,
+    claimantIdentity: identity,
+  });
+  const offers = poolOffers(descriptor);
+  const selection = {
+    poolOfferId: offers.offers[0]?.offerId ?? "",
+    payoutDestinationType: "bitcoin_mainnet_address" as const,
+    bitcoinMainnetAddress: payoutAddress,
+  };
+  return {
+    transport,
+    selection,
+    actionReference: stringField(descriptor, "action_reference"),
+    clientInput: {
+      challenge,
+      claimantIdentity: identity,
+      signedPoolOfferSet: offers,
+      authorityTrust: config.authorityTrust,
+      selection,
+      workers: config.workers,
+      claimantWorkCeiling: config.claimantWorkCeiling,
+      clientSafetyCeiling: config.clientSafetyCeiling,
+      transport,
+    },
+  };
+}
+
+async function startGate(
+  input: StandardWorkerPageInput,
+  client: HeadlessClient,
+  prepared: PreparedChallenge,
+  notify: (event: ReferencePageEvent) => void,
+): Promise<void> {
+  const { config } = input;
+  const { transport, selection, actionReference } = prepared;
   await transport.selectPool(selection);
   input.gate.configure({
     loadSession: async () => ({
@@ -125,7 +179,6 @@ export async function connectReferenceAccountPage(input: ReferencePageInput): Pr
     alternatives: [],
     provenance: config.provenance,
   });
-  return client;
 }
 
 async function redeem(

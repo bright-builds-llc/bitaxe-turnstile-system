@@ -8,6 +8,7 @@
     <style>
       body { font-family: system-ui, sans-serif; margin: 0 auto; max-width: 40rem; padding: 1rem; }
       label, input, button { display: block; margin-block: 0.5rem; }
+      dd { font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
       input { width: 100%; }
     </style>
     <!-- The deployment replaces this with its public trust; it holds no secrets. -->
@@ -19,7 +20,17 @@
       <label for="payout-address">Bitcoin payout address</label>
       <input id="payout-address" autocomplete="off" spellcheck="false" />
       <button id="connect-bitaxe" type="button">Connect Bitaxe over USB</button>
+      <button id="use-stratum-worker" type="button" hidden>Use another Stratum V1 Worker</button>
       <p id="connect-status" role="status"></p>
+      <section id="stratum-settings" hidden aria-live="polite">
+        <h2>Settings for your Worker</h2>
+        <p>Enter these in your Worker's pool settings. They work only while this page shows them.</p>
+        <dl>
+          <dt>Pool URL</dt><dd data-field="endpoint"></dd>
+          <dt>Username</dt><dd data-field="username"></dd>
+          <dt>Password</dt><dd data-field="password"></dd>
+        </dl>
+      </section>
       <bwg-work-gate presentation="inline"></bwg-work-gate>
     </main>
     <script type="module" src="../dist/reference-page/reference-account-page-entry.js"></script>

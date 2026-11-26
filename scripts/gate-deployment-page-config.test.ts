@@ -73,3 +73,30 @@ test("offers both boards, each named by the board its signed capability reports"
     { model: "bitaxe-ultra", revision: "205" },
   ]);
 });
+
+test("offers no standard Stratum V1 Worker unless the deployment names one", () => {
+  // Act
+  const config = buildPageConfig(input());
+
+  // Assert
+  expect("maybeStandardWorker" in config).toBe(false);
+});
+
+test("offers the standard Stratum V1 Worker the deployment names", () => {
+  // Act
+  const config = buildPageConfig(input({ maybeStandardWorker: { displayName: "Your Stratum V1 Worker", hashrateHs: "1000000000000" } }));
+
+  // Assert
+  expect(config.maybeStandardWorker).toEqual({
+    workerId: "standard-stratum-v1",
+    displayName: "Your Stratum V1 Worker",
+    hashrateHs: "1000000000000",
+  });
+});
+
+test("refuses a standard Worker hashrate that isn't a whole number", () => {
+  // Act and assert
+  expect(() => buildPageConfig(input({ maybeStandardWorker: { displayName: "Worker", hashrateHs: "1e12" } }))).toThrow(
+    "the standard Worker's hashrate must be a whole number of H/s",
+  );
+});

@@ -6,6 +6,8 @@
  *
  * Usage: bun scripts/gate-deployment-page-config.ts --origin URL --public-keys FILE
  *          --owner-trust FILE --image-dir DIR --gate-commit COMMIT
+ *          [--standard-worker-name NAME --standard-worker-hashrate H/S]
+ *   The standard Worker options offer "Use another Stratum V1 Worker" (ADR-0114).
  *   --image-dir holds the C image's COMMIT and SHA256SUMS; the one `.elf` line in
  *   SHA256SUMS is the app ELF.
  */
@@ -42,6 +44,7 @@ export type PageConfigInput = {
   imageCommit: string;
   sha256Sums: string;
   gateCommit: string;
+  maybeStandardWorker?: { displayName: string; hashrateHs: string };
 };
 
 /** The app ELF's digest: the only SHA256SUMS line naming a `.elf` file. */
@@ -63,9 +66,14 @@ export function buildPageConfig(input: PageConfigInput) {
     throw new Error("the Gate Pass public keys must be a non-empty array");
   }
   const trust = parseWorkerDeploymentTrust(input.ownerTrust);
+  const maybeStandard = input.maybeStandardWorker;
+  if (maybeStandard && !/^[1-9][0-9]{0,19}$/u.test(maybeStandard.hashrateHs)) {
+    throw new Error("the standard Worker's hashrate must be a whole number of H/s");
+  }
   return {
     authorityTrust: { issuer: input.origin, trustedKeys: input.publicKeys },
     workers: WORKERS,
+    ...(maybeStandard ? { maybeStandardWorker: { workerId: "standard-stratum-v1", ...maybeStandard } } : {}),
     claimantWorkCeiling: WORK_CEILING,
     clientSafetyCeiling: WORK_CEILING,
     provenance: { sourceUrl: SOURCE_URL, protocolVersion: "BWG/0.1", appVersion: input.gateCommit },
@@ -95,6 +103,14 @@ if (import.meta.main) {
     imageCommit: (await readFile(join(imageDir, "COMMIT"), "utf8")).trim(),
     sha256Sums: await readFile(join(imageDir, "SHA256SUMS"), "utf8"),
     gateCommit: option(args, "--gate-commit"),
+    ...(args.includes("--standard-worker-name")
+      ? {
+          maybeStandardWorker: {
+            displayName: option(args, "--standard-worker-name"),
+            hashrateHs: option(args, "--standard-worker-hashrate"),
+          },
+        }
+      : {}),
   });
   console.log(JSON.stringify(config));
 }
