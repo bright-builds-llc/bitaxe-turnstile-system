@@ -33,7 +33,12 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
+
+      # The repository has no TypeScript dependency; `tsc` comes from the checking machine, so CI
+      # installs the version it is checked with locally.
+      - name: Install TypeScript
+        run: npm install --global typescript@5.9.3
 
       # Pinned, because `clippy -D warnings` fails on lints a newer stable adds. Move it with the
       # toolchain the repository is checked with locally.
