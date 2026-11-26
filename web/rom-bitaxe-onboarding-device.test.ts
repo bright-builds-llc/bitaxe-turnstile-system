@@ -4,12 +4,12 @@ import { bootloader, firmwarePackage, partitionTable } from "./bitaxe-onboarding
 import { OTA_IMAGE_STATE, selectedBootSlot } from "./esp-otadata";
 import { KNOWN_PARTITION_TABLES, partitionLayout, type PartitionEntry } from "./esp-partition-table";
 import { RomBitaxeOnboardingDevice } from "./rom-bitaxe-onboarding-device";
+import { PAGE_ONBOARDING_CLOCK } from "./rom-onboarding-seams";
 import {
   appImage,
   C_IMAGE_PREFIX,
   FakeBoard,
   flipBits,
-  instantClock,
   PRE_ONBOARDING_VERSION,
   TEST_BOUNDS,
   vectorNvsPartition,
@@ -32,12 +32,13 @@ const C_CAPABILITIES: WorkerControllerCapabilities = {
 
 async function setUp(table: readonly PartitionEntry[] = KNOWN_PARTITION_TABLES.upstream) {
   const board = new FakeBoard(table);
+  // Bounds run on real time, so a step slowed by a loaded CPU still finishes; a silent board waits them out.
   // The fake board recognises the C image, which answers Worker Serial, by its prefix.
   const signed = await firmwarePackage(
     { compatibleBoards: [{ model: "bitaxe-gamma", revisions: ["601"] }] },
     new TextEncoder().encode(`${C_IMAGE_PREFIX}-image-v2`),
   );
-  const device = new RomBitaxeOnboardingDevice(board.rom(), board.link(C_CAPABILITIES), TEST_BOUNDS, instantClock());
+  const device = new RomBitaxeOnboardingDevice(board.rom(), board.link(C_CAPABILITIES), TEST_BOUNDS, PAGE_ONBOARDING_CLOCK);
   const onboarding = createBitaxeOnboarding({
     requestDevice: async () => device,
     trustedUpdateKeys: [signed.publicKey],
@@ -84,6 +85,19 @@ describe("RomBitaxeOnboardingDevice from stock", () => {
     // Assert
     expect(result.status).toBe("ready");
     expect(board.writes()).toEqual(["ota_0", "bootloader", "partition_table", "otadata"]);
+  });
+
+  test("finishes an install whose steps take real time well inside their bounds", async () => {
+    // Arrange
+    const { board, onboarding, firmwarePackage } = await setUp();
+    await onboarding.connect();
+    board.romReadMilliseconds = 20;
+
+    // Act
+    const result = await onboarding.install(firmwarePackage);
+
+    // Assert
+    expect(result.status).toBe("ready");
   });
 
   test("reads the bootloader and table back before it touches otadata", async () => {

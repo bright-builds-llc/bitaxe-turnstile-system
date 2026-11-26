@@ -78,6 +78,8 @@ export class FakeBoard {
   possessionFails = false;
   /** When true, a C image rejects `onboarding_inspect` as one that supports it but failed. */
   inspectFails = false;
+  /** Real time each ROM flash read takes, as a loaded CPU or a slow link would. */
+  romReadMilliseconds = 0;
   #inRom = false;
   #inspects = 0;
 
@@ -125,6 +127,7 @@ export class FakeBoard {
     return {
       readFlash: async (offset, length) => {
         live();
+        if (this.romReadMilliseconds > 0) await new Promise((resolve) => setTimeout(resolve, this.romReadMilliseconds));
         this.log.push({ op: "read", region: regionName(offset) });
         return this.region(offset, length);
       },
@@ -246,7 +249,10 @@ export class FakeBoard {
   }
 }
 
-/** A clock whose timers fire on the next macrotask, so every bound is short but still ordered. */
+/**
+ * A clock whose timers fire within 5 ms, for pauses only. A bound on it can fire before a step
+ * that is still working finishes, so a loaded CPU fails healthy runs.
+ */
 export function instantClock(): OnboardingClock {
   return {
     after(milliseconds, listener) {
