@@ -7,9 +7,8 @@ The agent chose this design's defaults on 2026-11-26, under the owner's standing
 - **First self-hoster:** the owner, on an arm64 Mac. macOS arm64 only is kept. A Linux port is a separate ticket for when someone else wants to self-host, because it means rebuilding and proving Hydra's pinned patches and the Bitcoin Core pin for another target.
 - **Origin and node:** Tailscale or the self-hoster's own TLS proxy, and on mainnet the self-hoster's own synced node, reached by loopback RPC and ZMQ URLs. A node on another machine fits the external-node path.
 - **Hydra's source:** Hydra is AGPL-3.0-or-later, and a deployment serves miners over a network. `/provenance` links the exact source it runs: Hydra's pinned upstream commit and this repository's patch files at the build's commit. A deployment serves no source archive of its own.
-- **Closing the last acceptance item:** both of these, not the production-path rehearsal alone:
-  - the Gate negatives harness, run on regtest against a deployment `self-host-gate.sh` launched;
-  - one journey on the owner's mainnet self-hosted deployment, with a Bitaxe and the owner's node, from consent through Gate Pass redemption. It follows the hardware process rules and records redacted evidence.
+- **Closing the last acceptance item:** one hardware session on the owner's mainnet self-hosted deployment, not the production-path rehearsal alone. It runs the Gate negatives harness with `--cases withheld,expired_context,handed_over,journey` on two Bitaxes and the owner's node: the three negatives, then a journey from consent through Gate Pass redemption and the spent-pass retry. It follows the hardware process rules and records redacted evidence.
+  - Revised on 2026-11-27: the owner first chose the negatives on regtest, but against a launched deployment the harness has only its deployment adapter, which needs real boards and a person at each port chooser. The rehearsal's fake board is kept away from launched deployments, and the expired-context and handover cases have no counterpart for a standard Worker. The owner moved the negatives into the hardware session rather than build a regtest adapter.
 
 ## Intent
 
@@ -109,10 +108,7 @@ A regtest proof, `scripts/rehearse-self-host.sh`, drives the page of a deploymen
 
 The proof doesn't cross the Work Requirement, so it issues and redeems no Gate Pass. (Revised during the build: the simulated outbox share the production-path rehearsal uses is guarded so that it can't reach a launched deployment, `tests/rehearsal_isolation.rs`, and a regtest CPU miner earns about one hash of credit per share against at least 2^43.) Issuance and redemption with a standard Worker are the production-path rehearsal's (`--standard-worker`), which runs the same services and page. No route, field or behaviour exists only for self-hosting.
 
-The last acceptance item closes on two more pieces (owner's decision):
-
-- `scripts/rehearse-self-host.sh` also runs the Gate negatives harness against the deployment it launched, on regtest.
-- One mainnet journey on the owner's self-hosted deployment, with a Bitaxe and the owner's node. A Bitaxe earns the Work Requirement's 2^43 hashes in seconds, so the journey runs from consent through issuance and redemption of a Gate Pass. Its evidence names the board, commit and build, is free of addresses, credentials and pool identities, and lists its non-claims.
+The last acceptance item closes on one hardware session (owner's decision). On the owner's mainnet self-hosted deployment, launched by `self-host-gate.sh` from a pushed commit, the Gate negatives harness runs its deployment adapter against the deployment's page with two Bitaxes and `--cases withheld,expired_context,handed_over,journey`. The handover's second tab is the second board in its own browser profile, as in Ticket 32. A Bitaxe earns the Work Requirement's 2^43 hashes in seconds, so the journey runs from consent through issuance and redemption of a Gate Pass, then retries the spent pass. The evidence names the boards, commit and build, is free of addresses, credentials and pool identities, and lists its non-claims. No code is added for it.
 
 ## Left to the builder
 

@@ -90,6 +90,9 @@ AGPL source to `/provenance`.
   document's digests matched the patch files, and a patch link at the pushed commit answered 200. The
   self-host rehearsal now checks the links, but it wasn't rerun for this change. A dirty build links
   its base commit, which its patches may not match; the digests show it.
-- **Negatives harness:** not built. Against a launched deployment the harness has only its deployment
-  adapter, which needs real boards and a person at each port chooser; the rehearsal's fake board is
-  kept away from launched deployments. The plan goes back to the owner.
+- **Negatives harness, 2026-11-27:** against a launched deployment the harness has only its
+  deployment adapter, which needs real boards and a person at each port chooser; the rehearsal's fake
+  board is kept away from launched deployments. The owner moved it into the hardware session: on the
+  mainnet self-hosted deployment, two Bitaxes run
+  `--cases withheld,expired_context,handed_over,journey`, which also covers the journey through Gate
+  Pass redemption. That session closes this item; nothing is left to build.
