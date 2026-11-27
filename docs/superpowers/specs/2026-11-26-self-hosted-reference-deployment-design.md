@@ -1,6 +1,15 @@
 # Self-hosted reference deployment (bwg-core Ticket 24)
 
-Defaults chosen by the agent on 2026-11-26, under the owner's standing instruction to choose sensible defaults for software-only work. The owner can change any of them; each is marked as the agent's call.
+The agent chose this design's defaults on 2026-11-26, under the owner's standing instruction to choose sensible defaults for software-only work, and built it. The owner reviewed it the same day and approved it with the decisions below. Calls still marked as the agent's were reviewed and kept.
+
+## Owner decisions (2026-11-26)
+
+- **First self-hoster:** the owner, on an arm64 Mac. macOS arm64 only is kept. A Linux port is a separate ticket for when someone else wants to self-host, because it means rebuilding and proving Hydra's pinned patches and the Bitcoin Core pin for another target.
+- **Origin and node:** Tailscale or the self-hoster's own TLS proxy, and on mainnet the self-hoster's own synced node, reached by loopback RPC and ZMQ URLs. A node on another machine fits the external-node path.
+- **Hydra's source:** Hydra is AGPL-3.0-or-later, and a deployment serves miners over a network. `/provenance` links the exact source it runs: Hydra's pinned upstream commit and this repository's patch files at the build's commit. A deployment serves no source archive of its own.
+- **Closing the last acceptance item:** both of these, not the production-path rehearsal alone:
+  - the Gate negatives harness, run on regtest against a deployment `self-host-gate.sh` launched;
+  - one journey on the owner's mainnet self-hosted deployment, with a Bitaxe and the owner's node, from consent through Gate Pass redemption. It follows the hardware process rules and records redacted evidence.
 
 ## Intent
 
@@ -19,7 +28,7 @@ A self-hoster runs the whole reference BWG Core stack and gets the same public i
 ## Non-goals
 
 - A hosted multi-tenant service, container images, or orchestration (Kubernetes, systemd units).
-- Linux or Intel Macs: the pinned Hydra and Bitcoin Core runners are macOS arm64 only, so this is too (agent's call; a non-claim until the runners are ported).
+- Linux or Intel Macs: the pinned Hydra and Bitcoin Core runners are macOS arm64 only, so this is too (owner's decision; a non-claim until a separate ticket ports the runners).
 - New Pool Offers, Action Policies or payout terms. The configuration names the ones the reference supports and refuses others.
 
 ## Anti-goals
@@ -72,9 +81,9 @@ The launcher already refuses missing commands, keys with loose modes, a lease ke
 - The launcher builds with `BWG_BUILD_COMMIT` (the commit, with `-dirty` for a dirty tree) and `BWG_BUILD_TIME`, so discovery's `source` is filled.
 - The front serves `GET /provenance`, a JSON document with:
   - the discovery URL, and the source repository, version, commit and build time;
-  - the engine: Hydra's version, commit and patches;
+  - the engine: Hydra's version, commit and patches, with links to its pinned upstream commit and to each patch file at the build's commit, which meets Hydra's AGPL source offer (owner's decision);
   - Bitcoin Core's pinned version;
-  - the licences: the project's MIT, Hydra's own, and Bitcoin Core's MIT.
+  - the licences: the project's MIT, Hydra's AGPL-3.0-or-later, and Bitcoin Core's MIT.
 
 ### Health and readiness (front)
 
@@ -99,6 +108,11 @@ The launcher already refuses missing commands, keys with loose modes, a lease ke
 A regtest proof, `scripts/rehearse-self-host.sh`, drives the page of a deployment that `self-host-gate.sh` launched, through public interfaces only. Its Worker is the standard Stratum V1 Worker, a CPU miner configured from the settings the page shows. The claimant gives consent, mines real shares past a Renew, then cancels; the proof checks that the page withdraws the settings and the Pool Adapter cuts the miner off.
 
 The proof doesn't cross the Work Requirement, so it issues and redeems no Gate Pass. (Revised during the build: the simulated outbox share the production-path rehearsal uses is guarded so that it can't reach a launched deployment, `tests/rehearsal_isolation.rs`, and a regtest CPU miner earns about one hash of credit per share against at least 2^43.) Issuance and redemption with a standard Worker are the production-path rehearsal's (`--standard-worker`), which runs the same services and page. No route, field or behaviour exists only for self-hosting.
+
+The last acceptance item closes on two more pieces (owner's decision):
+
+- `scripts/rehearse-self-host.sh` also runs the Gate negatives harness against the deployment it launched, on regtest.
+- One mainnet journey on the owner's self-hosted deployment, with a Bitaxe and the owner's node. A Bitaxe earns the Work Requirement's 2^43 hashes in seconds, so the journey runs from consent through issuance and redemption of a Gate Pass. Its evidence names the board, commit and build, is free of addresses, credentials and pool identities, and lists its non-claims.
 
 ## Left to the builder
 

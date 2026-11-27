@@ -79,3 +79,8 @@ The last item stays open, and it can't close in software. A self-hosted Gate Pas
 2^43 credited hashes. A regtest CPU miner would take weeks to earn them, and the rehearsal's
 synthetic share is kept away from launched deployments. Closing it takes a Bitaxe or another
 hashing Worker on a self-hosted deployment, on mainnet or with real hashrate.
+
+The owner approved the design on 2026-11-26 and chose how the item closes: the Gate negatives harness
+run by `scripts/rehearse-self-host.sh` on regtest, and one mainnet journey on the owner's self-hosted
+deployment with a Bitaxe, through Gate Pass redemption. The same review added links to Hydra's
+AGPL source to `/provenance`. Neither is built yet.
