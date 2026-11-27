@@ -4,7 +4,7 @@
 
 **Blocked by:** 04: Secure challenge issuance and publish Authority discovery; 09: Prove persistent lifecycle recovery and data governance; 13: Protect account creation with an accessible Web Component; 19: Submit block candidates independently of gate outages.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] One supported launch path starts Gate Authority, PostgreSQL, Pool Adapter, pinned Hydra/P2Pool, Bitcoin Core integration, reference service, and Web Component assets.
 - [x] Configuration distinguishes public endpoints, private service links, trust roots, secrets, Pool Offers, Action Policies, and payout terms.
@@ -12,7 +12,7 @@
 - [x] Authority discovery, source, version, commit, build, engine, and license provenance are visible.
 - [x] Health and readiness distinguish application availability from valid mining-job readiness.
 - [x] Backup, restore, upgrade, key rotation, shutdown, and recovery operations are documented and testable.
-- [ ] The deployment passes the same public acceptance harness without self-host-specific protocol forks.
+- [x] The deployment passes the same public acceptance harness without self-host-specific protocol forks.
 
 ## Self-host proof — 2026-11-26
 
@@ -96,3 +96,48 @@ AGPL source to `/provenance`.
   mainnet self-hosted deployment, two Bitaxes run
   `--cases withheld,expired_context,handed_over,journey`, which also covers the journey through Gate
   Pass redemption. That session closes this item; nothing is left to build.
+
+## Hardware session on the mainnet self-hosted deployment — 2026-11-27
+
+The last item closes here. Every case passed, and the harness printed `negatives: passed`.
+
+- **What ran:**
+  - Gate: `a1c4697`, clean and pushed, with build time `2026-11-27T09:19:30Z`. `/provenance` and discovery both named that commit.
+  - Launch: `scripts/self-host-gate.sh --config FILE` on macOS arm64, from a private `bwg-self-host/0.1` file. It used the `tailscale` origin, a new PostgreSQL volume and the Work Requirement 2^45 (`payoutTerms.expectedHashes`).
+  - Node and engine: Hydra (p2poolv2 0.12.0 at `8eca024`, with the job-admission and block-submission patches) on the owner's synced mainnet node (Bitcoin Core 31.1). It was reached by the external-node path, with the node's RPC and ZMQ forwarded to loopback.
+  - Boards: the Gamma 601 and the Ultra 205, both on the owner's reference image of `247d2cd`, the same image digests as Tickets 32 and 34.
+  - Harness: `scripts/gate-negatives-harness.ts` with its deployment adapter, unchanged, run once with `--cases withheld,expired_context,handed_over,journey`. Chrome was started through `open -na` with a new profile, and the owner picked each port.
+- **Timing:** launched at about 09:31 UTC. Checked just after launch, `/healthz` answered available and `/readyz` `admitted_job`; readiness wasn't watched between then and the sitting. The harness ran 16:39 to 16:44 UTC, and the launcher stopped at 16:45 UTC, exiting 0.
+- **Provenance:** Hydra's upstream archive and both patch links at `a1c4697` answered 200, and each file's SHA-256 matched the document. The mainnet document lists the two mainnet patches and no regtest patch.
+- **`withheld` and `expired_context`, on the 205:**
+  - Each consent named "Bitaxe Ultra 205" alone, estimating 70.4 s.
+  - `withheld` held its Start grant; `expired_context` held its grant 65 s, past the board's 60 s unused context.
+  - Each challenge ended `cancelled` with Verified Progress 0 and no Gate Pass request.
+- **`handed_over`, with tab a the 601 and tab b the 205 in its own browser context:**
+  - Each consent named only its tab's board.
+  - Both challenges ended `cancelled` with Verified Progress 0 and no Gate Pass request.
+  - Neither board logged a lease in any negative.
+- **`journey`, on the 601:**
+  - The consent named "Bitaxe Gamma 601" alone, estimating 29.3 s.
+  - Every grant passed through, and the audit searched 6 Renew grants.
+  - The Authority reached `satisfied`, then `pass_issued`, with Verified Progress just over 2^45. The redemption was answered 200.
+  - The spent-pass retry refreshed the identical pass, and its second redemption was refused with 401 `invalid_redemption`.
+  - The board logged one lease, stopped on restoration and logged `Lease stop finished ok=1`.
+- **Every case:**
+  - The audit searched the 8 board values and each tab's Device Identity fingerprints and found no violation.
+  - The only board-derived field sent to the Authority was `control_session_binding_sha256`. The payout address appeared only in the pool selection.
+  - The Authority holds exactly the five challenges the cases used. No stale job was logged.
+  - Both boards ended paused with `mineOnBoot` 0.
+  - No payout address, LAN address or origin appeared in the harness's or the services' logs.
+- **Same harness, no fork:** the deployment ran the same front, page, launcher and harness as Tickets 28 and 32. No route, field or behaviour was added or changed for it.
+
+Non-claims:
+
+- One run of each case, on one image and two boards. macOS arm64 and the Tailscale origin only; a self-hoster's own TLS proxy wasn't used.
+- The Work Requirement was the 2^45 override, not the Standard policy's default.
+- The Gate keys were copied from Ticket 07's directory, and the Work Lease Authority is the owner's development authority. A self-hoster's freshly generated keys weren't used on hardware.
+- The deployment adapter observes no board directly, so the board's own `admission_required` refusal in `expired_context` wasn't seen; the 205 logged no lease. A handed-over grant is refused by the page, not the board, as in Ticket 32.
+- The Device Identity was searched as its fingerprint, not its raw key.
+- No block was found, so block submission on a self-hosted deployment isn't shown here.
+- The private records are kept outside the repository.
+
