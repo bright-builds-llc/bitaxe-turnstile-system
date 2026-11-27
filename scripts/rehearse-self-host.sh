@@ -254,10 +254,14 @@ curl --fail --silent "$front/readyz" | jq -e '.ready == true and .miningJob == "
   fail "/readyz does not report an admitted mining job"
 expected_commit=$(git -C "$repo_root" rev-parse HEAD)
 [[ -z "$(git -C "$repo_root" status --porcelain)" ]] || expected_commit="$expected_commit-dirty"
+# Hydra's AGPL source offer: the pinned archive, and each patch at the commit this build came from.
 curl --fail --silent "$front/provenance" | jq -e --arg commit "$expected_commit" --arg origin "$ORIGIN" '
   .source.commit == $commit and .discovery == "\($origin)/.well-known/pow-gate-configuration"
-  and (.engine.patches[0] | test("regtest")) and .bitcoinCore.version == "31.1"' >/dev/null ||
-  fail "/provenance does not name this build and its pins"
+  and (.engine.patches[0] | test("regtest")) and .bitcoinCore.version == "31.1"
+  and (.engine.source.upstream.url | startswith("https://github.com/p2poolv2/p2poolv2/"))
+  and (.engine.source.patches | length) == (.engine.patches | length)
+  and all(.engine.source.patches[]; .url | contains("/raw/\($commit | sub("-dirty$"; ""))/integration/hydra-solo/"))' \
+  >/dev/null || fail "/provenance does not name this build, its pins and Hydra's source"
 curl --fail --silent "$front/.well-known/pow-gate-configuration" | jq -e --arg commit "$expected_commit" \
   '.source.commit == $commit' >/dev/null || fail "discovery does not name this build's commit"
 printf 'Health, readiness and provenance answer; discovery names commit %s\n' "${expected_commit:0:12}"

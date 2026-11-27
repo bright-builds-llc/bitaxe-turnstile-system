@@ -84,7 +84,7 @@ It's ready when it prints `gate_deployment=ready`.
 |---|---|
 | `/healthz` | 200 when the Authority and the Relying Service answer; 503 naming the part that doesn't. |
 | `/readyz` | 200 only when the application is healthy and Hydra handed the probe an admitted mining job. Otherwise 503, with `miningJob` set to `no_job`, `refused`, `unreachable` or `unconfigured`. The answer is cached for 30 s. |
-| `/provenance` | The discovery URL; this build's source, version, commit and build time; the pinned engine, its licence and patches; and Bitcoin Core's version and licence. |
+| `/provenance` | The discovery URL; this build's source, version, commit and build time; the pinned engine, its licence and patches, with links to the exact source it runs (Hydra's pinned upstream archive, and each patch file at the build's commit, each with its SHA-256); and Bitcoin Core's version and licence. Hydra is AGPL-3.0-or-later and serves miners over a network, so these links are the deployment's source offer; launch from a commit that is pushed to the public repository, or the patch links won't resolve. |
 | `/.well-known/pow-gate-configuration` | Authority discovery, naming the same commit and build time. |
 
 Point your monitoring at `/healthz` for liveness and `/readyz` for whether claimants can do work.

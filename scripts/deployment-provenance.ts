@@ -2,7 +2,10 @@
 /**
  * The provenance document a Gate deployment's front serves at `/provenance` (bwg-core Ticket 24):
  * its discovery URL, the source and build it runs, and the pinned engine and node with their
- * licences, read from `integration/hydra-solo/provenance.json`.
+ * licences, read from `integration/hydra-solo/provenance.json`. Hydra is AGPL-3.0-or-later and a
+ * deployment serves miners over a network, so the engine also links the exact source it runs: the
+ * pinned upstream archive and each patch file at the build's commit, with the digests the stack
+ * checks before building it.
  *
  * Usage: bun scripts/deployment-provenance.ts --origin URL --commit SHA[-dirty] --build-time TIME
  *          --network regtest|mainnet
@@ -14,6 +17,7 @@ import { parseArgs } from "node:util";
 
 const SOURCE_REPOSITORY = "https://github.com/bright-builds-llc/bitaxe-turnstile-system";
 const PINS_SCHEMA = "bwg-hydra-solo-provenance-v1";
+const PATCH_DIRECTORY = "integration/hydra-solo";
 
 export type ProvenanceFacts = {
   origin: string;
@@ -23,10 +27,20 @@ export type ProvenanceFacts = {
   network: "regtest" | "mainnet";
 };
 
+export type SourceLink = { url: string; sha256: string };
+export type PatchLink = SourceLink & { file: string };
+
 export type DeploymentProvenance = {
   discovery: string;
   source: { repository: string; version: string; commit: string; buildTime: string; license: "MIT" };
-  engine: { name: string; version: string; commit: string; license: string; patches: string[] };
+  engine: {
+    name: string;
+    version: string;
+    commit: string;
+    license: string;
+    patches: string[];
+    source: { upstream: SourceLink; patches: PatchLink[] };
+  };
   bitcoinCore: { version: string; license: string };
 };
 
@@ -51,8 +65,18 @@ export function deploymentProvenance(facts: ProvenanceFacts, pins: unknown): Dep
   }
   const hydra = section(pins, "p2poolv2");
   const bitcoinCore = section(pins, "bitcoinCore");
-  const patches = [text(hydra, "jobAdmissionPatch"), text(hydra, "blockSubmissionPatch")];
-  if (facts.network === "regtest") patches.unshift(text(hydra, "regtestPatch"));
+  const patchFields = ["jobAdmissionPatch", "blockSubmissionPatch"];
+  if (facts.network === "regtest") patchFields.unshift("regtestPatch");
+  // A dirty build's patches can only be linked at the commit it was built on; the digests say whether they match.
+  const sourceCommit = facts.commit.replace(/-dirty$/u, "");
+  const patchLinks = patchFields.map((field) => {
+    const file = text(hydra, field);
+    return {
+      file,
+      url: `${SOURCE_REPOSITORY}/raw/${sourceCommit}/${PATCH_DIRECTORY}/${file}`,
+      sha256: text(hydra, `${field}Sha256`),
+    };
+  });
   return {
     discovery: `${facts.origin}/.well-known/pow-gate-configuration`,
     source: {
@@ -67,7 +91,11 @@ export function deploymentProvenance(facts: ProvenanceFacts, pins: unknown): Dep
       version: text(hydra, "version"),
       commit: text(hydra, "commit"),
       license: text(hydra, "license"),
-      patches,
+      patches: patchLinks.map((link) => link.file),
+      source: {
+        upstream: { url: text(hydra, "sourceUrl"), sha256: text(hydra, "sourceSha256") },
+        patches: patchLinks,
+      },
     },
     bitcoinCore: { version: text(bitcoinCore, "version"), license: text(bitcoinCore, "license") },
   };

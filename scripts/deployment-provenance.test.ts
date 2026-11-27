@@ -39,7 +39,7 @@ test("names the pinned Hydra engine and the patches a mainnet build carries", ()
   const provenance = deploymentProvenance(facts, pins);
 
   // Assert
-  expect(provenance.engine).toEqual({
+  expect(provenance.engine).toMatchObject({
     name: "p2poolv2 (Hydra)",
     version: "0.12.0",
     commit: "8eca024bde6c2de74620dce2f9cc7fb9a544c5c0",
@@ -54,6 +54,52 @@ test("adds the regtest patch on regtest", () => {
 
   // Assert
   expect(provenance.engine.patches).toContain("p2poolv2-v0.12.0-regtest.patch");
+});
+
+test("links Hydra's pinned upstream source and each patch at the build's commit", () => {
+  // Act
+  const provenance = deploymentProvenance(facts, pins);
+
+  // Assert
+  const patchBase = `https://github.com/bright-builds-llc/bitaxe-turnstile-system/raw/${facts.commit}/integration/hydra-solo`;
+  expect(provenance.engine.source).toEqual({
+    upstream: {
+      url: "https://github.com/p2poolv2/p2poolv2/releases/download/v0.12.0/source.tar.gz",
+      sha256: "f95544a942ba9d91fdef1f096662e8d405cd069cb01db2cb9b34dbfc5f0928e4",
+    },
+    patches: [
+      {
+        file: "p2poolv2-v0.12.0-job-admission.patch",
+        url: `${patchBase}/p2poolv2-v0.12.0-job-admission.patch`,
+        sha256: "3039e8d886682548ac69456b7c82169a74bec1b847535467a51618ce299fd367",
+      },
+      {
+        file: "p2poolv2-v0.12.0-block-submission.patch",
+        url: `${patchBase}/p2poolv2-v0.12.0-block-submission.patch`,
+        sha256: "40539665f743dea0efc2791e7f90471c90224441b05408fa24b9b76c23cadcae",
+      },
+    ],
+  });
+});
+
+test("links a regtest build's regtest patch first", () => {
+  // Act
+  const provenance = deploymentProvenance({ ...facts, network: "regtest" }, pins);
+
+  // Assert
+  expect(provenance.engine.source.patches[0]).toEqual({
+    file: "p2poolv2-v0.12.0-regtest.patch",
+    url: `https://github.com/bright-builds-llc/bitaxe-turnstile-system/raw/${facts.commit}/integration/hydra-solo/p2poolv2-v0.12.0-regtest.patch`,
+    sha256: "b938dfb334868d991604611d3babe8a78b6e3b557cef460531b3a1e9642a1e2c",
+  });
+});
+
+test("links a dirty build's patches at the commit it was built on", () => {
+  // Act
+  const provenance = deploymentProvenance({ ...facts, commit: `${facts.commit}-dirty` }, pins);
+
+  // Assert
+  expect(provenance.engine.source.patches[0]?.url).toContain(`/raw/${facts.commit}/`);
 });
 
 test("names the pinned Bitcoin Core", () => {

@@ -83,4 +83,13 @@ hashing Worker on a self-hosted deployment, on mainnet or with real hashrate.
 The owner approved the design on 2026-11-26 and chose how the item closes: the Gate negatives harness
 run by `scripts/rehearse-self-host.sh` on regtest, and one mainnet journey on the owner's self-hosted
 deployment with a Bitaxe, through Gate Pass redemption. The same review added links to Hydra's
-AGPL source to `/provenance`. Neither is built yet.
+AGPL source to `/provenance`.
+
+- **Hydra's source, 2026-11-27:** `/provenance` now links Hydra's pinned upstream archive and each
+  patch at the build's commit, with their SHA-256 digests. Unit-tested. On this tree the regtest
+  document's digests matched the patch files, and a patch link at the pushed commit answered 200. The
+  self-host rehearsal now checks the links, but it wasn't rerun for this change. A dirty build links
+  its base commit, which its patches may not match; the digests show it.
+- **Negatives harness:** not built. Against a launched deployment the harness has only its deployment
+  adapter, which needs real boards and a person at each port chooser; the rehearsal's fake board is
+  kept away from launched deployments. The plan goes back to the owner.
