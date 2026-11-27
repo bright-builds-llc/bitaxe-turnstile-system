@@ -9,13 +9,13 @@
 - [x] Each role profile names its exact BWG/0.x version and publishes one reproducible command.
 - [x] Positive and negative fixtures cover work arithmetic, lifecycle, signatures, DPoP, event replay, expiry, rewards, privacy, and failure behavior.
 - [x] Implementations can self-certify only the profiles they actually pass.
-- [ ] The reference account-creation journey passes through the hosted and self-hosted public seams.
+- [x] The reference account-creation journey passes through the hosted and self-hosted public seams.
 - [x] Standard Stratum and real Bitaxe paths both satisfy the same Gate Authority accounting and Redemption semantics.
 - [ ] Every Core MVP success criterion has linked executable or hardware evidence.
 - [ ] Mainnet evidence includes exact job admission and independent block-submission behavior.
 - [x] Residual risks and non-claims are published without weakening the protocol's stated guarantees.
 
-## C Reference Firmware evidence — 2026-11-15, updated 2026-11-26
+## C Reference Firmware evidence — 2026-11-15, updated 2026-11-27
 
 Mapped by the C-image Gate effort's Ticket 09, and updated from its Tickets 28 and 32 to 34. The
 criterion-by-criterion table is in
@@ -33,10 +33,12 @@ Against this ticket's items:
 - **Every criterion has linked evidence:** each has a C-image entry. Criterion 11 is partial:
   malformed payout and invalid proposal weren't run on the C image, by the owner's choice
   (2026-11-22), and adapter replay is a Rust test.
-- **Hosted and self-hosted public seams:** the hosted journey redeemed on mainnet. A self-hosted
-  deployment ran on regtest through consent, real shares, a Renew and Cancel, but no Gate Pass,
-  since a CPU miner can't reach the requirement there (Ticket 24, "Self-host proof"). The item
-  stays open until a self-hosted journey redeems.
+- **Hosted and self-hosted public seams:** the hosted journey redeemed on mainnet. On 2026-11-27 a
+  self-hosted deployment, launched by `self-host-gate.sh` from `a1c4697` on the owner's mainnet
+  node, ran the same harness unchanged. The 601's journey redeemed its Gate Pass, and the three
+  negatives passed on both boards (Ticket 24, "Hardware session on the mainnet self-hosted
+  deployment"). Non-claims: one run each, the Tailscale origin only, the 2^45 Work Requirement
+  override, and Gate keys copied from Ticket 07 rather than freshly generated.
 - **Standard Stratum and real Bitaxe paths share accounting and Redemption:** the real Bitaxe path
   ran on the C image. A standard Stratum V1 Worker ran beside it on regtest; see below.
 
