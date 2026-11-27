@@ -47,3 +47,7 @@ Local ticket status uses the five default triage roles. See `docs/agents/triage-
 ### Domain docs
 
 This is a multi-context repository rooted at `CONTEXT-MAP.md`, with system-wide decisions under `docs/adr/`. See `docs/agents/domain.md`.
+
+## Long Jobs
+
+When starting anything likely to take more than about a minute, such as a build, a test suite, a rehearsal or a hardware run, tell the owner roughly how long it should take and when it should finish, from an earlier run where one exists. For a run of several steps, give the steps' rough times too. If a job runs well past its estimate, say so, with the last state seen.
